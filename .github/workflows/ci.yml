@@ -1,0 +1,84 @@
+name: 자동 검사
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    name: 코드 검사
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 한글 인코딩 검사
+        run: bash .ci/check-encoding.sh
+
+      - name: HTML 구조 검사
+        run: python3 .ci/check-html.py
+
+      - name: 비밀번호·인증키 검사
+        run: bash .ci/check-secrets.sh
+
+      - name: 개인정보 패턴 검사
+        run: bash .ci/check-pii.sh
+
+      - name: 공개 폴더 검사
+        run: bash .ci/check-public.sh
+
+  smoke:
+    name: 사이트 동작 확인
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 컨테이너 기동
+        run: docker compose up -d
+
+      - name: 응답 확인
+        run: |
+          for i in $(seq 1 15); do
+            if curl -sf http://127.0.0.1:8080/ -o /tmp/page.html; then
+              break
+            fi
+            sleep 2
+          done
+
+          if [ ! -s /tmp/page.html ]; then
+            echo "[실패] 사이트가 응답하지 않습니다."
+            echo "파일 경로나 docker-compose.yml 설정을 확인하세요."
+            docker compose logs
+            exit 1
+          fi
+
+          if ! grep -q "인사 통합포털" /tmp/page.html; then
+            echo "[실패] 응답은 왔지만 내용이 예상과 다릅니다."
+            head -20 /tmp/page.html
+            exit 1
+          fi
+
+          echo "[통과] 사이트 정상 응답 ($(wc -c < /tmp/page.html) 바이트)"
+
+      - name: 정리
+        if: always()
+        run: docker compose down
+
+  promote:
+    name: 배포 대상 갱신
+    needs: [validate, smoke]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: release 브랜치 갱신
+        run: |
+          git push origin HEAD:release
+          echo "release 브랜치를 $(git rev-parse --short HEAD) 로 갱신했습니다."
+          echo "서버가 2분 이내에 가져갑니다."
