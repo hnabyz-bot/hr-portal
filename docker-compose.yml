@@ -1,7 +1,7 @@
 services:
   web:
     image: nginx:alpine
-    container_name: hr-portal-dev-web
+    container_name: hr-portal-web
     restart: unless-stopped
     ports:
       - "127.0.0.1:8080:80"
