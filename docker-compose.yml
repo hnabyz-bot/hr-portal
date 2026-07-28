@@ -1,0 +1,9 @@
+services:
+  web:
+    image: nginx:alpine
+    container_name: hr-portal-dev-web
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8080:80"
+    volumes:
+      - ./public:/usr/share/nginx/html:ro
