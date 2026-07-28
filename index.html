@@ -1,0 +1,572 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>인사 통합포털 - 사이트 구조 초안</title>
+<style>
+  :root{
+    --sidebar-bg:#12172B;
+    --sidebar-hover:#1D2440;
+    --sidebar-text:#AEB3CC;
+    --sidebar-text-active:#FFFFFF;
+    --accent:#4F5BD5;
+    --accent-light:#EEF0FD;
+    --bg-page:#F5F6FA;
+    --surface:#FFFFFF;
+    --border:#E5E7EF;
+    --text-primary:#1A1D29;
+    --text-secondary:#6B7080;
+    --text-muted:#9CA0AF;
+    --success:#1E9E6B; --bg-success:#E6F7EF;
+    --warning:#C9861A; --bg-warning:#FDF3E1;
+    --danger:#D64550; --bg-danger:#FCEAEA;
+    --radius:10px;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;height:100%;}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Malgun Gothic",Roboto,sans-serif;
+    background:var(--bg-page);
+    color:var(--text-primary);
+    display:flex;
+    height:100vh;
+    overflow:hidden;
+    font-size:14px;
+  }
+  /* ---------- SIDEBAR ---------- */
+  .sidebar{
+    width:240px; flex-shrink:0; background:var(--sidebar-bg);
+    display:flex; flex-direction:column; height:100%;
+  }
+  .sidebar-logo{
+    display:flex; align-items:center; gap:10px;
+    padding:20px 20px 16px 20px; color:#fff; font-weight:700; font-size:16px;
+    border-bottom:1px solid rgba(255,255,255,0.08);
+  }
+  .sidebar-logo .mark{
+    width:28px;height:28px;border-radius:7px;background:var(--accent);
+    display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;
+  }
+  .sidebar-nav{ flex:1; overflow-y:auto; padding:12px 10px; }
+  .nav-item{
+    display:flex; align-items:center; gap:11px;
+    padding:10px 12px; margin-bottom:2px; border-radius:8px;
+    color:var(--sidebar-text); cursor:pointer; user-select:none;
+    border-left:3px solid transparent;
+    transition:background .12s ease;
+  }
+  .nav-item:hover{ background:var(--sidebar-hover); color:#fff; }
+  .nav-item.active{
+    background:var(--sidebar-hover); color:var(--sidebar-text-active);
+    border-left:3px solid var(--accent); font-weight:600;
+  }
+  .nav-item svg{ width:18px; height:18px; flex-shrink:0; }
+  .nav-item span{ font-size:13.5px; }
+  .sidebar-foot{
+    padding:14px 20px; border-top:1px solid rgba(255,255,255,0.08);
+    color:var(--sidebar-text); font-size:11.5px; line-height:1.5;
+  }
+  /* ---------- MAIN ---------- */
+  .main{ flex:1; display:flex; flex-direction:column; min-width:0; height:100%; }
+  .topbar{
+    height:60px; flex-shrink:0; background:var(--surface); border-bottom:1px solid var(--border);
+    display:flex; align-items:center; justify-content:space-between; padding:0 24px;
+  }
+  .topbar-title{ font-size:16px; font-weight:700; }
+  .topbar-search{
+    display:flex; align-items:center; gap:8px; background:var(--bg-page);
+    border:1px solid var(--border); border-radius:8px; padding:7px 12px; width:320px; color:var(--text-muted);
+  }
+  .topbar-search svg{ width:15px;height:15px;flex-shrink:0; }
+  .topbar-search input{
+    border:none; background:transparent; outline:none; font-size:13px; width:100%; color:var(--text-primary);
+  }
+  .topbar-right{ display:flex; align-items:center; gap:16px; }
+  .icon-btn{ width:34px; height:34px; border-radius:8px; display:flex; align-items:center; justify-content:center;
+    color:var(--text-secondary); cursor:pointer; position:relative; }
+  .icon-btn:hover{ background:var(--bg-page); }
+  .icon-btn svg{ width:18px; height:18px; }
+  .dot{ position:absolute; top:6px; right:6px; width:7px; height:7px; border-radius:50%; background:var(--danger); border:1.5px solid #fff; }
+  .avatar{ width:32px; height:32px; border-radius:50%; background:var(--accent-light); color:var(--accent);
+    display:flex; align-items:center; justify-content:center; font-weight:700; font-size:12px; }
+  .subtabs{
+    height:46px; flex-shrink:0; background:var(--surface); border-bottom:1px solid var(--border);
+    display:flex; align-items:center; gap:4px; padding:0 24px; overflow-x:auto;
+  }
+  .subtab{
+    padding:8px 14px; border-radius:7px; color:var(--text-secondary); font-size:13.5px;
+    cursor:pointer; white-space:nowrap; font-weight:500;
+  }
+  .subtab:hover{ background:var(--bg-page); color:var(--text-primary); }
+  .subtab.active{ background:var(--accent-light); color:var(--accent); font-weight:700; }
+  .content{ flex:1; overflow-y:auto; padding:24px 28px 48px 28px; }
+  .breadcrumb{ font-size:12.5px; color:var(--text-muted); margin-bottom:14px; }
+  .breadcrumb b{ color:var(--text-secondary); font-weight:600; }
+
+  /* ---------- CONTENT PRIMITIVES ---------- */
+  .grid{ display:grid; gap:14px; }
+  .g4{ grid-template-columns:repeat(4,1fr); }
+  .g3{ grid-template-columns:repeat(3,1fr); }
+  .g2{ grid-template-columns:repeat(2,1fr); }
+  .card{ background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:18px 20px; }
+  .card-title{ font-size:14px; font-weight:700; margin:0 0 12px 0; display:flex; align-items:center; justify-content:space-between; }
+  .card-title .more{ font-size:12px; font-weight:600; color:var(--accent); cursor:pointer; }
+  .stat-label{ font-size:12.5px; color:var(--text-secondary); margin-bottom:6px; }
+  .stat-value{ font-size:24px; font-weight:700; }
+  .stat-sub{ font-size:12px; color:var(--text-muted); margin-top:4px; }
+  .bar-track{ height:6px; background:var(--bg-page); border-radius:4px; margin-top:10px; overflow:hidden; }
+  .bar-fill{ height:100%; background:var(--accent); border-radius:4px; }
+  table{ width:100%; border-collapse:collapse; font-size:13px; }
+  th{ text-align:left; color:var(--text-muted); font-weight:600; font-size:12px; padding:8px 10px; border-bottom:1px solid var(--border); }
+  td{ padding:10px 10px; border-bottom:1px solid var(--border); color:var(--text-primary); }
+  tr:last-child td{ border-bottom:none; }
+  .badge{ display:inline-block; padding:3px 9px; border-radius:20px; font-size:11.5px; font-weight:700; }
+  .badge.success{ background:var(--bg-success); color:var(--success); }
+  .badge.warning{ background:var(--bg-warning); color:var(--warning); }
+  .badge.danger{ background:var(--bg-danger); color:var(--danger); }
+  .badge.neutral{ background:var(--bg-page); color:var(--text-secondary); }
+  .btn{ display:inline-flex; align-items:center; gap:6px; padding:9px 16px; border-radius:8px; font-size:13px;
+    font-weight:600; cursor:pointer; border:1px solid var(--border); background:var(--surface); color:var(--text-primary); }
+  .btn.primary{ background:var(--accent); color:#fff; border-color:var(--accent); }
+  .quick-grid{ display:grid; grid-template-columns:repeat(4,1fr); gap:10px; }
+  .quick-btn{ background:var(--bg-page); border:1px solid var(--border); border-radius:var(--radius);
+    padding:16px 10px; text-align:center; cursor:pointer; }
+  .quick-btn svg{ width:20px;height:20px;color:var(--accent); margin-bottom:8px; }
+  .quick-btn div{ font-size:12.5px; font-weight:600; }
+  .field-row{ display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-bottom:14px; }
+  .field label{ display:block; font-size:12.5px; font-weight:600; color:var(--text-secondary); margin-bottom:6px; }
+  .field input, .field select, .field textarea{
+    width:100%; border:1px solid var(--border); border-radius:8px; padding:9px 11px; font-size:13px;
+    font-family:inherit; color:var(--text-primary); background:var(--surface);
+  }
+  .divider{ height:1px; background:var(--border); margin:18px 0; }
+  .placeholder-note{ font-size:12px; color:var(--text-muted); background:var(--bg-page); border-radius:8px; padding:10px 12px; margin-top:14px;}
+  .list-row{ display:flex; align-items:center; justify-content:space-between; padding:11px 0; border-bottom:1px solid var(--border); }
+  .list-row:last-child{ border-bottom:none; }
+  .list-title{ font-size:13.5px; font-weight:600; }
+  .list-sub{ font-size:12px; color:var(--text-muted); margin-top:2px; }
+</style>
+</head>
+<body>
+
+<div class="sidebar">
+  <div class="sidebar-logo"><div class="mark">H</div>인사 통합포털</div>
+  <div class="sidebar-nav" id="sidebarNav"></div>
+  <div class="sidebar-foot">로그인: 홍길동 대리 · 마케팅팀<br>© 2026 H&aby HR System</div>
+</div>
+
+<div class="main">
+  <div class="topbar">
+    <div class="topbar-title" id="pageTitle">홈</div>
+    <div class="topbar-search">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <input placeholder="규정, 서식, 메뉴 통합검색"/>
+    </div>
+    <div class="topbar-right">
+      <div class="icon-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg><div class="dot"></div></div>
+      <div class="icon-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></div>
+      <div class="avatar">홍</div>
+    </div>
+  </div>
+  <div class="subtabs" id="subtabsRow"></div>
+  <div class="content" id="contentArea"></div>
+</div>
+
+<script>
+const ICONS = {
+  home:'<path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/>',
+  clock:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/>',
+  wallet:'<rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18"/><circle cx="16.5" cy="14" r="1"/>',
+  plane:'<path d="M2 12l19-7-7 19-2-8-8-2z"/>',
+  target:'<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="0.6"/>',
+  search:'<circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>',
+  network:'<circle cx="12" cy="4" r="2"/><circle cx="5" cy="18" r="2"/><circle cx="19" cy="18" r="2"/><path d="M12 6v6M12 12L6 16.5M12 12l6 4.5"/>',
+  bell:'<path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>',
+  settings:'<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.09A1.7 1.7 0 0 0 9 19.4a1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.55-1H3a2 2 0 1 1 0-4h.09A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-1.55V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1 1.55 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.4 9a1.7 1.7 0 0 0 1.55 1H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.51 1z"/>',
+  calendar:'<rect x="3" y="4" width="18" height="17" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="16" y1="2" x2="16" y2="6"/>',
+  doc:'<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/>',
+  users:'<circle cx="9" cy="8" r="3"/><path d="M2 20c0-3.5 3-6 7-6s7 2.5 7 6"/><circle cx="18" cy="8" r="2.4"/><path d="M16 14c2.8.4 5 2.6 5 6"/>',
+  calc:'<rect x="4" y="2" width="16" height="20" rx="2"/><line x1="8" y1="6" x2="16" y2="6"/><line x1="8" y1="11" x2="8" y2="11.01"/><line x1="12" y1="11" x2="12" y2="11.01"/><line x1="16" y1="11" x2="16" y2="11.01"/><line x1="8" y1="15" x2="8" y2="15.01"/><line x1="12" y1="15" x2="12" y2="15.01"/><line x1="16" y1="15" x2="16" y2="15.01"/><line x1="8" y1="19" x2="16" y2="19"/>',
+  edit:'<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>',
+  flag:'<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/>',
+};
+function icon(name){ return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICONS[name]}</svg>`; }
+
+/* ---------------- CONTENT RENDERERS ---------------- */
+function homeContent(){
+  return `
+  <div class="grid g4" style="margin-bottom:14px;">
+    <div class="card"><div class="stat-label">연차 잔여</div><div class="stat-value">15.5<span style="font-size:13px;font-weight:600;color:var(--text-muted);">일</span></div>
+      <div class="bar-track"><div class="bar-fill" style="width:77%;"></div></div><div class="stat-sub">총 20일 중 4.5일 사용</div></div>
+    <div class="card"><div class="stat-label">결재 대기</div><div class="stat-value">2<span style="font-size:13px;font-weight:600;color:var(--text-muted);">건</span></div>
+      <div class="stat-sub">출장신청 1 · 연차신청 1</div></div>
+    <div class="card"><div class="stat-label">오늘 근태</div><div class="stat-value" style="font-size:20px;">09:02 출근</div>
+      <div class="stat-sub"><span class="badge success">정상</span></div></div>
+    <div class="card"><div class="stat-label">이번달 초과근무</div><div class="stat-value">6.5<span style="font-size:13px;font-weight:600;color:var(--text-muted);">시간</span></div>
+      <div class="stat-sub">전월 대비 -2시간</div></div>
+  </div>
+  <div class="grid g3">
+    <div class="card" style="grid-column:span 2;">
+      <div class="card-title">빠른 메뉴</div>
+      <div class="quick-grid">
+        <div class="quick-btn">${icon('calendar')}<div>연차 신청</div></div>
+        <div class="quick-btn">${icon('plane')}<div>출장 신청</div></div>
+        <div class="quick-btn">${icon('search')}<div>규정 검색</div></div>
+        <div class="quick-btn">${icon('calc')}<div>경비 산출</div></div>
+      </div>
+      <div class="divider"></div>
+      <div class="card-title">결재 대기함</div>
+      <div class="list-row"><div><div class="list-title">서울 출장 경비 신청</div><div class="list-sub">2026.07.24 제출 · 1차 승인 대기</div></div><span class="badge warning">대기</span></div>
+      <div class="list-row"><div><div class="list-title">연차 신청 (8/3~8/4)</div><div class="list-sub">2026.07.20 제출 · 팀장 확인중</div></div><span class="badge warning">대기</span></div>
+    </div>
+    <div class="card">
+      <div class="card-title">공지사항 <span class="more">더보기</span></div>
+      <div class="list-row"><div><div class="list-title">2026년 하반기 KPI 중간점검 안내</div><div class="list-sub">인사팀 · 07.20</div></div></div>
+      <div class="list-row"><div><div class="list-title">전자연봉계약서 서명 요청</div><div class="list-sub">인사팀 · 07.18</div></div></div>
+      <div class="list-row"><div><div class="list-title">여름 휴가 사용 촉진 안내</div><div class="list-sub">인사팀 · 07.15</div></div></div>
+    </div>
+  </div>`;
+}
+
+function attendanceOverview(){
+  const rows = [
+    ['07.24 (목)','09:02','18:41','정상'],
+    ['07.23 (수)','08:57','19:20','정상'],
+    ['07.22 (화)','09:15','18:30','지각'],
+    ['07.21 (월)','09:01','18:35','정상'],
+  ];
+  return simpleTableCard('이번 주 출퇴근 기록', ['날짜','출근','퇴근','상태'], rows, (r)=> r[3]==='지각' ? 'warning' : 'success', 3);
+}
+function leaveContent(){
+  return `
+  <div class="grid g3" style="margin-bottom:14px;">
+    <div class="card"><div class="stat-label">총 연차</div><div class="stat-value">20일</div></div>
+    <div class="card"><div class="stat-label">사용</div><div class="stat-value">4.5일</div></div>
+    <div class="card"><div class="stat-label">잔여</div><div class="stat-value" style="color:var(--accent);">15.5일</div></div>
+  </div>
+  <div class="card" style="margin-bottom:14px;">
+    <div class="card-title">연차 신청</div>
+    <div class="field-row">
+      <div class="field"><label>시작일</label><input type="date"/></div>
+      <div class="field"><label>종료일</label><input type="date"/></div>
+    </div>
+    <div class="field"><label>사유</label><input placeholder="예: 가족 여행"/></div>
+    <div style="margin-top:14px; text-align:right;"><span class="btn primary">신청하기</span></div>
+  </div>
+  ${simpleTableCard('신청 내역', ['기간','일수','사유','상태'],
+    [['2026.06.10 ~ 06.11','2일','개인사유','승인'],['2026.05.02','1일','병가','승인']],
+    (r)=> 'success', 3)}`;
+}
+function overtimeContent(){
+  return `
+  <div class="card" style="margin-bottom:14px;">
+    <div class="card-title">초과근무 신청</div>
+    <div class="field-row">
+      <div class="field"><label>일자</label><input type="date"/></div>
+      <div class="field"><label>예상 시간</label><input placeholder="예: 2시간"/></div>
+    </div>
+    <div class="field"><label>사유</label><textarea rows="2" placeholder="업무 사유를 입력하세요"></textarea></div>
+    <div style="margin-top:14px; text-align:right;"><span class="btn primary">신청하기</span></div>
+  </div>
+  ${simpleTableCard('이번달 초과근무 내역', ['일자','시간','사유','상태'],
+    [['07.18','2.0h','월말 정산','승인'],['07.09','1.5h','고객 대응','승인'],['07.02','3.0h','시스템 점검','승인']],
+    (r)=>'success', 3)}`;
+}
+function leaveCalendar(){
+  let cells='';
+  for(let i=1;i<=31;i++){
+    const on = [3,4,17,18].includes(i);
+    cells += `<div style="aspect-ratio:1; border:1px solid var(--border); border-radius:6px; font-size:11.5px; padding:6px; ${on?'background:var(--accent-light); color:var(--accent); font-weight:700;':''}">${i}</div>`;
+  }
+  return `<div class="card"><div class="card-title">8월 휴가 캘린더</div>
+    <div style="display:grid; grid-template-columns:repeat(7,1fr); gap:6px;">${cells}</div>
+    <div class="placeholder-note">보라색 표시는 본인 승인된 휴가 일정입니다. (팀 전체 휴가는 조직도 &gt; 팀 캘린더에서 확인)</div></div>`;
+}
+
+function payslipContent(){
+  return simpleTableCard('급여명세서', ['지급월','실지급액','세전총액','비고'],
+    [['2026년 06월','3,215,400원','3,840,000원','다운로드'],['2026년 05월','3,215,400원','3,840,000원','다운로드'],['2026년 04월','3,190,200원','3,810,000원','다운로드']],
+    ()=>'neutral', 3);
+}
+function contractContent(){
+  return `
+  <div class="card">
+    <div class="card-title">전자연봉계약서</div>
+    <div class="list-row">
+      <div><div class="list-title">2026년도 연봉계약서</div><div class="list-sub">계약기간 2026.01.01 ~ 2026.12.31</div></div>
+      <span class="badge danger">서명 대기</span>
+    </div>
+    <div class="divider"></div>
+    <div style="border:1px dashed var(--border); border-radius:8px; padding:32px; text-align:center; color:var(--text-muted);">
+      전자서명 패드 영역<br><span style="font-size:12px;">여기에 서명 후 [서명 완료] 버튼을 누르면 계약이 확정됩니다.</span>
+    </div>
+    <div style="margin-top:14px; text-align:right;"><span class="btn">계약서 원문 보기</span> <span class="btn primary">서명 완료</span></div>
+  </div>
+  <div style="margin-top:14px;">
+  ${simpleTableCard('과거 계약 이력', ['연도','상태','서명일'],[['2025년','서명 완료','2025.01.03'],['2024년','서명 완료','2024.01.05']],()=>'success',1)}
+  </div>`;
+}
+function taxContent(){
+  return simpleTableCard('원천징수영수증', ['귀속연도','발급일','상태',''],
+    [['2025년','2026.02.15','발급완료','다운로드'],['2024년','2025.02.14','발급완료','다운로드']], ()=>'neutral', 2);
+}
+
+function tripRequest(){
+  return `
+  <div class="card">
+    <div class="card-title">출장 신청</div>
+    <div class="field-row">
+      <div class="field"><label>출장지</label><input placeholder="예: 부산 사업장"/></div>
+      <div class="field"><label>출장 목적</label><input placeholder="예: 협력사 미팅"/></div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>출발일</label><input type="date"/></div>
+      <div class="field"><label>복귀일</label><input type="date"/></div>
+    </div>
+    <div class="field"><label>예상 경비 (경비 산출기 연동)</label><input placeholder="경비 산출기에서 자동으로 채워집니다" disabled/></div>
+    <div style="margin-top:14px; text-align:right;"><span class="btn primary">신청하기</span></div>
+  </div>`;
+}
+function expenseCalculator(){
+  return `
+  <div class="grid g2">
+    <div class="card">
+      <div class="card-title">출장경비 산출기</div>
+      <div class="field"><label>교통비 (원)</label><input id="c1" type="number" value="85000" oninput="calcTotal()"/></div>
+      <div class="field" style="margin-top:12px;"><label>숙박비 (원 · 1박)</label><input id="c2" type="number" value="120000" oninput="calcTotal()"/></div>
+      <div class="field" style="margin-top:12px;"><label>숙박 일수</label><input id="c3" type="number" value="1" oninput="calcTotal()"/></div>
+      <div class="field" style="margin-top:12px;"><label>식비 (원 · 1일)</label><input id="c4" type="number" value="30000" oninput="calcTotal()"/></div>
+      <div class="field" style="margin-top:12px;"><label>출장 일수</label><input id="c5" type="number" value="2" oninput="calcTotal()"/></div>
+      <div class="field" style="margin-top:12px;"><label>기타 경비 (원)</label><input id="c6" type="number" value="0" oninput="calcTotal()"/></div>
+    </div>
+    <div class="card">
+      <div class="card-title">산출 결과</div>
+      <div class="list-row"><div class="list-title">교통비</div><div id="r1">85,000원</div></div>
+      <div class="list-row"><div class="list-title">숙박비</div><div id="r2">120,000원</div></div>
+      <div class="list-row"><div class="list-title">식비</div><div id="r3">60,000원</div></div>
+      <div class="list-row"><div class="list-title">기타</div><div id="r4">0원</div></div>
+      <div class="divider"></div>
+      <div class="list-row"><div class="list-title" style="font-size:16px;">합계</div><div style="font-size:20px; font-weight:700; color:var(--accent);" id="rTotal">265,000원</div></div>
+      <div class="placeholder-note">사내 출장비 규정 상 한도 초과 시 자동으로 경고가 표시됩니다.</div>
+      <div style="margin-top:14px; text-align:right;"><span class="btn primary">출장 신청에 반영</span></div>
+    </div>
+  </div>`;
+}
+function settlementContent(){
+  return simpleTableCard('정산 내역', ['출장지','기간','금액','상태'],
+    [['부산 사업장','2026.06.02~03','265,000원','정산완료'],['대전 협력사','2026.05.14','98,000원','정산완료'],['광주 지사','2026.04.20~21','312,000원','정산중']],
+    (r)=> r[3]==='정산중' ? 'warning':'success', 3);
+}
+
+function goalContent(){
+  const goals = [
+    ['신규 거래처 3건 발굴','70%','07.24 업데이트'],
+    ['제품 교육 이수 (2/3)','66%','07.20 업데이트'],
+    ['분기 매출 목표 달성','82%','07.24 업데이트'],
+  ];
+  return `<div class="card"><div class="card-title">2026 하반기 KPI 목표</div>${
+    goals.map(g=>`<div style="margin-bottom:16px;"><div style="display:flex; justify-content:space-between; font-size:13px; font-weight:600;"><span>${g[0]}</span><span style="color:var(--accent);">${g[1]}</span></div>
+    <div class="bar-track"><div class="bar-fill" style="width:${g[1]}"></div></div><div class="stat-sub">${g[2]}</div></div>`).join('')
+  }</div>`;
+}
+function reviewProgress(){
+  const steps = ['자기평가 작성','1차 평가 (팀장)','2차 평가 (본부장)','결과 확정'];
+  return `<div class="card"><div class="card-title">2026년 하반기 평가 진행 현황</div>
+  <div style="display:flex; align-items:center; gap:8px;">
+  ${steps.map((s,i)=>`
+    <div style="flex:1; text-align:center;">
+      <div style="width:30px;height:30px;border-radius:50%; margin:0 auto 8px; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:13px;
+        background:${i<2?'var(--accent)':'var(--bg-page)'}; color:${i<2?'#fff':'var(--text-muted)'};">${i+1}</div>
+      <div style="font-size:12px; font-weight:600; color:${i<2?'var(--text-primary)':'var(--text-muted)'};">${s}</div>
+    </div>${i<steps.length-1?`<div style="flex:0.4; height:2px; background:${i<1?'var(--accent)':'var(--border)'}; margin-top:-24px;"></div>`:''}`).join('')}
+  </div>
+  <div class="placeholder-note">현재 <b>1차 평가(팀장)</b> 단계가 진행중입니다. 예상 완료일: 2026.08.10</div></div>`;
+}
+function reviewResult(){
+  return simpleTableCard('과거 평가 결과', ['평가기간','종합등급','비고'],
+    [['2026년 상반기','A','우수'],['2025년 하반기','B+','양호'],['2025년 상반기','B+','양호']], ()=>'neutral', 1);
+}
+
+function ruleSearch(){
+  return `
+  <div class="topbar-search" style="width:100%; margin-bottom:16px; padding:11px 14px;">
+    ${icon('search')}<input placeholder="예: 연차, 출장비 한도, 육아휴직..."/>
+  </div>
+  <div class="card">
+    <div class="card-title">검색 결과 (예시)</div>
+    <div class="list-row"><div><div class="list-title">제 24조 (연차유급휴가)</div><div class="list-sub">취업규칙 · 3장 근로시간과 휴가</div></div><span class="badge neutral">규정</span></div>
+    <div class="list-row"><div><div class="list-title">출장비 지급 기준표</div><div class="list-sub">출장여비 규정 · 별표2</div></div><span class="badge neutral">별표</span></div>
+    <div class="list-row"><div><div class="list-title">육아휴직 신청 절차 안내</div><div class="list-sub">인사팀 FAQ</div></div><span class="badge neutral">FAQ</span></div>
+  </div>`;
+}
+function faqContent(){
+  const qs = [
+    ['연차는 언제부터 사용할 수 있나요?','입사일 기준 1개월 근속 시 1일씩 부여되며, 1년 근속 시 15일이 일괄 부여됩니다.'],
+    ['출장비는 언제 정산되나요?','출장 종료 후 5영업일 이내 경비 산출기로 신청하면 익월 급여일에 함께 지급됩니다.'],
+    ['평가 이의제기는 어떻게 하나요?','평가결과 확정 후 7일 이내 인사팀에 이의제기 신청서를 제출하시면 됩니다.'],
+  ];
+  return `<div class="card"><div class="card-title">자주 묻는 질문</div>${
+    qs.map(q=>`<div style="padding:12px 0; border-bottom:1px solid var(--border);"><div style="font-weight:700; font-size:13.5px; margin-bottom:6px;">Q. ${q[0]}</div><div style="color:var(--text-secondary); font-size:13px;">A. ${q[1]}</div></div>`).join('')
+  }</div>`;
+}
+function formsContent(){
+  return simpleTableCard('서식함', ['서식명','분류',''],
+    [['휴직 신청서','근태·휴가','다운로드'],['출장 정산서','출장·경비','다운로드'],['재직증명서 신청서','증명서','다운로드'],['경조사 신청서','복리후생','다운로드']],
+    ()=>'neutral', 2);
+}
+
+function orgChart(){
+  return `<div class="card">
+    <div class="card-title">조직도</div>
+    <div style="display:flex; flex-direction:column; align-items:center; gap:10px; padding:16px 0;">
+      <div class="badge neutral" style="font-size:13px; padding:8px 18px;">대표이사</div>
+      <div style="width:1px;height:16px;background:var(--border);"></div>
+      <div style="display:flex; gap:40px;">
+        ${['영업본부','마케팅본부','개발본부','생산본부'].map(d=>`
+        <div style="display:flex; flex-direction:column; align-items:center; gap:8px;">
+          <div class="badge neutral" style="font-size:12.5px; padding:7px 14px;">${d}</div>
+          <div style="width:1px;height:12px;background:var(--border);"></div>
+          <div style="font-size:11.5px; color:var(--text-muted);">3개 팀</div>
+        </div>`).join('')}
+      </div>
+    </div>
+  </div>`;
+}
+function memberSearch(){
+  const members = [['홍길동','대리','마케팅팀','내선 1234'],['김영희','과장','개발팀','내선 2210'],['이철수','본부장','영업본부','내선 1001']];
+  return `<div class="topbar-search" style="width:100%; margin-bottom:16px; padding:11px 14px;">${icon('search')}<input placeholder="이름, 부서로 검색"/></div>
+  ${simpleTableCard('구성원 목록', ['이름','직급','부서','연락처'], members, ()=>'neutral', -1)}`;
+}
+
+function noticeList(){
+  const notices = [
+    ['2026년 하반기 KPI 중간점검 안내','인사팀','07.20','필독'],
+    ['전자연봉계약서 서명 요청','인사팀','07.18','필독'],
+    ['여름 휴가 사용 촉진 안내','인사팀','07.15','일반'],
+    ['사내 보안 점검 안내','전산팀','07.10','일반'],
+  ];
+  return `<div class="card">${notices.map(n=>`<div class="list-row"><div><div class="list-title">${n[3]==='필독'?'<span class="badge danger" style="margin-right:6px;">필독</span>':''}${n[0]}</div><div class="list-sub">${n[1]} · ${n[2]}</div></div></div>`).join('')}</div>`;
+}
+function eventContent(){
+  return `<div class="card"><div class="card-title">이번달 이벤트</div>
+    <div class="list-row"><div><div class="list-title">김영희 과장 생일</div><div class="list-sub">개발팀 · 07.29</div></div></div>
+    <div class="list-row"><div><div class="list-title">신입사원 환영회</div><div class="list-sub">전사 · 08.01</div></div></div>
+  </div>`;
+}
+
+function myProfile(){
+  return `<div class="card">
+    <div style="display:flex; align-items:center; gap:14px; margin-bottom:16px;">
+      <div class="avatar" style="width:52px;height:52px;font-size:18px;">홍</div>
+      <div><div style="font-weight:700; font-size:15px;">홍길동</div><div class="list-sub">마케팅팀 · 대리</div></div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>이메일</label><input value="hong@company.com"/></div>
+      <div class="field"><label>연락처</label><input value="010-1234-5678"/></div>
+    </div>
+    <div style="text-align:right;"><span class="btn primary">저장</span></div>
+  </div>`;
+}
+function notifySettings(){
+  const opts = ['결재 요청 알림','공지사항 알림','연차/근태 알림','평가 일정 알림'];
+  return `<div class="card"><div class="card-title">알림 설정</div>${
+    opts.map(o=>`<div class="list-row"><div class="list-title">${o}</div><span class="badge success">ON</span></div>`).join('')
+  }</div>`;
+}
+function accessAdmin(){
+  return `<div class="card"><div class="card-title">접근 권한 (관리자 전용)</div>
+  <div class="placeholder-note">인사팀 관리자 계정에서만 노출되는 영역입니다. 부서별 메뉴 접근 권한, 결재라인 설정 등을 관리합니다.</div></div>`;
+}
+
+function simpleTableCard(title, headers, rows, badgeFn, badgeCol){
+  return `<div class="card"><div class="card-title">${title}</div><table><thead><tr>${headers.map(h=>`<th>${h}</th>`).join('')}</tr></thead><tbody>
+  ${rows.map(r=>`<tr>${r.map((c,i)=> i===badgeCol ? `<td><span class="badge ${badgeFn(r)}">${c}</span></td>` : `<td>${c}</td>`).join('')}</tr>`).join('')}
+  </tbody></table></div>`;
+}
+
+/* ---------------- NAV DATA ---------------- */
+const NAV = [
+  { id:'home', label:'홈', icon:'home', tabs:[ {id:'dash', label:'대시보드', render:homeContent} ] },
+  { id:'attend', label:'근태·휴가', icon:'clock', tabs:[
+      {id:'a1', label:'출퇴근 현황', render:attendanceOverview},
+      {id:'a2', label:'연차 신청·현황', render:leaveContent},
+      {id:'a3', label:'초과근무 신청', render:overtimeContent},
+      {id:'a4', label:'휴가 캘린더', render:leaveCalendar},
+  ]},
+  { id:'pay', label:'급여·계약', icon:'wallet', tabs:[
+      {id:'p1', label:'급여명세서', render:payslipContent},
+      {id:'p2', label:'전자연봉계약서', render:contractContent},
+      {id:'p3', label:'원천징수영수증', render:taxContent},
+  ]},
+  { id:'trip', label:'출장·경비', icon:'plane', tabs:[
+      {id:'t1', label:'출장 신청', render:tripRequest},
+      {id:'t2', label:'경비 산출기', render:expenseCalculator},
+      {id:'t3', label:'정산 내역', render:settlementContent},
+  ]},
+  { id:'perf', label:'평가·성과', icon:'target', tabs:[
+      {id:'e1', label:'목표설정 (KPI)', render:goalContent},
+      {id:'e2', label:'평가 진행', render:reviewProgress},
+      {id:'e3', label:'평가 결과', render:reviewResult},
+  ]},
+  { id:'rule', label:'규정·정책 검색', icon:'search', tabs:[
+      {id:'r1', label:'규정 검색', render:ruleSearch},
+      {id:'r2', label:'자주 묻는 질문', render:faqContent},
+      {id:'r3', label:'서식함', render:formsContent},
+  ]},
+  { id:'org', label:'조직도', icon:'network', tabs:[
+      {id:'o1', label:'부서별 조직도', render:orgChart},
+      {id:'o2', label:'구성원 검색', render:memberSearch},
+  ]},
+  { id:'notice', label:'공지사항', icon:'bell', tabs:[
+      {id:'n1', label:'전체 공지', render:noticeList},
+      {id:'n2', label:'이벤트', render:eventContent},
+  ]},
+  { id:'mypage', label:'마이페이지', icon:'settings', tabs:[
+      {id:'m1', label:'개인정보', render:myProfile},
+      {id:'m2', label:'알림 설정', render:notifySettings},
+      {id:'m3', label:'접근권한(관리자)', render:accessAdmin},
+  ]},
+];
+
+let currentNav = NAV[0], currentTab = NAV[0].tabs[0];
+
+function renderSidebar(){
+  document.getElementById('sidebarNav').innerHTML = NAV.map(n => `
+    <div class="nav-item ${n.id===currentNav.id?'active':''}" onclick="selectNav('${n.id}')">
+      ${icon(n.icon)}<span>${n.label}</span>
+    </div>`).join('');
+}
+function renderSubtabs(){
+  document.getElementById('subtabsRow').innerHTML = currentNav.tabs.map(t => `
+    <div class="subtab ${t.id===currentTab.id?'active':''}" onclick="selectTab('${t.id}')">${t.label}</div>
+  `).join('');
+}
+function renderContent(){
+  document.getElementById('pageTitle').textContent = currentNav.label;
+  document.getElementById('contentArea').innerHTML =
+    `<div class="breadcrumb">${currentNav.label} <b>›</b> ${currentTab.label}</div>` + currentTab.render();
+}
+function selectNav(id){
+  currentNav = NAV.find(n=>n.id===id);
+  currentTab = currentNav.tabs[0];
+  renderSidebar(); renderSubtabs(); renderContent();
+}
+function selectTab(id){
+  currentTab = currentNav.tabs.find(t=>t.id===id);
+  renderSubtabs(); renderContent();
+}
+function calcTotal(){
+  const v = id => Number(document.getElementById(id).value)||0;
+  const trans = v('c1'), stay = v('c2')*v('c3'), meal = v('c4')*v('c5'), etc = v('c6');
+  const fmt = n => n.toLocaleString('ko-KR')+'원';
+  document.getElementById('r1').textContent = fmt(trans);
+  document.getElementById('r2').textContent = fmt(stay);
+  document.getElementById('r3').textContent = fmt(meal);
+  document.getElementById('r4').textContent = fmt(etc);
+  document.getElementById('rTotal').textContent = fmt(trans+stay+meal+etc);
+}
+
+renderSidebar(); renderSubtabs(); renderContent();
+</script>
+</body>
+</html>
