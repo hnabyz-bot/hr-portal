@@ -124,15 +124,34 @@ cd ~/workspace/github-hnabyz-bot/hr-portal
 | `sudo systemctl restart cloudflared` | 재시작 |
 | `sudo journalctl -u cloudflared -n 50` | 최근 로그 |
 
-### 수동 배포
+### 배포 (자동)
 
-자동 배포가 구성되기 전까지는 수동으로 반영한다.
+배포는 자동이다. 수동으로 `git pull` 하지 않는다.
 
 ```
-cd ~/workspace/github-hnabyz-bot/hr-portal && git pull
+main 병합 → CI 검사 통과 → release 갱신 → 서버 타이머(2분) → 반영
 ```
 
-바인드 마운트 방식이라 **컨테이너 재시작이 필요 없다.** `git pull` 즉시 반영된다.
+서버 저장소는 **`release` 브랜치를 체크아웃한 상태**다.
+`release`는 CI가 검사를 통과했을 때만 갱신되므로, 검사에 실패한 코드가 서버에 도달할 경로는 없다.
+
+| 명령 | 하는 일 |
+|---|---|
+| `systemctl list-timers hr-portal-deploy` | 다음 실행 시각 확인 |
+| `sudo journalctl -u hr-portal-deploy -n 30` | 배포 이력 |
+| `sudo systemctl start hr-portal-deploy.service` | 즉시 배포 (2분 대기 생략) |
+| `sudo systemctl stop hr-portal-deploy.timer` | 자동 배포 일시 중지 |
+
+**구성 파일**
+
+| 경로 | 내용 |
+|---|---|
+| `/usr/local/bin/hr-portal-deploy.sh` | 배포 스크립트 |
+| `/etc/systemd/system/hr-portal-deploy.service` | 실행 단위 |
+| `/etc/systemd/system/hr-portal-deploy.timer` | 2분 주기 타이머 |
+
+> 배포 스크립트는 `git reset --hard origin/release` 를 수행한다.
+> **서버 저장소에서 직접 파일을 고치면 다음 배포 때 사라진다.** 수정은 반드시 GitHub을 통해서 한다.
 
 ---
 
@@ -281,15 +300,26 @@ cat ~/.ssh/authorized_keys
 
 | 항목 | 현재 상태 | 영향 |
 |---|---|---|
+| **브랜치 보호 규칙** | 미설정 | Write 권한자가 `main`에 바로 push할 수 있다. **작업자 초대 전 필수** |
+| **미리보기 환경** | 미구성 | PR별 미리보기 주소가 생성되지 않는다 (초심자 가이드 5장) |
 | **Cloudflare Access** | 미적용 | `hr.abyz-lab.work` 가 인증 없이 열려 있다 |
-| **자동 배포** | 미구성 | 병합 후 관리자가 `git pull` 을 직접 해야 한다 |
-| **자동 검사(CI)** | 미구성 | PR 검증이 수동이다 |
-| **미리보기 환경** | 미구성 | PR별 미리보기 주소가 생성되지 않는다 |
 | `hr-dev` DNS 레코드 | 미사용 상태로 잔존 | 정리 필요 |
 | 터널 이름 | `hr-portal-dev` | 대시보드에서 변경 가능 |
 
-> **초심자 가이드는 위 4가지가 구성된 것을 전제로 작성되어 있다.**
-> 작업자를 합류시키기 전에 먼저 구성해야 한다.
+### 브랜치 보호 설정 방법
+
+**Settings → Branches → Add branch protection rule** (또는 Rules → Rulesets)
+
+| 항목 | 설정 |
+|---|---|
+| Branch name pattern | `main` |
+| Require a pull request before merging | 체크 |
+| Require status checks to pass | 체크 → `코드 검사`, `사이트 동작 확인` 선택 |
+
+`release` 브랜치도 보호해 사람이 직접 push하지 못하게 막는 것이 좋다.
+(CI가 쓰기 때문에 `Allow specified actors to bypass` 에서 GitHub Actions를 허용해야 한다)
+
+> 플랜에 따라 Private 저장소에서 이 기능이 제한될 수 있다. Settings에서 실제 사용 가능한지 확인한다.
 
 ---
 

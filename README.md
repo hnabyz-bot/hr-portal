@@ -93,6 +93,16 @@ Docker 컨테이너  "hr-portal-web"  (nginx:alpine)
 ```
 hr-portal/
 ├── README.md
+├── .github/
+│   ├── workflows/ci.yml        # 자동 검사 + release 갱신
+│   └── pull_request_template.md
+├── .ci/                        # 검사 스크립트
+│   ├── check-encoding.sh
+│   ├── check-html.py
+│   ├── check-secrets.sh
+│   ├── check-pii.sh
+│   ├── check-public.sh
+│   └── allowed-demo-data.txt   # 개인정보 검사 예외 목록
 ├── docs/
 │   ├── beginner-guide.md  # 초심자 가이드 (브라우저만 사용, 비개발자용)
 │   └── admin-guide.md     # 관리자 가이드 (서버 운영)
@@ -107,12 +117,21 @@ hr-portal/
 
 ## 4. 운영
 
-### 코드 반영
+### 배포
 
-바인드 마운트 방식이라 `git pull`만으로 즉시 반영된다. 컨테이너 재시작이 필요 없다.
+**자동이다.** `main`에 병합되면 자동 검사를 거쳐 `release` 브랜치가 갱신되고,
+서버의 systemd 타이머가 2분 이내에 가져가 반영한다.
+
+```
+main 병합 → CI 검사 → release 갱신 → 서버 타이머(2분) → 사이트 반영
+```
+
+서버는 `release` 브랜치를 체크아웃한 상태이며, 바인드 마운트 방식이라 컨테이너 재시작이 필요 없다.
 
 ```bash
-cd ~/workspace/github-hnabyz-bot/hr-portal && git pull
+sudo systemctl status hr-portal-deploy.timer     # 타이머 상태
+sudo journalctl -u hr-portal-deploy -n 30        # 배포 이력
+sudo systemctl start hr-portal-deploy.service    # 즉시 배포 (2분 기다리지 않을 때)
 ```
 
 ### 컨테이너
@@ -170,20 +189,21 @@ curl -I https://hr.abyz-lab.work        # 외부 경로 전체
 서버 접근 권한(Tailscale) 없이도 작업할 수 있게 만드는 단계.
 **비개발자 작업자를 합류시키기 전에 반드시 완료해야 한다.** 초심자 가이드가 이 구성을 전제로 작성되어 있다.
 
-- [ ] `release` 브랜치 생성 — 검증 통과분만 도달하는 배포 기준 브랜치
-- [ ] 서버 자동 배포 구성 — systemd 타이머로 `release` 주기 확인 (Pull 방식)
+- [x] `release` 브랜치 생성 — 검증 통과분만 도달하는 배포 기준 브랜치
+- [x] 서버 자동 배포 구성 — systemd 타이머로 `release` 주기 확인 (2분 간격, Pull 방식)
       *서버가 Tailscale 뒤에 있어 GitHub이 서버로 들어올 수 없다. 서버가 나가서 가져오는 방식만 가능하다*
-- [ ] `main` 직접 push 차단 + PR 필수화 (플랜별 지원 여부 확인 필요)
-- [ ] 자동 검사(CI) 구성 — GitHub 호스팅 러너에서 실행
-  - [ ] HTML 문법 검사
-  - [ ] 시크릿 스캔 (비밀번호·토큰 커밋 차단)
-  - [ ] 개인정보 패턴 검사 (주민번호·연락처 형식)
-  - [ ] `public/` 노출 대상 검사
-  - [ ] 스모크 테스트 (컨테이너 기동 후 200 응답 확인)
-  - [ ] 한글 인코딩 검사
+- [x] 자동 검사(CI) 구성 — GitHub 호스팅 러너에서 실행
+  - [x] HTML 구조 검사 (태그 짝, id 중복)
+  - [x] 시크릿 스캔 (비밀번호·토큰 커밋 차단)
+  - [x] 개인정보 패턴 검사 (주민번호·연락처 형식)
+  - [x] `public/` 노출 대상 검사
+  - [x] 스모크 테스트 (컨테이너 기동 후 실제 응답 확인)
+  - [x] 한글 인코딩 검사
+- [x] PR 템플릿 작성 (변경 내용 체크리스트)
+- [ ] **`main` 직접 push 차단 + PR 필수화** — 플랜별 지원 여부 확인 필요
+      *이것이 없으면 Write 권한자가 `main`에 바로 push할 수 있어 위 구조가 우회된다. 작업자 초대 전 필수*
 - [ ] PR별 미리보기 환경 구성 (Cloudflare Pages)
-- [ ] PR 템플릿 작성 (변경 내용 체크리스트)
-- [ ] 작업자 GitHub 권한 부여 (Write, main push 불가)
+- [ ] 작업자 GitHub 권한 부여 (Write)
 
 > **CI는 GitHub 호스팅 러너에서 실행한다.** 우리 서버에 접근할 수 없는 환경이므로,
 > PR에 어떤 코드가 들어와도 서버는 안전하다. 빌드가 필요해지는 Phase 4 시점에
