@@ -252,32 +252,39 @@ function homeContent(){
   </div>`;
 }
 
-function payslipContent(){
-  return simpleTableCard('급여명세서', ['지급월','실지급액','세전총액','비고'],
-    [['2026년 06월','3,215,400원','3,840,000원','다운로드'],['2026년 05월','3,215,400원','3,840,000원','다운로드'],['2026년 04월','3,190,200원','3,810,000원','다운로드']],
-    ()=>'neutral', 3);
-}
-function contractContent(){
-  return `
-  <div class="card">
-    <div class="card-title">전자연봉계약서</div>
-    <div class="list-row">
-      <div><div class="list-title">2026년도 연봉계약서</div><div class="list-sub">계약기간 2026.01.01 ~ 2026.12.31</div></div>
-      <span class="badge danger">서명 대기</span>
-    </div>
-    <div class="divider"></div>
-    <div style="border:1px dashed var(--border); border-radius:8px; padding:32px; text-align:center; color:var(--text-muted);">
-      전자서명 패드 영역<br><span style="font-size:12px;">여기에 서명 후 [서명 완료] 버튼을 누르면 계약이 확정됩니다.</span>
-    </div>
-    <div style="margin-top:14px; text-align:right;"><span class="btn">계약서 원문 보기</span> <span class="btn primary">서명 완료</span></div>
-  </div>
-  <div style="margin-top:14px;">
-  ${simpleTableCard('과거 계약 이력', ['연도','상태','서명일'],[['2025년','서명 완료','2025.01.03'],['2024년','서명 완료','2024.01.05']],()=>'success',1)}
+function comingSoon(){
+  return `<div class="card" style="text-align:center; padding:44px 24px;">
+    <svg width="180" height="140" viewBox="0 0 220 170">
+      <ellipse cx="110" cy="158" rx="95" ry="8" fill="#EDEDF5"/>
+      <path d="M120,155 Q130,115 155,128 Q168,100 185,125 Q195,140 188,155 Z" fill="#C9915A"/>
+      <path d="M140,150 Q150,125 165,132 Q172,150 165,150 Z" fill="#B87F49"/>
+      <circle cx="165" cy="95" r="4" fill="#C9915A"/>
+      <circle cx="178" cy="88" r="3" fill="#C9915A"/>
+      <circle cx="152" cy="85" r="2.5" fill="#C9915A"/>
+      <line x1="110" y1="108" x2="110" y2="158" stroke="#8B5E34" stroke-width="5" stroke-linecap="round"/>
+      <path d="M100,150 L120,150 L116,163 L104,163 Z" fill="#A9AFC0"/>
+      <rect x="97" y="120" width="11" height="28" rx="5" fill="#3A3F55"/>
+      <rect x="112" y="120" width="11" height="28" rx="5" fill="#3A3F55"/>
+      <ellipse cx="102" cy="150" rx="9" ry="5" fill="#22242E"/>
+      <ellipse cx="117" cy="150" rx="9" ry="5" fill="#22242E"/>
+      <rect x="90" y="88" width="40" height="36" rx="12" fill="#F5A623"/>
+      <rect x="90" y="100" width="40" height="6" fill="#FFF3D6"/>
+      <line x1="93" y1="95" x2="103" y2="112" stroke="#FFD3A6" stroke-width="9" stroke-linecap="round"/>
+      <line x1="127" y1="95" x2="117" y2="112" stroke="#FFD3A6" stroke-width="9" stroke-linecap="round"/>
+      <circle cx="103" cy="113" r="6" fill="#FFD3A6"/>
+      <circle cx="117" cy="113" r="6" fill="#FFD3A6"/>
+      <circle cx="110" cy="75" r="17" fill="#FFD3A6"/>
+      <path d="M92,70 a18,14 0 0 1 36,0 Z" fill="#FFD43B"/>
+      <rect x="90" y="68" width="40" height="5" rx="2.5" fill="#FFC300"/>
+      <circle cx="104" cy="76" r="1.6" fill="#1A1D29"/>
+      <circle cx="116" cy="76" r="1.6" fill="#1A1D29"/>
+      <path d="M103,82 Q110,87 117,82" stroke="#1A1D29" stroke-width="2" fill="none" stroke-linecap="round"/>
+      <circle cx="98" cy="80" r="3" fill="#FFAFA3" opacity=".6"/>
+      <circle cx="122" cy="80" r="3" fill="#FFAFA3" opacity=".6"/>
+      <path d="M128,62 q4,5 0,9 q-4,-1 -4,-5 q0,-3 4,-4 Z" fill="#8ED0F5"/>
+    </svg>
+    <div style="font-size:16px; font-weight:700; color:var(--text-primary); margin-top:8px;">열심히 개발 중입니다</div>
   </div>`;
-}
-function taxContent(){
-  return simpleTableCard('원천징수영수증', ['귀속연도','발급일','상태',''],
-    [['2025년','2026.02.15','발급완료','다운로드'],['2024년','2025.02.14','발급완료','다운로드']], ()=>'neutral', 2);
 }
 
 function tripRequest(){
@@ -325,35 +332,6 @@ function settlementContent(){
   return simpleTableCard('정산 내역', ['출장지','기간','금액','상태'],
     [['부산 사업장','2026.06.02~03','265,000원','정산완료'],['대전 협력사','2026.05.14','98,000원','정산완료'],['광주 지사','2026.04.20~21','312,000원','정산중']],
     (r)=> r[3]==='정산중' ? 'warning':'success', 3);
-}
-
-function goalContent(){
-  const goals = [
-    ['신규 거래처 3건 발굴','70%','07.24 업데이트'],
-    ['제품 교육 이수 (2/3)','66%','07.20 업데이트'],
-    ['분기 매출 목표 달성','82%','07.24 업데이트'],
-  ];
-  return `<div class="card"><div class="card-title">2026 하반기 KPI 목표</div>${
-    goals.map(g=>`<div style="margin-bottom:16px;"><div style="display:flex; justify-content:space-between; font-size:13px; font-weight:600;"><span>${g[0]}</span><span style="color:var(--accent);">${g[1]}</span></div>
-    <div class="bar-track"><div class="bar-fill" style="width:${g[1]}"></div></div><div class="stat-sub">${g[2]}</div></div>`).join('')
-  }</div>`;
-}
-function reviewProgress(){
-  const steps = ['자기평가 작성','1차 평가 (팀장)','2차 평가 (본부장)','결과 확정'];
-  return `<div class="card"><div class="card-title">2026년 하반기 평가 진행 현황</div>
-  <div style="display:flex; align-items:center; gap:8px;">
-  ${steps.map((s,i)=>`
-    <div style="flex:1; text-align:center;">
-      <div style="width:30px;height:30px;border-radius:50%; margin:0 auto 8px; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:13px;
-        background:${i<2?'var(--accent)':'var(--bg-page)'}; color:${i<2?'#fff':'var(--text-muted)'};">${i+1}</div>
-      <div style="font-size:12px; font-weight:600; color:${i<2?'var(--text-primary)':'var(--text-muted)'};">${s}</div>
-    </div>${i<steps.length-1?`<div style="flex:0.4; height:2px; background:${i<1?'var(--accent)':'var(--border)'}; margin-top:-24px;"></div>`:''}`).join('')}
-  </div>
-  <div class="placeholder-note">현재 <b>1차 평가(팀장)</b> 단계가 진행중입니다. 예상 완료일: 2026.08.10</div></div>`;
-}
-function reviewResult(){
-  return simpleTableCard('과거 평가 결과', ['평가기간','종합등급','비고'],
-    [['2026년 상반기','A','우수'],['2025년 하반기','B+','양호'],['2025년 상반기','B+','양호']], ()=>'neutral', 1);
 }
 
 function ruleSearch(){
@@ -423,30 +401,6 @@ function eventContent(){
   </div>`;
 }
 
-function myProfile(){
-  return `<div class="card">
-    <div style="display:flex; align-items:center; gap:14px; margin-bottom:16px;">
-      <div class="avatar" style="width:52px;height:52px;font-size:18px;">홍</div>
-      <div><div style="font-weight:700; font-size:15px;">홍길동</div><div class="list-sub">마케팅팀 · 대리</div></div>
-    </div>
-    <div class="field-row">
-      <div class="field"><label>이메일</label><input value="hong@company.com"/></div>
-      <div class="field"><label>연락처</label><input value="010-1234-5678"/></div>
-    </div>
-    <div style="text-align:right;"><span class="btn primary">저장</span></div>
-  </div>`;
-}
-function notifySettings(){
-  const opts = ['결재 요청 알림','공지사항 알림','연차/근태 알림','평가 일정 알림'];
-  return `<div class="card"><div class="card-title">알림 설정</div>${
-    opts.map(o=>`<div class="list-row"><div class="list-title">${o}</div><span class="badge success">ON</span></div>`).join('')
-  }</div>`;
-}
-function accessAdmin(){
-  return `<div class="card"><div class="card-title">접근 권한 (관리자 전용)</div>
-  <div class="placeholder-note">인사팀 관리자 계정에서만 노출되는 영역입니다. 부서별 메뉴 접근 권한, 결재라인 설정 등을 관리합니다.</div></div>`;
-}
-
 function simpleTableCard(title, headers, rows, badgeFn, badgeCol){
   return `<div class="card"><div class="card-title">${title}</div><table><thead><tr>${headers.map(h=>`<th>${h}</th>`).join('')}</tr></thead><tbody>
   ${rows.map(r=>`<tr>${r.map((c,i)=> i===badgeCol ? `<td><span class="badge ${badgeFn(r)}">${c}</span></td>` : `<td>${c}</td>`).join('')}</tr>`).join('')}
@@ -457,24 +411,24 @@ function simpleTableCard(title, headers, rows, badgeFn, badgeCol){
 const NAV = [
   { id:'home', label:'홈', icon:'home', tabs:[ {id:'dash', label:'대시보드', render:homeContent} ] },
   { id:'pay', label:'급여·계약', icon:'wallet', tabs:[
-      {id:'p1', label:'급여명세서', render:payslipContent},
-      {id:'p2', label:'전자연봉계약서', render:contractContent},
-      {id:'p3', label:'원천징수영수증', render:taxContent},
+      {id:'p1', label:'급여명세서', render:comingSoon},
+      {id:'p2', label:'전자연봉계약서', render:comingSoon},
+      {id:'p3', label:'원천징수영수증', render:comingSoon},
+  ]},
+  { id:'perf', label:'평가·성과', icon:'target', tabs:[
+      {id:'e1', label:'목표설정 (KPI)', render:comingSoon},
+      {id:'e2', label:'평가 진행', render:comingSoon},
+      {id:'e3', label:'평가 결과', render:comingSoon},
+  ]},
+  { id:'rule', label:'규정 검색', icon:'search', tabs:[
+      {id:'r1', label:'규정 검색', render:ruleSearch},
+      {id:'r2', label:'자주 묻는 질문', render:faqContent},
+      {id:'r3', label:'서식함', render:formsContent},
   ]},
   { id:'trip', label:'출장·경비', icon:'plane', tabs:[
       {id:'t1', label:'출장 신청', render:tripRequest},
       {id:'t2', label:'경비 산출기', render:expenseCalculator},
       {id:'t3', label:'정산 내역', render:settlementContent},
-  ]},
-  { id:'perf', label:'평가·성과', icon:'target', tabs:[
-      {id:'e1', label:'목표설정 (KPI)', render:goalContent},
-      {id:'e2', label:'평가 진행', render:reviewProgress},
-      {id:'e3', label:'평가 결과', render:reviewResult},
-  ]},
-  { id:'rule', label:'규정·정책 검색', icon:'search', tabs:[
-      {id:'r1', label:'규정 검색', render:ruleSearch},
-      {id:'r2', label:'자주 묻는 질문', render:faqContent},
-      {id:'r3', label:'서식함', render:formsContent},
   ]},
   { id:'org', label:'조직도', icon:'network', tabs:[
       {id:'o1', label:'부서별 조직도', render:orgChart},
@@ -485,9 +439,9 @@ const NAV = [
       {id:'n2', label:'이벤트', render:eventContent},
   ]},
   { id:'mypage', label:'마이페이지', icon:'settings', tabs:[
-      {id:'m1', label:'개인정보', render:myProfile},
-      {id:'m2', label:'알림 설정', render:notifySettings},
-      {id:'m3', label:'접근권한(관리자)', render:accessAdmin},
+      {id:'m1', label:'개인정보', render:comingSoon},
+      {id:'m2', label:'알림 설정', render:comingSoon},
+      {id:'m3', label:'접근권한(관리자)', render:comingSoon},
   ]},
 ];
 
