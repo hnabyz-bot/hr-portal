@@ -5,15 +5,16 @@
 <title>인사 포털 - 사이트 구조 초안</title>
 <style>
   :root{
-    --sidebar-bg:#12172B;
-    --sidebar-hover:#1D2440;
-    --sidebar-text:#AEB3CC;
+    --sidebar-bg:#FFFFFF;
+    --sidebar-hover:#F3F1FE;
+    --sidebar-active-bg:#1A1D29;
+    --sidebar-text:#6B7080;
     --sidebar-text-active:#FFFFFF;
     --accent:#4F5BD5;
     --accent-light:#EEF0FD;
-    --bg-page:#F5F6FA;
+    --bg-page:#F5F5FC;
     --surface:#FFFFFF;
-    --border:#E5E7EF;
+    --border:#E9E9F4;
     --text-primary:#1A1D29;
     --text-secondary:#6B7080;
     --text-muted:#9CA0AF;
@@ -35,36 +36,32 @@
   }
   /* ---------- SIDEBAR ---------- */
   .sidebar{
-    width:240px; flex-shrink:0; background:var(--sidebar-bg);
+    width:240px; flex-shrink:0; background:var(--sidebar-bg); border-right:1px solid var(--border);
     display:flex; flex-direction:column; height:100%;
   }
   .sidebar-logo{
     display:flex; align-items:center; gap:10px;
-    padding:20px 20px 16px 20px; color:#fff; font-weight:700; font-size:16px;
-    border-bottom:1px solid rgba(255,255,255,0.08);
+    padding:18px 20px 16px 20px; color:var(--text-primary);
+    border-bottom:1px solid var(--border);
   }
-  .sidebar-logo .mark{
-    width:28px;height:28px;border-radius:7px;background:var(--accent);
-    display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;
-  }
+  .logo-word{ font-weight:800; font-size:16px; line-height:1.2; }
+  .logo-sub{ font-size:11px; color:var(--text-muted); margin-top:1px; }
   .sidebar-nav{ flex:1; overflow-y:auto; padding:12px 10px; }
   .nav-item{
     display:flex; align-items:center; gap:11px;
     padding:10px 12px; margin-bottom:2px; border-radius:8px;
     color:var(--sidebar-text); cursor:pointer; user-select:none;
-    border-left:3px solid transparent;
     transition:background .12s ease;
   }
-  .nav-item:hover{ background:var(--sidebar-hover); color:#fff; }
+  .nav-item:hover{ background:var(--sidebar-hover); color:var(--text-primary); }
   .nav-item.active{
-    background:var(--sidebar-hover); color:var(--sidebar-text-active);
-    border-left:3px solid var(--accent); font-weight:600;
+    background:var(--sidebar-active-bg); color:var(--sidebar-text-active); font-weight:600;
   }
   .nav-item svg{ width:18px; height:18px; flex-shrink:0; }
   .nav-item span{ font-size:13.5px; }
   .sidebar-foot{
-    padding:14px 20px; border-top:1px solid rgba(255,255,255,0.08);
-    color:var(--sidebar-text); font-size:11.5px; line-height:1.5;
+    padding:14px 20px; border-top:1px solid var(--border);
+    color:var(--text-muted); font-size:11.5px; line-height:1.5;
   }
   /* ---------- MAIN ---------- */
   .main{ flex:1; display:flex; flex-direction:column; min-width:0; height:100%; }
@@ -128,11 +125,21 @@
   .btn{ display:inline-flex; align-items:center; gap:6px; padding:9px 16px; border-radius:8px; font-size:13px;
     font-weight:600; cursor:pointer; border:1px solid var(--border); background:var(--surface); color:var(--text-primary); }
   .btn.primary{ background:var(--accent); color:#fff; border-color:var(--accent); }
-  .quick-grid{ display:grid; grid-template-columns:repeat(4,1fr); gap:10px; }
-  .quick-btn{ background:var(--bg-page); border:1px solid var(--border); border-radius:var(--radius);
-    padding:16px 10px; text-align:center; cursor:pointer; }
-  .quick-btn svg{ width:20px;height:20px;color:var(--accent); margin-bottom:8px; }
-  .quick-btn div{ font-size:12.5px; font-weight:600; }
+  .quick-grid{ display:grid; grid-template-columns:repeat(6,1fr); gap:10px; }
+  .quick-btn{ display:flex; flex-direction:column; align-items:center; gap:8px;
+    text-align:center; cursor:pointer; }
+  .quick-btn .qicon{ width:48px; height:48px; border-radius:50%;
+    display:flex; align-items:center; justify-content:center; }
+  .quick-btn svg{ width:20px;height:20px; }
+  .quick-btn .qlabel{ font-size:12px; font-weight:600; color:var(--text-secondary); }
+  .hero-banner{
+    background:linear-gradient(135deg,#F1EEFC 0%,#FFFFFF 75%);
+    border-radius:16px; padding:28px 32px; margin-bottom:14px;
+    position:relative; overflow:hidden;
+  }
+  .hero-banner .hero-mark{ position:absolute; top:-10px; right:-10px; opacity:.5; }
+  .hero-title{ font-size:21px; font-weight:800; color:var(--text-primary); line-height:1.35; margin:12px 0 6px; position:relative; }
+  .hero-sub{ font-size:13px; color:var(--text-secondary); position:relative; }
   .field-row{ display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-bottom:14px; }
   .field label{ display:block; font-size:12.5px; font-weight:600; color:var(--text-secondary); margin-bottom:6px; }
   .field input, .field select, .field textarea{
@@ -150,9 +157,17 @@
 <body>
 
 <div class="sidebar">
-  <div class="sidebar-logo"><div class="mark">H</div>인사 통합포털</div>
+  <div class="sidebar-logo">
+    <svg width="30" height="30" viewBox="0 0 32 32">
+      <path d="M16 16 C16 9 21 4 27 4 C27 11 22 16 16 16 Z" fill="#FF6B6B"/>
+      <path d="M16 16 C23 16 28 21 28 27 C21 27 16 22 16 16 Z" fill="#4F5BD5"/>
+      <path d="M16 16 C16 23 11 28 5 28 C5 21 10 16 16 16 Z" fill="#51CF66"/>
+      <path d="M16 16 C9 16 4 11 4 5 C11 5 16 10 16 16 Z" fill="#FFB020"/>
+    </svg>
+    <div><div class="logo-word">H&abyz</div><div class="logo-sub">인사 통합포털</div></div>
+  </div>
   <div class="sidebar-nav" id="sidebarNav"></div>
-  <div class="sidebar-foot">로그인: 홍길동 대리 · 마케팅팀<br>© 2026 H&aby HR System</div>
+  <div class="sidebar-foot">로그인: 홍길동 대리 · 마케팅팀<br>© 2026 H&abyz HR System</div>
 </div>
 
 <div class="main">
@@ -175,7 +190,6 @@
 <script>
 const ICONS = {
   home:'<path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/>',
-  clock:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/>',
   wallet:'<rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18"/><circle cx="16.5" cy="14" r="1"/>',
   plane:'<path d="M2 12l19-7-7 19-2-8-8-2z"/>',
   target:'<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="0.6"/>',
@@ -183,41 +197,51 @@ const ICONS = {
   network:'<circle cx="12" cy="4" r="2"/><circle cx="5" cy="18" r="2"/><circle cx="19" cy="18" r="2"/><path d="M12 6v6M12 12L6 16.5M12 12l6 4.5"/>',
   bell:'<path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>',
   settings:'<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.09A1.7 1.7 0 0 0 9 19.4a1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.55-1H3a2 2 0 1 1 0-4h.09A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-1.55V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1 1.55 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.4 9a1.7 1.7 0 0 0 1.55 1H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.51 1z"/>',
-  calendar:'<rect x="3" y="4" width="18" height="17" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="16" y1="2" x2="16" y2="6"/>',
-  doc:'<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/>',
   users:'<circle cx="9" cy="8" r="3"/><path d="M2 20c0-3.5 3-6 7-6s7 2.5 7 6"/><circle cx="18" cy="8" r="2.4"/><path d="M16 14c2.8.4 5 2.6 5 6"/>',
   calc:'<rect x="4" y="2" width="16" height="20" rx="2"/><line x1="8" y1="6" x2="16" y2="6"/><line x1="8" y1="11" x2="8" y2="11.01"/><line x1="12" y1="11" x2="12" y2="11.01"/><line x1="16" y1="11" x2="16" y2="11.01"/><line x1="8" y1="15" x2="8" y2="15.01"/><line x1="12" y1="15" x2="12" y2="15.01"/><line x1="16" y1="15" x2="16" y2="15.01"/><line x1="8" y1="19" x2="16" y2="19"/>',
   edit:'<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>',
   flag:'<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/>',
 };
 function icon(name){ return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICONS[name]}</svg>`; }
+function logoMark(size){
+  return `<svg width="${size}" height="${size}" viewBox="0 0 32 32">
+    <path d="M16 16 C16 9 21 4 27 4 C27 11 22 16 16 16 Z" fill="#FF6B6B"/>
+    <path d="M16 16 C23 16 28 21 28 27 C21 27 16 22 16 16 Z" fill="#4F5BD5"/>
+    <path d="M16 16 C16 23 11 28 5 28 C5 21 10 16 16 16 Z" fill="#51CF66"/>
+    <path d="M16 16 C9 16 4 11 4 5 C11 5 16 10 16 16 Z" fill="#FFB020"/>
+  </svg>`;
+}
 
 /* ---------------- CONTENT RENDERERS ---------------- */
 function homeContent(){
+  const services = [
+    ['wallet','급여명세서','#E6F7EF','#1E9E6B'],
+    ['plane','출장 신청','#EAF1FF','#3B6FE0'],
+    ['calc','경비 산출','#FDF3E1','#C9861A'],
+    ['search','규정 검색','#EEF0FD','#4F5BD5'],
+    ['target','KPI','#F2ECFB','#7C5CD1'],
+    ['users','구성원 검색','#E7F7F7','#1D9A9A'],
+  ];
   return `
-  <div class="grid g4" style="margin-bottom:14px;">
-    <div class="card"><div class="stat-label">연차 잔여</div><div class="stat-value">15.5<span style="font-size:13px;font-weight:600;color:var(--text-muted);">일</span></div>
-      <div class="bar-track"><div class="bar-fill" style="width:77%;"></div></div><div class="stat-sub">총 20일 중 4.5일 사용</div></div>
-    <div class="card"><div class="stat-label">결재 대기</div><div class="stat-value">2<span style="font-size:13px;font-weight:600;color:var(--text-muted);">건</span></div>
-      <div class="stat-sub">출장신청 1 · 연차신청 1</div></div>
-    <div class="card"><div class="stat-label">오늘 근태</div><div class="stat-value" style="font-size:20px;">09:02 출근</div>
-      <div class="stat-sub"><span class="badge success">정상</span></div></div>
-    <div class="card"><div class="stat-label">이번달 초과근무</div><div class="stat-value">6.5<span style="font-size:13px;font-weight:600;color:var(--text-muted);">시간</span></div>
-      <div class="stat-sub">전월 대비 -2시간</div></div>
+  <div class="hero-banner">
+    <div class="hero-mark">${logoMark(90)}</div>
+    <div class="hero-title">함께 만드는 성장,<br>더 편리해지는 인사업무</div>
+    <div class="hero-sub">H&abyz 인사 통합포털에서 급여·출장·평가·규정을 한 곳에서 확인하세요</div>
+  </div>
+  <div class="card" style="margin-bottom:14px;">
+    <div class="card-title">빠른 서비스</div>
+    <div class="quick-grid">
+      ${services.map(s=>`
+      <div class="quick-btn">
+        <div class="qicon" style="background:${s[2]};color:${s[3]};">${icon(s[0])}</div>
+        <div class="qlabel">${s[1]}</div>
+      </div>`).join('')}
+    </div>
   </div>
   <div class="grid g3">
     <div class="card" style="grid-column:span 2;">
-      <div class="card-title">빠른 메뉴</div>
-      <div class="quick-grid">
-        <div class="quick-btn">${icon('calendar')}<div>연차 신청</div></div>
-        <div class="quick-btn">${icon('plane')}<div>출장 신청</div></div>
-        <div class="quick-btn">${icon('search')}<div>규정 검색</div></div>
-        <div class="quick-btn">${icon('calc')}<div>경비 산출</div></div>
-      </div>
-      <div class="divider"></div>
-      <div class="card-title">결재 대기함</div>
+      <div class="card-title">결재 대기함 <span class="more">1건</span></div>
       <div class="list-row"><div><div class="list-title">서울 출장 경비 신청</div><div class="list-sub">2026.07.24 제출 · 1차 승인 대기</div></div><span class="badge warning">대기</span></div>
-      <div class="list-row"><div><div class="list-title">연차 신청 (8/3~8/4)</div><div class="list-sub">2026.07.20 제출 · 팀장 확인중</div></div><span class="badge warning">대기</span></div>
     </div>
     <div class="card">
       <div class="card-title">공지사항 <span class="more">더보기</span></div>
@@ -226,61 +250,6 @@ function homeContent(){
       <div class="list-row"><div><div class="list-title">여름 휴가 사용 촉진 안내</div><div class="list-sub">인사팀 · 07.15</div></div></div>
     </div>
   </div>`;
-}
-
-function attendanceOverview(){
-  const rows = [
-    ['07.24 (목)','09:02','18:41','정상'],
-    ['07.23 (수)','08:57','19:20','정상'],
-    ['07.22 (화)','09:15','18:30','지각'],
-    ['07.21 (월)','09:01','18:35','정상'],
-  ];
-  return simpleTableCard('이번 주 출퇴근 기록', ['날짜','출근','퇴근','상태'], rows, (r)=> r[3]==='지각' ? 'warning' : 'success', 3);
-}
-function leaveContent(){
-  return `
-  <div class="grid g3" style="margin-bottom:14px;">
-    <div class="card"><div class="stat-label">총 연차</div><div class="stat-value">20일</div></div>
-    <div class="card"><div class="stat-label">사용</div><div class="stat-value">4.5일</div></div>
-    <div class="card"><div class="stat-label">잔여</div><div class="stat-value" style="color:var(--accent);">15.5일</div></div>
-  </div>
-  <div class="card" style="margin-bottom:14px;">
-    <div class="card-title">연차 신청</div>
-    <div class="field-row">
-      <div class="field"><label>시작일</label><input type="date"/></div>
-      <div class="field"><label>종료일</label><input type="date"/></div>
-    </div>
-    <div class="field"><label>사유</label><input placeholder="예: 가족 여행"/></div>
-    <div style="margin-top:14px; text-align:right;"><span class="btn primary">신청하기</span></div>
-  </div>
-  ${simpleTableCard('신청 내역', ['기간','일수','사유','상태'],
-    [['2026.06.10 ~ 06.11','2일','개인사유','승인'],['2026.05.02','1일','병가','승인']],
-    (r)=> 'success', 3)}`;
-}
-function overtimeContent(){
-  return `
-  <div class="card" style="margin-bottom:14px;">
-    <div class="card-title">초과근무 신청</div>
-    <div class="field-row">
-      <div class="field"><label>일자</label><input type="date"/></div>
-      <div class="field"><label>예상 시간</label><input placeholder="예: 2시간"/></div>
-    </div>
-    <div class="field"><label>사유</label><textarea rows="2" placeholder="업무 사유를 입력하세요"></textarea></div>
-    <div style="margin-top:14px; text-align:right;"><span class="btn primary">신청하기</span></div>
-  </div>
-  ${simpleTableCard('이번달 초과근무 내역', ['일자','시간','사유','상태'],
-    [['07.18','2.0h','월말 정산','승인'],['07.09','1.5h','고객 대응','승인'],['07.02','3.0h','시스템 점검','승인']],
-    (r)=>'success', 3)}`;
-}
-function leaveCalendar(){
-  let cells='';
-  for(let i=1;i<=31;i++){
-    const on = [3,4,17,18].includes(i);
-    cells += `<div style="aspect-ratio:1; border:1px solid var(--border); border-radius:6px; font-size:11.5px; padding:6px; ${on?'background:var(--accent-light); color:var(--accent); font-weight:700;':''}">${i}</div>`;
-  }
-  return `<div class="card"><div class="card-title">8월 휴가 캘린더</div>
-    <div style="display:grid; grid-template-columns:repeat(7,1fr); gap:6px;">${cells}</div>
-    <div class="placeholder-note">보라색 표시는 본인 승인된 휴가 일정입니다. (팀 전체 휴가는 조직도 &gt; 팀 캘린더에서 확인)</div></div>`;
 }
 
 function payslipContent(){
@@ -487,12 +456,6 @@ function simpleTableCard(title, headers, rows, badgeFn, badgeCol){
 /* ---------------- NAV DATA ---------------- */
 const NAV = [
   { id:'home', label:'홈', icon:'home', tabs:[ {id:'dash', label:'대시보드', render:homeContent} ] },
-  { id:'attend', label:'근태·휴가', icon:'clock', tabs:[
-      {id:'a1', label:'출퇴근 현황', render:attendanceOverview},
-      {id:'a2', label:'연차 신청·현황', render:leaveContent},
-      {id:'a3', label:'초과근무 신청', render:overtimeContent},
-      {id:'a4', label:'휴가 캘린더', render:leaveCalendar},
-  ]},
   { id:'pay', label:'급여·계약', icon:'wallet', tabs:[
       {id:'p1', label:'급여명세서', render:payslipContent},
       {id:'p2', label:'전자연봉계약서', render:contractContent},
