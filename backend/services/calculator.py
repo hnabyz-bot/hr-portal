@@ -98,14 +98,14 @@ def get_allowance_reason(one_way_distance_km: float, destination_count: int) -> 
     return f"일비 미지급: 편도 {one_way_distance_km:.1f}km, 출장지 {destination_count}곳 (기준 미충족)"
 
 
-def build_manual_route_data(total_distance_km: float, one_way_distance_km: float | None = None) -> dict[str, Any]:
-    """직접 입력한 이동거리(km)로 경로 데이터 dict를 생성한다."""
+def build_manual_route_data(total_distance_km: float) -> dict[str, Any]:
+    """직접 입력한 총 이동거리(km)로 경로 데이터 dict를 생성한다. (편도 거리는 총 거리와 동일하게 취급)"""
     total = round(total_distance_km, 2)
     return {
         "segments": [],
         "total_distance_km": total,
         "total_duration_min": 0.0,
-        "one_way_distance_km": round(one_way_distance_km, 2) if one_way_distance_km is not None else total,
+        "one_way_distance_km": total,
     }
 
 

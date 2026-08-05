@@ -363,24 +363,26 @@ function expenseCalculator(){
       </div>
     </div>
 
-    <div class="field" style="margin-bottom:14px;">
-      <label>출발지</label>
-      <div style="display:flex; gap:8px;">
-        <input id="expDeparture" placeholder="예: 경기도 용인시 처인구 처인성로 41-16"/>
-        <span class="btn" onclick="expSearchPlace('departure')">🔍 검색</span>
+    <div id="expAddressPanel">
+      <div class="field" style="margin-bottom:14px;">
+        <label>출발지</label>
+        <div style="display:flex; gap:8px;">
+          <input id="expDeparture" placeholder="예: 경기도 용인시 처인구 처인성로 41-16"/>
+          <span class="btn" onclick="expSearchPlace('departure')">🔍 검색</span>
+        </div>
+        <div id="expDepartureResults"></div>
       </div>
-      <div id="expDepartureResults"></div>
-    </div>
 
-    <div id="expDestWrap"></div>
-    <div style="margin:6px 0 14px;"><span class="btn" onclick="expAddDestination()">+ 출장지 추가</span></div>
+      <div id="expDestWrap"></div>
+      <div style="margin:6px 0 14px;"><span class="btn" onclick="expAddDestination()">+ 출장지 추가</span></div>
+    </div>
 
     <div id="expManualPanel" class="hidden" style="margin-bottom:14px;">
       <div class="field-row">
         <div class="field"><label>총 이동거리 (km)</label><input id="expManualTotal" type="number" min="0" step="0.1" placeholder="예: 85.5"/></div>
-        <div class="field"><label>편도 거리 (km, 일비 판정용)</label><input id="expManualOneWay" type="number" min="0" step="0.1" placeholder="비워두면 총 이동거리와 동일"/></div>
+        <div class="field"><label>출장지 개수</label><input id="expManualDestCount" type="number" min="1" max="10" step="1" value="1"/></div>
       </div>
-      <div class="placeholder-note">네이버 지도 등에서 확인한 거리를 직접 입력하세요.</div>
+      <div class="placeholder-note">네이버 지도 등에서 확인한 총 이동거리를 직접 입력하세요. 출장지 개수는 일비 지급 기준(3곳 이상)에만 쓰입니다 — 출발지/출장지 주소는 입력하지 않아도 됩니다.</div>
     </div>
 
     <div style="text-align:right;"><span class="btn primary" onclick="expCalculate()">🔢 경비 계산</span></div>
@@ -426,6 +428,7 @@ function expRemoveDestination(i){
 function expSetDistanceMode(mode){
   expDistanceMode = mode;
   document.getElementById('expManualPanel').style.display = mode==='manual' ? 'block' : 'none';
+  document.getElementById('expAddressPanel').style.display = mode==='manual' ? 'none' : 'block';
 }
 async function expSearchPlace(target){
   const inputId = target==='departure' ? 'expDeparture' : `expDest_${target}`;
@@ -462,22 +465,24 @@ async function expCalculate(){
   const resultEl = document.getElementById('expResult');
   msgEl.innerHTML=''; resultEl.innerHTML='';
 
-  const departure = document.getElementById('expDeparture').value.trim();
-  const destinations = expDestinations.map(d=>d.trim()).filter(Boolean);
-  if(!departure){ msgEl.innerHTML = expErrorBox('출발지를 입력해 주세요.'); return; }
-  if(!destinations.length){ msgEl.innerHTML = expErrorBox('출장지를 1곳 이상 입력해 주세요.'); return; }
-
   const payload = {
     trip_date: document.getElementById('expDate').value,
-    departure, destinations,
     vehicle_type: document.getElementById('expVehicle').value,
     fuel_type: document.getElementById('expFuel').value,
   };
+
   if(expDistanceMode==='manual'){
     const total = Number(document.getElementById('expManualTotal').value);
-    const oneWayRaw = document.getElementById('expManualOneWay').value;
+    const destCount = Number(document.getElementById('expManualDestCount').value) || 1;
     if(!total || total<=0){ msgEl.innerHTML = expErrorBox('총 이동거리를 입력해 주세요.'); return; }
-    payload.manual_distance = { total_km: total, one_way_km: oneWayRaw ? Number(oneWayRaw) : null };
+    payload.manual_distance = { total_km: total, destination_count: destCount };
+  } else {
+    const departure = document.getElementById('expDeparture').value.trim();
+    const destinations = expDestinations.map(d=>d.trim()).filter(Boolean);
+    if(!departure){ msgEl.innerHTML = expErrorBox('출발지를 입력해 주세요.'); return; }
+    if(!destinations.length){ msgEl.innerHTML = expErrorBox('출장지를 1곳 이상 입력해 주세요.'); return; }
+    payload.departure = departure;
+    payload.destinations = destinations;
   }
 
   msgEl.innerHTML = '<div class="placeholder-note">계산 중입니다... (지도·유가 조회에 몇 초 걸릴 수 있습니다)</div>';

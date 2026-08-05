@@ -167,27 +167,36 @@ def search_places():
 
 @app.post("/api/calculate")
 def calculate():
+    """
+    거리 직접 입력 모드에서는 출발지/출장지 주소가 필요 없다.
+    (원본 앱과 동일하게 출발지="거리 직접 입력", 출장지=["출장지 1", ...]로 자동 채운다)
+    """
     payload = request.get_json(silent=True) or {}
 
     trip_date = _parse_trip_date(payload)
-    departure = _require_str(payload, "departure")
-    destinations = _require_destinations(payload)
     vehicle_type = _require_choice(payload, "vehicle_type", VEHICLE_TYPES)
     fuel_type = _require_choice(payload, "fuel_type", FUEL_TYPES)
     manual = payload.get("manual_distance")
 
     if manual:
         if not isinstance(manual, dict) or "total_km" not in manual:
-            raise ApiError("수동 입력 거리 값이 올바르지 않습니다.")
+            raise ApiError("거리 직접 입력 값이 올바르지 않습니다.")
         try:
             total_km = float(manual["total_km"])
-            one_way_km = float(manual["one_way_km"]) if manual.get("one_way_km") is not None else None
+            dest_count = int(manual.get("destination_count", 1))
         except (TypeError, ValueError) as exc:
-            raise ApiError("거리 값은 숫자로 입력해 주세요.") from exc
+            raise ApiError("총 이동거리/출장지 개수는 숫자로 입력해 주세요.") from exc
         if total_km <= 0:
-            raise ApiError("총 이동거리는 0보다 커야 합니다.")
-        route_data = build_manual_route_data(total_km, one_way_km)
+            raise ApiError("총 이동거리를 입력해 주세요.")
+        if dest_count < 1 or dest_count > MAX_DESTINATIONS:
+            raise ApiError(f"출장지 개수는 1~{MAX_DESTINATIONS} 사이여야 합니다.")
+
+        departure = "거리 직접 입력"
+        destinations = [f"출장지 {i + 1}" for i in range(dest_count)]
+        route_data = build_manual_route_data(total_km)
     else:
+        departure = _require_str(payload, "departure")
+        destinations = _require_destinations(payload)
         route_data = calculate_route_segments([departure, *destinations])
 
     fuel_price_info = opinet_api.get_gyeonggi_previous_month_avg_price(trip_date, fuel_type)
