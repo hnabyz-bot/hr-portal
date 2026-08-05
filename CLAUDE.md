@@ -1,13 +1,14 @@
 # hr-portal — 작업 컨텍스트
 
-인사 통합포털. 현재 PoC 단계 — 화면 목업만 있고 백엔드·인증·DB 없음. 자세한 배경은 [README.md](README.md), 작업 절차는 [docs/beginner-guide.md](docs/beginner-guide.md) 참고.
+인사 통합포털. 대부분 화면은 아직 PoC 목업(백엔드·인증·DB 없음)이지만, **출장·경비 > 경비 산출기는 실제 백엔드(backend/)가 붙어 있다** (아래 "백엔드가 있는 기능" 참고). 자세한 배경은 [README.md](README.md), 작업 절차는 [docs/beginner-guide.md](docs/beginner-guide.md) 참고.
 
 ## 협업 방식
 
 - 저장소 소유자는 초심자(비개발자). 코드는 내가 작성하고, 판단(무엇을 만들지·규칙)은 저장소 소유자가 정한다.
 - 기능 하나 = 브랜치 하나 = PR 하나. 여러 기능을 한 PR에 섞지 않는다.
 - `main` 직접 push 금지 — 브랜치 보호 규칙이 아직 없어 기술적으로는 가능하지만, 습관적으로 PR을 거친다.
-- 수정 대상은 거의 항상 `public/index.html` (단일 파일, 인라인 CSS/JS). `docker-compose.yml`은 건드리지 않는다.
+- 수정 대상은 대부분 `public/index.html` (단일 파일, 인라인 CSS/JS). `docker-compose.yml`/`nginx.conf`/`backend/`는 경비 산출기용 백엔드가 생기면서 실제로 쓰이게 됐다 — 함부로 건드리지 말되, "건드리지 않는다"는 더는 사실이 아니다.
+- **API 키·비밀번호를 절대 커밋하지 않는다.** hr-portal은 Public 저장소다. 서버용 시크릿은 저장소 루트의 `.env`(gitignore됨, 서버에 직접 생성)로만 전달한다. `.env.example`에 필요한 변수 이름만 적어둔다.
 - 실제 직원 개인정보를 절대 넣지 않는다. 표시 데이터는 하드코딩된 가상 데이터만 사용.
 
 ## 배포 흐름 (실제로 동작하는 것)
@@ -24,6 +25,29 @@
 
 CI(`.github/workflows/ci.yml`)가 자동 검사하는 것: 한글 인코딩, HTML 구조, 시크릿, 개인정보 패턴, `public/` 노출 범위, 스모크 테스트. 실패하면 원인을 그대로 알려준다.
 
+## 백엔드가 있는 기능 (출장·경비 > 경비 산출기)
+
+`secom-allowance-calculator`(로컬 Streamlit 앱, `http://10.20.6.63:8501` — 건드리지 않음, 그대로 유지)의 로직을 hr-portal에도 포팅한 것. Naver 지도(주소→좌표, 경로), Naver 지역검색(장소명→주소), Opinet(전월 경기도 평균 유가) API를 실시간으로 호출해야 해서, **hr-portal이 처음으로 백엔드를 갖게 됐다**.
+
+구조:
+```
+브라우저 → hr.abyz-lab.work/api/*  (nginx가 리버스 프록시, 새 Cloudflare 규칙 필요 없음)
+              → api 컨테이너(Flask, backend/)  → Naver/Opinet API (키는 서버 .env에만 존재)
+브라우저 → hr.abyz-lab.work/*      (nginx가 public/ 정적 서빙, 기존과 동일)
+```
+
+- `backend/`: Flask 앱. `/api/calculate`(핵심 계산), `/api/search-places`, `/api/export/{excel,pdf,application-form}`.
+- `nginx.conf`: `/api/`만 `api` 컨테이너로 proxy_pass, 나머지는 기존처럼 정적 서빙.
+- `docker-compose.yml`: `api` 서비스는 `expose`만 하고 host 포트를 열지 않음 (nginx만 접근 가능, 새 Cloudflare Tunnel 규칙 불필요).
+- API 키 5개(NAVER_CLIENT_ID/SECRET, NAVER_LOCAL_CLIENT_ID/SECRET, OPINET_API_KEY)는 저장소 루트 `.env`에서 `${VAR:-}` 치환으로 주입 — CI에는 `.env`가 없어도 빈 값으로 통과한다(계산 API를 실제로 호출하는 스모크 테스트는 없음).
+
+**서버에서 (SSH 필요 — 나는 서버 접근 권한이 없어 직접 못 함) 딱 한 번 해야 할 일**:
+1. `~/workspace/github-hnabyz-bot/hr-portal/.env` 생성, `secom-allowance-calculator/project/.env`와 동일한 값 입력 (`.env.example` 참고).
+2. `docker compose up -d --build` 한 번 실행 (api 컨테이너 최초 기동, nginx도 새 nginx.conf 적용을 위해 재시작됨).
+3. `/usr/local/bin/hr-portal-deploy.sh`에 `docker compose up -d --build` 한 줄 추가 — 지금까지는 정적 파일만 바뀌어서 컨테이너 재시작이 필요 없었지만(bind mount), `backend/` 코드가 바뀌면 이미지를 다시 빌드해야 반영된다.
+
+이 세 가지가 안 되어 있으면 화면은 뜨지만 "경비 계산" 버튼을 누르면 502가 난다.
+
 ## 현재 사이트 상태 (2026-08-04 기준)
 
 - 사이드바 메뉴 순서: 홈 - 급여·계약 - 평가·성과 - 규정 검색 - 출장·경비 - 조직도 - 공지사항 - 마이페이지
@@ -38,7 +62,7 @@ README 로드맵과 beginner-guide 8-2절 기준. 쉬운 것부터, 순서를 �
 1. 공지사항 (CRUD 연습, 개인정보 없어 안전) — 아직 착수 전
 2. 로그인 / 직원 정보 / 역할 구분
 3. 전자결재 (요청/승인/반려)
-4. 출장·경비 (화면은 이미 있음, 백엔드·규칙 없음)
+4. 출장·경비 — 경비 산출기는 백엔드 완료(위 섹션 참고, 서버 반영 작업 남음), 출장 신청/정산 내역은 아직 목업
 5. 급여·계약 / 평가·성과 / 마이페이지 (현재 placeholder — 요구사항 확정 후 채움, 가장 민감하니 마지막)
 
 각 모듈 시작 전 반드시 사용자에게 **정의(한 문장) + 화면 구성 + 저장할 정보 + 지켜야 할 규칙**을 확정받는다. 규칙이 빠지면 만들지 않는다.
