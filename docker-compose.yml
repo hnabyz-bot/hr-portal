@@ -7,3 +7,19 @@ services:
       - "127.0.0.1:8080:80"
     volumes:
       - ./public:/usr/share/nginx/html:ro
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - api
+
+  api:
+    build: ./backend
+    container_name: hr-portal-api
+    restart: unless-stopped
+    environment:
+      - NAVER_CLIENT_ID=${NAVER_CLIENT_ID:-}
+      - NAVER_CLIENT_SECRET=${NAVER_CLIENT_SECRET:-}
+      - NAVER_LOCAL_CLIENT_ID=${NAVER_LOCAL_CLIENT_ID:-}
+      - NAVER_LOCAL_CLIENT_SECRET=${NAVER_LOCAL_CLIENT_SECRET:-}
+      - OPINET_API_KEY=${OPINET_API_KEY:-}
+    expose:
+      - "8000"

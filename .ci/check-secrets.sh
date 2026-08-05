@@ -5,7 +5,7 @@
 # 그래서 올라가기 전에 막는다.
 set -uo pipefail
 
-TARGETS="public docker-compose.yml"
+TARGETS="public docker-compose.yml backend"
 FOUND=0
 
 check() {

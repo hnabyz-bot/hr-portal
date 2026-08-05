@@ -300,6 +300,7 @@ cat ~/.ssh/authorized_keys
 
 | 항목 | 현재 상태 | 영향 |
 |---|---|---|
+| **경비 산출기 백엔드 서버 반영** | 미완료 | `docker-compose.yml`에 `api` 서비스(Flask)가 추가됐지만, 서버에 `.env`(API 키) 생성 + `docker compose up -d --build` 최초 실행 + 배포 스크립트에 빌드 단계 추가가 아직 안 됐다. 상세 절차는 [CLAUDE.md](../CLAUDE.md)의 "백엔드가 있는 기능" 참고 |
 | **브랜치 보호 규칙** | 미설정 | Write 권한자가 `main`에 바로 push할 수 있다. **작업자 초대 전 필수** |
 | **미리보기 환경** | 미구성 | PR별 미리보기 주소가 생성되지 않는다 (초심자 가이드 5장) |
 | **Cloudflare Access** | 미적용 | `hr.abyz-lab.work` 가 인증 없이 열려 있다 |
