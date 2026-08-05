@@ -8,6 +8,7 @@ Naver Map / Opinet API 키는 환경변수로만 전달되며, 프런트엔드�
 from __future__ import annotations
 
 import logging
+import os
 from datetime import date
 from urllib.parse import quote
 
@@ -24,6 +25,8 @@ from services.calculator import (
     get_vehicle_type_label,
 )
 from services.naver_api import NaverMapAPIError, calculate_route_segments, search_places_by_keyword
+from services import rules_search
+import rules_config
 from app_config import get_fuel_price_label, get_fuel_price_unit, get_fuel_type_label
 
 logging.basicConfig(level=logging.INFO)
@@ -240,6 +243,44 @@ def export_application_form():
     data = export_utils.export_application_form(result, applicant_name.strip()[:50])
     filename = f"출장신청서_{result.trip_date.isoformat()}.pdf"
     return _send_file(data, filename, "application/pdf")
+
+
+RULE_FILE_MIMETYPES = {
+    ".pdf": "application/pdf",
+    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+}
+
+
+@app.get("/api/rules/search")
+def rules_search_route():
+    query = request.args.get("q", "")
+    if not query.strip():
+        raise ApiError("검색어를 입력해 주세요.")
+    if len(query) > 100:
+        raise ApiError("검색어가 너무 깁니다.")
+    return jsonify({"results": rules_search.search(query)})
+
+
+@app.get("/api/rules/<rule_id>/file")
+def rules_file_route(rule_id: str):
+    rule = rules_config.get_rule(rule_id)
+    if not rule:
+        raise ApiError("존재하지 않는 규정입니다.", status=404)
+
+    path = rules_config.rule_file_path(rule)
+    if not os.path.isfile(path):
+        raise ApiError("아직 서버에 등록되지 않은 규정 파일입니다. 담당자에게 문의해 주세요.", status=404)
+
+    ext = os.path.splitext(path)[1].lower()
+    mimetype = RULE_FILE_MIMETYPES.get(ext, "application/octet-stream")
+    disposition = "inline" if ext == ".pdf" else "attachment"
+
+    with open(path, "rb") as f:
+        data = f.read()
+
+    response = Response(data, mimetype=mimetype)
+    response.headers["Content-Disposition"] = f"{disposition}; filename*=UTF-8''{quote(rule['filename'])}"
+    return response
 
 
 if __name__ == "__main__":
