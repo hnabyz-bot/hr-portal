@@ -279,9 +279,6 @@ function homeContent(){
     </div>
     <div class="card">
       <div class="card-title">공지사항 <span class="more">더보기</span></div>
-      <div class="list-row"><div><div class="list-title">2026년 하반기 KPI 중간점검 안내</div><div class="list-sub">인사팀 · 07.20</div></div></div>
-      <div class="list-row"><div><div class="list-title">전자연봉계약서 서명 요청</div><div class="list-sub">인사팀 · 07.18</div></div></div>
-      <div class="list-row"><div><div class="list-title">여름 휴가 사용 촉진 안내</div><div class="list-sub">인사팀 · 07.15</div></div></div>
     </div>
   </div>`;
 }
@@ -609,21 +606,6 @@ function memberSearch(){
   ${simpleTableCard('구성원 목록', ['이름','직급','부서','연락처'], members, ()=>'neutral', -1)}`;
 }
 
-function noticeList(){
-  const notices = [
-    ['2026년 하반기 KPI 중간점검 안내','인사팀','07.20','필독'],
-    ['전자연봉계약서 서명 요청','인사팀','07.18','필독'],
-    ['여름 휴가 사용 촉진 안내','인사팀','07.15','일반'],
-    ['사내 보안 점검 안내','전산팀','07.10','일반'],
-  ];
-  return `<div class="card">${notices.map(n=>`<div class="list-row"><div><div class="list-title">${n[3]==='필독'?'<span class="badge danger" style="margin-right:6px;">필독</span>':''}${n[0]}</div><div class="list-sub">${n[1]} · ${n[2]}</div></div></div>`).join('')}</div>`;
-}
-function eventContent(){
-  return `<div class="card"><div class="card-title">이번달 이벤트</div>
-    <div class="list-row"><div><div class="list-title">김영희 과장 생일</div><div class="list-sub">개발팀 · 07.29</div></div></div>
-    <div class="list-row"><div><div class="list-title">신입사원 환영회</div><div class="list-sub">전사 · 08.01</div></div></div>
-  </div>`;
-}
 
 function simpleTableCard(title, headers, rows, badgeFn, badgeCol){
   return `<div class="card"><div class="card-title">${title}</div><table><thead><tr>${headers.map(h=>`<th>${h}</th>`).join('')}</tr></thead><tbody>
@@ -659,8 +641,8 @@ const NAV = [
       {id:'o2', label:'구성원 검색', render:memberSearch},
   ]},
   { id:'notice', label:'공지사항', icon:'bell', tabs:[
-      {id:'n1', label:'전체 공지', render:noticeList},
-      {id:'n2', label:'이벤트', render:eventContent},
+      {id:'n1', label:'전체 공지', render:comingSoon},
+      {id:'n2', label:'이벤트', render:comingSoon},
   ]},
   { id:'mypage', label:'마이페이지', icon:'settings', tabs:[
       {id:'m1', label:'개인정보', render:comingSoon},
