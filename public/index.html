@@ -407,8 +407,8 @@ function expRemoveDestination(i){
 }
 function expSetDistanceMode(mode){
   expDistanceMode = mode;
-  document.getElementById('expManualPanel').style.display = mode==='manual' ? 'block' : 'none';
-  document.getElementById('expAddressPanel').style.display = mode==='manual' ? 'none' : 'block';
+  document.getElementById('expManualPanel').classList.toggle('hidden', mode!=='manual');
+  document.getElementById('expAddressPanel').classList.toggle('hidden', mode==='manual');
 }
 async function expSearchPlace(target){
   const inputId = target==='departure' ? 'expDeparture' : `expDest_${target}`;
