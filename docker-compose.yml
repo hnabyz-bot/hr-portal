@@ -21,5 +21,7 @@ services:
       - NAVER_LOCAL_CLIENT_ID=${NAVER_LOCAL_CLIENT_ID:-}
       - NAVER_LOCAL_CLIENT_SECRET=${NAVER_LOCAL_CLIENT_SECRET:-}
       - OPINET_API_KEY=${OPINET_API_KEY:-}
+    volumes:
+      - ./regulations:/app/regulations:ro
     expose:
       - "8000"

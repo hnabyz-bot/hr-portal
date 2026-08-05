@@ -377,11 +377,11 @@ let expDistanceMode = 'auto';
 let expLastResult = null;
 let expSearchCache = {};
 
-function expEscape(str){
+function escapeHtml(str){
   return String(str).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
 }
 function expErrorBox(msg){
-  return `<div class="placeholder-note" style="background:var(--bg-danger); color:var(--danger);">${expEscape(msg)}</div>`;
+  return `<div class="placeholder-note" style="background:var(--bg-danger); color:var(--danger);">${escapeHtml(msg)}</div>`;
 }
 function expRenderDestinations(){
   const wrap = document.getElementById('expDestWrap');
@@ -390,7 +390,7 @@ function expRenderDestinations(){
     <div class="field" style="margin-bottom:10px;">
       <label>출장지 ${i+1}${expDestinations.length>1?` <span style="font-size:11px; font-weight:600; color:var(--danger); cursor:pointer;" onclick="expRemoveDestination(${i})">삭제</span>`:''}</label>
       <div style="display:flex; gap:8px;">
-        <input id="expDest_${i}" value="${expEscape(addr)}" oninput="expDestinations[${i}]=this.value" placeholder="예: 경기도 수원시 신원로 88"/>
+        <input id="expDest_${i}" value="${escapeHtml(addr)}" oninput="expDestinations[${i}]=this.value" placeholder="예: 경기도 수원시 신원로 88"/>
         <span class="btn" onclick="expSearchPlace(${i})">🔍 검색</span>
       </div>
       <div id="expDestResults_${i}"></div>
@@ -426,7 +426,7 @@ async function expSearchPlace(target){
     if(!expSearchCache[target].length){ resultsEl.innerHTML = '<div class="placeholder-note">검색 결과가 없습니다. 도로명 주소를 직접 입력해 보세요.</div>'; return; }
     resultsEl.innerHTML = expSearchCache[target].map((r,i) => `
       <div class="list-row" style="cursor:pointer;" onclick="expPickPlace(${JSON.stringify(target)}, ${i})">
-        <div><div class="list-title">${expEscape(r.name)}</div><div class="list-sub">${expEscape(r.road_address)}</div></div>
+        <div><div class="list-title">${escapeHtml(r.name)}</div><div class="list-sub">${escapeHtml(r.road_address)}</div></div>
       </div>`).join('');
   }catch(err){
     resultsEl.innerHTML = expErrorBox(err.message);
@@ -478,7 +478,7 @@ async function expCalculate(){
   }
 }
 function expRenderResult(r){
-  const warn = r.fuel_price_is_fallback ? `<div class="placeholder-note" style="background:var(--bg-warning); color:var(--warning); margin-bottom:10px;">${expEscape(r.fuel_price_source)}</div>` : '';
+  const warn = r.fuel_price_is_fallback ? `<div class="placeholder-note" style="background:var(--bg-warning); color:var(--warning); margin-bottom:10px;">${escapeHtml(r.fuel_price_source)}</div>` : '';
   const costLabel = r.fuel_type==='electric' ? '충전비' : '유류비';
   const segRows = (r.route_segments||[]).map(s=>[`구간 ${s.segment_no}`, s.start, s.goal, s.distance_km+' km', s.duration_min+'분']);
   return `
@@ -488,12 +488,12 @@ function expRenderResult(r){
   </div>
   <div class="grid g4" style="margin-bottom:14px;">
     <div class="card"><div class="stat-label">총 이동거리</div><div class="stat-value" style="font-size:18px;">${r.total_distance_km} km</div></div>
-    <div class="card"><div class="stat-label">${expEscape(r.fuel_type_label)} 단가</div><div class="stat-value" style="font-size:18px;">${Math.round(r.fuel_price).toLocaleString('ko-KR')}원/${r.fuel_price_unit}</div></div>
+    <div class="card"><div class="stat-label">${escapeHtml(r.fuel_type_label)} 단가</div><div class="stat-value" style="font-size:18px;">${Math.round(r.fuel_price).toLocaleString('ko-KR')}원/${r.fuel_price_unit}</div></div>
     <div class="card"><div class="stat-label">${costLabel}</div><div class="stat-value" style="font-size:18px;">${r.fuel_cost.toLocaleString('ko-KR')}원</div></div>
     <div class="card"><div class="stat-label">일비</div><div class="stat-value" style="font-size:18px;">${r.daily_allowance.toLocaleString('ko-KR')}원</div></div>
   </div>
   ${warn}
-  <div class="placeholder-note">${expEscape(r.allowance_reason)}</div>
+  <div class="placeholder-note">${escapeHtml(r.allowance_reason)}</div>
   ${segRows.length ? simpleTableCard('구간별 이동 상세', ['구간','출발','도착','거리','소요시간'], segRows, ()=>'neutral', -1) : ''}
   <div class="card" style="margin-top:14px;">
     <div class="card-title">결과 내려받기</div>
@@ -539,16 +539,44 @@ function settlementContent(){
 }
 
 function ruleSearch(){
+  setTimeout(()=>{
+    const input = document.getElementById('ruleQuery');
+    if(input) input.addEventListener('keydown', e=>{ if(e.key==='Enter') ruleDoSearch(); });
+  }, 0);
   return `
-  <div class="topbar-search" style="width:100%; margin-bottom:16px; padding:11px 14px;">
-    ${icon('search')}<input placeholder="예: 연차, 출장비 한도, 육아휴직..."/>
+  <div class="card" style="margin-bottom:14px;">
+    <div style="display:flex; gap:8px;">
+      <div class="field" style="flex:1;"><input id="ruleQuery" placeholder="예: 연차, 출장비 한도, 정보보안..."/></div>
+      <span class="btn primary" style="flex-shrink:0; height:38px;" onclick="ruleDoSearch()">검색</span>
+    </div>
   </div>
-  <div class="card">
-    <div class="card-title">검색 결과 (예시)</div>
-    <div class="list-row"><div><div class="list-title">제 24조 (연차유급휴가)</div><div class="list-sub">취업규칙 · 3장 근로시간과 휴가</div></div><span class="badge neutral">규정</span></div>
-    <div class="list-row"><div><div class="list-title">출장비 지급 기준표</div><div class="list-sub">출장여비 규정 · 별표2</div></div><span class="badge neutral">별표</span></div>
-    <div class="list-row"><div><div class="list-title">육아휴직 신청 절차 안내</div><div class="list-sub">인사팀 FAQ</div></div><span class="badge neutral">FAQ</span></div>
-  </div>`;
+  <div id="ruleResults"></div>`;
+}
+async function ruleDoSearch(){
+  const q = document.getElementById('ruleQuery').value.trim();
+  const resultsEl = document.getElementById('ruleResults');
+  if(!q){ resultsEl.innerHTML=''; return; }
+  resultsEl.innerHTML = '<div class="placeholder-note">검색 중...</div>';
+  try{
+    const res = await fetch('/api/rules/search?q='+encodeURIComponent(q));
+    const data = await res.json();
+    if(!res.ok) throw new Error(data.error || '검색에 실패했습니다.');
+    if(!data.results.length){
+      resultsEl.innerHTML = '<div class="card"><div class="placeholder-note">검색 결과가 없습니다.</div></div>';
+      return;
+    }
+    resultsEl.innerHTML = `<div class="card"><div class="card-title">검색 결과 (${data.results.length}건)</div>${
+      data.results.map(r=>`
+      <div class="list-row">
+        <div><div class="list-title">${escapeHtml(r.title)}</div><div class="list-sub">${escapeHtml(r.snippet)}</div></div>
+        ${r.available
+          ? `<a class="btn" href="/api/rules/${encodeURIComponent(r.id)}/file" target="_blank">전문 보기</a>`
+          : `<span class="badge neutral">준비 중</span>`}
+      </div>`).join('')}
+    </div>`;
+  }catch(err){
+    resultsEl.innerHTML = `<div class="placeholder-note" style="background:var(--bg-danger); color:var(--danger);">${escapeHtml(err.message)}</div>`;
+  }
 }
 function faqContent(){
   const qs = [
@@ -585,7 +613,7 @@ function orgChart(){
 }
 function memberSearch(){
   const members = [['홍길동','대리','마케팅팀','내선 1234'],['김영희','과장','개발팀','내선 2210'],['이철수','본부장','영업본부','내선 1001']];
-  return `<div class="topbar-search" style="width:100%; margin-bottom:16px; padding:11px 14px;">${icon('search')}<input placeholder="이름, 부서로 검색"/></div>
+  return `<div class="card" style="margin-bottom:14px;"><div class="field"><input placeholder="이름, 부서로 검색"/></div></div>
   ${simpleTableCard('구성원 목록', ['이름','직급','부서','연락처'], members, ()=>'neutral', -1)}`;
 }
 
