@@ -249,12 +249,11 @@ function logoMark(size){
 /* ---------------- CONTENT RENDERERS ---------------- */
 function homeContent(){
   const services = [
-    ['wallet','급여명세서','#E6F7EF','#1E9E6B'],
-    ['plane','출장 신청','#EAF1FF','#3B6FE0'],
-    ['calc','경비 산출','#FDF3E1','#C9861A'],
-    ['search','규정 검색','#EEF0FD','#4F5BD5'],
-    ['target','KPI','#F2ECFB','#7C5CD1'],
-    ['users','구성원 검색','#E7F7F7','#1D9A9A'],
+    ['wallet','급여명세서','#E6F7EF','#1E9E6B','pay','p1'],
+    ['calc','경비 산출','#FDF3E1','#C9861A','trip','t2'],
+    ['search','규정 검색','#EEF0FD','#4F5BD5','rule','r1'],
+    ['target','KPI','#F2ECFB','#7C5CD1','perf','e1'],
+    ['users','구성원 검색','#E7F7F7','#1D9A9A','org','o2'],
   ];
   return `
   <div class="hero-banner">
@@ -266,7 +265,7 @@ function homeContent(){
     <div class="card-title">빠른 서비스</div>
     <div class="quick-grid">
       ${services.map(s=>`
-      <div class="quick-btn">
+      <div class="quick-btn" onclick="goTo('${s[4]}','${s[5]}')">
         <div class="qicon" style="background:${s[2]};color:${s[3]};">${icon(s[0])}</div>
         <div class="qlabel">${s[1]}</div>
       </div>`).join('')}
@@ -321,22 +320,6 @@ function comingSoon(){
   </div>`;
 }
 
-function tripRequest(){
-  return `
-  <div class="card">
-    <div class="card-title">출장 신청</div>
-    <div class="field-row">
-      <div class="field"><label>출장지</label><input placeholder="예: 부산 사업장"/></div>
-      <div class="field"><label>출장 목적</label><input placeholder="예: 협력사 미팅"/></div>
-    </div>
-    <div class="field-row">
-      <div class="field"><label>출발일</label><input type="date"/></div>
-      <div class="field"><label>복귀일</label><input type="date"/></div>
-    </div>
-    <div class="field"><label>예상 경비 (경비 산출기 연동)</label><input placeholder="경비 산출기에서 자동으로 채워집니다" disabled/></div>
-    <div style="margin-top:14px; text-align:right;"><span class="btn primary">신청하기</span></div>
-  </div>`;
-}
 function expenseCalculator(){
   const today = new Date().toISOString().slice(0,10);
   expDestinations = [''];
@@ -650,7 +633,6 @@ const NAV = [
       {id:'r3', label:'서식함', render:formsContent},
   ]},
   { id:'trip', label:'출장·경비', icon:'plane', tabs:[
-      {id:'t1', label:'출장 신청', render:tripRequest},
       {id:'t2', label:'경비 산출기', render:expenseCalculator},
       {id:'t3', label:'정산 내역', render:settlementContent},
   ]},
@@ -696,6 +678,10 @@ function selectNav(id){
 function selectTab(id){
   currentTab = currentNav.tabs.find(t=>t.id===id);
   renderSubtabs(); renderContent();
+}
+function goTo(navId, tabId){
+  selectNav(navId);
+  if(tabId) selectTab(tabId);
 }
 function toggleSidebar(){ document.querySelector('.sidebar').classList.toggle('open'); }
 function closeSidebar(){ document.querySelector('.sidebar').classList.remove('open'); }
