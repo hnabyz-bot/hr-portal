@@ -347,8 +347,12 @@ function expenseCalculator(){
       <div class="field" style="margin-bottom:14px;">
         <label>출발지</label>
         <div style="display:flex; gap:8px;">
-          <input id="expDeparture" placeholder="예: 경기도 용인시 처인구 처인성로 41-16"/>
-          <span class="btn" onclick="expSearchPlace('departure')">🔍 검색</span>
+          <input id="expDeparture" style="flex:1;" placeholder="예: 경기도 용인시 처인구 처인성로 41-16"/>
+          <span class="btn" style="flex-shrink:0; white-space:nowrap;" onclick="expSearchPlace('departure')">🔍 검색</span>
+        </div>
+        <div style="margin-top:6px; display:flex; gap:6px;">
+          <span class="btn" style="font-size:12px; padding:5px 10px;" onclick="expSetPreset('departure','yongin')">용인사무실</span>
+          <span class="btn" style="font-size:12px; padding:5px 10px;" onclick="expSetPreset('departure','suwon')">수원사무실</span>
         </div>
         <div id="expDepartureResults"></div>
       </div>
@@ -376,6 +380,15 @@ let expDestinations = [''];
 let expDistanceMode = 'auto';
 let expLastResult = null;
 let expSearchCache = {};
+const EXP_PRESETS = { yongin: '경기도 용인시 처인구 처인성로41-16', suwon: '경기도 수원시 신원로88' };
+
+function expSetPreset(target, key){
+  const inputId = target==='departure' ? 'expDeparture' : `expDest_${target}`;
+  const resultsId = target==='departure' ? 'expDepartureResults' : `expDestResults_${target}`;
+  document.getElementById(inputId).value = EXP_PRESETS[key];
+  if(target!=='departure'){ expDestinations[target] = EXP_PRESETS[key]; }
+  document.getElementById(resultsId).innerHTML = '';
+}
 
 function escapeHtml(str){
   return String(str).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
@@ -390,8 +403,12 @@ function expRenderDestinations(){
     <div class="field" style="margin-bottom:10px;">
       <label>출장지 ${i+1}${expDestinations.length>1?` <span style="font-size:11px; font-weight:600; color:var(--danger); cursor:pointer;" onclick="expRemoveDestination(${i})">삭제</span>`:''}</label>
       <div style="display:flex; gap:8px;">
-        <input id="expDest_${i}" value="${escapeHtml(addr)}" oninput="expDestinations[${i}]=this.value" placeholder="예: 경기도 수원시 신원로 88"/>
-        <span class="btn" onclick="expSearchPlace(${i})">🔍 검색</span>
+        <input id="expDest_${i}" style="flex:1;" value="${escapeHtml(addr)}" oninput="expDestinations[${i}]=this.value" placeholder="예: 경기도 수원시 신원로 88"/>
+        <span class="btn" style="flex-shrink:0; white-space:nowrap;" onclick="expSearchPlace(${i})">🔍 검색</span>
+      </div>
+      <div style="margin-top:6px; display:flex; gap:6px;">
+        <span class="btn" style="font-size:12px; padding:5px 10px;" onclick="expSetPreset(${i},'yongin')">용인사무실</span>
+        <span class="btn" style="font-size:12px; padding:5px 10px;" onclick="expSetPreset(${i},'suwon')">수원사무실</span>
       </div>
       <div id="expDestResults_${i}"></div>
     </div>`).join('');
@@ -425,7 +442,7 @@ async function expSearchPlace(target){
     expSearchCache[target] = data.results || [];
     if(!expSearchCache[target].length){ resultsEl.innerHTML = '<div class="placeholder-note">검색 결과가 없습니다. 도로명 주소를 직접 입력해 보세요.</div>'; return; }
     resultsEl.innerHTML = expSearchCache[target].map((r,i) => `
-      <div class="list-row" style="cursor:pointer;" onclick="expPickPlace(${JSON.stringify(target)}, ${i})">
+      <div class="list-row" style="cursor:pointer;" onclick='expPickPlace(${JSON.stringify(target)}, ${i})'>
         <div><div class="list-title">${escapeHtml(r.name)}</div><div class="list-sub">${escapeHtml(r.road_address)}</div></div>
       </div>`).join('');
   }catch(err){
