@@ -10,7 +10,8 @@ from __future__ import annotations
 
 import sys
 import traceback
-from datetime import date
+from dataclasses import replace
+from datetime import date, datetime, timezone
 from decimal import Decimal
 
 # Windows 콘솔 기본 코드페이지(cp949)에서 한글·기호가 깨지는 걸 막는다.
@@ -29,10 +30,15 @@ from hr_eval.domain.errors import (
 from hr_eval.domain.models import (
     Actor,
     ContractStatus,
+    EvaluationPeriod,
     Grade,
+    KpiSheet,
+    KpiSheetStatus,
     PdfStatus,
+    PeriodType,
     Role,
     SalaryContract,
+    SignatureInput,
 )
 from hr_eval.domain.quota import (
     SMALL_DIVISION_THRESHOLD,
@@ -49,6 +55,12 @@ from hr_eval.domain.contract_rules import (
 )
 from hr_eval.domain.grading import Assignment, validate_and_assign_evaluation_grades
 from hr_eval.domain.kpi import KpiInput, validate_kpi_set
+from hr_eval.usecases import (
+    cancel_salary_contract,
+    finalize_salary_contract,
+    resend_salary_contract,
+    submit_kpi_goal,
+)
 
 CHECKS: list = []
 
@@ -576,6 +588,315 @@ def 문서해시는_64자리_16진수다():
     h = build_document_hash(_가짜계약서().as_document())
     assert len(h) == 64
     assert all(c in "0123456789abcdef" for c in h)
+
+
+class _가짜UoW:
+    """DB 없이 유스케이스를 돌리기 위한 최소 구현.
+
+    commit()이 불렸는지 기록해서, 오류 경로에서 저장이 일어나지 않는 걸 확인한다.
+    """
+
+    def __init__(self, *, period=None, sheet=None, contract=None):
+        self.period = period or EvaluationPeriod(
+            id=1, type=PeriodType.ANNUAL, is_kpi_window_open=True
+        )
+        self.sheet = sheet
+        self.contract = contract
+        self.saved_kpis = None
+        self.inserted = []
+        self.audit_entries = []
+        self.committed = False
+        self._next_id = 500
+
+        uow = self
+
+        class _Kpis:
+            def get_sheet(self, period_id, user_id):
+                return uow.sheet
+
+            def create_sheet(self, period_id, user_id, created_by):
+                uow._next_id += 1
+                uow.sheet = KpiSheet(id=uow._next_id, period_id=period_id, user_id=user_id)
+                return uow.sheet
+
+            def replace_kpis(self, sheet_id, kpis):
+                uow.saved_kpis = list(kpis)
+
+            def save_sheet(self, sheet):
+                uow.sheet = sheet
+
+        class _Periods:
+            def get(self, period_id):
+                return uow.period
+
+        class _Contracts:
+            def get_for_update(self, contract_id):
+                if uow.contract is None or uow.contract.id != contract_id:
+                    raise NotFoundError(f"계약서를 찾을 수 없습니다 (id={contract_id})")
+                return uow.contract
+
+            def save(self, contract):
+                uow.contract = contract
+
+            def insert(self, contract):
+                uow._next_id += 1
+                saved = replace(contract, id=uow._next_id)
+                uow.inserted.append(saved)
+                return saved
+
+        class _Audit:
+            def append(self, entry):
+                uow.audit_entries.append(entry)
+
+        self.kpis = _Kpis()
+        self.periods = _Periods()
+        self.contracts = _Contracts()
+        self.audit = _Audit()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return None
+
+    def commit(self):
+        self.committed = True
+
+    @property
+    def actions(self):
+        return [e.action for e in self.audit_entries]
+
+
+@check
+def KPI제출은_본인이나_HR만_할_수_있다():
+    uow = _가짜UoW()
+    try:
+        submit_kpi_goal(
+            actor=Actor(user_id=99, role=Role.TEAM_LEADER),
+            period_id=1,
+            user_id=10,
+            kpis=_KPI("40.00", "30.00", "30.00"),
+            uow=uow,
+        )
+    except PermissionDeniedError:
+        pass
+    else:
+        raise AssertionError("남의 KPI를 제출했는데 막히지 않았다")
+    assert not uow.committed
+
+
+@check
+def KPI제출은_수정기간이_닫혀_있으면_막힌다():
+    uow = _가짜UoW(
+        period=EvaluationPeriod(id=1, type=PeriodType.ANNUAL, is_kpi_window_open=False)
+    )
+    try:
+        submit_kpi_goal(
+            actor=Actor(user_id=10, role=Role.EMPLOYEE),
+            period_id=1,
+            user_id=10,
+            kpis=_KPI("40.00", "30.00", "30.00"),
+            uow=uow,
+        )
+    except StateConflictError:
+        pass
+    else:
+        raise AssertionError("수정 기간이 닫혔는데 제출됐다")
+    assert not uow.committed
+
+
+@check
+def 확정된_KPI는_직접_수정할_수_없다():
+    uow = _가짜UoW(
+        sheet=KpiSheet(
+            id=7, period_id=1, user_id=10, status=KpiSheetStatus.DIVISION_HEAD_APPROVED
+        )
+    )
+    try:
+        submit_kpi_goal(
+            actor=Actor(user_id=10, role=Role.EMPLOYEE),
+            period_id=1,
+            user_id=10,
+            kpis=_KPI("40.00", "30.00", "30.00"),
+            uow=uow,
+        )
+    except StateConflictError as err:
+        assert "수정 요청" in str(err)  # 무엇을 해야 하는지 알려줘야 한다
+    else:
+        raise AssertionError("확정된 KPI가 그대로 수정됐다")
+    assert not uow.committed
+
+
+@check
+def KPI제출이_성공하면_DRAFT로_저장되고_감사로그가_남는다():
+    uow = _가짜UoW()
+    sheet = submit_kpi_goal(
+        actor=Actor(user_id=10, role=Role.EMPLOYEE),
+        period_id=1,
+        user_id=10,
+        kpis=_KPI("40.00", "30.00", "30.00"),
+        uow=uow,
+    )
+    assert sheet.status is KpiSheetStatus.DRAFT
+    assert sheet.submitted_at is not None
+    assert len(uow.saved_kpis) == 3
+    assert uow.actions == ["KPI_SUBMITTED"]
+    assert uow.committed
+
+
+@check
+def 계약서는_본인만_서명할_수_있다():
+    uow = _가짜UoW(contract=_가짜계약서(id=1, user_id=10))
+    try:
+        finalize_salary_contract(
+            actor=Actor(user_id=11, role=Role.HR_ADMIN),  # HR도 대리 서명 불가
+            contract_id=1,
+            signature=_서명(),
+            uow=uow,
+        )
+    except PermissionDeniedError:
+        pass
+    else:
+        raise AssertionError("본인이 아닌데 서명됐다")
+    assert not uow.committed
+
+
+@check
+def 동의_미체크나_서명이미지_누락은_거부한다():
+    for 잘못된서명 in (
+        _서명(consent_checked=False),
+        _서명(signer_name="   "),
+        _서명(signature_image=None),
+        _서명(ip=None),
+    ):
+        uow = _가짜UoW(contract=_가짜계약서(id=1, user_id=10))
+        try:
+            finalize_salary_contract(
+                actor=Actor(user_id=10, role=Role.EMPLOYEE),
+                contract_id=1,
+                signature=잘못된서명,
+                uow=uow,
+            )
+        except ValidationError:
+            pass
+        else:
+            raise AssertionError(f"불완전한 서명이 통과됐다: {잘못된서명}")
+        assert not uow.committed
+
+
+@check
+def 서명이_끝나면_잠기고_감사로그가_남는다():
+    uow = _가짜UoW(contract=_가짜계약서(id=1, user_id=10))
+    signed = finalize_salary_contract(
+        actor=Actor(user_id=10, role=Role.EMPLOYEE),
+        contract_id=1,
+        signature=_서명(),
+        uow=uow,
+    )
+    assert signed.status is ContractStatus.SIGNED
+    assert signed.is_locked is True
+    assert signed.signer_user_id == 10
+    assert signed.signer_ip == "10.20.6.1"
+    assert signed.signed_at is not None
+    assert len(signed.document_hash) == 64
+    assert signed.pdf_status is PdfStatus.PENDING
+    assert uow.actions == ["CONTRACT_SIGNED"]
+    assert uow.audit_entries[0].ip == "10.20.6.1"
+    assert uow.committed
+
+
+@check
+def 이미_서명된_계약서는_다시_서명할_수_없다():
+    서명됨 = _가짜계약서(id=1, user_id=10, status=ContractStatus.SIGNED, is_locked=True)
+    uow = _가짜UoW(contract=서명됨)
+    try:
+        finalize_salary_contract(
+            actor=Actor(user_id=10, role=Role.EMPLOYEE),
+            contract_id=1,
+            signature=_서명(),
+            uow=uow,
+        )
+    except StateConflictError:
+        pass
+    else:
+        raise AssertionError("서명된 계약서가 다시 서명됐다")
+    assert not uow.committed
+
+
+@check
+def 계약_파기는_HR만_사유를_적어야_가능하다():
+    uow = _가짜UoW(contract=_가짜계약서(id=1, user_id=10, status=ContractStatus.SIGNED, is_locked=True))
+    try:
+        cancel_salary_contract(
+            actor=Actor(user_id=10, role=Role.EMPLOYEE), contract_id=1, reason="그냥", uow=uow
+        )
+    except PermissionDeniedError:
+        pass
+    else:
+        raise AssertionError("HR이 아닌데 파기됐다")
+
+    uow = _가짜UoW(contract=_가짜계약서(id=1, user_id=10, status=ContractStatus.SIGNED, is_locked=True))
+    try:
+        cancel_salary_contract(
+            actor=Actor(user_id=1, role=Role.HR_ADMIN), contract_id=1, reason="   ", uow=uow
+        )
+    except ValidationError:
+        pass
+    else:
+        raise AssertionError("사유 없이 파기됐다")
+    assert not uow.committed
+
+    uow = _가짜UoW(contract=_가짜계약서(id=1, user_id=10, status=ContractStatus.SIGNED, is_locked=True))
+    파기됨 = cancel_salary_contract(
+        actor=Actor(user_id=1, role=Role.HR_ADMIN),
+        contract_id=1,
+        reason="연봉 산정 오류로 재발송 예정",
+        uow=uow,
+    )
+    assert 파기됨.status is ContractStatus.CANCELLED
+    assert 파기됨.cancel_reason == "연봉 산정 오류로 재발송 예정"
+    assert 파기됨.cancelled_by == 1
+    assert uow.actions == ["CONTRACT_CANCELLED"]
+    assert uow.committed
+
+
+@check
+def 재발송은_원본을_보존하고_새_버전을_만든다():
+    원본 = _가짜계약서(id=1, user_id=10, status=ContractStatus.SIGNED, is_locked=True)
+    uow = _가짜UoW(contract=원본)
+    새계약 = resend_salary_contract(
+        actor=Actor(user_id=1, role=Role.HR_ADMIN),
+        contract_id=1,
+        reason="등급 정정에 따른 재발송",
+        uow=uow,
+    )
+    # 원본은 파기 상태로 남는다
+    assert uow.contract.status is ContractStatus.CANCELLED
+    assert uow.contract.is_locked is True
+    # 새 계약은 서명값이 전부 비워진 SENT 상태다
+    assert 새계약.status is ContractStatus.SENT
+    assert 새계약.version == 2
+    assert 새계약.resent_from_id == 1
+    assert 새계약.is_locked is False
+    assert 새계약.signature_image is None
+    assert 새계약.document_hash is None
+    assert 새계약.signed_at is None
+    assert 새계약.cancel_reason is None
+    assert 새계약.pdf_status is PdfStatus.NONE
+    assert uow.actions == ["CONTRACT_CANCELLED", "CONTRACT_RESENT"]
+    assert uow.committed
+
+
+def _서명(**overrides) -> SignatureInput:
+    base = dict(
+        consent_checked=True,
+        signer_name="홍길동",
+        signature_image="\x89PNG-가상서명".encode("utf-8"),
+        ip="10.20.6.1",
+        user_agent="Mozilla/5.0 (검사용)",
+    )
+    base.update(overrides)
+    return SignatureInput(**base)
 
 
 def main() -> int:
