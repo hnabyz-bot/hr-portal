@@ -42,6 +42,7 @@ from hr_eval.domain.quota import (
     calculate_department_quota,
     round_half_up,
 )
+from hr_eval.domain.grading import Assignment, validate_and_assign_evaluation_grades
 
 CHECKS: list = []
 
@@ -190,6 +191,274 @@ def _가짜계약서(**overrides) -> SalaryContract:
     )
     base.update(overrides)
     return SalaryContract(**base)
+
+
+def _배정(*쌍) -> list[Assignment]:
+    """(user_id, 점수, 등급) 튜플들을 Assignment 목록으로 바꾼다."""
+    return [Assignment(uid, Decimal(str(점수)), grade) for uid, 점수, grade in 쌍]
+
+
+def _오류코드(fn) -> list[str]:
+    """검증이 던진 ValidationError의 ERROR 코드 목록을 돌려준다."""
+    try:
+        fn()
+    except ValidationError as err:
+        return [i.code for i in err.errors]
+    raise AssertionError("ValidationError가 나오지 않았다")
+
+
+@check
+def S등급은_100점_초과일_때만_가능하다():
+    q = calculate_department_quota(10)
+    멤버 = list(range(1, 11))
+
+    def 백점_S():
+        validate_and_assign_evaluation_grades(
+            quota=q,
+            member_ids=멤버,
+            assignments=_배정((1, "100.00", Grade.S), *[(i, "80", Grade.C) for i in range(2, 11)]),
+        )
+
+    assert "S_GRADE_SCORE_TOO_LOW" in _오류코드(백점_S)
+
+    # 100.01점이면 통과한다 (S 1명 = Cap_S, 그래서 A는 0명이어야 한다)
+    결과 = validate_and_assign_evaluation_grades(
+        quota=q,
+        member_ids=멤버,
+        assignments=_배정(
+            (1, "100.01", Grade.S),
+            (2, "90", Grade.B),
+            (3, "60", Grade.D),
+            *[(i, "80", Grade.C) for i in range(4, 11)],
+        ),
+    )
+    assert 결과.s_count == 1
+    assert 결과.effective_upper == 0
+
+
+@check
+def S등급이_A쿼터를_차감한다():
+    """스펙: Q_A' = Q_A - K. 10명 본부는 Q_A=1이므로 S 1명이면 A는 0명이다."""
+    q = calculate_department_quota(10)
+    멤버 = list(range(1, 11))
+
+    def S와_A를_같이():
+        validate_and_assign_evaluation_grades(
+            quota=q,
+            member_ids=멤버,
+            assignments=_배정(
+                (1, "101", Grade.S),
+                (2, "95", Grade.A),
+                (3, "90", Grade.B),
+                (4, "60", Grade.D),
+                *[(i, "80", Grade.C) for i in range(5, 11)],
+            ),
+        )
+
+    assert "QUOTA_EXCEEDED" in _오류코드(S와_A를_같이)
+
+
+@check
+def S등급_상한_초과는_막는다():
+    q = calculate_department_quota(10)  # cap_s = 1
+    멤버 = list(range(1, 11))
+
+    def S_두명():
+        validate_and_assign_evaluation_grades(
+            quota=q,
+            member_ids=멤버,
+            assignments=_배정(
+                (1, "101", Grade.S),
+                (2, "102", Grade.S),
+                *[(i, "80", Grade.C) for i in range(3, 11)],
+            ),
+        )
+
+    assert "S_GRADE_CAP_EXCEEDED" in _오류코드(S_두명)
+
+
+@check
+def 쿼터_초과는_ERROR_미달은_WARNING이다():
+    q = calculate_department_quota(10)  # A1 B1 C7 D1
+    멤버 = list(range(1, 11))
+
+    def A_두명():
+        validate_and_assign_evaluation_grades(
+            quota=q,
+            member_ids=멤버,
+            assignments=_배정(
+                (1, "95", Grade.A),
+                (2, "94", Grade.A),
+                (3, "90", Grade.B),
+                (4, "60", Grade.D),
+                *[(i, "80", Grade.C) for i in range(5, 11)],
+            ),
+        )
+
+    assert "QUOTA_EXCEEDED" in _오류코드(A_두명)
+
+    # 전원 C: A·B·D가 전부 미달이지만 통과하고 경고 3건이 나온다
+    결과 = validate_and_assign_evaluation_grades(
+        quota=q, member_ids=멤버, assignments=_배정(*[(i, "80", Grade.C) for i in 멤버])
+    )
+    assert len(결과.warnings) == 3
+    assert all(w.severity is Severity.WARNING for w in 결과.warnings)
+
+
+@check
+def 잔여흡수_등급은_초과로_잡히지_않는다():
+    """C가 정원(7)보다 많아도 오류가 아니다. 그건 A·B·D 미달의 다른 얼굴일 뿐이다."""
+    q = calculate_department_quota(10)
+    멤버 = list(range(1, 11))
+    결과 = validate_and_assign_evaluation_grades(
+        quota=q, member_ids=멤버, assignments=_배정(*[(i, "80", Grade.C) for i in 멤버])
+    )
+    assert [w.code for w in 결과.warnings].count("QUOTA_UNDERFILLED") == 3
+
+
+@check
+def 그룹모드_4명본부는_상위를_합쳐_검사한다():
+    q = calculate_department_quota(4)  # 상위 1 / 하위 3
+    멤버 = [1, 2, 3, 4]
+
+    # A1 B1 -> 상위 2명이라 초과
+    def 상위_두명():
+        validate_and_assign_evaluation_grades(
+            quota=q,
+            member_ids=멤버,
+            assignments=_배정((1, "95", Grade.A), (2, "94", Grade.B), (3, "80", Grade.C), (4, "60", Grade.D)),
+        )
+
+    assert "QUOTA_EXCEEDED" in _오류코드(상위_두명)
+
+    # A1 C2 D1 -> 상위 1명. B가 0명이어도 오류가 아니다
+    결과 = validate_and_assign_evaluation_grades(
+        quota=q,
+        member_ids=멤버,
+        assignments=_배정((1, "95", Grade.A), (2, "80", Grade.C), (3, "78", Grade.C), (4, "60", Grade.D)),
+    )
+    assert 결과.warnings == ()
+
+    # B1 C3 -> 상위 1명을 B로 줘도 된다
+    결과 = validate_and_assign_evaluation_grades(
+        quota=q,
+        member_ids=멤버,
+        assignments=_배정((1, "90", Grade.B), (2, "80", Grade.C), (3, "78", Grade.C), (4, "77", Grade.C)),
+    )
+    assert 결과.warnings == ()
+
+
+@check
+def 그룹모드_상위미달은_경고로_통과한다():
+    q = calculate_department_quota(4)
+    결과 = validate_and_assign_evaluation_grades(
+        quota=q,
+        member_ids=[1, 2, 3, 4],
+        assignments=_배정(*[(i, "80", Grade.C) for i in (1, 2, 3, 4)]),
+    )
+    assert [w.code for w in 결과.warnings] == ["QUOTA_UNDERFILLED"]
+
+
+@check
+def 그룹모드_4명본부도_S가_가능하다():
+    """Cap_S = 상위 정원 = 1. 대신 A·B는 0명이 된다."""
+    q = calculate_department_quota(4)
+    결과 = validate_and_assign_evaluation_grades(
+        quota=q,
+        member_ids=[1, 2, 3, 4],
+        assignments=_배정((1, "105", Grade.S), (2, "80", Grade.C), (3, "78", Grade.C), (4, "60", Grade.D)),
+    )
+    assert 결과.s_count == 1
+    assert 결과.effective_upper == 0
+    assert 결과.warnings == ()
+
+
+@check
+def 그룹모드_1명본부는_상위등급을_줄_수_없다():
+    q = calculate_department_quota(1)  # 상위 0 / 하위 1
+
+    def 혼자_A():
+        validate_and_assign_evaluation_grades(
+            quota=q, member_ids=[1], assignments=_배정((1, "95", Grade.A))
+        )
+
+    assert "QUOTA_EXCEEDED" in _오류코드(혼자_A)
+
+    결과 = validate_and_assign_evaluation_grades(
+        quota=q, member_ids=[1], assignments=_배정((1, "80", Grade.C))
+    )
+    assert 결과.warnings == ()
+
+
+@check
+def 누락_중복_외부인원은_각각_오류다():
+    q = calculate_department_quota(10)
+    멤버 = list(range(1, 11))
+
+    def 누락():
+        validate_and_assign_evaluation_grades(
+            quota=q, member_ids=멤버, assignments=_배정(*[(i, "80", Grade.C) for i in range(1, 10)])
+        )
+
+    assert "ASSIGNMENT_MISSING" in _오류코드(누락)
+
+    def 중복():
+        validate_and_assign_evaluation_grades(
+            quota=q,
+            member_ids=멤버,
+            assignments=_배정(*[(i, "80", Grade.C) for i in 멤버], (1, "80", Grade.C)),
+        )
+
+    assert "ASSIGNMENT_DUPLICATED" in _오류코드(중복)
+
+    def 외부인원():
+        validate_and_assign_evaluation_grades(
+            quota=q,
+            member_ids=멤버,
+            assignments=_배정(*[(i, "80", Grade.C) for i in 멤버], (99, "80", Grade.C)),
+        )
+
+    assert "MEMBER_NOT_IN_DIVISION" in _오류코드(외부인원)
+
+
+@check
+def 오류가_여러개면_전부_모아서_돌려준다():
+    """첫 오류에서 멈추면 조직장이 한 번에 고칠 수 없다."""
+    q = calculate_department_quota(10)
+    멤버 = list(range(1, 11))
+
+    def 한꺼번에():
+        validate_and_assign_evaluation_grades(
+            quota=q,
+            member_ids=멤버,
+            assignments=_배정(
+                (1, "100", Grade.S),   # 100점 이하 S
+                (2, "95", Grade.A),
+                (3, "94", Grade.A),    # A 초과
+                (99, "80", Grade.C),   # 외부 인원
+                *[(i, "80", Grade.C) for i in range(4, 11)],
+            ),
+        )
+
+    코드 = _오류코드(한꺼번에)
+    assert "S_GRADE_SCORE_TOO_LOW" in 코드
+    assert "MEMBER_NOT_IN_DIVISION" in 코드
+    assert len(코드) >= 3
+
+
+@check
+def 중간점검_기간에는_등급을_배정할_수_없다():
+    q = calculate_department_quota(10)
+
+    def 중간점검():
+        validate_and_assign_evaluation_grades(
+            quota=q,
+            member_ids=list(range(1, 11)),
+            assignments=_배정(*[(i, "80", Grade.C) for i in range(1, 11)]),
+            is_annual=False,
+        )
+
+    assert "MIDTERM_GRADE_NOT_ALLOWED" in _오류코드(중간점검)
 
 
 def main() -> int:
