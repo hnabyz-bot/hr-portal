@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import pathlib
 import sys
 import traceback
 from dataclasses import replace
@@ -932,6 +933,49 @@ def _서명(**overrides) -> SignatureInput:
     )
     base.update(overrides)
     return SignatureInput(**base)
+
+
+@check
+def 총점은_110점을_넘을_수_없다():
+    """DDL의 eval_total_max_chk 와 같은 규칙을 도메인에서도 막는다."""
+    q = calculate_department_quota(10)
+    멤버 = list(range(1, 11))
+
+    def 백십일점():
+        validate_and_assign_evaluation_grades(
+            quota=q,
+            member_ids=멤버,
+            assignments=_배정(
+                (1, "111.00", Grade.S),
+                *[(i, "80", Grade.C) for i in range(2, 11)],
+            ),
+        )
+
+    assert "SCORE_ABOVE_MAX" in _오류코드(백십일점)
+
+    # 정확히 110점은 통과한다 (상한은 이하이므로 경계 포함)
+    결과 = validate_and_assign_evaluation_grades(
+        quota=q,
+        member_ids=멤버,
+        assignments=_배정(
+            (1, "110.00", Grade.S),
+            (2, "90", Grade.B),
+            (3, "60", Grade.D),
+            *[(i, "80", Grade.C) for i in range(4, 11)],
+        ),
+    )
+    assert 결과.s_count == 1
+
+
+@check
+def 상한_상수가_DDL과_같은_값이다():
+    from hr_eval.domain.grading import MAX_TOTAL_SCORE
+
+    assert MAX_TOTAL_SCORE == Decimal("110")
+    ddl = (
+        pathlib.Path(__file__).with_name("sql") / "001_init.sql"
+    ).read_text(encoding="utf-8")
+    assert "CHECK (kpi_score + bonus_score <= 110)" in ddl
 
 
 def main() -> int:

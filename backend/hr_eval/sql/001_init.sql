@@ -219,6 +219,7 @@ CREATE TABLE evaluations (
     updated_at   TIMESTAMPTZ       NOT NULL DEFAULT now(),
     created_by   BIGINT            NULL REFERENCES users(id) ON DELETE SET NULL,
     CONSTRAINT evaluations_unique    UNIQUE (period_id, user_id),
+    CONSTRAINT eval_total_max_chk    CHECK (kpi_score + bonus_score <= 110),
     CONSTRAINT eval_s_grade_chk      CHECK (grade <> 'S' OR kpi_score + bonus_score > 100),
     CONSTRAINT eval_bonus_reason_chk CHECK (bonus_score = 0 OR bonus_reason IS NOT NULL),
     CONSTRAINT eval_confirmed_chk    CHECK (status <> 'CONFIRMED' OR grade IS NOT NULL)
