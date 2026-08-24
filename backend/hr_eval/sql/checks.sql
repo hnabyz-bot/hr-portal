@@ -25,6 +25,20 @@ EXCEPTION WHEN check_violation THEN
 END
 $chk$;
 
+-- (1-2) 총점이 110점을 넘으면 거부돼야 한다
+DO $chk$
+BEGIN
+    INSERT INTO evaluations (period_id, user_id, division_id, kpi_score, bonus_score, bonus_reason)
+    VALUES ((SELECT id FROM evaluation_periods LIMIT 1),
+            (SELECT id FROM users LIMIT 1),
+            (SELECT id FROM departments LIMIT 1),
+            100, 11, '가상 가점 사유');
+    RAISE EXCEPTION '[검사 실패] 총점 111점이 저장됐습니다';
+EXCEPTION WHEN check_violation THEN
+    RAISE NOTICE '[통과] 총점 110점 초과 거부';
+END
+$chk$;
+
 -- (2) 그룹 정원 합계가 인원수와 다르면 거부돼야 한다
 DO $chk$
 BEGIN

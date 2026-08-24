@@ -53,7 +53,7 @@
 | KPI 가중치 | 합계 정확히 100.00 |
 | KPI 승인 | DRAFT → TEAM_LEADER_APPROVED → DIVISION_HEAD_APPROVED(확정·잠금) |
 | KPI 수정 | HR이 연 `is_kpi_window_open` 기간에만 **수정안 요청** 가능. 팀장·본부장 승인 시 반영. 승인 전까지 기존 KPI가 유효 |
-| 점수 | KPI 0~100점 + 가점(0점 이상, **상한 없음**). 가점 입력 시 사유 필수 |
+| 점수 | KPI 0~100점 + 가점(0점 이상). **총점 상한 110점**. 가점 입력 시 사유 필수 |
 | 서명 | 동의 체크 + 성명 입력 + 손글씨 서명 이미지. 서명자·IP·UA·일시·문서해시 기록 |
 | 서명 후 | 즉시 READ_ONLY 잠금. HR_ADMIN만 사유 입력 후 파기 가능 |
 | 재발송 | 원본은 CANCELLED로 보존하고 **새 버전 행을 발행**한다 (덮어쓰지 않음) |
@@ -338,6 +338,7 @@ CREATE TABLE evaluations (
     updated_at   TIMESTAMPTZ       NOT NULL DEFAULT now(),
     created_by   BIGINT            NULL REFERENCES users(id) ON DELETE SET NULL,
     CONSTRAINT evaluations_unique    UNIQUE (period_id, user_id),
+    CONSTRAINT eval_total_max_chk    CHECK (kpi_score + bonus_score <= 110),
     CONSTRAINT eval_s_grade_chk      CHECK (grade <> 'S' OR kpi_score + bonus_score > 100),
     CONSTRAINT eval_bonus_reason_chk CHECK (bonus_score = 0 OR bonus_reason IS NOT NULL),
     CONSTRAINT eval_confirmed_chk    CHECK (status <> 'CONFIRMED' OR grade IS NOT NULL)
@@ -722,6 +723,5 @@ CI(`.github/workflows/ci.yml`)에 이 스크립트 실행 단계를 한 줄 추�
 
 - GROUPED/INDIVIDUAL 모드 경계를 4명에 둘지 (현재 `SMALL_DIVISION_THRESHOLD = 4`). 5명 본부가 A1 B1 C2 D1로 상위 40%가 되는 게 걸리면 경계를 올리는 걸 검토
 - GROUPED 모드에서 하위(C·D) 배분을 조직장 자율로 둘지, D 최소 1명을 강제할지 (현재 자율)
-- 가점 상한을 둘지 (현재 상한 없음)
 - 서명 IP·서명 이미지 보관기간 및 파기 절차
 - 가중치 합 100을 DB 트리거로도 강제할지 (현재는 도메인 로직만)

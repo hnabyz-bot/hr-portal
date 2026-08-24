@@ -18,6 +18,10 @@ from hr_eval.domain.quota import GroupedQuota, IndividualQuota, Quota
 #: S등급 자격 기준. 이 점수를 "초과"해야 한다 (동점은 불가).
 S_GRADE_MIN_SCORE = Decimal("100")
 
+#: 총점 상한. KPI 100점 + 가점이 이 값을 넘을 수 없다.
+#: DDL의 eval_total_max_chk 와 같은 값이어야 한다.
+MAX_TOTAL_SCORE = Decimal("110")
+
 
 @dataclass(frozen=True)
 class Assignment:
@@ -103,6 +107,15 @@ def validate_and_assign_evaluation_grades(
         )
 
     for a in assignments:
+        if a.total_score > MAX_TOTAL_SCORE:
+            issues.append(
+                Issue(
+                    "SCORE_ABOVE_MAX",
+                    f"총점은 {MAX_TOTAL_SCORE}점을 넘을 수 없습니다 "
+                    f"(사번키 {a.user_id}, 점수 {a.total_score})",
+                    target=f"user:{a.user_id}",
+                )
+            )
         if a.grade is Grade.S and a.total_score <= S_GRADE_MIN_SCORE:
             issues.append(
                 Issue(
