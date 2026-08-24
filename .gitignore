@@ -4,3 +4,4 @@ __pycache__/
 backend/.cache/
 regulations/*
 !regulations/README.md
+.superpowers/
