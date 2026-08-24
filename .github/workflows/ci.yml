@@ -67,9 +67,54 @@ jobs:
         if: always()
         run: docker compose down
 
+  domain:
+    name: 평가·계약 도메인 검사
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: 도메인 로직 자체 검증
+        working-directory: backend
+        run: python -m hr_eval.selfcheck
+
+  schema:
+    name: DB 스키마 검사
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          # CI 전용 일회성 컨테이너다. 비밀번호를 아예 두지 않아
+          # 시크릿 검사에도 걸리지 않는다.
+          POSTGRES_HOST_AUTH_METHOD: trust
+          POSTGRES_DB: hr_portal_ci
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+        ports:
+          - 5432:5432
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 스키마 적용
+        run: |
+          psql -h 127.0.0.1 -U postgres -d hr_portal_ci -v ON_ERROR_STOP=1 \
+            -f backend/hr_eval/sql/001_init.sql
+
+      - name: 제약조건 동작 확인
+        run: |
+          psql -h 127.0.0.1 -U postgres -d hr_portal_ci -v ON_ERROR_STOP=1 \
+            -f backend/hr_eval/sql/checks.sql
+
   promote:
     name: 배포 대상 갱신
-    needs: [validate, smoke]
+    needs: [validate, smoke, domain, schema]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
