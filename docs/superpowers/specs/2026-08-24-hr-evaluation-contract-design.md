@@ -42,10 +42,11 @@
 |---|---|
 | 조직 | 본부(DIVISION) > 팀(TEAM) 2단계. 쿼터는 본부 인원 기준 |
 | 역할 | EMPLOYEE / TEAM_LEADER / DIVISION_HEAD / HR_ADMIN (1인 1역할) |
-| 쿼터 산정 | `Q_A = Q_B = Q_D = round_half_up(N × 10%)`, `Q_C = N − (Q_A + Q_B + Q_D)` |
+| 쿼터 산정 (N ≥ 5) | **개별 정원**: `Q_A = Q_B = Q_D = round_half_up(N × 10%)`, `Q_C = N − (Q_A + Q_B + Q_D)` |
+| 쿼터 산정 (N ≤ 4) | **그룹 정원**: 상위(A·B 합계) = `1 if N ≥ 2 else 0`, 하위(C·D 합계) = 나머지 |
 | S등급 자격 | 총점 > 100점 (초과, 100점 동점은 불가) |
-| S등급 상한 | `Cap_S = Q_A` |
-| S등급 차감 | S가 K명이면 `Q_A' = Q_A − K` |
+| S등급 상한 | `Cap_S = Q_A` (N ≤ 4는 `Cap_S = 상위 정원`) |
+| S등급 차감 | S가 K명이면 `Q_A' = Q_A − K` (N ≤ 4는 `상위' = 상위 − K`) |
 | 쿼터 불일치 | **초과 = ERROR(제출 차단)**, 미달 = WARNING(통과) |
 | 평가 주기 | 연 1회 ANNUAL(등급 확정) + MIDTERM 중간점검(등급 없음, 기록만) |
 | KPI 개수 | 1인 최소 3개 |
@@ -57,14 +58,30 @@
 | 서명 후 | 즉시 READ_ONLY 잠금. HR_ADMIN만 사유 입력 후 파기 가능 |
 | 재발송 | 원본은 CANCELLED로 보존하고 **새 버전 행을 발행**한다 (덮어쓰지 않음) |
 
-### 규칙의 귀결 — 알고 쓰는 것
+### 두 가지 쿼터 모드
 
-`Q_A = Q_B = Q_D = round_half_up(N × 0.1)`, `Q_C = 나머지`를 그대로 계산하면:
+본부 인원에 따라 정원을 매기는 방식이 다르다. **경계는 5명이다.**
+
+**GROUPED (N ≤ 4) — 그룹 정원**
+
+등급별로 쪼개지 않고 상위(A·B)와 하위(C·D)를 묶어서 정원을 준다. 4명짜리 본부에서 A 1명 + B 1명을 따로 강제하면 절반이 상위등급이 되어 상대평가가 의미를 잃기 때문이다.
+
+| N | 상위 (A+B) | 하위 (C+D) | Cap_S |
+|---:|---:|---:|---:|
+| 0 | 0 | 0 | 0 |
+| 1 | 0 | 1 | 0 |
+| 2 | 1 | 1 | 1 |
+| 3 | 1 | 2 | 1 |
+| 4 | 1 | 3 | 1 |
+
+- 상위 1명을 **A로 줄지 B로 줄지는 조직장이 고른다.** 하위도 C·D 중 자유롭게 나눈다.
+- 1명짜리 본부는 상위 정원이 0이라 C 또는 D만 가능하다.
+- `Cap_S = 상위 정원`이므로 **4명 본부에서도 100점 초과자가 있으면 S 1명이 가능하다.** 대신 그 1명이 상위 정원을 다 쓰므로 A·B는 0명이 된다.
+
+**INDIVIDUAL (N ≥ 5) — 등급별 개별 정원**
 
 | N | Q_A | Q_B | Q_C | Q_D | Cap_S |
 |---:|---:|---:|---:|---:|---:|
-| 3 | 0 | 0 | 3 | 0 | 0 |
-| 4 | 0 | 0 | 4 | 0 | 0 |
 | 5 | 1 | 1 | 2 | 1 | 1 |
 | 7 | 1 | 1 | 4 | 1 | 1 |
 | 10 | 1 | 1 | 7 | 1 | 1 |
@@ -72,11 +89,10 @@
 | 20 | 2 | 2 | 14 | 2 | 2 |
 | 25 | 3 | 3 | 16 | 3 | 3 |
 
-- **4명 이하 본부는 A·B·D가 모두 0 → 전원 C이고, `Cap_S = Q_A = 0`이므로 S도 불가하다.**
 - **5명 본부는 C가 40%까지 내려간다.** (15명 60%, 25명 64%)
 - 10의 배수일 때만 10/10/70/10이 정확히 맞는다.
 
-이번 설계는 예외를 두지 않고 위 표대로 간다. 운영해보고 소규모 본부가 문제가 되면 "N명 미만은 상위 본부에 합산" 같은 규칙을 나중에 추가한다. **재검토 항목으로 남겨둔다.**
+**두 모드 공통**: 정원 합계는 항상 본부 인원 N과 같고, 하위 그룹(GROUPED) 또는 C등급(INDIVIDUAL)이 **잔여 흡수** 역할이라 상한 검사를 하지 않는다.
 
 ### 반올림 함정
 
@@ -100,6 +116,7 @@ CREATE TYPE period_type           AS ENUM ('ANNUAL','MIDTERM');
 CREATE TYPE period_status         AS ENUM ('PREPARING','KPI_OPEN','EVALUATING','CLOSED');
 CREATE TYPE kpi_sheet_status      AS ENUM ('DRAFT','TEAM_LEADER_APPROVED','DIVISION_HEAD_APPROVED');
 CREATE TYPE change_request_status AS ENUM ('PENDING','TEAM_LEADER_APPROVED','APPROVED','REJECTED','WITHDRAWN');
+CREATE TYPE quota_mode            AS ENUM ('INDIVIDUAL','GROUPED');
 CREATE TYPE grade                 AS ENUM ('S','A','B','C','D');
 CREATE TYPE evaluation_status     AS ENUM ('DRAFT','SUBMITTED','CONFIRMED');
 CREATE TYPE submission_status     AS ENUM ('NOT_SUBMITTED','SUBMITTED','CONFIRMED');
@@ -183,10 +200,15 @@ CREATE TABLE department_quotas (
     period_id         BIGINT            NOT NULL REFERENCES evaluation_periods(id) ON DELETE CASCADE,
     department_id     BIGINT            NOT NULL REFERENCES departments(id)        ON DELETE RESTRICT,
     headcount         INTEGER           NOT NULL CHECK (headcount >= 0),
-    quota_a           INTEGER           NOT NULL CHECK (quota_a >= 0),
-    quota_b           INTEGER           NOT NULL CHECK (quota_b >= 0),
-    quota_c           INTEGER           NOT NULL CHECK (quota_c >= 0),
-    quota_d           INTEGER           NOT NULL CHECK (quota_d >= 0),
+    quota_mode        quota_mode        NOT NULL,
+    -- INDIVIDUAL 모드 (N >= 5) 에서만 채운다
+    quota_a           INTEGER           NULL CHECK (quota_a >= 0),
+    quota_b           INTEGER           NULL CHECK (quota_b >= 0),
+    quota_c           INTEGER           NULL CHECK (quota_c >= 0),
+    quota_d           INTEGER           NULL CHECK (quota_d >= 0),
+    -- GROUPED 모드 (N <= 4) 에서만 채운다
+    quota_upper       INTEGER           NULL CHECK (quota_upper >= 0),   -- A+B 합계 상한
+    quota_lower       INTEGER           NULL CHECK (quota_lower >= 0),   -- C+D 합계 (잔여 흡수)
     cap_s             INTEGER           NOT NULL CHECK (cap_s >= 0),
     submission_status submission_status NOT NULL DEFAULT 'NOT_SUBMITTED',
     submitted_at      TIMESTAMPTZ       NULL,
@@ -198,13 +220,29 @@ CREATE TABLE department_quotas (
     updated_at        TIMESTAMPTZ       NOT NULL DEFAULT now(),
     created_by        BIGINT            NULL REFERENCES users(id) ON DELETE SET NULL,
     CONSTRAINT quotas_unique     UNIQUE (period_id, department_id),
-    CONSTRAINT quotas_sum_chk    CHECK (quota_a + quota_b + quota_c + quota_d = headcount),
-    CONSTRAINT quotas_cap_chk    CHECK (cap_s <= quota_a),
-    CONSTRAINT quotas_adjust_chk CHECK (adjusted_by IS NULL OR adjust_reason IS NOT NULL)
+    CONSTRAINT quotas_adjust_chk CHECK (adjusted_by IS NULL OR adjust_reason IS NOT NULL),
+    CONSTRAINT quotas_individual_chk CHECK (
+        quota_mode <> 'INDIVIDUAL' OR (
+            quota_a IS NOT NULL AND quota_b IS NOT NULL
+            AND quota_c IS NOT NULL AND quota_d IS NOT NULL
+            AND quota_upper IS NULL AND quota_lower IS NULL
+            AND quota_a + quota_b + quota_c + quota_d = headcount
+            AND cap_s <= quota_a
+        )
+    ),
+    CONSTRAINT quotas_grouped_chk CHECK (
+        quota_mode <> 'GROUPED' OR (
+            quota_upper IS NOT NULL AND quota_lower IS NOT NULL
+            AND quota_a IS NULL AND quota_b IS NULL
+            AND quota_c IS NULL AND quota_d IS NULL
+            AND quota_upper + quota_lower = headcount
+            AND cap_s <= quota_upper
+        )
+    )
 );
 ```
 
-`quotas_sum_chk`가 핵심이다. HR_ADMIN이 쿼터를 조율하더라도 **A+B+C+D = N**이 DB 차원에서 항상 유지된다.
+두 CHECK가 핵심이다. HR_ADMIN이 쿼터를 조율하더라도 **정원 합계 = 본부 인원**이 어느 모드에서든 DB 차원에서 유지되고, 모드에 맞지 않는 칼럼을 채우면 저장이 거부된다.
 
 ### 3.4 KPI
 
@@ -527,23 +565,34 @@ class NotFoundError(HrDomainError):          # → 404
 
 ## 5. 도메인 로직
 
-### 5.1 `calculate_department_quota(headcount) -> QuotaResult`
+### 5.1 `calculate_department_quota(headcount) -> Quota`
 
-```
-Q_A = Q_B = Q_D = round_half_up(N * 0.1)     # Decimal ROUND_HALF_UP
-Q_C = N - (Q_A + Q_B + Q_D)
-Cap_S = Q_A
+```python
+SMALL_DIVISION_THRESHOLD = 4     # 이하면 GROUPED 모드
+
+def calculate_department_quota(n):
+    if n < 0:
+        raise ValueError(...)
+
+    if n <= SMALL_DIVISION_THRESHOLD:
+        upper = 1 if n >= 2 else 0
+        return GroupedQuota(upper=upper, lower=n - upper, cap_s=upper)
+
+    q = round_half_up(n * 0.1)                 # Decimal ROUND_HALF_UP
+    return IndividualQuota(a=q, b=q, d=q, c=n - 3 * q, cap_s=q)
 ```
 
-- `N < 0` → `ValueError`
-- `N = 0` → 전부 0
-- `Q_C`는 `3 * round_half_up(N/10) <= N`이 모든 N에서 성립하므로 음수가 되지 않는다.
+- 반환 타입이 두 가지다. 공통 상위 타입 `Quota`가 `mode`, `cap_s`, `total()`을 제공한다.
+- `IndividualQuota.c`는 `3 * round_half_up(N/10) <= N`이 모든 `N >= 5`에서 성립하므로 음수가 되지 않는다.
+- 두 모드 모두 `total() == N`이다. selfcheck에서 전 구간 검증한다.
 
 ### 5.2 `validate_and_assign_evaluation_grades(...) -> GradeAssignmentResult`
 
-입력: 평가기간, 본부, 쿼터(`QuotaResult` 또는 DB 조율값), 본부 소속 인원 명단, 조직장이 배정한 `{user_id: (total_score, grade)}`.
+입력: 평가기간, 본부, 쿼터(`Quota` 또는 DB 조율값), 본부 소속 인원 명단, 조직장이 배정한 `{user_id: (total_score, grade)}`.
 
 검사 순서 (전부 수행하고 issues를 모아 반환):
+
+**공통 검사** (모드 무관, 전부 수행하고 issues를 모아 반환):
 
 | # | 검사 | severity |
 |---|---|---|
@@ -552,16 +601,28 @@ Cap_S = Q_A
 | 3 | 같은 인원 중복 배정 | ERROR |
 | 4 | `grade = S`인데 `total_score <= 100` | ERROR |
 | 5 | `K = count(S) > Cap_S` | ERROR |
-| 6 | `count(A) > Q_A' (= Q_A − K)` | ERROR |
-| 7 | `count(B) > Q_B` / `count(D) > Q_D` | ERROR |
-| 8 | `count(A) < Q_A'` / `count(B) < Q_B` / `count(D) < Q_D` | WARNING |
-| 9 | 중간점검(MIDTERM) 기간에 등급 배정 시도 | ERROR |
+| 6 | 중간점검(MIDTERM) 기간에 등급 배정 시도 | ERROR |
 
-- **C등급은 잔여 흡수**라서 상·하한 검사를 하지 않는다. A/B/D가 미달이면 C가 늘어나고, 그건 이미 8번 WARNING으로 잡힌다.
+**INDIVIDUAL 모드 (N ≥ 5) 추가 검사**
+
+| # | 검사 | severity |
+|---|---|---|
+| 7 | `count(A) > Q_A' (= Q_A − K)` | ERROR |
+| 8 | `count(B) > Q_B` / `count(D) > Q_D` | ERROR |
+| 9 | `count(A) < Q_A'` / `count(B) < Q_B` / `count(D) < Q_D` | WARNING |
+
+**GROUPED 모드 (N ≤ 4) 추가 검사**
+
+| # | 검사 | severity |
+|---|---|---|
+| 7 | `count(A) + count(B) > 상위' (= 상위 − K)` | ERROR |
+| 8 | `count(A) + count(B) < 상위'` | WARNING |
+
+- **잔여 흡수 그룹은 상한 검사를 하지 않는다.** INDIVIDUAL의 C, GROUPED의 하위(C·D)가 그것이다. 상위가 미달이면 잔여가 늘어나는데, 그건 이미 WARNING으로 잡혔으므로 같은 사실을 ERROR로 두 번 잡으면 제출이 부당하게 막힌다.
 - ERROR가 하나라도 있으면 `ValidationError(issues)`를 던진다. 저장은 일어나지 않는다.
-- ERROR가 없으면 `GradeAssignmentResult(assignments, warnings, effective_quota_a=Q_A', s_count=K)`를 반환한다.
+- ERROR가 없으면 `GradeAssignmentResult(assignments, warnings, effective_upper, s_count=K)`를 반환한다. `effective_upper`는 INDIVIDUAL에서는 `Q_A'`, GROUPED에서는 `상위'`다.
 
-`Q_A' = Q_A − K`이고 `Cap_S = Q_A`이므로, S를 상한까지 쓰면 A는 0명이 된다. 의도된 동작이다.
+`Cap_S`가 상위 정원과 같으므로, 두 모드 모두 **S를 상한까지 쓰면 A(및 GROUPED의 B)는 0명이 된다.** 의도된 동작이다.
 
 ### 5.3 `submit_kpi_goal(actor, sheet, kpis, uow) -> KpiSheet`
 
@@ -623,12 +684,20 @@ python backend/hr_eval/selfcheck.py
 
 포함할 케이스:
 
-- 쿼터: N = 0, 3, 4, 5, 7, 10, 15, 20, 25 → 2장 "규칙의 귀결" 표와 일치. `Q_A+Q_B+Q_C+Q_D == N` 항상 성립
+- 쿼터: N = 0~4 → GROUPED, N = 5, 7, 10, 15, 20, 25 → INDIVIDUAL. 2장 두 표와 일치
+- 쿼터: **N = 0부터 200까지 전 구간에서 `quota.total() == N`** (모드 경계 포함)
+- 모드 경계: N=4는 GROUPED, N=5는 INDIVIDUAL
 - `round_half_up(0.5) == 1` (내장 `round()`였다면 0)
 - S: 100점 정확히 → S 불가 / 100.01점 → 가능
 - S가 Cap_S 초과 → ERROR
-- S가 K명일 때 A 정원이 `Q_A − K`로 줄어드는지
-- A 초과 → ERROR, A 미달 → WARNING이면서 결과는 반환
+- S가 K명일 때 상위 정원이 `− K` 되는지 (두 모드 각각)
+- INDIVIDUAL: A 초과 → ERROR, A 미달 → WARNING이면서 결과는 반환
+- GROUPED: 4명 본부에 A1 B1 → `count(A)+count(B)=2 > 1` ERROR
+- GROUPED: 4명 본부에 A1 C2 D1 → 통과, B는 0명이어도 오류 아님
+- GROUPED: 4명 본부에 C4 → 상위 미달 WARNING, 통과
+- GROUPED: 4명 본부에 S1 C3 → 통과 (Cap_S=1)
+- GROUPED: 1명 본부에 A1 → 상위 정원 0이므로 ERROR
+- 잔여 흡수 그룹은 초과로 잡히지 않는다 (INDIVIDUAL의 C, GROUPED의 C·D)
 - 배정 누락·중복·타본부 인원 → 각각 ERROR
 - 오류가 여러 개일 때 issues에 전부 담기는지 (첫 오류에서 멈추지 않음)
 - KPI: 2개 → ERROR, 가중치 99.99 → ERROR, 100.00 → 통과
@@ -651,7 +720,8 @@ CI(`.github/workflows/ci.yml`)에 이 스크립트 실행 단계를 한 줄 추�
 
 ## 9. 재검토 항목
 
-- 소규모 본부(4명 이하) 전원 C·S 불가를 유지할지, 상위 본부 합산 같은 예외를 둘지
+- GROUPED/INDIVIDUAL 모드 경계를 4명에 둘지 (현재 `SMALL_DIVISION_THRESHOLD = 4`). 5명 본부가 A1 B1 C2 D1로 상위 40%가 되는 게 걸리면 경계를 올리는 걸 검토
+- GROUPED 모드에서 하위(C·D) 배분을 조직장 자율로 둘지, D 최소 1명을 강제할지 (현재 자율)
 - 가점 상한을 둘지 (현재 상한 없음)
 - 서명 IP·서명 이미지 보관기간 및 파기 절차
 - 가중치 합 100을 DB 트리거로도 강제할지 (현재는 도메인 로직만)
