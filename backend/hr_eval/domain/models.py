@@ -6,7 +6,7 @@ DDL의 ENUM 값과 문자열이 정확히 일치해야 한다 (selfcheck가 지�
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
 from enum import Enum
@@ -74,6 +74,11 @@ class KpiSheet:
     user_id: int
     status: KpiSheetStatus = KpiSheetStatus.DRAFT
     submitted_at: datetime | None = None
+    team_leader_approved_at: datetime | None = None
+    team_leader_approved_by: int | None = None
+    division_head_approved_at: datetime | None = None
+    division_head_approved_by: int | None = None
+    locked_at: datetime | None = None
 
 
 @dataclass(frozen=True)

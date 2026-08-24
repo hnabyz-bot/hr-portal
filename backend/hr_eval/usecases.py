@@ -66,7 +66,18 @@ def submit_kpi_goal(
             sheet = uow.kpis.create_sheet(period_id, user_id, actor.user_id)
 
         uow.kpis.replace_kpis(sheet.id, kpis)
-        sheet = replace(sheet, status=KpiSheetStatus.DRAFT, submitted_at=_now())
+        # 재제출이므로 이전 승인은 전부 무효다 — 남겨두면 승인 시각/승인자가
+        # DRAFT 상태의 새 KPI 내용과 어긋난 채 남는다.
+        sheet = replace(
+            sheet,
+            status=KpiSheetStatus.DRAFT,
+            submitted_at=_now(),
+            team_leader_approved_at=None,
+            team_leader_approved_by=None,
+            division_head_approved_at=None,
+            division_head_approved_by=None,
+            locked_at=None,
+        )
         uow.kpis.save_sheet(sheet)
 
         uow.audit.append(

@@ -364,7 +364,7 @@ BEGIN
             USING ERRCODE = 'restrict_violation';
     END IF;
 
-    IF NEW.status NOT IN ('SIGNED', 'CANCELLED') THEN
+    IF NOT (NEW.status = 'CANCELLED' OR NEW.status = OLD.status) THEN
         RAISE EXCEPTION 'READ_ONLY: 서명 완료된 계약서는 파기 외 상태로 바꿀 수 없습니다 (contract_id=%)', OLD.id
             USING ERRCODE = 'restrict_violation';
     END IF;

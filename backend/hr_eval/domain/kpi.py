@@ -54,7 +54,7 @@ def validate_kpi_set(kpis: Sequence[KpiInput]) -> None:
                 Issue(
                     "KPI_WEIGHT_OUT_OF_RANGE",
                     f"{번호}번째 KPI 가중치는 0 초과 100 이하여야 합니다"
-                    f"(현재 {k.weight_pct})",
+                    f" (현재 {k.weight_pct})",
                     target=f"kpi:{idx}",
                 )
             )

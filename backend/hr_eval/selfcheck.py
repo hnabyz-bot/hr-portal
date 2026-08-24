@@ -11,7 +11,7 @@ from __future__ import annotations
 import sys
 import traceback
 from dataclasses import replace
-from datetime import date, datetime, timezone
+from datetime import date, datetime
 from decimal import Decimal
 
 # Windows 콘솔 기본 코드페이지(cp949)에서 한글·기호가 깨지는 걸 막는다.
@@ -176,6 +176,13 @@ def enum_값이_DDL의_ENUM과_문자열로_일치한다():
     ]
     assert [s.value for s in ContractStatus] == ["DRAFT", "SENT", "SIGNED", "CANCELLED"]
     assert [p.value for p in PdfStatus] == ["NONE", "PENDING", "GENERATED", "FAILED"]
+    assert [k.value for k in KpiSheetStatus] == [
+        "DRAFT",
+        "TEAM_LEADER_APPROVED",
+        "DIVISION_HEAD_APPROVED",
+    ]
+    assert [p.value for p in PeriodType] == ["ANNUAL", "MIDTERM"]
+    assert [q.value for q in QuotaMode] == ["INDIVIDUAL", "GROUPED"]
 
 
 @check
@@ -542,17 +549,19 @@ def 중간점검_기간에는_등급을_배정할_수_없다():
 
 @check
 def 등급으로_인상률을_찾는다():
+    # 인상률 수치는 salary_raise_rates 테이블에만 있어야 한다 (hr-portal은 Public
+    # 저장소다). 아래 표는 전부 가상 값이라 실제 인상률과 겹치지 않는다.
     표 = {
-        Grade.S: Decimal("8.00"),
-        Grade.A: Decimal("5.00"),
-        Grade.B: Decimal("3.00"),
-        Grade.C: Decimal("2.00"),
-        Grade.D: Decimal("0.00"),
+        Grade.S: Decimal("11.11"),
+        Grade.A: Decimal("7.77"),
+        Grade.B: Decimal("5.55"),
+        Grade.C: Decimal("3.33"),
+        Grade.D: Decimal("1.11"),
     }
-    assert resolve_raise_pct(표, Grade.A) == Decimal("5.00")
+    assert resolve_raise_pct(표, Grade.A) == Decimal("7.77")
 
     try:
-        resolve_raise_pct({Grade.A: Decimal("5.00")}, Grade.D)
+        resolve_raise_pct({Grade.A: Decimal("7.77")}, Grade.D)
     except NotFoundError:
         pass
     else:
@@ -745,6 +754,32 @@ def KPI제출이_성공하면_DRAFT로_저장되고_감사로그가_남는다():
 
 
 @check
+def KPI재제출은_이전_팀장승인_흔적을_지운다():
+    """재제출인데 team_leader_approved_at이 남으면 kpi_sheets_tl_chk를
+    DRAFT 상태에서만 우회로 통과시켜온 것과 같은 구멍이 도메인 계층에도 생긴다."""
+    uow = _가짜UoW(
+        sheet=KpiSheet(
+            id=7,
+            period_id=1,
+            user_id=10,
+            status=KpiSheetStatus.TEAM_LEADER_APPROVED,
+            team_leader_approved_at=datetime(2027, 1, 10, 9, 0, 0),
+            team_leader_approved_by=20,
+        )
+    )
+    sheet = submit_kpi_goal(
+        actor=Actor(user_id=10, role=Role.EMPLOYEE),
+        period_id=1,
+        user_id=10,
+        kpis=_KPI("40.00", "30.00", "30.00"),
+        uow=uow,
+    )
+    assert sheet.status is KpiSheetStatus.DRAFT
+    assert sheet.team_leader_approved_at is None
+    assert sheet.team_leader_approved_by is None
+
+
+@check
 def 계약서는_본인만_서명할_수_있다():
     uow = _가짜UoW(contract=_가짜계약서(id=1, user_id=10))
     try:
@@ -796,12 +831,12 @@ def 서명이_끝나면_잠기고_감사로그가_남는다():
     assert signed.status is ContractStatus.SIGNED
     assert signed.is_locked is True
     assert signed.signer_user_id == 10
-    assert signed.signer_ip == "10.20.6.1"
+    assert signed.signer_ip == "192.0.2.1"
     assert signed.signed_at is not None
     assert len(signed.document_hash) == 64
     assert signed.pdf_status is PdfStatus.PENDING
     assert uow.actions == ["CONTRACT_SIGNED"]
-    assert uow.audit_entries[0].ip == "10.20.6.1"
+    assert uow.audit_entries[0].ip == "192.0.2.1"
     assert uow.committed
 
 
@@ -892,7 +927,7 @@ def _서명(**overrides) -> SignatureInput:
         consent_checked=True,
         signer_name="홍길동",
         signature_image="\x89PNG-가상서명".encode("utf-8"),
-        ip="10.20.6.1",
+        ip="192.0.2.1",
         user_agent="Mozilla/5.0 (검사용)",
     )
     base.update(overrides)

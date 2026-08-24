@@ -6,7 +6,7 @@
 set -uo pipefail
 
 ALLOW=".ci/allowed-demo-data.txt"
-TARGETS="public"
+TARGETS="public docker-compose.yml backend"
 FOUND=0
 
 scan() {

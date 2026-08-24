@@ -54,6 +54,8 @@ END
 $chk$;
 
 -- 서명 완료 계약서 하나를 만든다 (이후 검사의 대상)
+-- raise_pct/base_salary_after는 전부 가상 값이다 (실제 인상률은 salary_raise_rates
+-- 테이블에만 있다. hr-portal은 Public 저장소다).
 INSERT INTO evaluations (period_id, user_id, division_id, kpi_score, bonus_score,
                          bonus_reason, grade, status)
 VALUES ((SELECT id FROM evaluation_periods LIMIT 1),
@@ -71,10 +73,10 @@ INSERT INTO salary_contracts (
     (SELECT id FROM evaluation_periods LIMIT 1),
     (SELECT id FROM users LIMIT 1),
     (SELECT id FROM evaluations LIMIT 1),
-    'S', 50000000, 8.00, 54000000,
+    'S', 50000000, 11.11, 55555000,
     DATE '2027-01-01', DATE '2027-12-31',
     'SIGNED', TRUE, TRUE,
-    (SELECT id FROM users LIMIT 1), '가상직원', '10.20.6.1'::inet,
+    (SELECT id FROM users LIMIT 1), '가상직원', '192.0.2.1'::inet,
     '\x00'::bytea, repeat('a', 64), now()
 );
 
