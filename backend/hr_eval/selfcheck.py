@@ -43,6 +43,7 @@ from hr_eval.domain.quota import (
     round_half_up,
 )
 from hr_eval.domain.grading import Assignment, validate_and_assign_evaluation_grades
+from hr_eval.domain.kpi import KpiInput, validate_kpi_set
 
 CHECKS: list = []
 
@@ -205,6 +206,67 @@ def _오류코드(fn) -> list[str]:
     except ValidationError as err:
         return [i.code for i in err.errors]
     raise AssertionError("ValidationError가 나오지 않았다")
+
+
+def _KPI(*가중치들) -> list[KpiInput]:
+    return [
+        KpiInput(title=f"목표{i + 1}", weight_pct=Decimal(str(w)))
+        for i, w in enumerate(가중치들)
+    ]
+
+
+@check
+def KPI는_최소_3개여야_한다():
+    def 두개():
+        validate_kpi_set(_KPI("50.00", "50.00"))
+
+    assert "KPI_TOO_FEW" in _오류코드(두개)
+    # 3개면 통과한다
+    validate_kpi_set(_KPI("40.00", "30.00", "30.00"))
+
+
+@check
+def KPI_가중치_합은_정확히_100이어야_한다():
+    def 구십구점구구():
+        validate_kpi_set(_KPI("40.00", "30.00", "29.99"))
+
+    assert "KPI_WEIGHT_SUM_INVALID" in _오류코드(구십구점구구)
+
+    def 백점일():
+        validate_kpi_set(_KPI("40.00", "30.00", "30.01"))
+
+    assert "KPI_WEIGHT_SUM_INVALID" in _오류코드(백점일)
+
+    # float였다면 0.1+0.2 문제로 새어나갔을 조합도 Decimal이라 정확히 맞는다
+    validate_kpi_set(_KPI("33.33", "33.33", "33.34"))
+
+
+@check
+def KPI_가중치는_0초과_100이하여야_한다():
+    def 영():
+        validate_kpi_set(_KPI("0.00", "50.00", "50.00"))
+
+    assert "KPI_WEIGHT_OUT_OF_RANGE" in _오류코드(영)
+
+    def 음수():
+        validate_kpi_set(_KPI("-10.00", "60.00", "50.00"))
+
+    assert "KPI_WEIGHT_OUT_OF_RANGE" in _오류코드(음수)
+
+
+@check
+def KPI_제목이_비면_오류다():
+    def 빈제목():
+        validate_kpi_set(
+            [
+                KpiInput(title="   ", weight_pct=Decimal("40.00")),
+                KpiInput(title="목표2", weight_pct=Decimal("30.00")),
+                KpiInput(title="목표3", weight_pct=Decimal("30.00")),
+            ]
+        )
+
+    코드 = _오류코드(빈제목)
+    assert "KPI_TITLE_EMPTY" in 코드
 
 
 @check
