@@ -42,6 +42,11 @@ from hr_eval.domain.quota import (
     calculate_department_quota,
     round_half_up,
 )
+from hr_eval.domain.contract_rules import (
+    build_document_hash,
+    calculate_new_salary,
+    resolve_raise_pct,
+)
 from hr_eval.domain.grading import Assignment, validate_and_assign_evaluation_grades
 from hr_eval.domain.kpi import KpiInput, validate_kpi_set
 
@@ -521,6 +526,56 @@ def 중간점검_기간에는_등급을_배정할_수_없다():
         )
 
     assert "MIDTERM_GRADE_NOT_ALLOWED" in _오류코드(중간점검)
+
+
+@check
+def 등급으로_인상률을_찾는다():
+    표 = {
+        Grade.S: Decimal("8.00"),
+        Grade.A: Decimal("5.00"),
+        Grade.B: Decimal("3.00"),
+        Grade.C: Decimal("2.00"),
+        Grade.D: Decimal("0.00"),
+    }
+    assert resolve_raise_pct(표, Grade.A) == Decimal("5.00")
+
+    try:
+        resolve_raise_pct({Grade.A: Decimal("5.00")}, Grade.D)
+    except NotFoundError:
+        pass
+    else:
+        raise AssertionError("등록되지 않은 등급인데 NotFoundError가 나오지 않았다")
+
+
+@check
+def 인상후_연봉은_원단위_내림이다():
+    # 50,000,000 * 1.05 = 52,500,000 (딱 떨어짐)
+    assert calculate_new_salary(Decimal("50000000"), Decimal("5.00")) == Decimal("52500000")
+    # 33,333,333 * 1.03 = 34,333,332.99 -> 34,333,332 (올리지 않는다)
+    assert calculate_new_salary(Decimal("33333333"), Decimal("3.00")) == Decimal("34333332")
+    # 0% 인상은 그대로
+    assert calculate_new_salary(Decimal("40000000"), Decimal("0.00")) == Decimal("40000000")
+
+
+@check
+def 문서해시는_같은_내용에_같은_값_다른_내용에_다른_값이다():
+    문서 = _가짜계약서().as_document()
+    assert build_document_hash(문서) == build_document_hash(dict(문서))
+
+    바뀐문서 = dict(문서)
+    바뀐문서["base_salary_after"] = "60000000"
+    assert build_document_hash(문서) != build_document_hash(바뀐문서)
+
+    # 키 순서가 달라도 같은 해시여야 한다 (JSON 직렬화 순서에 흔들리면 안 된다)
+    뒤집은문서 = dict(reversed(list(문서.items())))
+    assert build_document_hash(문서) == build_document_hash(뒤집은문서)
+
+
+@check
+def 문서해시는_64자리_16진수다():
+    h = build_document_hash(_가짜계약서().as_document())
+    assert len(h) == 64
+    assert all(c in "0123456789abcdef" for c in h)
 
 
 def main() -> int:
