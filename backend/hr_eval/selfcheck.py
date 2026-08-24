@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import sys
 import traceback
+from datetime import date
 from decimal import Decimal
 
 # Windows 콘솔 기본 코드페이지(cp949)에서 한글·기호가 깨지는 걸 막는다.
@@ -24,6 +25,14 @@ from hr_eval.domain.errors import (
     Severity,
     StateConflictError,
     ValidationError,
+)
+from hr_eval.domain.models import (
+    Actor,
+    ContractStatus,
+    Grade,
+    PdfStatus,
+    Role,
+    SalaryContract,
 )
 from hr_eval.domain.quota import (
     SMALL_DIVISION_THRESHOLD,
@@ -134,6 +143,53 @@ def 음수_인원은_거부한다():
         pass
     else:
         raise AssertionError("음수 인원인데 ValueError가 나오지 않았다")
+
+
+@check
+def enum_값이_DDL의_ENUM과_문자열로_일치한다():
+    """DDL의 CREATE TYPE 값과 어긋나면 저장할 때 터진다."""
+    assert [g.value for g in Grade] == ["S", "A", "B", "C", "D"]
+    assert [r.value for r in Role] == [
+        "EMPLOYEE",
+        "TEAM_LEADER",
+        "DIVISION_HEAD",
+        "HR_ADMIN",
+    ]
+    assert [s.value for s in ContractStatus] == ["DRAFT", "SENT", "SIGNED", "CANCELLED"]
+    assert [p.value for p in PdfStatus] == ["NONE", "PENDING", "GENERATED", "FAILED"]
+
+
+@check
+def 계약서_문서스냅샷은_서명값을_담지_않는다():
+    """as_document()는 해시 대상이다. 서명 자체가 들어가면 해시가 자기참조가 된다."""
+    c = _가짜계약서()
+    doc = c.as_document()
+    assert "signature_image" not in doc
+    assert "document_hash" not in doc
+    assert "signed_at" not in doc
+    # 금액·등급·기간은 반드시 들어가야 위변조를 잡는다
+    assert doc["grade"] == "A"
+    assert doc["base_salary_after"] == "52000000"
+    assert doc["contract_starts_on"] == "2027-01-01"
+
+
+def _가짜계약서(**overrides) -> SalaryContract:
+    """검사용 계약서. 전부 가상 값이다."""
+    base = dict(
+        id=1,
+        period_id=1,
+        user_id=10,
+        evaluation_id=100,
+        grade=Grade.A,
+        base_salary_before=Decimal("50000000"),
+        raise_pct=Decimal("4.00"),
+        base_salary_after=Decimal("52000000"),
+        contract_starts_on=date(2027, 1, 1),
+        contract_ends_on=date(2027, 12, 31),
+        status=ContractStatus.SENT,
+    )
+    base.update(overrides)
+    return SalaryContract(**base)
 
 
 def main() -> int:
