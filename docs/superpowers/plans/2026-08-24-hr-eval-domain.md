@@ -1774,12 +1774,12 @@ def 서명이_끝나면_잠기고_감사로그가_남는다():
     assert signed.status is ContractStatus.SIGNED
     assert signed.is_locked is True
     assert signed.signer_user_id == 10
-    assert signed.signer_ip == "10.20.6.1"
+    assert signed.signer_ip == "192.0.2.10"
     assert signed.signed_at is not None
     assert len(signed.document_hash) == 64
     assert signed.pdf_status is PdfStatus.PENDING
     assert uow.actions == ["CONTRACT_SIGNED"]
-    assert uow.audit_entries[0].ip == "10.20.6.1"
+    assert uow.audit_entries[0].ip == "192.0.2.10"
     assert uow.committed
 
 
@@ -1870,7 +1870,7 @@ def _서명(**overrides) -> SignatureInput:
         consent_checked=True,
         signer_name="홍길동",
         signature_image=b"\x89PNG-가상서명",
-        ip="10.20.6.1",
+        ip="192.0.2.10",
         user_agent="Mozilla/5.0 (검사용)",
     )
     base.update(overrides)
@@ -2426,7 +2426,7 @@ INSERT INTO salary_contracts (
     'S', 50000000, 8.00, 54000000,
     DATE '2027-01-01', DATE '2027-12-31',
     'SIGNED', TRUE, TRUE,
-    (SELECT id FROM users LIMIT 1), '가상직원', '10.20.6.1'::inet,
+    (SELECT id FROM users LIMIT 1), '가상직원', '192.0.2.10'::inet,
     '\x00'::bytea, repeat('a', 64), now()
 );
 

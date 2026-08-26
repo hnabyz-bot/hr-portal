@@ -28,16 +28,17 @@
   → release 브랜치 자동 갱신 → 서버 타이머(2분) → https://hr.abyz-lab.work 반영
 ```
 
-- **로컬 확인**: 이 개발 환경엔 docker가 없다(`docker: command not found`). `docker compose up`은 서버에서만 가능. 로컬에선 `python3 -m http.server <port>` 를 `public/` 안에서 띄우고 브라우저로 확인한다 (file:// 직접 열기는 Claude Code 브라우저 프리뷰에서 "static snapshot"으로 렌더링되어 클릭 등 상호작용 확인이 안 됨 — 반드시 http 서버 경유).
-- **PR 생성·merge**: `gh` CLI 없음. `git credential fill`로 얻은 GitHub 토큰으로 REST API(`api.github.com/repos/hnabyz-bot/hr-portal/pulls`)를 직접 호출해 PR 생성·merge까지 처리 가능 (사용자 승인 하에). 사용자 자격 증명을 재사용하는 것이므로 매번 실행 전 사용자에게 진행해도 되는지 확인한다.
+- **이 개발 환경이 곧 포털 서버다 (2026-08-26 확인)**: 별도 SSH 접속이 필요 없고 `docker` 명령이 바로 된다. 실제 서비스를 `http://127.0.0.1:8080` 으로 직접 확인할 수 있고, `backend/` 변경도 `docker compose up -d --build` 로 실물 검증이 가능하다. 다만 이건 **실제 운영 서버**이고 같은 서버에 무관한 서비스(`voc-mr-ecr`)도 같이 떠 있으니 그쪽은 절대 건드리지 않는다. 시크릿 값은 `cat`/`Read`로 열어보지 않는다.
+- **⚠️ 작업은 워크트리에서 한다**: 저장소 폴더(`~/workspace/github-hnabyz-bot/hr-portal`)는 배포 대상이라 systemd 타이머가 **2분마다 `git reset --hard origin/release`** 를 실행한다. 여기서 브랜치를 만들어 작업하면 **미커밋 변경이 최대 2분 안에 사라진다.** 코드 작업은 워크트리 `~/workspace/hr-portal-dev` 에서 하고, 저장소 폴더는 서비스 전용으로 둔다 (`.env`·`regulations/` 원문이 있는 곳이기도 하다).
+- **PR 생성·merge**: `gh` CLI 없음. REST API(`api.github.com/repos/hnabyz-bot/hr-portal/...`)를 직접 호출해 이슈·PR 생성·merge까지 처리한다. 토큰은 두 개이며 용도가 다르다 — 일반 작업은 `git credential fill`로 얻는 협업자 토큰, 저장소 관리자 작업(브랜치 보호 등)은 `~/.config/hr-portal/owner-token`(권한 600). 토큰 값 자체는 화면에 띄우지 않는다.
+- **브랜치 보호 적용됨 (2026-08-26)**: `main`은 PR 필수 + CI 4종 통과 필수(승인자 0명이라 검사만 통과하면 merge 가능), 강제 push·삭제 금지. `release`는 강제 push·삭제만 금지(CI가 직접 갱신해야 하므로 PR 필수는 걸지 않음). **`main` 직접 push는 이제 막힌다** — 반드시 PR을 거친다.
 - **PR별 미리보기(Cloudflare Pages)는 아직 미구성** — beginner-guide 5장이 설명하는 미리보기 링크는 지금 뜨지 않는다.
-- **서버 SSH 접근 가능 (2026-08-07부터)**: `ssh hr-portal-server` (별칭, `~/.ssh/config`에 등록됨, 전용 키 `~/.ssh/hr-portal-server`). `docker compose`, 배포 스크립트 수정, 파일 업로드(scp) 등 서버 작업을 직접 할 수 있다. 다만 이건 실제 운영 서버이고 같은 서버에 무관한 서비스(`voc-mr-ecr`)도 같이 떠 있으니, 그쪽은 절대 건드리지 않는다. 시크릿 값은 `cat`/`Read`로 열어보지 않고 scp로만 전달한다.
 
 CI(`.github/workflows/ci.yml`)가 자동 검사하는 것: 한글 인코딩, HTML 구조, 시크릿, 개인정보 패턴, `public/` 노출 범위, 스모크 테스트. 실패하면 원인을 그대로 알려준다.
 
 ## 백엔드가 있는 기능 (출장·경비 > 경비 산출기)
 
-`secom-allowance-calculator`(로컬 Streamlit 앱, `http://10.20.6.63:8501` — 건드리지 않음, 그대로 유지)의 로직을 hr-portal에도 포팅한 것. Naver 지도(주소→좌표, 경로), Naver 지역검색(장소명→주소), Opinet(전월 경기도 평균 유가) API를 실시간으로 호출해야 해서, **hr-portal이 처음으로 백엔드를 갖게 됐다**.
+`secom-allowance-calculator`(경비 산출기 PC에서 도는 Streamlit 앱 — 건드리지 않음, 그대로 유지)의 로직을 hr-portal에도 포팅한 것. Naver 지도(주소→좌표, 경로), Naver 지역검색(장소명→주소), Opinet(전월 경기도 평균 유가) API를 실시간으로 호출해야 해서, **hr-portal이 처음으로 백엔드를 갖게 됐다**.
 
 구조:
 ```
@@ -51,7 +52,7 @@ CI(`.github/workflows/ci.yml`)가 자동 검사하는 것: 한글 인코딩, HTM
 - `docker-compose.yml`: `api` 서비스는 `expose`만 하고 host 포트를 열지 않음 (nginx만 접근 가능, 새 Cloudflare Tunnel 규칙 불필요).
 - API 키 5개(NAVER_CLIENT_ID/SECRET, NAVER_LOCAL_CLIENT_ID/SECRET, OPINET_API_KEY)는 저장소 루트 `.env`에서 `${VAR:-}` 치환으로 주입 — CI에는 `.env`가 없어도 빈 값으로 통과한다(계산 API를 실제로 호출하는 스모크 테스트는 없음).
 
-**서버 반영 완료 (2026-08-07)** — SSH 키를 등록해서 이제 나도 서버(`hr-portal-server` — `~/.ssh/config`에 별칭 등록됨, `10.20.6.50`, 사용자 `abyz-lab0`)에 직접 접속해 작업할 수 있다. 해둔 것:
+**서버 반영 완료 (2026-08-07)** — 해둔 것:
 1. `.env` 생성 완료 (`secom-allowance-calculator/project/.env`에서 그대로 복사, 나는 내용을 읽지 않고 scp로만 전달했음 — 앞으로도 시크릿은 이 방식으로, 절대 `cat`/`Read`로 값 자체를 내 컨텍스트에 띄우지 않는다).
 2. `docker compose up -d --build` 완료, `api`/`web` 컨테이너 정상 기동 확인.
 3. `/usr/local/bin/hr-portal-deploy.sh`에 `docker compose up -d --build` 반영 완료 (기존 스크립트는 날짜 붙여 백업).
