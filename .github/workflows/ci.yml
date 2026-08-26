@@ -81,6 +81,24 @@ jobs:
         working-directory: backend
         run: python -m hr_eval.selfcheck
 
+  sqlite:
+    name: SQLite 기능 검증
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # 설계 문서가 "SQLite에서 확인했다"고만 적어둔 전제들을 실제로 재현한다.
+      # 외래키 기본 OFF, 생성 칼럼, 부분 유니크 인덱스, RAISE(ABORT) 트리거,
+      # 부동소수점 오차, BEGIN IMMEDIATE 잠금 — 하나라도 깨지면 CI가 멈춘다.
+      # sqlite3 는 파이썬 내장이라 서비스 컨테이너가 필요 없다.
+      - name: SQLite 전제 재현
+        working-directory: backend
+        run: python -m hr_eval.sql.check_sqlite_features
+
   schema:
     name: DB 스키마 검사
     runs-on: ubuntu-latest
@@ -114,7 +132,7 @@ jobs:
 
   promote:
     name: 배포 대상 갱신
-    needs: [validate, smoke, domain, schema]
+    needs: [validate, smoke, domain, sqlite, schema]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
