@@ -975,7 +975,17 @@ def 상한_상수가_DDL과_같은_값이다():
     ddl = (
         pathlib.Path(__file__).with_name("sql") / "001_init.sql"
     ).read_text(encoding="utf-8")
-    assert "CHECK (kpi_score + bonus_score <= 110)" in ddl
+    # SQLite 스키마는 점수를 100배 정수로 저장한다 (110.00점 = 11000).
+    # 도메인 상수와 DDL 이 같은 값을 말하는지 확인한다.
+    expected = int(MAX_TOTAL_SCORE * 100)
+    assert f"CHECK (kpi_score_x100 + bonus_score_x100 <= {expected})" in ddl
+
+    from hr_eval.domain.grading import S_GRADE_MIN_SCORE
+
+    expected_s = int(S_GRADE_MIN_SCORE * 100)
+    assert (
+        f"CHECK (grade <> 'S' OR kpi_score_x100 + bonus_score_x100 > {expected_s})" in ddl
+    )
 
 
 def main() -> int:
