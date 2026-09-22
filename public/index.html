@@ -159,7 +159,7 @@
   .btn:disabled{ opacity:.45; cursor:not-allowed; }
   .btn.sm{ font-size:12px; padding:5px 10px; }
   .kpi-wrap{ overflow-x:auto; }
-  .kpi-table{ min-width:1320px; table-layout:fixed; }
+  .kpi-table{ min-width:1400px; table-layout:fixed; }
   .kpi-table th, .kpi-table td{ vertical-align:top; border:1px solid var(--border); padding:6px; white-space:pre-wrap; word-break:break-word; }
   .kpi-table th{ background:var(--bg-page); text-align:center; }
   .kpi-table tr.changed td{ background:var(--bg-warning); }
@@ -284,12 +284,10 @@ function homeContent(){
     </div>
   </div>
   <div class="grid g3">
-    <div class="card" style="grid-column:span 2;">
-      <div class="card-title">결재 대기함 <span class="more">1건</span></div>
-      <div class="list-row"><div><div class="list-title">서울 출장 경비 신청</div><div class="list-sub">2026.07.24 제출 · 1차 승인 대기</div></div><span class="badge warning">대기</span></div>
-    </div>
-    <div class="card">
-      <div class="card-title">공지사항 <span class="more">더보기</span></div>
+    ${kpiHomeCard()}
+    <div style="display:flex; flex-direction:column; gap:14px;">
+      ${kpiScheduleCard()}
+      <div class="card"><div class="card-title">공지사항 <span class="more">더보기</span></div></div>
     </div>
   </div>`;
 }
@@ -672,19 +670,20 @@ function kpiDay(offset){
 }
 function kpiInPeriod(from, to, today=kpiDay(0)){ return !!from && !!to && from<=today && today<=to; }
 function kpiClone(x){ return JSON.parse(JSON.stringify(x)); }
-function kpiNewItem(owner){ return { action:'', formula:'', weight:0, owner, S:'', A:'', B:'', C:'', D:'', files:[] }; }
+function kpiNewItem(owner){ return { action:'', formula:'', weight:0, owner, S:'', A:'', B:'', C:'', D:'', progress:0, files:[] }; }
 function kpiNewGoal(owner, n=1){ return { team:'', personal:'', items:Array.from({length:n}, ()=>kpiNewItem(owner)) }; }
 function kpiSum(items){ return Math.round(items.reduce((a,i)=>a+(+i.weight||0),0)*100)/100; }
-function kpiKey(item){ return JSON.stringify({...item, files:undefined}); }
+function kpiKey(item){ return JSON.stringify({...item, files:undefined, progress:undefined}); }   // 증빙·진행률은 목표 변경이 아니다
+function kpiProgress(goals){ const items = goals.flatMap(g=>g.items); return Math.round(items.reduce((a,i)=>a+(+i.weight||0)*(+i.progress||0),0)/100); }   // 가중 달성률 (가중치 합 100 전제)
 
 const kpiPeriod = { editFrom:kpiDay(-7), editTo:kpiDay(7), evalFrom:KPI_YEAR+'-12-01', evalTo:KPI_YEAR+'-12-15' };
 const kpiSeed = [
   { team:'신규 고객 채널 확대', personal:'온라인 리드 확보 체계 구축', items:[
-    { ...kpiNewItem('홍길동'), action:'월 1회 타깃 콘텐츠 발행', formula:'연간 발행 건수', weight:40, S:'14건 이상', A:'12건', B:'11건', C:'10건', D:'9건 이하' },
-    { ...kpiNewItem('홍길동'), action:'분기별 웨비나 개최', formula:'연간 개최 횟수', weight:30, S:'5회 이상', A:'4회', B:'3회', C:'2회', D:'1회 이하' },
+    { ...kpiNewItem('홍길동'), action:'월 1회 타깃 콘텐츠 발행', formula:'연간 발행 건수', weight:40, progress:75, S:'14건 이상', A:'12건', B:'11건', C:'10건', D:'9건 이하' },
+    { ...kpiNewItem('홍길동'), action:'분기별 웨비나 개최', formula:'연간 개최 횟수', weight:30, progress:50, S:'5회 이상', A:'4회', B:'3회', C:'2회', D:'1회 이하' },
   ]},
   { team:'브랜드 인지도 제고', personal:'전시회 성과 관리', items:[
-    { ...kpiNewItem('홍길동'), action:'전시회 상담 리드 DB 등록 (전시 종료 후 2주 내)', formula:'DB 등록률(%)', weight:30, S:'100%', A:'95%', B:'90%', C:'85%', D:'80% 미만' },
+    { ...kpiNewItem('홍길동'), action:'전시회 상담 리드 DB 등록 (전시 종료 후 2주 내)', formula:'DB 등록률(%)', weight:30, progress:57, S:'100%', A:'95%', B:'90%', C:'85%', D:'80% 미만' },
   ]},
 ];
 const kpiSheets = {   // confirmed=확정본, draft=작성 중, pending=승인 대기 {rows,reason,step}
@@ -720,7 +719,7 @@ function kpiDecide(sheet, approvers, actor, approve, reason, actorLabel){
     sheet.draft = p.rows; sheet.pending = null; sheet.rejectNote = `${actorLabel} 반려: ${reason.trim()}`;
     return null;
   }
-  // ponytail: 승인 대기 중 확정본에 올린 증빙은 새 확정본으로 안 넘어간다. 실제 저장 땐 증빙을 KPI 행 id에 묶는다.
+  // ponytail: 승인 대기 중 확정본에 올린 증빙·진행률은 새 확정본으로 안 넘어간다. 실제 저장 땐 KPI 행 id에 묶는다.
   if(++p.step>=approvers.length){ sheet.confirmed = p.rows; sheet.draft = kpiClone(p.rows); sheet.pending = null; }
   return null;
 }
@@ -732,6 +731,7 @@ function kpiSelfCheck(){   // 브라우저 콘솔에서 kpiSelfCheck() 실행
   ok(kpiValidate(g([40,30,30])).length===0, '3개·합 100 통과');
   ok(kpiValidate(g([40,30,29.99])).length===1, '합 99.99 거부');
   ok(kpiValidate(g(Array(10).fill(10))).length===0, '개수 상한 없음');
+  ok(kpiProgress(kpiSeed)===62 && kpiProgress(g([100]))===0, '가중 달성률 = Σ(가중치×진행률)/100');
   ok(kpiInPeriod('2026-01-01','2026-01-31','2026-01-31') && !kpiInPeriod('2026-01-01','2026-01-31','2026-02-01') && !kpiInPeriod('','','2026-01-01'), '기간 판정');
   const s = sheet([40,30,30]), line = ['lead','head'];
   ok(kpiSubmitSheet(s,'',false).length===1 && !s.pending, '기간 밖 제출 차단');
@@ -783,13 +783,15 @@ function kpiTable(goals, o={}){   // o.edit 입력 모드 / o.own 내 확정본(
       + (o.edit ? `<div style="margin:6px 0; font-size:12px; color:var(--text-secondary);">가중치 소계 <b id="kpiSub_${gi}">${kpiSum(g.items)}</b></div><button class="btn sm" onclick="kpiAddItem(${gi})">＋ 실행목표</button>` : '') + `</td>`;
     const weight = o.edit ? `<input type="number" class="kpi-in" min="0" max="100" step="0.01" value="${it.weight||''}" oninput="kpiDraft()${p}.weight=+this.value; kpiRecalc()">` : it.weight;
     return `<tr class="${changed?'changed':''}">${head}<td>${txt(it.action,p+'.action')}</td><td>${txt(it.formula,p+'.formula')}</td><td style="text-align:center;">${weight}</td><td>${txt(it.owner,p+'.owner')}</td>`
-      + KPI_GRADES.map(([gr])=>`<td>${txt(it[gr],p+'.'+gr)}</td>`).join('') + `<td>${lastCol(it,gi,ii)}</td></tr>`;
+      + KPI_GRADES.map(([gr])=>`<td>${txt(it[gr],p+'.'+gr)}</td>`).join('')
+      + `<td style="text-align:center;">${o.own ? `<input type="number" class="kpi-in" min="0" max="100" step="1" value="${it.progress||0}" oninput="kpiSetProgress(${gi},${ii},this.value)" title="본인이 보는 진행 정도(%). 언제든 수정 가능">` : (it.progress||0)+'%'}</td>`
+      + `<td>${lastCol(it,gi,ii)}</td></tr>`;
   }).join('')).join('');
   const total = kpiSum(goals.flatMap(g=>g.items));
   return `<div class="kpi-wrap"><table class="kpi-table">
-    <colgroup><col style="width:120px"><col style="width:130px"><col style="width:170px"><col style="width:140px"><col style="width:74px"><col style="width:84px">${'<col style="width:96px">'.repeat(5)}<col style="width:150px"></colgroup>
-    <thead><tr><th>팀목표</th><th>개인목표</th><th>실행목표</th><th>측정식</th><th>가중치</th><th>담당자</th>${KPI_GRADES.map(([gr,pct])=>`<th>${gr}(${pct}%)</th>`).join('')}<th>${o.edit?'관리':'증빙자료'}</th></tr></thead>
-    <tbody>${rows}<tr><td colspan="4" style="text-align:center; font-weight:700;">합 계</td><td ${o.edit?'id="kpiTotal"':''} style="text-align:center; font-weight:700; color:var(--${total===100?'success':'danger'});">${total}</td><td colspan="7"></td></tr></tbody>
+    <colgroup><col style="width:120px"><col style="width:130px"><col style="width:170px"><col style="width:140px"><col style="width:74px"><col style="width:84px">${'<col style="width:96px">'.repeat(5)}<col style="width:72px"><col style="width:150px"></colgroup>
+    <thead><tr><th>팀목표</th><th>개인목표</th><th>실행목표</th><th>측정식</th><th>가중치</th><th>담당자</th>${KPI_GRADES.map(([gr,pct])=>`<th>${gr}(${pct}%)</th>`).join('')}<th>진행률</th><th>${o.edit?'관리':'증빙자료'}</th></tr></thead>
+    <tbody>${rows}<tr><td colspan="4" style="text-align:center; font-weight:700;">합 계</td><td ${o.edit?'id="kpiTotal"':''} style="text-align:center; font-weight:700; color:var(--${total===100?'success':'danger'});">${total}</td><td colspan="8"></td></tr></tbody>
   </table></div>`;
 }
 function kpiRecalc(){   // 입력 중에는 다시 그리지 않고(포커스 유지) 합계와 제출 버튼만 갱신
@@ -832,6 +834,7 @@ function kpiAddFiles(gi, ii, files){
   if(ok.length<all.length) return kpiFlash(`10MB를 넘는 파일 ${all.length-ok.length}개는 제외했습니다.`, 'danger');
   kpiFlash('증빙자료를 첨부했습니다. (시연: 파일명만 표시되고 서버에는 저장되지 않습니다)');
 }
+function kpiSetProgress(gi, ii, v){ kpiSheets[kpiRole].confirmed[gi].items[ii].progress = Math.min(100, Math.max(0, Math.round(+v||0))); }   // 다시 그리지 않음(포커스 유지)
 function kpiDelFile(gi, ii, fi){ kpiSheets[kpiRole].confirmed[gi].items[ii].files.splice(fi,1); kpiFlash(null); }
 
 function kpiHrPanel(){
@@ -917,6 +920,43 @@ function kpiContent(){
     </div>
     ${kpiMsg ? kpiNote(kpiMsg.msg, kpiMsg.type) : ''}
     ${kpiRole==='hr' ? kpiHrPanel() : ''}${kpiInbox()}${kpiSheets[kpiRole] ? kpiMySheet() : ''}`;
+}
+
+function kpiScheduleCard(){
+  const fmt = d=>d ? `${+d.slice(5,7)}월 ${+d.slice(8,10)}일` : '미정';
+  const dday = to=>{ if(!to) return ''; const n = Math.round((new Date(to)-new Date(kpiDay(0)))/864e5); return n<0 ? '<span class="badge neutral">종료</span>' : `<span class="badge warning">D-${n}</span>`; };
+  const editOpen = kpiInPeriod(kpiPeriod.editFrom, kpiPeriod.editTo), evalOpen = kpiInPeriod(kpiPeriod.evalFrom, kpiPeriod.evalTo);
+  return `<div class="card"><div class="card-title">일정</div>
+    <div class="list-row"><div><div class="list-title">KPI 작성·수정 기간</div><div class="list-sub">${fmt(kpiPeriod.editFrom)} ~ ${fmt(kpiPeriod.editTo)}</div></div>${editOpen ? dday(kpiPeriod.editTo) : '<span class="badge neutral">기간 아님</span>'}</div>
+    <div class="list-row"><div><div class="list-title">평가 기간 (증빙 업로드)</div><div class="list-sub">${fmt(kpiPeriod.evalFrom)} ~ ${fmt(kpiPeriod.evalTo)}</div></div>${evalOpen ? dday(kpiPeriod.evalTo) : '<span class="badge neutral">예정</span>'}</div>
+  </div>`;
+}
+function kpiHomeCard(){
+  const s = kpiSheets[kpiRole], me = KPI_USERS[kpiRole];
+  const waiting = Object.keys(kpiSheets).filter(k=>{ const p = kpiSheets[k].pending; return p && KPI_USERS[k].approvers[p.step]===kpiRole; }).length;
+  const inboxLine = waiting ? `<span style="color:var(--warning); font-weight:600; cursor:pointer;" onclick="goTo('perf','e1')">팀원 KPI 승인 대기 ${waiting}건 →</span>` : '';
+  let body;
+  if(!s || !s.confirmed){
+    body = `<div class="placeholder-note" style="margin:0;">${!s ? '담당자 계정은 KPI 대상이 아닙니다.' : '아직 확정된 KPI가 없습니다. 목표를 작성해 제출해 주세요.'}</div>`;
+  } else {
+    const items = s.confirmed.flatMap(g=>g.items), total = kpiProgress(s.confirmed), files = items.reduce((a,i)=>a+i.files.length,0);
+    const bar = (pct,h)=>`<div class="bar-track" style="margin-top:0; height:${h}px;"><div class="bar-fill" style="width:${pct}%;"></div></div>`;
+    body = `<div style="display:flex; align-items:baseline; gap:8px; margin-bottom:6px;"><span class="stat-label" style="margin:0;">종합 달성률</span><span class="stat-value">${total}%</span><span class="stat-sub" style="margin:0;">가중치 반영 · 본인 입력 기준</span></div>
+      ${bar(total,8)}
+      <div style="display:grid; grid-template-columns:minmax(0,1fr) 44px 110px 44px; gap:6px 10px; align-items:center; font-size:13px; margin-top:16px;">
+        ${items.map(i=>`<span>${escapeHtml(i.action)}</span><span style="text-align:right; color:var(--text-muted); font-size:12px;">${i.weight}%</span>${bar(i.progress||0,6)}<span style="text-align:right;">${i.progress||0}%</span>`).join('')}
+      </div>
+      <div class="stat-sub">회색 숫자 = 가중치. 진행률은 본인 신고값이며 평가 점수와는 별개입니다.</div>
+      <div class="divider" style="margin:12px 0;"></div>
+      <div style="display:flex; justify-content:space-between; align-items:center; font-size:13px; flex-wrap:wrap; gap:8px;">
+        <span style="color:var(--text-secondary);">📎 증빙자료 ${files}건 첨부</span>${inboxLine}<span class="more" onclick="goTo('perf','e1')">KPI 상세 보기 →</span>
+      </div>`;
+  }
+  const [label, cls] = s ? kpiStatus(kpiRole) : ['해당 없음','neutral'];
+  return `<div class="card" style="grid-column:span 2;">
+    <div class="card-title"><span>나의 KPI 현황 <span style="font-weight:500; color:var(--text-secondary);">${KPI_YEAR}년 · ${me.name} ${me.title}</span></span><span class="badge ${cls}">${label}</span></div>
+    ${body}${(!s || !s.confirmed) && inboxLine ? `<div style="margin-top:10px;">${inboxLine}</div>` : ''}
+  </div>`;
 }
 
 /* ---------------- NAV DATA ---------------- */
