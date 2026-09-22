@@ -154,6 +154,18 @@
   .list-row:last-child{ border-bottom:none; }
   .list-title{ font-size:13.5px; font-weight:600; }
   .list-sub{ font-size:12px; color:var(--text-muted); margin-top:2px; }
+  /* ---------- KPI ---------- */
+  button.btn{ font-family:inherit; }
+  .btn:disabled{ opacity:.45; cursor:not-allowed; }
+  .btn.sm{ font-size:12px; padding:5px 10px; }
+  .kpi-wrap{ overflow-x:auto; }
+  .kpi-table{ min-width:1320px; table-layout:fixed; }
+  .kpi-table th, .kpi-table td{ vertical-align:top; border:1px solid var(--border); padding:6px; white-space:pre-wrap; word-break:break-word; }
+  .kpi-table th{ background:var(--bg-page); text-align:center; }
+  .kpi-table tr.changed td{ background:var(--bg-warning); }
+  .kpi-in{ width:100%; border:1px solid var(--border); border-radius:6px; padding:6px 8px; font:inherit; font-size:12.5px; resize:vertical; background:var(--surface); color:var(--text-primary); }
+  .kpi-file{ font-size:12px; color:var(--text-secondary); margin-bottom:4px; }
+  .kpi-file span{ color:var(--danger); cursor:pointer; font-weight:700; }
 
   /* ---------- MOBILE ---------- */
   .menu-btn{ display:none; width:34px; height:34px; border-radius:8px; align-items:center; justify-content:center;
@@ -641,6 +653,272 @@ function simpleTableCard(title, headers, rows, badgeFn, badgeCol){
   </tbody></table></div>`;
 }
 
+/* ---------------- KPI 목표설정 ----------------
+   시연용: 데이터는 브라우저 메모리에만 있고 새로고침하면 초기화된다.
+   로그인·DB가 생기면 역할 전환 버튼을 없애고 backend/hr_eval 유스케이스에 연결한다.
+   규칙 원본: docs/superpowers/specs/2026-09-21-kpi-goal-screen-design.md */
+const KPI_YEAR = new Date().getFullYear();
+const KPI_GRADES = [['S',110],['A',100],['B',90],['C',80],['D',70]];
+const KPI_ACCEPT = '.pdf,.jpg,.jpeg,.png,.xlsx,.xls,.docx,.doc,.hwp,.hwpx';
+const KPI_USERS = {   // approvers = 결재선 (순서대로)
+  emp:  { name:'홍길동', title:'대리',    dept:'마케팅팀',   switchLabel:'직원',   approvers:['lead','head'] },
+  lead: { name:'김영희', title:'팀장',    dept:'마케팅팀',   switchLabel:'팀장',   approvers:['head'] },
+  head: { name:'이철수', title:'본부장',  dept:'영업본부',   switchLabel:'본부장', approvers:['hr'] },
+  hr:   { name:'박인사', title:'HR 담당', dept:'경영지원팀', switchLabel:'HR',     approvers:[] },
+};
+function kpiDay(offset){
+  const d = new Date(); d.setDate(d.getDate()+offset);
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
+function kpiInPeriod(from, to, today=kpiDay(0)){ return !!from && !!to && from<=today && today<=to; }
+function kpiClone(x){ return JSON.parse(JSON.stringify(x)); }
+function kpiNewItem(owner){ return { action:'', formula:'', weight:0, owner, S:'', A:'', B:'', C:'', D:'', files:[] }; }
+function kpiNewGoal(owner, n=1){ return { team:'', personal:'', items:Array.from({length:n}, ()=>kpiNewItem(owner)) }; }
+function kpiSum(items){ return Math.round(items.reduce((a,i)=>a+(+i.weight||0),0)*100)/100; }
+function kpiKey(item){ return JSON.stringify({...item, files:undefined}); }
+
+const kpiPeriod = { editFrom:kpiDay(-7), editTo:kpiDay(7), evalFrom:KPI_YEAR+'-12-01', evalTo:KPI_YEAR+'-12-15' };
+const kpiSeed = [
+  { team:'신규 고객 채널 확대', personal:'온라인 리드 확보 체계 구축', items:[
+    { ...kpiNewItem('홍길동'), action:'월 1회 타깃 콘텐츠 발행', formula:'연간 발행 건수', weight:40, S:'14건 이상', A:'12건', B:'11건', C:'10건', D:'9건 이하' },
+    { ...kpiNewItem('홍길동'), action:'분기별 웨비나 개최', formula:'연간 개최 횟수', weight:30, S:'5회 이상', A:'4회', B:'3회', C:'2회', D:'1회 이하' },
+  ]},
+  { team:'브랜드 인지도 제고', personal:'전시회 성과 관리', items:[
+    { ...kpiNewItem('홍길동'), action:'전시회 상담 리드 DB 등록 (전시 종료 후 2주 내)', formula:'DB 등록률(%)', weight:30, S:'100%', A:'95%', B:'90%', C:'85%', D:'80% 미만' },
+  ]},
+];
+const kpiSheets = {   // confirmed=확정본, draft=작성 중, pending=승인 대기 {rows,reason,step}
+  emp:  { confirmed:kpiClone(kpiSeed), draft:kpiClone(kpiSeed), pending:null, rejectNote:null },
+  lead: { confirmed:null, draft:[kpiNewGoal('김영희',3)], pending:null, rejectNote:null },
+  head: { confirmed:null, draft:[kpiNewGoal('이철수',3)], pending:null, rejectNote:null },
+};
+let kpiRole = 'emp', kpiEditing = false, kpiReviewKey = null, kpiReason = '', kpiMsg = null;
+
+/* ----- 규칙 (화면과 분리된 순수 로직, kpiSelfCheck가 검증) ----- */
+function kpiValidate(goals){
+  const items = goals.flatMap(g=>g.items), errs = [];
+  if(items.length<3) errs.push('실행목표(KPI)는 최소 3개 이상이어야 합니다.');
+  if(goals.some(g=>!g.team.trim()||!g.personal.trim())) errs.push('팀목표와 개인목표를 모두 입력해 주세요.');
+  if(items.some(i=>!i.action.trim()||!i.formula.trim())) errs.push('실행목표와 측정식을 모두 입력해 주세요.');
+  if(items.some(i=>!(i.weight>0))) errs.push('가중치는 모두 0보다 커야 합니다.');
+  if(kpiSum(items)!==100) errs.push(`가중치 합계가 100이어야 합니다. (현재 ${kpiSum(items)})`);
+  return errs;
+}
+function kpiSubmitSheet(sheet, reason, editOpen){
+  if(!editOpen) return ['지금은 KPI 작성·수정 기간이 아닙니다.'];
+  if(sheet.pending) return ['이미 승인 대기 중인 건이 있습니다.'];
+  const errs = kpiValidate(sheet.draft);
+  if(sheet.confirmed && !reason.trim()) errs.push('수정 사유를 입력해 주세요.');
+  if(!errs.length){ sheet.pending = { rows:kpiClone(sheet.draft), reason:reason.trim(), step:0 }; sheet.rejectNote = null; }
+  return errs;
+}
+function kpiDecide(sheet, approvers, actor, approve, reason, actorLabel){
+  const p = sheet.pending;
+  if(!p || approvers[p.step]!==actor) return '지금 이 건을 승인할 차례가 아닙니다.';
+  if(!approve){
+    if(!reason.trim()) return '반려 사유를 입력해 주세요.';
+    sheet.draft = p.rows; sheet.pending = null; sheet.rejectNote = `${actorLabel} 반려: ${reason.trim()}`;
+    return null;
+  }
+  // ponytail: 승인 대기 중 확정본에 올린 증빙은 새 확정본으로 안 넘어간다. 실제 저장 땐 증빙을 KPI 행 id에 묶는다.
+  if(++p.step>=approvers.length){ sheet.confirmed = p.rows; sheet.draft = kpiClone(p.rows); sheet.pending = null; }
+  return null;
+}
+function kpiSelfCheck(){   // 브라우저 콘솔에서 kpiSelfCheck() 실행
+  const ok = (c,m)=>{ if(!c) throw new Error('kpiSelfCheck 실패: '+m); };
+  const g = ws=>[{ team:'t', personal:'p', items:ws.map(w=>({...kpiNewItem('x'), action:'a', formula:'f', weight:w})) }];
+  const sheet = ws=>({ confirmed:null, draft:g(ws), pending:null, rejectNote:null });
+  ok(kpiValidate(g([50,50])).length===1, '2개는 거부');
+  ok(kpiValidate(g([40,30,30])).length===0, '3개·합 100 통과');
+  ok(kpiValidate(g([40,30,29.99])).length===1, '합 99.99 거부');
+  ok(kpiValidate(g(Array(10).fill(10))).length===0, '개수 상한 없음');
+  ok(kpiInPeriod('2026-01-01','2026-01-31','2026-01-31') && !kpiInPeriod('2026-01-01','2026-01-31','2026-02-01') && !kpiInPeriod('','','2026-01-01'), '기간 판정');
+  const s = sheet([40,30,30]), line = ['lead','head'];
+  ok(kpiSubmitSheet(s,'',false).length===1 && !s.pending, '기간 밖 제출 차단');
+  ok(kpiSubmitSheet(s,'',true).length===0 && s.pending, '제출');
+  ok(kpiDecide(s,line,'head',true,'','')!==null, '1차를 건너뛴 승인 차단');
+  kpiDecide(s,line,'lead',true,'',''); ok(!s.confirmed, '1차 승인만으로는 미확정');
+  kpiDecide(s,line,'head',true,'',''); ok(s.confirmed && !s.pending, '2차 승인 후 확정');
+  s.draft[0].items[0].weight = 50; s.draft[0].items[1].weight = 20;
+  ok(kpiSubmitSheet(s,'',true).length===1, '수정은 사유 필수');
+  kpiSubmitSheet(s,'사유',true);
+  ok(kpiSubmitSheet(s,'사유',true).length===1, '미결 수정 요청은 1건만');
+  ok(kpiDecide(s,line,'lead',false,' ','')!==null, '반려 사유 필수');
+  kpiDecide(s,line,'lead',false,'근거 부족','팀장');
+  ok(s.confirmed[0].items[0].weight===40 && s.rejectNote && !s.pending, '반려 시 기존 KPI 유지');
+  const t = sheet([40,30,30]);
+  kpiSubmitSheet(t,'',true); kpiDecide(t,['head'],'head',true,'',''); ok(t.confirmed, '팀장은 본부장 1단계로 확정');
+  return 'kpiSelfCheck 통과';
+}
+
+/* ----- 화면 ----- */
+function kpiDraft(){ return kpiSheets[kpiRole].draft; }
+function kpiFlash(msg, type){ kpiMsg = msg ? {msg, type:type||'success'} : null; renderContent(); }
+function kpiStatus(key){
+  const s = kpiSheets[key], u = KPI_USERS[key];
+  if(s.pending) return [`${KPI_USERS[u.approvers[s.pending.step]].title} 승인대기${s.confirmed?' (수정요청)':''}`, 'warning'];
+  if(s.rejectNote) return ['반려됨', 'danger'];
+  if(s.confirmed) return ['확정', 'success'];
+  return ['작성중', 'neutral'];
+}
+function kpiNote(html, type){
+  const c = type ? `background:var(--bg-${type}); color:var(--${type});` : '';
+  return `<div class="placeholder-note" style="margin:0 0 12px 0; ${c}">${html}</div>`;
+}
+function kpiTable(goals, o={}){   // o.edit 입력 모드 / o.own 내 확정본(증빙 칸 활성 대상) / o.upload 평가 기간 / o.base 비교 기준
+  const txt = (v, path)=> o.edit ? `<textarea class="kpi-in" rows="2" oninput="kpiDraft()${path}=this.value">${escapeHtml(v)}</textarea>` : escapeHtml(v);
+  const lastCol = (it,gi,ii)=>{
+    if(o.edit) return `<button class="btn sm" onclick="kpiDelItem(${gi},${ii})">행 삭제</button>`;
+    const files = it.files.map((f,fi)=>`<div class="kpi-file">📎 ${escapeHtml(f)}${o.own&&o.upload?` <span onclick="kpiDelFile(${gi},${ii},${fi})">✕</span>`:''}</div>`).join('');
+    if(!o.own) return files || '—';
+    return files + (o.upload
+      ? `<label class="btn sm">＋ 자료 첨부<input type="file" multiple hidden accept="${KPI_ACCEPT}" onchange="kpiAddFiles(${gi},${ii},this.files)"></label>`
+      : `<button class="btn sm" disabled title="평가 기간에만 업로드할 수 있습니다">＋ 자료 첨부</button>`);
+  };
+  const rows = goals.map((g,gi)=>g.items.map((it,ii)=>{
+    const b = o.base && o.base[gi], bi = b && b.items[ii];
+    const changed = o.base && !(bi && b.team===g.team && b.personal===g.personal && kpiKey(bi)===kpiKey(it));
+    const span = ` rowspan="${g.items.length}"`, p = `[${gi}].items[${ii}]`;
+    const head = ii>0 ? '' : `<td${span}>${txt(g.team,`[${gi}].team`)}</td><td${span}>${txt(g.personal,`[${gi}].personal`)}`
+      + (o.edit ? `<div style="margin:6px 0; font-size:12px; color:var(--text-secondary);">가중치 소계 <b id="kpiSub_${gi}">${kpiSum(g.items)}</b></div><button class="btn sm" onclick="kpiAddItem(${gi})">＋ 실행목표</button>` : '') + `</td>`;
+    const weight = o.edit ? `<input type="number" class="kpi-in" min="0" max="100" step="0.01" value="${it.weight||''}" oninput="kpiDraft()${p}.weight=+this.value; kpiRecalc()">` : it.weight;
+    return `<tr class="${changed?'changed':''}">${head}<td>${txt(it.action,p+'.action')}</td><td>${txt(it.formula,p+'.formula')}</td><td style="text-align:center;">${weight}</td><td>${txt(it.owner,p+'.owner')}</td>`
+      + KPI_GRADES.map(([gr])=>`<td>${txt(it[gr],p+'.'+gr)}</td>`).join('') + `<td>${lastCol(it,gi,ii)}</td></tr>`;
+  }).join('')).join('');
+  const total = kpiSum(goals.flatMap(g=>g.items));
+  return `<div class="kpi-wrap"><table class="kpi-table">
+    <colgroup><col style="width:120px"><col style="width:130px"><col style="width:170px"><col style="width:140px"><col style="width:74px"><col style="width:84px">${'<col style="width:96px">'.repeat(5)}<col style="width:150px"></colgroup>
+    <thead><tr><th>팀목표</th><th>개인목표</th><th>실행목표</th><th>측정식</th><th>가중치</th><th>담당자</th>${KPI_GRADES.map(([gr,pct])=>`<th>${gr}(${pct}%)</th>`).join('')}<th>${o.edit?'관리':'증빙자료'}</th></tr></thead>
+    <tbody>${rows}<tr><td colspan="4" style="text-align:center; font-weight:700;">합 계</td><td ${o.edit?'id="kpiTotal"':''} style="text-align:center; font-weight:700; color:var(--${total===100?'success':'danger'});">${total}</td><td colspan="7"></td></tr></tbody>
+  </table></div>`;
+}
+function kpiRecalc(){   // 입력 중에는 다시 그리지 않고(포커스 유지) 합계와 제출 버튼만 갱신
+  const goals = kpiDraft(), items = goals.flatMap(g=>g.items), sum = kpiSum(items);
+  goals.forEach((g,gi)=>{ const el = document.getElementById('kpiSub_'+gi); if(el) el.textContent = kpiSum(g.items); });
+  const t = document.getElementById('kpiTotal');
+  if(t){ t.textContent = sum; t.style.color = `var(--${sum===100?'success':'danger'})`; }
+  const b = document.getElementById('kpiSubmitBtn');
+  if(b) b.disabled = !(sum===100 && items.length>=3);
+}
+function kpiSetRole(r){ kpiRole = r; kpiEditing = false; kpiReviewKey = null; kpiReason = ''; kpiFlash(null); }
+function kpiAddGoal(){ kpiDraft().push(kpiNewGoal(KPI_USERS[kpiRole].name)); kpiFlash(null); }
+function kpiAddItem(gi){ kpiDraft()[gi].items.push(kpiNewItem(KPI_USERS[kpiRole].name)); kpiFlash(null); }
+function kpiDelItem(gi, ii){
+  const goals = kpiDraft();
+  goals[gi].items.splice(ii,1);
+  if(!goals[gi].items.length) goals.splice(gi,1);
+  if(!goals.length) goals.push(kpiNewGoal(KPI_USERS[kpiRole].name));
+  kpiFlash(null);
+}
+function kpiCancelEdit(){ const s = kpiSheets[kpiRole]; s.draft = kpiClone(s.confirmed); kpiEditing = false; kpiReason = ''; kpiFlash(null); }
+function kpiSubmit(){
+  const s = kpiSheets[kpiRole], errs = kpiSubmitSheet(s, kpiReason, kpiInPeriod(kpiPeriod.editFrom, kpiPeriod.editTo));
+  if(errs.length) return kpiFlash(errs.map(escapeHtml).join('<br>'), 'danger');
+  kpiEditing = false; kpiReason = '';
+  kpiFlash(`제출했습니다. ${escapeHtml(KPI_USERS[KPI_USERS[kpiRole].approvers[0]].title)} 승인을 기다립니다.`);
+}
+function kpiReview(key, approve){
+  const me = KPI_USERS[kpiRole], el = document.getElementById('kpiRejectReason');
+  const err = kpiDecide(kpiSheets[key], KPI_USERS[key].approvers, kpiRole, approve, el ? el.value : '', `${me.name} ${me.title}`);
+  if(err) return kpiFlash(escapeHtml(err), 'danger');
+  kpiReviewKey = null;
+  const s = kpiSheets[key];
+  kpiFlash(!approve ? '반려했습니다. 기존 KPI는 그대로 유지됩니다.' : s.pending ? '승인했습니다. 다음 승인자에게 넘어갔습니다.' : '승인했습니다. KPI가 확정(잠금)되었습니다.');
+}
+function kpiAddFiles(gi, ii, files){
+  if(!kpiInPeriod(kpiPeriod.evalFrom, kpiPeriod.evalTo)) return;
+  const all = [...files], ok = all.filter(f=>f.size<=10*1024*1024);
+  kpiSheets[kpiRole].confirmed[gi].items[ii].files.push(...ok.map(f=>f.name));
+  if(ok.length<all.length) return kpiFlash(`10MB를 넘는 파일 ${all.length-ok.length}개는 제외했습니다.`, 'danger');
+  kpiFlash('증빙자료를 첨부했습니다. (시연: 파일명만 표시되고 서버에는 저장되지 않습니다)');
+}
+function kpiDelFile(gi, ii, fi){ kpiSheets[kpiRole].confirmed[gi].items[ii].files.splice(fi,1); kpiFlash(null); }
+
+function kpiHrPanel(){
+  const d = (k)=>`<input type="date" value="${kpiPeriod[k]}" onchange="kpiPeriod.${k}=this.value; kpiFlash('기간을 변경했습니다.')">`;
+  const rows = Object.keys(kpiSheets).map(k=>{
+    const u = KPI_USERS[k], s = kpiSheets[k], items = (s.confirmed||s.draft).flatMap(g=>g.items);
+    return [`${u.name} ${u.title}`, u.dept, kpiStatus(k)[0], items.length+'개', items.reduce((a,i)=>a+i.files.length,0)+'건'];
+  });
+  return `<div class="card" style="margin-bottom:14px;">
+    <div class="card-title">기간 설정 (HR)</div>
+    <div class="field-row">
+      <div class="field"><label>KPI 작성·수정 기간 — 이 기간에만 입력·수정 요청 가능</label><div style="display:flex; gap:8px; align-items:center;">${d('editFrom')} ~ ${d('editTo')}</div></div>
+      <div class="field"><label>평가 기간 — 이 기간에만 증빙자료 업로드 가능</label><div style="display:flex; gap:8px; align-items:center;">${d('evalFrom')} ~ ${d('evalTo')}</div></div>
+    </div>
+  </div>
+  <div style="margin-bottom:14px;">${simpleTableCard('전 직원 진행현황', ['이름','부서','상태','실행목표','증빙'], rows, r=>kpiStatus(Object.keys(kpiSheets)[rows.indexOf(r)])[1], 2)}</div>`;
+}
+function kpiInbox(){
+  if(!Object.values(KPI_USERS).some(u=>u.approvers.includes(kpiRole))) return '';
+  const keys = Object.keys(kpiSheets).filter(k=>{ const p = kpiSheets[k].pending; return p && KPI_USERS[k].approvers[p.step]===kpiRole; });
+  const list = keys.map(k=>{
+    const u = KPI_USERS[k], s = kpiSheets[k], open = kpiReviewKey===k;
+    return `<div class="list-row"><div><div class="list-title">${u.name} ${u.title} · ${u.dept}</div>
+        <div class="list-sub">${s.confirmed?'KPI 수정 요청':'KPI 최초 제출'}${s.pending.reason?' · 사유: '+escapeHtml(s.pending.reason):''}</div></div>
+        <button class="btn sm" onclick="kpiReviewKey=${open?'null':`'${k}'`}; kpiFlash(null)">${open?'닫기':'검토'}</button></div>`
+      + (!open ? '' : `<div style="padding:12px 0;">
+        ${s.confirmed ? `<div class="card-title">기존 KPI (현재 유효)</div>${kpiTable(s.confirmed)}<div class="card-title" style="margin-top:16px;">수정안 <span class="badge warning">노란색 = 바뀐 행</span></div>` : ''}
+        ${kpiTable(s.pending.rows, {base:s.confirmed})}
+        <div class="field" style="margin-top:12px;"><label>반려 사유 (반려할 때만 필수)</label><textarea id="kpiRejectReason" rows="2"></textarea></div>
+        <div style="display:flex; gap:8px; margin-top:10px;"><button class="btn primary" onclick="kpiReview('${k}',true)">승인</button><button class="btn" onclick="kpiReview('${k}',false)">반려</button></div>
+      </div>`);
+  }).join('');
+  return `<div class="card" style="margin-bottom:14px;"><div class="card-title">승인 대기함 <span class="more">${keys.length}건</span></div>
+    ${list || '<div class="list-sub">대기 중인 건이 없습니다.</div>'}</div>`;
+}
+function kpiMySheet(){
+  const me = KPI_USERS[kpiRole], s = kpiSheets[kpiRole], [label, cls] = kpiStatus(kpiRole);
+  const editOpen = kpiInPeriod(kpiPeriod.editFrom, kpiPeriod.editTo), evalOpen = kpiInPeriod(kpiPeriod.evalFrom, kpiPeriod.evalTo);
+  const editing = editOpen && !s.pending && (kpiEditing || !s.confirmed);
+  let body;
+  if(editing){
+    const items = s.draft.flatMap(g=>g.items), can = kpiSum(items)===100 && items.length>=3;
+    body = kpiTable(s.draft, {edit:true})
+      + `<div style="margin-top:10px;"><button class="btn sm" onclick="kpiAddGoal()">＋ 목표 추가</button></div>`
+      + (s.confirmed ? `<div class="field" style="margin-top:14px;"><label>수정 사유 (필수)</label><textarea rows="2" oninput="kpiReason=this.value" placeholder="예: 조직 개편으로 담당 업무 변경">${escapeHtml(kpiReason)}</textarea></div>` : '')
+      + `<div style="display:flex; gap:8px; margin-top:14px; flex-wrap:wrap;">
+          <button class="btn" onclick="kpiFlash('임시저장했습니다.')">임시저장</button>
+          <button class="btn primary" id="kpiSubmitBtn" ${can?'':'disabled'} onclick="kpiSubmit()">${s.confirmed?'수정 요청 제출':'제출'}</button>
+          ${s.confirmed ? '<button class="btn" onclick="kpiCancelEdit()">취소</button>' : ''}
+        </div><div class="list-sub" style="margin-top:8px;">제출 버튼은 실행목표가 3개 이상이고 가중치 합계가 100일 때 활성화됩니다.</div>`;
+  } else {
+    body = kpiTable(s.confirmed || (s.pending ? s.pending.rows : s.draft), {own:!!s.confirmed, upload:evalOpen});
+    if(s.pending && s.confirmed) body += `<div class="card-title" style="margin-top:18px;">승인 대기 중인 수정안 <span class="badge warning">노란색 = 바뀐 행</span></div>
+      <div class="list-sub" style="margin-bottom:8px;">사유: ${escapeHtml(s.pending.reason)} · 승인 전까지는 위의 기존 KPI가 유효합니다.</div>${kpiTable(s.pending.rows, {base:s.confirmed})}`;
+    if(s.pending) body += `<div class="list-sub" style="margin-top:12px;">승인 진행 중에는 수정할 수 없습니다.</div>`;
+    else if(s.confirmed) body += `<div style="margin-top:14px;"><button class="btn primary" ${editOpen?'':'disabled title="수정 기간이 아닙니다"'} onclick="kpiEditing=true; kpiFlash(null)">수정 요청</button></div>`;
+  }
+  return `<div class="card">
+    <div class="card-title"><span>${KPI_YEAR}년 KPI 계획서 <span style="font-weight:500; color:var(--text-secondary);">[${me.dept}_${me.name}_${me.title}]</span></span><span class="badge ${cls}">${label}</span></div>
+    ${editOpen ? kpiNote(`KPI 작성·수정 기간입니다. (${kpiPeriod.editFrom} ~ ${kpiPeriod.editTo})`, 'success')
+               : kpiNote(`지금은 KPI 작성·수정 기간이 아닙니다. 조회만 가능합니다. (설정된 기간: ${kpiPeriod.editFrom||'미정'} ~ ${kpiPeriod.editTo||'미정'})`)}
+    ${evalOpen ? kpiNote(`평가 기간입니다. 맨 우측 칸에 증빙자료를 올릴 수 있습니다. (${kpiPeriod.evalFrom} ~ ${kpiPeriod.evalTo})`, 'success') : ''}
+    ${s.rejectNote ? kpiNote(escapeHtml(s.rejectNote) + (s.confirmed?' — 기존 KPI는 그대로 유효합니다. 수정 기간 안에 고쳐서 다시 요청할 수 있습니다.':' — 고쳐서 다시 제출해 주세요.'), 'danger') : ''}
+    <details style="margin-bottom:12px; font-size:12.5px; color:var(--text-secondary); line-height:1.7;"><summary style="cursor:pointer; font-weight:600;">※ 목표설정 방법</summary>
+      1) 개인 KPI는 팀 목표와 직접 연결되도록 설정 (팀장님과 면담 후 목표 설정)<br>
+      2) SMART 원칙에 따라 목표 설정<br>
+      &nbsp;- Specific(구체적): 막연한 표현(X) → "월 1회 제안서 작성"처럼 구체적으로(O)<br>
+      &nbsp;- Measurable(측정 가능): 고객만족 향상(X) → 고객 만족도 90% 이상 유지(월별 설문 결과 기준)(O)<br>
+      &nbsp;- Achievable(달성 가능): 현실적인 수준에서 도전적인 목표 설정<br>
+      &nbsp;- Relevant(관련성): 현재 역할과 팀 목표에 직접적으로 연관<br>
+      &nbsp;- Time-bound(기한 설정): 언제까지 할 것인지 명확히 기재<br>
+      3) 타 부서나 타인의 영향이 과도한 지표는 피하고, 본인이 책임지고 추진할 수 있는 업무로 범위 설정<br>
+      4) 현재 진행 중인 업무가 아닌, 팀 목표 달성을 위한 새로운 업무목표로 설정 (실행목표 최소 3개, 가중치 합계 100)
+    </details>
+    ${body}
+  </div>`;
+}
+function kpiContent(){
+  const switcher = Object.keys(KPI_USERS).map(k=>`<button class="btn sm ${k===kpiRole?'primary':''}" onclick="kpiSetRole('${k}')">${KPI_USERS[k].switchLabel} (${KPI_USERS[k].name})</button>`).join('');
+  return `<div class="card" style="margin-bottom:14px;">
+      <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;"><b style="font-size:12.5px;">시연용 역할 전환</b>${switcher}</div>
+      <div class="list-sub" style="margin-top:8px;">로그인 기능이 생기면 이 버튼은 사라집니다. 지금은 입력 내용이 저장되지 않고 새로고침하면 초기화됩니다.</div>
+    </div>
+    ${kpiMsg ? kpiNote(kpiMsg.msg, kpiMsg.type) : ''}
+    ${kpiRole==='hr' ? kpiHrPanel() : ''}${kpiInbox()}${kpiSheets[kpiRole] ? kpiMySheet() : ''}`;
+}
+
 /* ---------------- NAV DATA ---------------- */
 const NAV = [
   { id:'home', label:'홈', icon:'home', tabs:[ {id:'dash', label:'대시보드', render:homeContent} ] },
@@ -650,7 +928,7 @@ const NAV = [
       {id:'p3', label:'원천징수영수증', render:comingSoon},
   ]},
   { id:'perf', label:'평가·성과', icon:'target', tabs:[
-      {id:'e1', label:'목표설정 (KPI)', render:comingSoon},
+      {id:'e1', label:'목표설정 (KPI)', render:kpiContent},
       {id:'e2', label:'평가 진행', render:comingSoon},
       {id:'e3', label:'평가 결과', render:comingSoon},
   ]},
