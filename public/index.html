@@ -166,6 +166,22 @@
   .kpi-in{ width:100%; border:1px solid var(--border); border-radius:6px; padding:6px 8px; font:inherit; font-size:12.5px; resize:vertical; background:var(--surface); color:var(--text-primary); }
   .kpi-file{ font-size:12px; color:var(--text-secondary); margin-bottom:4px; }
   .kpi-file span{ color:var(--danger); cursor:pointer; font-weight:700; }
+  /* ---------- ORG ---------- */
+  .org-div{ margin-bottom:10px; }
+  .org-div-head{ display:flex; align-items:center; justify-content:space-between; cursor:pointer; padding:10px 12px; border-radius:8px; background:var(--bg-page); font-weight:700; }
+  .org-team{ margin:6px 0 0 18px; }
+  .org-team-head{ display:flex; align-items:center; justify-content:space-between; cursor:pointer; padding:8px 12px; border-radius:8px; font-weight:600; color:var(--text-secondary); }
+  .org-team-head:hover, .org-div-head:hover{ background:var(--accent-light); }
+  .org-member{ display:flex; align-items:center; gap:8px; padding:7px 12px 7px 30px; font-size:13px; flex-wrap:wrap; }
+  .org-name{ color:var(--accent); font-weight:600; cursor:pointer; text-decoration:underline; text-underline-offset:3px; }
+  .org-modal{ position:fixed; inset:0; background:rgba(0,0,0,.4); z-index:60; display:flex; align-items:center; justify-content:center; padding:16px; }
+  .org-modal .card{ width:100%; max-width:420px; max-height:90vh; overflow-y:auto; }
+  .org-contact{ display:flex; align-items:center; justify-content:space-between; gap:8px; padding:8px 0; border-bottom:1px solid var(--border); font-size:13px; }
+  .org-contact b{ min-width:64px; color:var(--text-secondary); font-weight:600; }
+  .org-contact span{ flex:1; }
+  .org-actions{ display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-top:14px; }
+  .org-actions a{ text-decoration:none; justify-content:center; }
+
 
   /* ---------- MOBILE ---------- */
   .menu-btn{ display:none; width:34px; height:34px; border-radius:8px; align-items:center; justify-content:center;
@@ -209,7 +225,7 @@
     <div><div class="logo-word">H&abyz</div><div class="logo-sub">인사 통합포털</div></div>
   </div>
   <div class="sidebar-nav" id="sidebarNav"></div>
-  <div class="sidebar-foot">로그인: 홍길동 대리 · 마케팅팀<br>© 2026 H&abyz HR System</div>
+  <div class="sidebar-foot">로그인: 홍길동 대리 · 국내영업팀<br>© 2026 H&abyz HR System</div>
 </div>
 <div class="sidebar-backdrop" id="sidebarBackdrop" onclick="closeSidebar()"></div>
 
@@ -621,29 +637,197 @@ function formsContent(){
     ()=>'neutral', 2);
 }
 
-function orgChart(){
-  return `<div class="card">
-    <div class="card-title">조직도</div>
-    <div style="display:flex; flex-direction:column; align-items:center; gap:10px; padding:16px 0;">
-      <div class="badge neutral" style="font-size:13px; padding:8px 18px;">대표이사</div>
-      <div style="width:1px;height:16px;background:var(--border);"></div>
-      <div style="display:flex; gap:40px;">
-        ${['영업본부','마케팅본부','개발본부','생산본부'].map(d=>`
-        <div style="display:flex; flex-direction:column; align-items:center; gap:8px;">
-          <div class="badge neutral" style="font-size:12.5px; padding:7px 14px;">${d}</div>
-          <div style="width:1px;height:12px;background:var(--border);"></div>
-          <div style="font-size:11.5px; color:var(--text-muted);">3개 팀</div>
-        </div>`).join('')}
-      </div>
-    </div>
-  </div>`;
+/* ---------------- 조직도 ----------------
+   본부·팀 이름은 인사담당자가 준 조직도 양식의 실제 구조. 사람·연락처는 전부 가상 값.
+   열람은 전원, 등록·수정·삭제는 HR(kpiRole==='hr')만. 저장은 로그인·DB 이후. */
+const ORG_TREE = [
+  { division:'대표이사 직속부서', teams:['지원팀','총무팀'], noHead:true },
+  { division:'DR사업본부',        teams:['Device 개발팀','솔루션 개발팀'] },
+  { division:'품질경영제조본부',  teams:['CsI팀','DR제조팀','품질경영팀'] },
+  { division:'전략마케팅본부',    teams:['해외영업1팀','해외영업2팀','국내영업팀','CX팀'] },
+  { division:'솔루션사업본부',    teams:['솔루션 제조팀'] },
+  { division:'연구개발본부',      teams:['SCM팀'] },
+];
+let orgSeq = 0;
+function orgMember(name, title, division, team, lead='', hideMobile=false){   // team '' = 본부 직속
+  const n = ++orgSeq;
+  return { id:n, name, title, division, team, lead, hideMobile,
+    mobile:'010-0000-'+String(n).padStart(4,'0'), ext:String(1000+n), email:`user${String(n).padStart(2,'0')}@example.com` };
 }
-function memberSearch(){
-  const members = [['홍길동','대리','마케팅팀','내선 1234'],['김영희','과장','개발팀','내선 2210'],['이철수','본부장','영업본부','내선 1001']];
-  return `<div class="card" style="margin-bottom:14px;"><div class="field"><input placeholder="이름, 부서로 검색"/></div></div>
-  ${simpleTableCard('구성원 목록', ['이름','직급','부서','연락처'], members, ()=>'neutral', -1)}`;
+const orgMembers = [
+  orgMember('박인사','HR 담당','대표이사 직속부서','지원팀'),
+  orgMember('최지원','팀장','대표이사 직속부서','지원팀','TEAM'),
+  orgMember('강총무','팀장','대표이사 직속부서','총무팀','TEAM'),
+  orgMember('윤개발','본부장','DR사업본부','','DIVISION'),
+  orgMember('오디바','팀장','DR사업본부','Device 개발팀','TEAM'),
+  orgMember('서솔루','팀장','DR사업본부','솔루션 개발팀','TEAM'),
+  orgMember('한품질','본부장','품질경영제조본부','','DIVISION'),
+  orgMember('정씨에','팀장','품질경영제조본부','CsI팀','TEAM'),
+  orgMember('임제조','팀장','품질경영제조본부','DR제조팀','TEAM', true),
+  orgMember('이철수','본부장','전략마케팅본부','','DIVISION'),
+  orgMember('김영희','팀장','전략마케팅본부','국내영업팀','TEAM'),
+  orgMember('홍길동','대리','전략마케팅본부','국내영업팀'),
+  orgMember('문해외','팀장','전략마케팅본부','해외영업1팀','TEAM'),
+  orgMember('배연구','본부장','연구개발본부','','DIVISION'),
+  orgMember('신에스','사원','연구개발본부','SCM팀'),
+];
+let orgOpen = {}, orgQuery = '';
+function orgIsHr(){ return kpiRole==='hr'; }
+function orgFind(id){ return orgMembers.find(m=>m.id===id); }
+function orgTeamsOf(div){ const d = ORG_TREE.find(x=>x.division===div); return d ? d.teams : []; }
+
+/* ----- 규칙 (순수 로직, orgSelfCheck가 검증) ----- */
+function orgValidate(m, members){
+  const errs = [], div = ORG_TREE.find(d=>d.division===m.division);
+  if(!m.name.trim()) errs.push('이름을 입력해 주세요.');
+  if(!m.title.trim()) errs.push('직급을 입력해 주세요.');
+  if(!div) errs.push('본부를 선택해 주세요.');
+  if(m.team && !orgTeamsOf(m.division).includes(m.team)) errs.push('선택한 본부에 없는 팀입니다.');
+  if(m.lead==='TEAM' && !m.team) errs.push('팀장은 팀 소속이어야 합니다.');
+  if(m.lead==='DIVISION' && div && div.noHead) errs.push('이 본부는 본부장을 두지 않습니다.');
+  const others = members.filter(o=>o.id!==m.id);
+  if(m.lead==='TEAM' && others.some(o=>o.lead==='TEAM' && o.division===m.division && o.team===m.team)) errs.push('이 팀에는 이미 팀장이 있습니다.');
+  if(m.lead==='DIVISION' && others.some(o=>o.lead==='DIVISION' && o.division===m.division)) errs.push('이 본부에는 이미 본부장이 있습니다.');
+  if(m.email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(m.email)) errs.push('메일 형식이 올바르지 않습니다.');
+  return errs;
+}
+function orgUpsert(members, m, isHr){
+  if(!isHr) return ['조직도 수정은 HR 관리자만 할 수 있습니다.'];
+  const errs = orgValidate(m, members);
+  if(errs.length) return errs;
+  const i = members.findIndex(o=>o.id===m.id);
+  if(i<0){ m.id = ++orgSeq; members.push(m); } else members[i] = m;
+  return [];
+}
+function orgRemove(members, id, isHr){
+  if(!isHr) return ['조직도 수정은 HR 관리자만 할 수 있습니다.'];
+  const i = members.findIndex(o=>o.id===id);
+  if(i>=0) members.splice(i,1);
+  return [];
+}
+function orgVisibleContacts(m){ return { ext:m.ext, email:m.email, mobile: m.hideMobile ? null : m.mobile }; }
+function orgSelfCheck(){   // 브라우저 콘솔에서 orgSelfCheck() 실행
+  const ok = (c,msg)=>{ if(!c) throw new Error('orgSelfCheck 실패: '+msg); };
+  const ms = orgMembers.map(m=>({...m}));
+  const mk = o=>({ id:0, name:'테스트', title:'사원', division:'DR사업본부', team:'Device 개발팀', lead:'', hideMobile:false, mobile:'', ext:'', email:'', ...o });
+  ok(orgUpsert(ms, mk({}), false).length===1, 'HR 아니면 등록 불가');
+  ok(orgRemove(ms, ms[0].id, false).length===1 && ms.length===orgMembers.length, 'HR 아니면 삭제 불가');
+  ok(orgUpsert(ms, mk({}), true).length===0 && ms.length===orgMembers.length+1, 'HR 등록');
+  ok(orgUpsert(ms, mk({name:' '}), true).length===1, '이름 필수');
+  ok(orgUpsert(ms, mk({lead:'TEAM'}), true).length===1, '팀장 중복 불가');
+  ok(orgUpsert(ms, mk({team:'솔루션 개발팀', lead:'TEAM'}), true).length===1, '이미 팀장 있는 팀');
+  ok(orgUpsert(ms, mk({division:'솔루션사업본부', team:'솔루션 제조팀', lead:'DIVISION'}), true).length===0, '본부장 없는 본부에 본부장 등록');
+  ok(orgUpsert(ms, mk({division:'대표이사 직속부서', team:'지원팀', lead:'DIVISION'}), true).length===1, '대표이사 직속은 본부장 없음');
+  ok(orgUpsert(ms, mk({team:'CsI팀'}), true).length===1, '다른 본부의 팀 선택 불가');
+  ok(orgUpsert(ms, mk({email:'nope'}), true).length===1, '메일 형식');
+  ok(orgVisibleContacts(mk({hideMobile:true, mobile:'x'})).mobile===null && orgVisibleContacts(mk({mobile:'x'})).mobile==='x', '휴대폰 비공개');
+  const last = ms[ms.length-1]; orgRemove(ms, last.id, true); ok(!ms.some(o=>o.id===last.id), 'HR 삭제');
+  return 'orgSelfCheck 통과';
 }
 
+/* ----- 화면 ----- */
+function orgToggle(key){ orgOpen[key] = !orgOpen[key]; renderContent(); }
+function orgExpandAll(all){ orgOpen = all ? Object.fromEntries(ORG_TREE.flatMap(d=>[[d.division,true], ...d.teams.map(t=>[d.division+'/'+t,true])])) : {}; renderContent(); }
+function orgLeadBadge(m){ return m.lead==='DIVISION' ? '<span class="badge success">본부장</span>' : m.lead==='TEAM' ? '<span class="badge warning">팀장</span>' : ''; }
+function orgMemberRow(m){
+  const hr = orgIsHr() ? `<span style="margin-left:auto; display:flex; gap:6px;"><button class="btn sm" onclick="orgEdit(${m.id})">수정</button><button class="btn sm" onclick="orgDelete(${m.id})">삭제</button></span>` : '';
+  return `<div class="org-member"><span class="org-name" onclick="orgShow(${m.id})">${escapeHtml(m.name)}</span><span style="color:var(--text-secondary);">${escapeHtml(m.title)}</span>${orgLeadBadge(m)}${hr}</div>`;
+}
+function orgChart(){
+  const sorted = ms=>[...ms].sort((a,b)=>(b.lead?1:0)-(a.lead?1:0));
+  const anyOpen = Object.values(orgOpen).some(Boolean);
+  const hrBar = orgIsHr() ? `<div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px;"><button class="btn sm primary" onclick="orgEdit(null)">＋ 구성원 추가</button><button class="btn sm" onclick="orgAddTeam()">＋ 팀 추가</button><button class="btn sm" onclick="orgAddDivision()">＋ 본부 추가</button></div>` : '';
+  const divs = ORG_TREE.map(d=>{
+    const all = orgMembers.filter(m=>m.division===d.division), head = all.find(m=>m.lead==='DIVISION'), direct = all.filter(m=>!m.team);
+    const open = orgOpen[d.division];
+    const teams = d.teams.map(t=>{
+      const ms = all.filter(m=>m.team===t), tkey = d.division+'/'+t, topen = orgOpen[tkey];
+      return `<div class="org-team"><div class="org-team-head" onclick="orgToggle('${tkey}')"><span>${topen?'▾':'▸'} ${escapeHtml(t)}</span><span class="badge neutral">${ms.length}명</span></div>${topen ? (sorted(ms).map(orgMemberRow).join('') || '<div class="org-member" style="color:var(--text-muted);">등록된 구성원이 없습니다</div>') : ''}</div>`;
+    }).join('');
+    const directRows = direct.length ? `<div class="org-team"><div class="org-team-head" style="cursor:default;"><span>본부 직속</span></div>${sorted(direct).map(orgMemberRow).join('')}</div>` : '';
+    const headNote = head ? '· 본부장 '+escapeHtml(head.name) : d.noHead ? '· 대표이사 직속' : '· 본부장 공석';
+    return `<div class="card org-div"><div class="org-div-head" onclick="orgToggle('${d.division}')"><span>${open?'▾':'▸'} ${escapeHtml(d.division)} <span style="font-weight:500; color:var(--text-secondary); font-size:12.5px;">${headNote}</span></span><span class="badge neutral">${all.length}명 · ${d.teams.length}개 팀</span></div>${open ? directRows+teams : ''}</div>`;
+  }).join('');
+  return `${roleSwitcher()}${kpiMsg ? kpiNote(kpiMsg.msg, kpiMsg.type) : ''}
+    <div class="card" style="margin-bottom:14px;"><div class="card-title">조직도 <span class="more" onclick="orgExpandAll(${anyOpen?'false':'true'})">${anyOpen?'모두 접기':'모두 펼치기'}</span></div>
+      ${hrBar}
+      <div style="text-align:center; margin-bottom:12px;"><span class="badge neutral" style="font-size:13px; padding:8px 18px;">대표이사</span></div>
+      ${divs}
+      <div class="list-sub" style="margin-top:8px;">이름을 누르면 연락처와 전화·문자·메일 버튼이 나옵니다. 전 직원 ${orgMembers.length}명 등록됨 (가상 데이터).</div>
+    </div>`;
+}
+function memberSearch(){
+  const q = orgQuery.trim().toLowerCase();
+  const rows = orgMembers.filter(m=>!q || [m.name,m.title,m.division,m.team].join(' ').toLowerCase().includes(q));
+  return `${roleSwitcher()}<div class="card" style="margin-bottom:14px;"><div class="field"><input id="orgSearch" placeholder="이름, 직급, 본부, 팀으로 검색" value="${escapeHtml(orgQuery)}" oninput="orgQuery=this.value; renderContent(); const i=document.getElementById('orgSearch'); i.focus(); i.setSelectionRange(i.value.length,i.value.length);"/></div></div>
+    <div class="card"><div class="card-title">구성원 목록 <span class="more">${rows.length}명</span></div><table><thead><tr><th>이름</th><th>직급</th><th>소속</th><th>내선</th><th>메일</th></tr></thead><tbody>
+    ${rows.map(m=>`<tr><td><span class="org-name" onclick="orgShow(${m.id})">${escapeHtml(m.name)}</span> ${orgLeadBadge(m)}</td><td>${escapeHtml(m.title)}</td><td>${escapeHtml(m.division)}${m.team?' › '+escapeHtml(m.team):''}</td><td>${escapeHtml(m.ext)}</td><td>${escapeHtml(m.email)}</td></tr>`).join('') || '<tr><td colspan="5" style="color:var(--text-muted);">검색 결과가 없습니다</td></tr>'}
+    </tbody></table></div>`;
+}
+function orgModal(html){ orgCloseModal(); const d = document.createElement('div'); d.className='org-modal'; d.id='orgModal'; d.onclick = e=>{ if(e.target===d) orgCloseModal(); }; d.innerHTML = `<div class="card">${html}</div>`; document.body.appendChild(d); }
+function orgCloseModal(){ const d = document.getElementById('orgModal'); if(d) d.remove(); }
+function orgCopy(text, btn){ if(!navigator.clipboard) return; navigator.clipboard.writeText(text).then(()=>{ btn.textContent='복사됨'; setTimeout(()=>btn.textContent='복사', 1200); }); }
+function orgShow(id){
+  const m = orgFind(id), c = orgVisibleContacts(m);
+  const row = (label, val, href)=> val ? `<div class="org-contact"><b>${label}</b><span>${href?`<a href="${href}" style="color:inherit;">${escapeHtml(val)}</a>`:escapeHtml(val)}</span><button class="btn sm" onclick="orgCopy('${escapeHtml(val)}', this)">복사</button></div>` : '';
+  const off = 'style="opacity:.45; pointer-events:none;"';
+  orgModal(`<div class="card-title"><span>${escapeHtml(m.name)} <span style="font-weight:500; color:var(--text-secondary);">${escapeHtml(m.title)}</span> ${orgLeadBadge(m)}</span><span style="cursor:pointer; font-size:18px;" onclick="orgCloseModal()">✕</span></div>
+    <div class="list-sub" style="margin-bottom:10px;">${escapeHtml(m.division)}${m.team?' › '+escapeHtml(m.team):' (본부 직속)'}</div>
+    ${c.mobile ? row('휴대폰', c.mobile, 'tel:'+c.mobile) : '<div class="org-contact"><b>휴대폰</b><span style="color:var(--text-muted);">본인 요청으로 비공개</span></div>'}
+    ${row('내선', c.ext)}${row('메일', c.email, 'mailto:'+c.email)}
+    <div class="org-actions">
+      <a class="btn primary" href="tel:${c.mobile||''}" ${c.mobile?'':off}>📞 전화</a>
+      <a class="btn" href="sms:${c.mobile||''}" ${c.mobile?'':off}>💬 문자</a>
+      <a class="btn" href="mailto:${c.email}">✉ 메일</a>
+    </div>
+    <div class="list-sub" style="margin-top:10px;">스마트폰에서는 전화·문자 앱이 바로 열립니다. PC에서는 "복사"를 쓰세요.</div>`);
+}
+function orgTeamOptions(div, selected){ return `<option value="">(본부 직속)</option>`+orgTeamsOf(div).map(t=>`<option ${t===selected?'selected':''}>${escapeHtml(t)}</option>`).join(''); }
+function orgEdit(id){
+  if(!orgIsHr()) return;
+  const m = id ? {...orgFind(id)} : { id:0, name:'', title:'', division:ORG_TREE[0].division, team:'', lead:'', hideMobile:false, mobile:'', ext:'', email:'' };
+  const f = (label, key, type='text')=>`<div class="field"><label>${label}</label><input id="orgF_${key}" type="${type}" value="${escapeHtml(m[key])}"></div>`;
+  const sel = (label, key, opts)=>`<div class="field"><label>${label}</label><select id="orgF_${key}">${opts.map(([v,l])=>`<option value="${v}" ${String(m[key]||'')===v?'selected':''}>${l}</option>`).join('')}</select></div>`;
+  orgModal(`<div class="card-title">${id?'구성원 수정':'구성원 추가'}</div><div id="orgFormErr"></div>
+    <div class="field-row">${f('이름','name')}${f('직급','title')}</div>
+    <div class="field-row"><div class="field"><label>본부</label><select id="orgF_division" onchange="document.getElementById('orgF_team').innerHTML=orgTeamOptions(this.value,'')">${ORG_TREE.map(d=>`<option ${d.division===m.division?'selected':''}>${escapeHtml(d.division)}</option>`).join('')}</select></div>
+      <div class="field"><label>팀</label><select id="orgF_team">${orgTeamOptions(m.division, m.team)}</select></div></div>
+    <div class="field-row">${sel('직책','lead',[['','없음'],['TEAM','팀장'],['DIVISION','본부장']])}${sel('휴대폰 공개','hideMobile',[['','공개'],['true','비공개 (본인 요청)']])}</div>
+    <div class="field-row">${f('회사 휴대폰','mobile','tel')}${f('내선','ext')}</div>
+    ${f('회사 메일','email','email')}
+    <div style="display:flex; gap:8px; margin-top:6px;"><button class="btn primary" onclick="orgSave(${m.id})">저장</button><button class="btn" onclick="orgCloseModal()">취소</button></div>`);
+}
+function orgSave(id){
+  const v = k=>document.getElementById('orgF_'+k).value;
+  const m = { id, name:v('name'), title:v('title'), division:v('division'), team:v('team'), lead:v('lead'), hideMobile:v('hideMobile')==='true', mobile:v('mobile').trim(), ext:v('ext').trim(), email:v('email').trim() };
+  const errs = orgUpsert(orgMembers, m, orgIsHr());
+  if(errs.length){ document.getElementById('orgFormErr').innerHTML = kpiNote(errs.map(escapeHtml).join('<br>'), 'danger'); return; }
+  orgOpen[m.division] = true; if(m.team) orgOpen[m.division+'/'+m.team] = true;
+  orgCloseModal(); kpiFlash(`${escapeHtml(m.name)} 님을 ${id?'수정':'등록'}했습니다.`);
+}
+function orgDelete(id){
+  const m = orgFind(id);
+  if(!confirm(`${m.name} ${m.title} 님을 조직도에서 삭제할까요?`)) return;
+  const errs = orgRemove(orgMembers, id, orgIsHr());
+  kpiFlash(errs.length ? escapeHtml(errs[0]) : `${escapeHtml(m.name)} 님을 삭제했습니다.`, errs.length ? 'danger' : 'success');
+}
+function orgAddDivision(){
+  if(!orgIsHr()) return;
+  const name = (prompt('새 본부 이름')||'').trim();
+  if(!name) return;
+  if(ORG_TREE.some(d=>d.division===name)) return kpiFlash('이미 있는 본부입니다.', 'danger');
+  ORG_TREE.push({ division:name, teams:[] }); orgOpen[name] = true; kpiFlash(`${escapeHtml(name)} 본부를 추가했습니다.`);
+}
+function orgAddTeam(){
+  if(!orgIsHr()) return;
+  const div = (prompt('팀을 추가할 본부 이름\n'+ORG_TREE.map(d=>'· '+d.division).join('\n'))||'').trim();
+  const d = ORG_TREE.find(x=>x.division===div);
+  if(!d){ if(div) kpiFlash('없는 본부입니다.', 'danger'); return; }
+  const name = (prompt(`${div}에 추가할 팀 이름`)||'').trim();
+  if(!name) return;
+  if(d.teams.includes(name)) return kpiFlash('이미 있는 팀입니다.', 'danger');
+  d.teams.push(name); orgOpen[div] = true; kpiFlash(`${escapeHtml(name)}을(를) 추가했습니다.`);
+}
 
 function simpleTableCard(title, headers, rows, badgeFn, badgeCol){
   return `<div class="card"><div class="card-title">${title}</div><table><thead><tr>${headers.map(h=>`<th>${h}</th>`).join('')}</tr></thead><tbody>
@@ -659,10 +843,10 @@ const KPI_YEAR = new Date().getFullYear();
 const KPI_GRADES = [['S',110],['A',100],['B',90],['C',80],['D',70]];
 const KPI_ACCEPT = '.pdf,.jpg,.jpeg,.png,.xlsx,.xls,.docx,.doc,.hwp,.hwpx';
 const KPI_USERS = {   // approvers = 결재선 (순서대로)
-  emp:  { name:'홍길동', title:'대리',    dept:'마케팅팀',   switchLabel:'직원',   approvers:['lead','head'] },
-  lead: { name:'김영희', title:'팀장',    dept:'마케팅팀',   switchLabel:'팀장',   approvers:['head'] },
-  head: { name:'이철수', title:'본부장',  dept:'영업본부',   switchLabel:'본부장', approvers:['hr'] },
-  hr:   { name:'박인사', title:'HR 담당', dept:'경영지원팀', switchLabel:'HR',     approvers:[] },
+  emp:  { name:'홍길동', title:'대리',    dept:'국내영업팀',   switchLabel:'직원',   approvers:['lead','head'] },
+  lead: { name:'김영희', title:'팀장',    dept:'국내영업팀',   switchLabel:'팀장',   approvers:['head'] },
+  head: { name:'이철수', title:'본부장',  dept:'전략마케팅본부', switchLabel:'본부장', approvers:['hr'] },
+  hr:   { name:'박인사', title:'HR 담당', dept:'지원팀',       switchLabel:'HR',     approvers:[] },
 };
 function kpiDay(offset){
   const d = new Date(); d.setDate(d.getDate()+offset);
@@ -912,12 +1096,15 @@ function kpiMySheet(){
     ${body}
   </div>`;
 }
-function kpiContent(){
+function roleSwitcher(){
   const switcher = Object.keys(KPI_USERS).map(k=>`<button class="btn sm ${k===kpiRole?'primary':''}" onclick="kpiSetRole('${k}')">${KPI_USERS[k].switchLabel} (${KPI_USERS[k].name})</button>`).join('');
   return `<div class="card" style="margin-bottom:14px;">
       <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;"><b style="font-size:12.5px;">시연용 역할 전환</b>${switcher}</div>
       <div class="list-sub" style="margin-top:8px;">로그인 기능이 생기면 이 버튼은 사라집니다. 지금은 입력 내용이 저장되지 않고 새로고침하면 초기화됩니다.</div>
-    </div>
+    </div>`;
+}
+function kpiContent(){
+  return `${roleSwitcher()}
     ${kpiMsg ? kpiNote(kpiMsg.msg, kpiMsg.type) : ''}
     ${kpiRole==='hr' ? kpiHrPanel() : ''}${kpiInbox()}${kpiSheets[kpiRole] ? kpiMySheet() : ''}`;
 }
