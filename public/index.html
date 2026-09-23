@@ -167,12 +167,22 @@
   .kpi-file{ font-size:12px; color:var(--text-secondary); margin-bottom:4px; }
   .kpi-file span{ color:var(--danger); cursor:pointer; font-weight:700; }
   /* ---------- ORG ---------- */
-  .org-div{ margin-bottom:10px; }
-  .org-div-head{ display:flex; align-items:center; justify-content:space-between; cursor:pointer; padding:10px 12px; border-radius:8px; background:var(--bg-page); font-weight:700; }
-  .org-team{ margin:6px 0 0 18px; }
-  .org-team-head{ display:flex; align-items:center; justify-content:space-between; cursor:pointer; padding:8px 12px; border-radius:8px; font-weight:600; color:var(--text-secondary); }
-  .org-team-head:hover, .org-div-head:hover{ background:var(--accent-light); }
-  .org-member{ display:flex; align-items:center; gap:8px; padding:7px 12px 7px 30px; font-size:13px; flex-wrap:wrap; }
+  .org-chart{ text-align:center; font-size:13px; line-height:1; }
+  .org-grid{ display:grid; grid-template-columns:repeat(var(--org-cols,6),minmax(0,1fr)); gap:8px; }
+  .org-col{ display:flex; flex-direction:column; align-items:center; min-width:0; }
+  .org-bx{ width:100%; display:flex; align-items:center; justify-content:center; gap:5px; white-space:nowrap; overflow:hidden; padding:0 6px; border-radius:6px; }
+  .org-ceo{ width:auto; height:38px; padding:0 28px; background:var(--bg-warning); color:var(--warning); font-weight:700; }
+  .org-divbx{ height:44px; background:var(--accent); color:#fff; font-weight:700; font-size:12px; }
+  .org-headbx{ height:32px; border:1px solid var(--border); background:var(--surface); margin-top:6px; }
+  .org-teambx{ height:34px; background:var(--accent-light); color:var(--accent); font-weight:700; margin-top:10px; cursor:pointer; border-radius:6px 6px 0 0; }
+  .org-teambx:hover{ filter:brightness(.96); }
+  .org-teambx small{ font-weight:500; opacity:.75; }
+  .org-leadbx{ height:30px; border:1px solid var(--border); border-top:0; background:var(--surface); border-radius:0 0 6px 6px; color:var(--text-secondary); }
+  .org-vline{ width:0; border-left:1px solid var(--border); height:12px; }
+  .org-hline{ width:84%; border-top:1px solid var(--border); margin:0 auto; }
+  .org-muted{ color:var(--text-muted); font-weight:500; }
+  .org-member{ display:flex; align-items:center; gap:8px; padding:8px 0; border-bottom:1px solid var(--border); font-size:13px; flex-wrap:wrap; }
+  .org-member:last-child{ border-bottom:none; }
   .org-name{ color:var(--accent); font-weight:600; cursor:pointer; text-decoration:underline; text-underline-offset:3px; }
   .org-modal{ position:fixed; inset:0; background:rgba(0,0,0,.4); z-index:60; display:flex; align-items:center; justify-content:center; padding:16px; }
   .org-modal .card{ width:100%; max-width:420px; max-height:90vh; overflow-y:auto; }
@@ -209,6 +219,7 @@
     .card[style*="grid-column:span 2"]{ grid-column:auto; }
     .card{ overflow-x:auto; }
     table{ min-width:420px; }
+    .org-grid{ --org-cols:2; }
   }
 </style>
 </head>
@@ -671,7 +682,7 @@ const orgMembers = [
   orgMember('배연구','본부장','연구개발본부','','DIVISION'),
   orgMember('신에스','사원','연구개발본부','SCM팀'),
 ];
-let orgOpen = {}, orgQuery = '';
+let orgQuery = '';
 function orgIsHr(){ return kpiRole==='hr'; }
 function orgFind(id){ return orgMembers.find(m=>m.id===id); }
 function orgTeamsOf(div){ const d = ORG_TREE.find(x=>x.division===div); return d ? d.teams : []; }
@@ -726,35 +737,42 @@ function orgSelfCheck(){   // 브라우저 콘솔에서 orgSelfCheck() 실행
 }
 
 /* ----- 화면 ----- */
-function orgToggle(key){ orgOpen[key] = !orgOpen[key]; renderContent(); }
-function orgExpandAll(all){ orgOpen = all ? Object.fromEntries(ORG_TREE.flatMap(d=>[[d.division,true], ...d.teams.map(t=>[d.division+'/'+t,true])])) : {}; renderContent(); }
 function orgLeadBadge(m){ return m.lead==='DIVISION' ? '<span class="badge success">본부장</span>' : m.lead==='TEAM' ? '<span class="badge warning">팀장</span>' : ''; }
 function orgMemberRow(m){
   const hr = orgIsHr() ? `<span style="margin-left:auto; display:flex; gap:6px;"><button class="btn sm" onclick="orgEdit(${m.id})">수정</button><button class="btn sm" onclick="orgDelete(${m.id})">삭제</button></span>` : '';
   return `<div class="org-member"><span class="org-name" onclick="orgShow(${m.id})">${escapeHtml(m.name)}</span><span style="color:var(--text-secondary);">${escapeHtml(m.title)}</span>${orgLeadBadge(m)}${hr}</div>`;
 }
+function orgShortTeam(t){ return t.replace(/팀$/, ''); }   // 화면 표시만 '팀' 생략, 데이터는 원래 이름
+function orgPerson(m, cls){ return m ? `<div class="org-bx ${cls}"><span class="org-name" style="text-decoration:none;" onclick="orgShow(${m.id})">${escapeHtml(m.name)} ${escapeHtml(m.title)}</span></div>` : `<div class="org-bx ${cls} org-muted">공석</div>`; }
 function orgChart(){
-  const sorted = ms=>[...ms].sort((a,b)=>(b.lead?1:0)-(a.lead?1:0));
-  const anyOpen = Object.values(orgOpen).some(Boolean);
-  const hrBar = orgIsHr() ? `<div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px;"><button class="btn sm primary" onclick="orgEdit(null)">＋ 구성원 추가</button><button class="btn sm" onclick="orgAddTeam()">＋ 팀 추가</button><button class="btn sm" onclick="orgAddDivision()">＋ 본부 추가</button></div>` : '';
-  const divs = ORG_TREE.map(d=>{
-    const all = orgMembers.filter(m=>m.division===d.division), head = all.find(m=>m.lead==='DIVISION'), direct = all.filter(m=>!m.team);
-    const open = orgOpen[d.division];
+  const hrBar = orgIsHr() ? `<div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px;"><button class="btn sm primary" onclick="orgEdit(null)">＋ 구성원 추가</button><button class="btn sm" onclick="orgAddTeam()">＋ 팀 추가</button><button class="btn sm" onclick="orgAddDivision()">＋ 본부 추가</button></div>` : '';
+  const cols = ORG_TREE.map(d=>{
+    const all = orgMembers.filter(m=>m.division===d.division), head = all.find(m=>m.lead==='DIVISION');
     const teams = d.teams.map(t=>{
-      const ms = all.filter(m=>m.team===t), tkey = d.division+'/'+t, topen = orgOpen[tkey];
-      return `<div class="org-team"><div class="org-team-head" onclick="orgToggle('${tkey}')"><span>${topen?'▾':'▸'} ${escapeHtml(t)}</span><span class="badge neutral">${ms.length}명</span></div>${topen ? (sorted(ms).map(orgMemberRow).join('') || '<div class="org-member" style="color:var(--text-muted);">등록된 구성원이 없습니다</div>') : ''}</div>`;
+      const ms = all.filter(m=>m.team===t), lead = ms.find(m=>m.lead==='TEAM');
+      return `<div class="org-bx org-teambx" onclick="orgShowTeam('${escapeHtml(d.division)}','${escapeHtml(t)}')" title="${escapeHtml(t)} 구성원 보기">${escapeHtml(orgShortTeam(t))}<small>${ms.length}명</small></div>${orgPerson(lead,'org-leadbx')}`;
     }).join('');
-    const directRows = direct.length ? `<div class="org-team"><div class="org-team-head" style="cursor:default;"><span>본부 직속</span></div>${sorted(direct).map(orgMemberRow).join('')}</div>` : '';
-    const headNote = head ? '· 본부장 '+escapeHtml(head.name) : d.noHead ? '· 대표이사 직속' : '· 본부장 공석';
-    return `<div class="card org-div"><div class="org-div-head" onclick="orgToggle('${d.division}')"><span>${open?'▾':'▸'} ${escapeHtml(d.division)} <span style="font-weight:500; color:var(--text-secondary); font-size:12.5px;">${headNote}</span></span><span class="badge neutral">${all.length}명 · ${d.teams.length}개 팀</span></div>${open ? directRows+teams : ''}</div>`;
+    return `<div class="org-col"><div class="org-vline"></div>
+      <div class="org-bx org-divbx" onclick="orgShowTeam('${escapeHtml(d.division)}','')" style="cursor:pointer;" title="본부 전체 구성원 보기">${escapeHtml(d.division.replace('직속부서','직속'))}</div>
+      ${d.noHead ? '<div class="org-bx org-headbx org-muted">본부장 없음</div>' : orgPerson(head,'org-headbx')}
+      ${teams}</div>`;
   }).join('');
   return `${roleSwitcher()}${kpiMsg ? kpiNote(kpiMsg.msg, kpiMsg.type) : ''}
-    <div class="card" style="margin-bottom:14px;"><div class="card-title">조직도 <span class="more" onclick="orgExpandAll(${anyOpen?'false':'true'})">${anyOpen?'모두 접기':'모두 펼치기'}</span></div>
+    <div class="card" style="margin-bottom:14px;"><div class="card-title">조직도 <span style="font-weight:500; color:var(--text-muted); font-size:12px;">전 직원 ${orgMembers.length}명 · 가상 데이터</span></div>
       ${hrBar}
-      <div style="text-align:center; margin-bottom:12px;"><span class="badge neutral" style="font-size:13px; padding:8px 18px;">대표이사</span></div>
-      ${divs}
-      <div class="list-sub" style="margin-top:8px;">이름을 누르면 연락처와 전화·문자·메일 버튼이 나옵니다. 전 직원 ${orgMembers.length}명 등록됨 (가상 데이터).</div>
+      <div class="org-chart">
+        <div style="display:flex; flex-direction:column; align-items:center;"><div class="org-bx org-ceo">대표이사</div><div class="org-vline"></div></div>
+        <div class="org-hline"></div>
+        <div class="org-grid">${cols}</div>
+      </div>
+      <div class="list-sub" style="margin-top:14px;">팀 상자를 누르면 구성원 명단이, 이름을 누르면 연락처와 전화·문자·메일 버튼이 나옵니다.</div>
     </div>`;
+}
+function orgShowTeam(division, team){   // team '' = 본부 전체
+  const ms = orgMembers.filter(m=>m.division===division && (!team || m.team===team)).sort((a,b)=>(b.lead?1:0)-(a.lead?1:0));
+  orgModal(`<div class="card-title"><span>${escapeHtml(team || division)} <span style="font-weight:500; color:var(--text-secondary);">${ms.length}명</span></span><span style="cursor:pointer; font-size:18px;" onclick="orgCloseModal()">✕</span></div>
+    ${team ? `<div class="list-sub" style="margin-bottom:8px;">${escapeHtml(division)}</div>` : ''}
+    ${ms.map(orgMemberRow).join('') || '<div class="list-sub">등록된 구성원이 없습니다.</div>'}`);
 }
 function memberSearch(){
   const q = orgQuery.trim().toLowerCase();
@@ -802,13 +820,13 @@ function orgSave(id){
   const m = { id, name:v('name'), title:v('title'), division:v('division'), team:v('team'), lead:v('lead'), hideMobile:v('hideMobile')==='true', mobile:v('mobile').trim(), ext:v('ext').trim(), email:v('email').trim() };
   const errs = orgUpsert(orgMembers, m, orgIsHr());
   if(errs.length){ document.getElementById('orgFormErr').innerHTML = kpiNote(errs.map(escapeHtml).join('<br>'), 'danger'); return; }
-  orgOpen[m.division] = true; if(m.team) orgOpen[m.division+'/'+m.team] = true;
   orgCloseModal(); kpiFlash(`${escapeHtml(m.name)} 님을 ${id?'수정':'등록'}했습니다.`);
 }
 function orgDelete(id){
   const m = orgFind(id);
   if(!confirm(`${m.name} ${m.title} 님을 조직도에서 삭제할까요?`)) return;
   const errs = orgRemove(orgMembers, id, orgIsHr());
+  orgCloseModal();
   kpiFlash(errs.length ? escapeHtml(errs[0]) : `${escapeHtml(m.name)} 님을 삭제했습니다.`, errs.length ? 'danger' : 'success');
 }
 function orgAddDivision(){
@@ -816,7 +834,7 @@ function orgAddDivision(){
   const name = (prompt('새 본부 이름')||'').trim();
   if(!name) return;
   if(ORG_TREE.some(d=>d.division===name)) return kpiFlash('이미 있는 본부입니다.', 'danger');
-  ORG_TREE.push({ division:name, teams:[] }); orgOpen[name] = true; kpiFlash(`${escapeHtml(name)} 본부를 추가했습니다.`);
+  ORG_TREE.push({ division:name, teams:[] }); kpiFlash(`${escapeHtml(name)} 본부를 추가했습니다.`);
 }
 function orgAddTeam(){
   if(!orgIsHr()) return;
@@ -826,7 +844,7 @@ function orgAddTeam(){
   const name = (prompt(`${div}에 추가할 팀 이름`)||'').trim();
   if(!name) return;
   if(d.teams.includes(name)) return kpiFlash('이미 있는 팀입니다.', 'danger');
-  d.teams.push(name); orgOpen[div] = true; kpiFlash(`${escapeHtml(name)}을(를) 추가했습니다.`);
+  d.teams.push(name); kpiFlash(`${escapeHtml(name)}을(를) 추가했습니다.`);
 }
 
 function simpleTableCard(title, headers, rows, badgeFn, badgeCol){
