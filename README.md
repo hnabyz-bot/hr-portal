@@ -10,6 +10,10 @@
 > ### 🔧 [관리자 가이드 — 서버를 직접 다루는 담당자용](docs/admin-guide.md)
 > SSH 접속, 컨테이너·터널 운영, 장애 점검 절차. Tailscale 접근 권한이 있는 담당자만 해당된다.
 >
+> ### 🔗 [하이웍스 API 연동 설정 가이드](docs/hiworks-api-setup.md)
+> 로그인·조직도·전자결재·알림을 회사 그룹웨어(하이웍스)에 맡기는 계획([#42](https://github.com/hnabyz-bot/hr-portal/issues/42))의 설정 절차.
+> 하이웍스 관리자가 할 일(토큰 발급, SSO 메뉴 등록, 결재 양식)과 확인되지 않은 항목이 정리되어 있다.
+>
 > ### 🤝 [기여 안내](CONTRIBUTING.md) · [배포 안내](DEPLOY.md)
 > 브랜치·PR 규칙과 하지 말아야 할 것(기여 안내), 자동 배포 흐름과 장애 대응(배포 안내).
 
@@ -113,7 +117,8 @@ hr-portal/
 │   └── allowed-demo-data.txt   # 개인정보 검사 예외 목록
 ├── docs/
 │   ├── beginner-guide.md  # 초심자 가이드 (브라우저만 사용, 비개발자용)
-│   └── admin-guide.md     # 관리자 가이드 (서버 운영)
+│   ├── admin-guide.md     # 관리자 가이드 (서버 운영)
+│   └── hiworks-api-setup.md  # 하이웍스 API 연동 설정 가이드
 ├── docker-compose.yml
 └── public/
     └── index.html         # 프로토타입 (단일 파일, 인라인 CSS/JS)
