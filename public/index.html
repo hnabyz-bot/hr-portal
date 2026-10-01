@@ -315,6 +315,9 @@
   @keyframes payGlyph{ 0%{ transform:translate(0,0) scale(.6); opacity:0; } 15%{ opacity:1; } 100%{ transform:translate(var(--dx),-64px) scale(1.15); opacity:0; } }
   .pay-treasure{ position:absolute; right:0; bottom:18px; width:190px; }
   .pay-treasure img{ width:100%; height:auto; display:block; animation:payGlow 2.4s ease-in-out infinite; }
+  .pay-shine{ position:absolute; inset:0; pointer-events:none; background:linear-gradient(110deg,transparent 35%,rgba(255,255,255,.85) 50%,transparent 65%); background-size:260% 100%;
+    -webkit-mask:url(img/pay/treasure.png) center/100% 100% no-repeat; mask:url(img/pay/treasure.png) center/100% 100% no-repeat; animation:payShine 3s ease-in-out infinite; }
+  @keyframes payShine{ 0%,35%{ background-position:130% 0; } 100%{ background-position:-40% 0; } }
   @keyframes payGlow{ 0%,100%{ filter:drop-shadow(0 0 0 rgba(255,200,60,0)); } 50%{ filter:drop-shadow(0 0 10px rgba(255,200,60,.6)); } }
   .pay-spark{ position:absolute; width:14px; height:14px; background:#FFD54A; opacity:0; clip-path:polygon(50% 0,62% 38%,100% 50%,62% 62%,50% 100%,38% 62%,0 50%,38% 38%); animation:fxTwinkle 1.8s ease-in-out infinite; }
   .pay-win{ position:absolute; left:50%; bottom:6px; width:220px; height:150px; transform:translateX(-50%); }
@@ -330,13 +333,46 @@
     .pay-treasure{ width:130px; }
   }
   .pay-ends{ display:flex; justify-content:space-between; font-size:var(--fs-xs); color:#7D6656; }
-  .pay-months{ display:flex; gap:8px; overflow-x:auto; padding:2px 2px 8px; }
-  .pay-month{ flex:0 0 auto; display:flex; flex-direction:column; gap:2px; text-align:left; border:1px solid var(--border); background:var(--surface); border-radius:var(--radius); padding:10px 14px; cursor:pointer; font:inherit; color:var(--text-primary); transition:border-color .2s var(--ease), background .2s var(--ease); }
-  .pay-month:hover{ border-color:var(--sky); }
-  .pay-month.on{ border-color:var(--accent); background:var(--accent-light); }
-  .pay-month b{ font-size:var(--fs-sm); }
-  .pay-month span{ font-size:var(--fs-xs); color:var(--text-secondary); }
-  .pay-month small{ font-size:var(--fs-xs); color:var(--text-muted); }
+  .pay-years{ display:flex; gap:6px; }
+  .pay-year{ border:1px solid var(--border); background:var(--surface); border-radius:var(--radius-sm); padding:6px 12px; font:inherit; font-size:var(--fs-sm); font-weight:600; color:var(--text-secondary); cursor:pointer; }
+  .pay-year.on{ background:var(--accent); border-color:var(--accent); color:#fff; }
+  .pay-mgrid{ display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:8px; margin-bottom:10px; }
+  .pay-mbtn{ display:flex; flex-direction:column; align-items:center; gap:2px; border:1px solid var(--border); background:var(--surface); border-radius:var(--radius); padding:10px 4px; font:inherit; color:var(--text-primary); cursor:pointer; transition:border-color .2s var(--ease), background .2s var(--ease); }
+  .pay-mbtn b{ font-size:var(--fs-md); }
+  .pay-mbtn small{ font-size:var(--fs-xs); color:var(--text-muted); }
+  .pay-mbtn:hover:not(:disabled){ border-color:var(--sky); background:var(--accent-soft); }
+  .pay-mbtn.on{ border-color:var(--accent); background:var(--accent-light); }
+  .pay-mbtn:disabled{ opacity:.45; cursor:default; }
+  .pay-sum{ display:flex; flex-wrap:wrap; gap:6px 18px; font-size:var(--fs-sm); color:var(--text-secondary); margin-bottom:8px; }
+  .pay-sum b{ color:var(--text-primary); }
+  .pay-legend{ display:flex; flex-wrap:wrap; gap:14px; align-items:center; font-size:var(--fs-xs); color:var(--text-secondary); margin-bottom:10px; }
+  .pay-legend span, .pay-tip span{ display:inline-flex; align-items:center; gap:6px; }
+  .sw{ display:inline-block; width:10px; height:10px; border-radius:3px; }
+  .sw.net{ background:#255DAA; } .sw.ded{ background:#54A6E1; }
+  .pay-chart{ position:relative; height:calc(var(--h) + 26px); margin:0 0 6px 48px; }
+  .pay-grid{ position:absolute; left:0; right:0; border-top:1px solid var(--border); }
+  .pay-grid span{ position:absolute; right:calc(100% + 6px); top:-8px; font-size:var(--fs-xs); color:var(--text-muted); white-space:nowrap; }
+  .pay-cols{ position:absolute; inset:0; display:grid; grid-template-columns:repeat(12,minmax(0,1fr)); gap:4px; }
+  .pay-col{ position:relative; display:flex; flex-direction:column; justify-content:flex-end; align-items:center; border:0; background:none; padding:0; font:inherit; cursor:pointer; border-radius:var(--radius-sm); }
+  .pay-col.empty{ cursor:default; }
+  .pay-col:hover:not(.empty), .pay-col.on{ background:var(--accent-soft); }
+  .pay-bar{ width:min(28px,70%); display:flex; flex-direction:column; gap:2px; }
+  .pay-bar i{ display:block; width:100%; }
+  .pay-bar i.ded{ background:#54A6E1; border-radius:4px 4px 0 0; }
+  .pay-bar i.net{ background:#255DAA; }
+  .pay-mlabel{ height:26px; line-height:26px; font-size:var(--fs-xs); color:var(--text-secondary); }
+  .pay-col.empty .pay-mlabel{ color:var(--text-muted); }
+  .pay-tip{ position:absolute; bottom:calc(100% - 20px); left:50%; transform:translateX(-50%); z-index:5; display:none; flex-direction:column; gap:3px; min-width:150px; text-align:left;
+    background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-sm); box-shadow:0 8px 20px -8px rgba(27,36,51,.3); padding:8px 10px; font-size:var(--fs-xs); color:var(--text-primary); white-space:nowrap; }
+  .pay-col:hover .pay-tip, .pay-col:focus-visible .pay-tip{ display:flex; }
+  .pay-table summary{ cursor:pointer; font-size:var(--fs-xs); font-weight:600; color:var(--accent); margin-top:6px; }
+  .pay-table table{ margin-top:8px; }
+  @media (max-width:768px){
+    .pay-mgrid{ grid-template-columns:repeat(4,minmax(0,1fr)); }
+    .pay-chart{ margin-left:0; }
+    .pay-grid span{ display:none; }
+    .pay-cols{ gap:2px; }
+  }
   .pay-doc{ max-width:760px; margin:0 auto; padding:8px 4px; }
   .pay-doc-title{ text-align:center; font-size:var(--fs-xl); font-weight:800; margin-bottom:12px; }
   .pay-meta{ display:flex; justify-content:space-between; font-size:var(--fs-xs); color:var(--text-secondary); margin-bottom:8px; }
@@ -1825,7 +1861,7 @@ const PAY_PEOPLE = {   // 시연 역할별 가상 사원 정보와 월 지급 �
   head: { gender:'m', code:'10057', birth:'1978.09.11', dept:'전략마케팅본부', title:'본부장', step:'',      base:2491500, ability:1976000, ot:353760, pos:500000 },
   hr:   { gender:'f', code:'10188', birth:'1988.11.27', dept:'지원팀',         title:'HR 담당', step:'',     base:2491500, ability:1350000, ot:300120, pos:100000 },
 };
-let paySlips = null, payOpen = null, payShow = false, payViewKey = null, payTimer = null, payPreview = false;   // payPreview: 시연용 급여일 모습 미리보기
+let payYear = null, paySlips = null, payOpen = null, payShow = false, payViewKey = null, payTimer = null, payPreview = false;   // payPreview: 시연용 급여일 모습 미리보기
 
 /* ----- 규칙 (순수 로직, paySelfCheck가 검증) ----- */
 function payIsOff(d){ return d.getDay()===0 || d.getDay()===6 || PAY_HOLIDAYS.has(ctYmd(d)); }
@@ -1880,7 +1916,7 @@ function paySlipsFor(key){
   paySlips = paySlips || {};
   if(!paySlips[key]){
     const today = ctYmd(new Date()), list = [];
-    for(let i=1; list.length<12 && i<15; i++){ const d = new Date(); d.setDate(1); d.setMonth(d.getMonth()-i); const s = paySlip(PAY_PEOPLE[key], d.getFullYear(), d.getMonth()); if(s.payday<=today) list.push(s); }
+    for(let i=1; list.length<24 && i<27; i++){ const d = new Date(); d.setDate(1); d.setMonth(d.getMonth()-i); const s = paySlip(PAY_PEOPLE[key], d.getFullYear(), d.getMonth()); if(s.payday<=today) list.push(s); }
     paySlips[key] = list;
   }
   return paySlips[key];
@@ -1911,7 +1947,7 @@ function payHero(key){
         ${[12,30,52,70,88].map((x,i)=>`<img class="pay-coin" src="img/pay/coin.png" alt="" style="left:${x}%; animation-delay:${i*0.3}s">`).join('')}
         ${[[8,20],[86,14],[20,64],[78,58]].map(([x,y],i)=>`<span class="pay-spark" style="left:${x}%; top:${y}%; animation-delay:${i*0.4}s"></span>`).join('')}</div>`
     : `<div class="pay-walker" id="payWalker"><img src="img/pay/walk-${g}.png" alt="${g==='f'?'패드':'노트북'}으로 일하며 급여일을 향해 걸어가는 캐릭터">${glyphs}<span class="pay-shadow"></span></div>
-       <div class="pay-treasure"><img src="img/pay/treasure.png" alt="금은보화"><span class="pay-spark" style="left:18%; top:10%"></span><span class="pay-spark" style="left:70%; top:4%; animation-delay:.7s"></span></div>`;
+       <div class="pay-treasure"><img src="img/pay/treasure.png" alt="금은보화"><span class="pay-shine"></span>${[[16,12,0],[70,2,.5],[44,30,1],[86,40,1.4],[30,56,.8],[60,62,1.7]].map(([x,y,d])=>`<span class="pay-spark" style="left:${x}%; top:${y}%; animation-delay:${d}s"></span>`).join('')}</div>`;
   return `<section class="pay-hero${arrived?' arrived':''}" aria-label="급여일까지 진행 상황">
     <div class="pay-top"><div>
       <div class="pay-lead">${lead}</div>
@@ -1953,21 +1989,50 @@ function payDetail(key, s){
     </div>
   </div>`;
 }
+function payYearChart(slips, year){   // 막대 = 세전, 아래 실수령(진한 파랑) + 위 공제(파랑). 축은 하나
+  const bym = Object.fromEntries(slips.filter(s=>s.y===year).map(s=>[s.m, s]));
+  const max = Math.max(...Object.values(bym).map(s=>s.gross), 1), top = Math.ceil(max/1e6)*1e6, H = 180;
+  const won = n=>payShow ? payWon(n) : PAY_MASK;
+  const grid = [0, .5, 1].map(f=>`<div class="pay-grid" style="bottom:calc(26px + ${f} * var(--h))"><span>${payShow ? (top*f/1e4).toLocaleString('ko-KR')+'만' : ''}</span></div>`).join('');
+  const bars = Array.from({length:12}, (_,m)=>{
+    const sl = bym[m];
+    if(!sl) return `<div class="pay-col empty"><div class="pay-bar"></div><span class="pay-mlabel">${m+1}월</span></div>`;
+    const hNet = sl.net/top*H, hDed = sl.deduct/top*H;
+    return `<button type="button" class="pay-col${sl.label===payOpen?' on':''}" onclick="payOpen='${sl.label}'; renderContent(); setTimeout(()=>{ const e=document.getElementById('paySlip'); if(e) e.scrollIntoView({behavior:'smooth', block:'start'}); }, 30)"
+        aria-label="${m+1}월 세전 ${won(sl.gross)}, 실수령 ${won(sl.net)}, 공제 ${won(sl.deduct)}">
+      <div class="pay-tip" role="tooltip"><b>${year}년 ${m+1}월분</b><span><i class="sw net"></i>실수령 ${won(sl.net)}</span><span><i class="sw ded"></i>공제 ${won(sl.deduct)}</span><span>세전 ${won(sl.gross)}</span></div>
+      <div class="pay-bar"><i class="ded" style="height:${hDed}px"></i><i class="net" style="height:${hNet}px"></i></div><span class="pay-mlabel">${m+1}월</span></button>`;
+  }).join('');
+  const list = Object.values(bym), net = list.reduce((a,s)=>a+s.net, 0), gross = list.reduce((a,s)=>a+s.gross, 0);
+  const rows = list.sort((a,b)=>a.m-b.m).map(s=>`<tr><td>${s.m+1}월</td><td class="num">${won(s.gross)}</td><td class="num">${won(s.deduct)}</td><td class="num">${won(s.net)}</td></tr>`).join('');
+  return `<div class="pay-sum"><span>${year}년 누적 실수령 <b>${won(net)}</b></span><span>월평균 <b>${won(list.length ? net/list.length : 0)}</b></span><span>세전 합계 ${won(gross)} · ${list.length}개월</span></div>
+    <div class="pay-legend"><span><i class="sw net"></i>실수령</span><span><i class="sw ded"></i>공제 (세금·4대보험)</span><span class="list-sub" style="margin:0;">막대 전체 = 세전</span></div>
+    <div class="pay-chart" style="--h:${H}px">${grid}<div class="pay-cols">${bars}</div></div>
+    <details class="pay-table"><summary>표로 보기</summary><div class="ct-tbl"><table><thead><tr><th>월</th><th class="num">세전</th><th class="num">공제</th><th class="num">실수령</th></tr></thead><tbody>${rows}</tbody></table></div></details>`;
+}
 function payContent(){
   const role = kpiRole;
   if(!payViewKey || !payCanView(role, payViewKey)) payViewKey = role;
   const key = payViewKey, slips = paySlipsFor(key);
-  if(!slips.some(s=>s.label===payOpen)) payOpen = null;
-  const picker = role==='hr' ? `<div class="card" style="margin-bottom:14px;"><div class="field" style="max-width:320px;"><label>볼 직원 (HR)</label><select onchange="payViewKey=this.value; payOpen=null; renderContent()">${Object.keys(PAY_PEOPLE).map(k=>`<option value="${k}" ${k===key?'selected':''}>${escapeHtml(KPI_USERS[k].name)} ${escapeHtml(KPI_USERS[k].title)}</option>`).join('')}</select></div></div>` : '';
-  const months = slips.map(s=>`<button type="button" class="pay-month${s.label===payOpen?' on':''}" onclick="payOpen=${s.label===payOpen?'null':`'${s.label}'`}; renderContent(); setTimeout(()=>{ const e=document.getElementById('paySlip'); if(e) e.scrollIntoView({behavior:'smooth', block:'start'}); }, 30)" aria-expanded="${s.label===payOpen}">
-      <b>${escapeHtml(s.label)}</b><span>${payShow ? payWon(s.net) : PAY_MASK} 실수령</span><small>지급 ${s.payday.slice(5).replace('-','/')}</small></button>`).join('');
+  const years = [...new Set(slips.map(s=>s.y))].sort((a,b)=>b-a);
+  if(!years.includes(payYear)) payYear = years[0];
+  if(!slips.some(s=>s.label===payOpen && s.y===payYear)) payOpen = null;
+  const picker = role==='hr' ? `<div class="card" style="margin-bottom:14px;"><div class="field" style="max-width:320px;"><label>볼 직원 (HR)</label><select onchange="payViewKey=this.value; payOpen=null; payYear=null; renderContent()">${Object.keys(PAY_PEOPLE).map(k=>`<option value="${k}" ${k===key?'selected':''}>${escapeHtml(KPI_USERS[k].name)} ${escapeHtml(KPI_USERS[k].title)}</option>`).join('')}</select></div></div>` : '';
+  const yearBtns = years.map(y=>`<button type="button" class="pay-year${y===payYear?' on':''}" onclick="payYear=${y}; payOpen=null; renderContent()" aria-pressed="${y===payYear}">${y}년</button>`).join('');
+  const bym = Object.fromEntries(slips.filter(s=>s.y===payYear).map(s=>[s.m, s]));
+  const monthBtns = Array.from({length:12}, (_,m)=>{ const sl = bym[m];
+    return sl ? `<button type="button" class="pay-mbtn${sl.label===payOpen?' on':''}" aria-expanded="${sl.label===payOpen}" onclick="payOpen=${sl.label===payOpen?'null':`'${sl.label}'`}; renderContent(); setTimeout(()=>{ const e=document.getElementById('paySlip'); if(e) e.scrollIntoView({behavior:'smooth', block:'start'}); }, 30)"><b>${m+1}월</b><small>지급 ${sl.payday.slice(5).replace('-','/')}</small></button>`
+      : `<button type="button" class="pay-mbtn" disabled><b>${m+1}월</b><small>명세서 없음</small></button>`; }).join('');
   const open = slips.find(s=>s.label===payOpen);
   if(!payTimer) payTimer = setInterval(payTick, 1000);
   setTimeout(payTick, 0);
   return `${roleSwitcher()}${picker}${payHero(key)}
-    <div class="card" style="margin-bottom:14px;"><div class="card-title"><span>월별 급여명세서 <span style="font-weight:500; color:var(--text-secondary);">${escapeHtml(KPI_USERS[key].name)} · 최근 ${slips.length}개월</span></span></div>
-      <div class="pay-months">${months}</div>
-      <div class="list-sub">달을 누르면 아래에 명세서가 열립니다. 시연용 가상 금액이며, 실제 명세서는 위하고 자료를 올리면 표시됩니다.</div></div>
+    <div class="card" style="margin-bottom:14px;">
+      <div class="card-title"><span>급여명세서 <span style="font-weight:500; color:var(--text-secondary);">${escapeHtml(KPI_USERS[key].name)}</span></span><span class="pay-years" role="group" aria-label="연도 선택">${yearBtns}</span></div>
+      <div class="pay-mgrid">${monthBtns}</div>
+      <div class="list-sub">월을 누르면 아래에 명세서가 열립니다. 시연용 가상 금액이며, 실제 명세서는 위하고 자료를 올리면 표시됩니다.</div>
+    </div>
+    <div class="card" style="margin-bottom:14px;"><div class="card-title">${payYear}년 급여 수령 현황</div>${payYearChart(slips, payYear)}</div>
     ${open ? payDetail(key, open) : ''}`;
 }
 
