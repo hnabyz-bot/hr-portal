@@ -302,19 +302,32 @@
   .pay-eye{ width:36px; height:36px; border-radius:var(--radius-sm); border:1px solid var(--sky); background:var(--surface); color:var(--accent); cursor:pointer; display:inline-flex; align-items:center; justify-content:center; padding:0; }
   .pay-eye svg{ width:18px; height:18px; }
   .pay-sub{ font-size:var(--fs-xs); color:var(--text-secondary); }
-  .pay-road{ position:relative; height:104px; margin-top:6px; }
-  .pay-track{ position:absolute; left:0; right:84px; bottom:16px; height:12px; background:var(--surface); border-radius:6px; overflow:hidden; box-shadow:inset 0 1px 2px rgba(27,36,51,.08); }
-  .pay-fill{ height:100%; width:0; background:linear-gradient(90deg,var(--bg-warning),var(--alert)); border-radius:6px; transition:width 1s linear; }
-  .pay-walker{ position:absolute; bottom:24px; left:0; width:60px; height:60px; transition:left 1s linear; animation:payStep .45s ease-in-out infinite alternate; }
-  @keyframes payStep{ from{ transform:translateY(0) rotate(-3deg); } to{ transform:translateY(-6px) rotate(3deg); } }
-  .pay-chest{ position:absolute; right:0; bottom:2px; width:84px; height:96px; }
-  .pay-chest img{ position:absolute; right:8px; bottom:6px; width:68px; height:68px; }
-  .pay-chest .pay-gem{ width:34px; height:34px; right:0; bottom:58px; animation:payGem 1.8s ease-in-out infinite; }
-  @keyframes payGem{ 0%,100%{ transform:scale(.9) rotate(-8deg); } 50%{ transform:scale(1.12) rotate(8deg); } }
+  .pay-road{ position:relative; height:150px; margin-top:4px; }
+  .pay-track{ position:absolute; left:0; right:0; bottom:14px; height:14px; background:var(--surface); border-radius:8px; overflow:hidden; box-shadow:inset 0 1px 3px rgba(27,36,51,.1); }
+  .pay-fill{ height:100%; width:0; background:linear-gradient(90deg,var(--bg-warning),var(--alert)); border-radius:8px; transition:width 1s linear; }
+  .pay-tick{ position:absolute; top:3px; width:2px; height:8px; border-radius:1px; background:var(--accent-light); }
+  .pay-walker{ position:absolute; bottom:22px; left:0; width:84px; height:120px; transition:left 1s linear; }
+  .pay-walker img{ position:absolute; bottom:0; left:0; height:120px; width:auto; transform-origin:50% 100%; animation:payStep .42s ease-in-out infinite alternate; }
+  @keyframes payStep{ from{ transform:translateY(0) rotate(-2deg); } to{ transform:translateY(-5px) rotate(2deg); } }
+  .pay-paper{ position:absolute; left:10px; top:62px; width:16px; height:20px; background:#fff; border:1px solid var(--border); border-radius:2px; box-shadow:0 2px 4px rgba(27,36,51,.12);
+    background-image:repeating-linear-gradient(180deg,transparent 0 4px,var(--accent-light) 4px 5px); opacity:0; animation:payPaper 2.2s ease-out infinite; }
+  @keyframes payPaper{ 0%{ transform:translate(0,0) rotate(0); opacity:0; } 12%{ opacity:1; } 100%{ transform:translate(-70px,-70px) rotate(-220deg); opacity:0; } }
+  .pay-treasure{ position:absolute; right:0; bottom:18px; width:190px; }
+  .pay-treasure img{ width:100%; height:auto; display:block; animation:payGlow 2.4s ease-in-out infinite; }
+  @keyframes payGlow{ 0%,100%{ filter:drop-shadow(0 0 0 rgba(255,200,60,0)); } 50%{ filter:drop-shadow(0 0 10px rgba(255,200,60,.6)); } }
+  .pay-spark{ position:absolute; width:14px; height:14px; background:#FFD54A; opacity:0; clip-path:polygon(50% 0,62% 38%,100% 50%,62% 62%,50% 100%,38% 62%,0 50%,38% 38%); animation:fxTwinkle 1.8s ease-in-out infinite; }
+  .pay-win{ position:absolute; left:50%; bottom:6px; width:220px; height:150px; transform:translateX(-50%); }
+  .pay-win > img:first-child{ position:absolute; left:50%; bottom:0; height:146px; width:auto; transform:translateX(-50%); animation:payJump .55s ease-in-out infinite alternate; }
+  @keyframes payJump{ from{ transform:translateX(-50%) translateY(0); } to{ transform:translateX(-50%) translateY(-10px); } }
   .pay-coin{ position:absolute; top:0; width:24px; height:24px; opacity:0; animation:payCoin 1.5s ease-in infinite; }
-  @keyframes payCoin{ 0%{ transform:translateY(-16px) rotate(0); opacity:0; } 20%{ opacity:1; } 100%{ transform:translateY(46px) rotate(200deg); opacity:0; } }
-  .pay-hero.arrived .pay-walker{ animation:payJump .6s ease-in-out infinite alternate; }
-  @keyframes payJump{ from{ transform:translateY(0); } to{ transform:translateY(-16px); } }
+  @keyframes payCoin{ 0%{ transform:translateY(-16px) rotate(0); opacity:0; } 20%{ opacity:1; } 100%{ transform:translateY(90px) rotate(200deg); opacity:0; } }
+  .pay-hero.arrived .pay-track{ opacity:.5; }
+  .pay-demo{ border:0; background:none; color:var(--accent); font:inherit; font-size:var(--fs-xs); font-weight:600; cursor:pointer; text-decoration:underline; text-underline-offset:3px; padding:0 4px; }
+  @media (max-width:768px){
+    .pay-road{ height:130px; }
+    .pay-walker, .pay-walker img{ height:100px; }
+    .pay-treasure{ width:130px; }
+  }
   .pay-ends{ display:flex; justify-content:space-between; font-size:var(--fs-xs); color:var(--text-secondary); }
   .pay-months{ display:flex; gap:8px; overflow-x:auto; padding:2px 2px 8px; }
   .pay-month{ flex:0 0 auto; display:flex; flex-direction:column; gap:2px; text-align:left; border:1px solid var(--border); background:var(--surface); border-radius:var(--radius); padding:10px 14px; cursor:pointer; font:inherit; color:var(--text-primary); transition:border-color .2s var(--ease), background .2s var(--ease); }
@@ -1806,12 +1819,12 @@ function ctContent(){
 const PAY_HOLIDAYS = new Set(['2026-01-01','2026-02-16','2026-02-17','2026-02-18','2026-03-02','2026-05-05','2026-05-25','2026-06-03','2026-08-17','2026-09-24','2026-09-25','2026-10-05','2026-10-09','2026-12-25',
   '2027-01-01','2027-02-08','2027-02-09','2027-03-01','2027-05-05','2027-05-13','2027-08-16','2027-09-14','2027-09-15','2027-09-16','2027-10-04','2027-10-11','2027-12-27']);
 const PAY_PEOPLE = {   // 시연 역할별 가상 사원 정보와 월 지급 항목
-  emp:  { code:'10301', birth:'1990.03.15', dept:'국내영업팀',     title:'대리',   step:'2호봉', base:2491500, ability:1283700, ot:285850, pos:0 },
-  lead: { code:'10142', birth:'1985.07.02', dept:'국내영업팀',     title:'팀장',   step:'',      base:2491500, ability:1620000, ot:311490, pos:300000 },
-  head: { code:'10057', birth:'1978.09.11', dept:'전략마케팅본부', title:'본부장', step:'',      base:2491500, ability:1976000, ot:353760, pos:500000 },
-  hr:   { code:'10188', birth:'1988.11.27', dept:'지원팀',         title:'HR 담당', step:'',     base:2491500, ability:1350000, ot:300120, pos:100000 },
+  emp:  { gender:'m', code:'10301', birth:'1990.03.15', dept:'국내영업팀',     title:'대리',   step:'2호봉', base:2491500, ability:1283700, ot:285850, pos:0 },
+  lead: { gender:'f', code:'10142', birth:'1985.07.02', dept:'국내영업팀',     title:'팀장',   step:'',      base:2491500, ability:1620000, ot:311490, pos:300000 },
+  head: { gender:'m', code:'10057', birth:'1978.09.11', dept:'전략마케팅본부', title:'본부장', step:'',      base:2491500, ability:1976000, ot:353760, pos:500000 },
+  hr:   { gender:'f', code:'10188', birth:'1988.11.27', dept:'지원팀',         title:'HR 담당', step:'',     base:2491500, ability:1350000, ot:300120, pos:100000 },
 };
-let paySlips = null, payOpen = null, payShow = false, payViewKey = null, payTimer = null;
+let paySlips = null, payOpen = null, payShow = false, payViewKey = null, payTimer = null, payPreview = false;   // payPreview: 시연용 급여일 모습 미리보기
 
 /* ----- 규칙 (순수 로직, paySelfCheck가 검증) ----- */
 function payIsOff(d){ return d.getDay()===0 || d.getDay()===6 || PAY_HOLIDAYS.has(ctYmd(d)); }
@@ -1879,17 +1892,25 @@ function payMd(d){ return `${d.getMonth()+1}월 ${d.getDate()}일`; }
 function payTick(){
   const el = document.getElementById('payAmt');
   if(!el){ clearInterval(payTimer); payTimer = null; return; }
-  const key = payViewKey, slips = paySlipsFor(key), now = new Date(), w = payWindow(now), t = payTarget(slips, w), p = payProgress(now, w);
+  const key = payViewKey, slips = paySlipsFor(key), now = new Date(), w = payWindow(now), t = payTarget(slips, w), p = payPreview ? 1 : payProgress(now, w);
   el.textContent = payShow ? payWon(t.amount*p) : PAY_MASK;
   const pct = (p*100).toFixed(3)+'%';
   document.getElementById('payFill').style.width = pct;
-  document.getElementById('payWalker').style.left = `calc((100% - 84px) * ${p})`;
+  const wk = document.getElementById('payWalker'); if(wk) wk.style.left = `calc((100% - 210px) * ${p})`;
 }
 function payHero(key){
-  const slips = paySlipsFor(key), now = new Date(), w = payWindow(now), t = payTarget(slips, w);
+  const slips = paySlipsFor(key), now = new Date(), w = payWindow(now), t = payTarget(slips, w), arrived = w.isPayday || payPreview;
+  const g = PAY_PEOPLE[key].gender==='f' ? 'f' : 'm';
   const days = Math.round((w.next - new Date(now.getFullYear(), now.getMonth(), now.getDate()))/864e5);
-  const lead = w.isPayday ? '<b>오늘은 급여일!</b> 이번 달도 수고 많으셨어요' : `다음 급여일 <b>${payMd(w.next)}</b>까지 <b>${days}일</b> · 지금까지 모인 이번 달 급여`;
-  return `<section class="pay-hero${w.isPayday?' arrived':''}" aria-label="급여일까지 진행 상황">
+  const lead = arrived ? '<b>오늘은 급여일!</b> 이번 달도 수고 많으셨어요' : `다음 급여일 <b>${payMd(w.next)}</b>까지 <b>${days}일</b> · 지금까지 모인 이번 달 급여`;
+  const papers = [0,1,2,3].map(i=>`<span class="pay-paper" style="animation-delay:${i*0.55}s"></span>`).join('');
+  const scene = arrived
+    ? `<div class="pay-win"><img src="img/pay/payday-${g}.png" alt="금은보화를 안고 기뻐하는 캐릭터">
+        ${[12,30,52,70,88].map((x,i)=>`<img class="pay-coin" src="img/pay/coin.png" alt="" style="left:${x}%; animation-delay:${i*0.3}s">`).join('')}
+        ${[[8,20],[86,14],[20,64],[78,58]].map(([x,y],i)=>`<span class="pay-spark" style="left:${x}%; top:${y}%; animation-delay:${i*0.4}s"></span>`).join('')}</div>`
+    : `<div class="pay-walker" id="payWalker">${papers}<img src="img/pay/walk-${g}.png" alt="급여일을 향해 걸어가는 캐릭터"></div>
+       <div class="pay-treasure"><img src="img/pay/treasure.png" alt="금은보화"><span class="pay-spark" style="left:18%; top:10%"></span><span class="pay-spark" style="left:70%; top:4%; animation-delay:.7s"></span></div>`;
+  return `<section class="pay-hero${arrived?' arrived':''}" aria-label="급여일까지 진행 상황">
     <div class="pay-top"><div>
       <div class="pay-lead">${lead}</div>
       <div class="pay-amt-row"><span class="pay-amt" id="payAmt" aria-live="off">${payShow ? '' : PAY_MASK}</span>
@@ -1897,12 +1918,10 @@ function payHero(key){
       <div class="pay-sub">${t.slip ? `${escapeHtml(t.slip.label)} 기준 ` : ''}세전 ${payShow ? payWon(t.amount) : PAY_MASK}${t.estimate ? ' <span class="badge neutral">예상</span>' : ''}</div>
     </div></div>
     <div class="pay-road">
-      <div class="pay-track"><div class="pay-fill" id="payFill"></div></div>
-      <img class="pay-walker" id="payWalker" src="img/pay/walker.png" alt="">
-      ${w.isPayday ? '<img class="pay-coin" src="img/pay/coin.png" alt="" style="right:58px"><img class="pay-coin" src="img/pay/coin.png" alt="" style="right:24px; animation-delay:.5s"><img class="pay-coin" src="img/pay/coin.png" alt="" style="right:40px; animation-delay:.9s">' : '<img class="pay-coin" src="img/pay/coin.png" alt="" style="right:40px">'}
-      <div class="pay-chest"><img src="img/pay/moneybag.png" alt=""><img class="pay-gem" src="img/pay/gem.png" alt=""></div>
+      <div class="pay-track"><div class="pay-fill" id="payFill"></div>${[25,50,75].map(x=>`<i class="pay-tick" style="left:${x}%"></i>`).join('')}</div>
+      ${scene}
     </div>
-    <div class="pay-ends"><span>${payMd(w.prev)} 지난 급여일</span><span>${payMd(w.next)} 급여일</span></div>
+    <div class="pay-ends"><span>${payMd(w.prev)} 지난 급여일</span><button type="button" class="pay-demo" onclick="payPreview=!payPreview; renderContent()">${payPreview?'원래대로 보기':'시연: 급여일 모습 보기'}</button><span>${payMd(w.next)} 급여일</span></div>
   </section>`;
 }
 function payDetail(key, s){
