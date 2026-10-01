@@ -294,18 +294,18 @@
   }
 
   /* ---------- 급여명세서 ---------- */
-  .pay-hero{ background:linear-gradient(180deg,var(--accent-soft),var(--accent-light)); border-radius:var(--radius-lg); padding:20px 24px 14px; margin-bottom:14px; position:relative; overflow:hidden; }
-  .pay-lead{ font-size:var(--fs-sm); color:var(--text-secondary); }
-  .pay-lead b{ color:var(--text-primary); }
+  .pay-hero{ --pay-ink:#7A3E1D; background:linear-gradient(180deg,#FFF9F2,#FBEADB); border:1px solid #F3DCC8; border-radius:var(--radius-lg); padding:20px 24px 14px; margin-bottom:14px; position:relative; overflow:hidden; }
+  .pay-lead{ font-size:var(--fs-sm); color:#7D6656; }
+  .pay-lead b{ color:var(--pay-ink); }
   .pay-amt-row{ display:flex; align-items:center; gap:8px; margin:4px 0 2px; }
-  .pay-amt{ font-size:var(--fs-2xl); font-weight:800; letter-spacing:-0.02em; color:var(--accent); min-width:8ch; }
-  .pay-eye{ width:36px; height:36px; border-radius:var(--radius-sm); border:1px solid var(--sky); background:var(--surface); color:var(--accent); cursor:pointer; display:inline-flex; align-items:center; justify-content:center; padding:0; }
+  .pay-amt{ font-size:var(--fs-2xl); font-weight:800; letter-spacing:-0.02em; color:var(--pay-ink); min-width:8ch; }
+  .pay-eye{ width:36px; height:36px; border-radius:var(--radius-sm); border:1px solid #EBC9AE; background:var(--surface); color:var(--pay-ink); cursor:pointer; display:inline-flex; align-items:center; justify-content:center; padding:0; }
   .pay-eye svg{ width:18px; height:18px; }
-  .pay-sub{ font-size:var(--fs-xs); color:var(--text-secondary); }
+  .pay-sub{ font-size:var(--fs-xs); color:#7D6656; }
   .pay-road{ position:relative; height:150px; margin-top:4px; }
   .pay-track{ position:absolute; left:0; right:0; bottom:14px; height:14px; background:var(--surface); border-radius:8px; overflow:hidden; box-shadow:inset 0 1px 3px rgba(27,36,51,.1); }
   .pay-fill{ height:100%; width:0; background:linear-gradient(90deg,var(--bg-warning),var(--alert)); border-radius:8px; transition:width 1s linear; }
-  .pay-tick{ position:absolute; top:3px; width:2px; height:8px; border-radius:1px; background:var(--accent-light); }
+  .pay-tick{ position:absolute; top:3px; width:2px; height:8px; border-radius:1px; background:#F3DCC8; }
   .pay-walker{ position:absolute; bottom:22px; left:0; width:84px; height:120px; transition:left 1s linear; }
   .pay-walker img{ position:absolute; bottom:0; left:0; height:120px; width:auto; transform-origin:50% 100%; animation:payStep .42s ease-in-out infinite alternate; }
   @keyframes payStep{ from{ transform:translateY(0) rotate(-2deg); } to{ transform:translateY(-5px) rotate(2deg); } }
@@ -322,13 +322,13 @@
   .pay-coin{ position:absolute; top:0; width:24px; height:24px; opacity:0; animation:payCoin 1.5s ease-in infinite; }
   @keyframes payCoin{ 0%{ transform:translateY(-16px) rotate(0); opacity:0; } 20%{ opacity:1; } 100%{ transform:translateY(90px) rotate(200deg); opacity:0; } }
   .pay-hero.arrived .pay-track{ opacity:.5; }
-  .pay-demo{ border:0; background:none; color:var(--accent); font:inherit; font-size:var(--fs-xs); font-weight:600; cursor:pointer; text-decoration:underline; text-underline-offset:3px; padding:0 4px; }
+  .pay-demo{ border:0; background:none; color:var(--pay-ink); font:inherit; font-size:var(--fs-xs); font-weight:600; cursor:pointer; text-decoration:underline; text-underline-offset:3px; padding:0 4px; }
   @media (max-width:768px){
     .pay-road{ height:130px; }
     .pay-walker, .pay-walker img{ height:100px; }
     .pay-treasure{ width:130px; }
   }
-  .pay-ends{ display:flex; justify-content:space-between; font-size:var(--fs-xs); color:var(--text-secondary); }
+  .pay-ends{ display:flex; justify-content:space-between; font-size:var(--fs-xs); color:#7D6656; }
   .pay-months{ display:flex; gap:8px; overflow-x:auto; padding:2px 2px 8px; }
   .pay-month{ flex:0 0 auto; display:flex; flex-direction:column; gap:2px; text-align:left; border:1px solid var(--border); background:var(--surface); border-radius:var(--radius); padding:10px 14px; cursor:pointer; font:inherit; color:var(--text-primary); transition:border-color .2s var(--ease), background .2s var(--ease); }
   .pay-month:hover{ border-color:var(--sky); }
