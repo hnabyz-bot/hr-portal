@@ -395,6 +395,36 @@
     .pay-kv{ grid-template-columns:72px minmax(0,1fr); }
   }
 
+  /* ---------- 원천징수영수증 ---------- */
+  .wh-hero{ display:grid; grid-template-columns:minmax(0,1fr) 120px; gap:12px; align-items:center; border-radius:var(--radius-lg); padding:18px 22px; margin-bottom:12px; }
+  .wh-hero.refund{ background:linear-gradient(180deg,#F1FAF4,#DDF2E5); border:1px solid #C7E7D3; --wh-ink:#1F6B47; }
+  .wh-hero.extra{ background:linear-gradient(180deg,#FFF9F2,#FBEADB); border:1px solid #F3DCC8; --wh-ink:#7A3E1D; }
+  .wh-lead{ font-size:var(--fs-xs); color:var(--text-secondary); }
+  .wh-big{ font-size:var(--fs-2xl); font-weight:800; letter-spacing:-0.02em; color:var(--wh-ink); }
+  .wh-hero .pay-eye{ border-color:currentColor; color:var(--wh-ink); }
+  .wh-fx{ position:relative; height:96px; }
+  .wh-fly{ position:absolute; left:50%; top:10px; width:72px; height:72px; margin-left:-36px; animation:whFly 2.4s ease-in-out infinite; }
+  @keyframes whFly{ 0%,100%{ transform:translate(-14px,8px) rotate(-8deg); } 50%{ transform:translate(14px,-8px) rotate(8deg); } }
+  .wh-heart{ position:absolute; left:50%; top:14px; width:64px; height:64px; margin-left:-32px; animation:whPat 1.6s ease-in-out infinite; }
+  @keyframes whPat{ 0%,100%{ transform:scale(1); } 50%{ transform:scale(1.08); } }
+  .wh-flow{ display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:8px; margin-bottom:12px; }
+  .wh-step{ display:flex; flex-direction:column; gap:2px; background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:10px 12px; }
+  .wh-step span{ font-size:var(--fs-xs); color:var(--text-secondary); }
+  .wh-step b{ font-size:var(--fs-lg); }
+  .wh-step small{ font-size:var(--fs-xs); color:var(--text-muted); }
+  .wh-step.refund{ border-color:#C7E7D3; background:#F6FCF8; } .wh-step.refund b{ color:#1F6B47; }
+  .wh-step.extra{ border-color:#F3DCC8; background:#FFFAF5; } .wh-step.extra b{ color:#7A3E1D; }
+  .wh-detail{ border:1px solid var(--border); border-radius:var(--radius); padding:12px 16px; }
+  .wh-head{ display:flex; justify-content:space-between; align-items:center; margin-bottom:4px; }
+  .wh-row{ display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px solid var(--border); font-size:var(--fs-sm); }
+  .wh-row:last-of-type{ border-bottom:0; }
+  .wh-actions{ display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; }
+  @media (max-width:768px){
+    .wh-hero{ grid-template-columns:1fr; }
+    .wh-fx{ height:80px; }
+    .wh-flow{ grid-template-columns:1fr 1fr; }
+  }
+
   /* ---------- MOBILE ---------- */
   .menu-btn{ display:none; width:34px; height:34px; border-radius:var(--radius-sm); align-items:center; justify-content:center;
     color:var(--text-secondary); cursor:pointer; flex-shrink:0; border:0; background:none; padding:0; }
@@ -2043,13 +2073,98 @@ function payContent(){
     ${open ? payDetail(key, open) : ''}`;
 }
 
+/* ---------------- 원천징수영수증 (연말정산) ----------------
+   시연용: 금액은 전부 가상 값. 실제는 위하고에서 나온 PDF를 HR이 서버에 올리고, 요약 숫자는 그 서식 1·2쪽 값을 쓴다.
+   원본에는 주민번호 전체·주소·계좌번호가 있으므로 저장소·화면에 그대로 싣지 않는다.
+   화면 규칙 (인사담당자 2026-10-01): 요약 + 원본 PDF, 환급이면 돈 날아오는 효과·추가납부면 토닥토닥, 금액 가리기는 급여명세서와 같은 버튼 */
+const WH_DATA = {   // 귀속연도별 [급여, 상여, 결정 소득세, 기납부 소득세, 공제 항목들]
+  emp:  { 2025:[46200000,2491500, 912400,1803700, {'신용카드 등 사용액':3120000,'보험료 (건강·고용)':2105400,'연금저축 세액공제':300000,'보장성보험 세액공제':120000}],
+          2024:[44800000,2418900,1402600,1188300, {'신용카드 등 사용액':2210000,'보험료 (건강·고용)':2041800,'보장성보험 세액공제':120000}],
+          2023:[43100000,2349000, 864200,1530900, {'신용카드 등 사용액':2860000,'보험료 (건강·고용)':1964200,'의료비 세액공제':184500}] },
+  lead: { 2025:[53900000,2491500,1984300,2731800, {'신용카드 등 사용액':4120000,'보험료 (건강·고용)':2441300,'자녀 세액공제':250000,'교육비 세액공제':360000}],
+          2024:[52400000,2418900,2412500,2265100, {'신용카드 등 사용액':3540000,'보험료 (건강·고용)':2372800,'자녀 세액공제':250000}] },
+  head: { 2025:[64100000,2491500,3615800,4402700, {'신용카드 등 사용액':5310000,'보험료 (건강·고용)':2902600,'부양가족 공제':1500000,'기부금 세액공제':82500}],
+          2024:[62300000,2418900,3870400,3741200, {'신용카드 등 사용액':4780000,'보험료 (건강·고용)':2821400,'부양가족 공제':1500000}] },
+  hr:   { 2025:[46600000,2491500, 978200,1652400, {'신용카드 등 사용액':3380000,'보험료 (건강·고용)':2123700,'연금저축 세액공제':302400,'월세 세액공제':510000}] },
+};
+/* ----- 규칙 (순수 로직, whSelfCheck가 검증) ----- */
+function whSummary(year, row){   // 지방소득세 = 소득세의 10% (원 단위 절사), 차감 = 결정 − 기납부 (음수면 환급)
+  const [salary, bonus, decided, prepaid, deductions, prepaidLocalActual] = row;   // 6번째 = 실제 기납부 지방소득세(있으면 그 값)
+  const local = n=>Math.floor(n/10);
+  const prepaidLocal = prepaidLocalActual ?? local(prepaid);
+  const gross = salary + bonus, t10 = x=>Math.trunc(x/10)*10;   // 차감징수세액은 10원 미만 절사
+  const settle = t10(decided - prepaid) + t10(local(decided) - prepaidLocal);
+  return { year, salary, bonus, gross, decided, prepaid, decidedLocal:local(decided), prepaidLocal, settle,
+    refund: settle<0, rate: Math.round(decided/gross*1000)/10, deductions, settleMonth:`${year+1}년 2월분 급여` };
+}
+function whYears(key){ return Object.keys(WH_DATA[key]||{}).map(Number).sort((a,b)=>b-a); }
+function whSelfCheck(){   // 브라우저 콘솔에서 whSelfCheck() 실행
+  const ok = (c,m)=>{ if(!c) throw new Error('whSelfCheck 실패: '+m); };
+  const s = whSummary(2025, [61730784, 2622246, 2153860, 4445520, {}, 444460]);   // 인사담당자 샘플 서식 1쪽 값
+  ok(s.gross===64353030, '총급여 = 급여 + 상여');
+  ok(s.decidedLocal===215386, '결정 지방소득세 = 소득세 10% 절사');
+  ok(s.settle===-2291660-229070 && s.refund, '차감징수세액 = 서식 값 -2,291,660 + -229,070 (10원 미만 절사), 음수 = 환급');
+  ok(whSummary(2025, [1,0,0,1000,{}]).prepaidLocal===100, '실제 지방세 없으면 10%');
+  ok(s.rate===3.3, '실효세율 = 결정세액 / 총급여 (샘플 3.3%)');
+  ok(!whSummary(2024, [1,0,10,5,{}]).refund, '결정 > 기납부면 추가납부');
+  ok(whYears('emp').join()==='2025,2024,2023' && whYears('none').length===0, '연도 목록');
+  return 'whSelfCheck 통과';
+}
+
+/* ----- 화면 ----- */
+let whYear = null, whViewKey = null;
+function whContent(){
+  const role = kpiRole;
+  if(!whViewKey || !payCanView(role, whViewKey)) whViewKey = role;
+  const key = whViewKey, years = whYears(key);
+  if(!years.includes(whYear)) whYear = years[0];
+  const won = n=>payShow ? payWon(n) : PAY_MASK;
+  const picker = role==='hr' ? `<div class="card" style="margin-bottom:14px;"><div class="field" style="max-width:320px;"><label>볼 직원 (HR)</label><select onchange="whViewKey=this.value; whYear=null; renderContent()">${Object.keys(PAY_PEOPLE).map(k=>`<option value="${k}" ${k===key?'selected':''}>${escapeHtml(KPI_USERS[k].name)} ${escapeHtml(KPI_USERS[k].title)}</option>`).join('')}</select></div></div>` : '';
+  if(!years.length) return `${roleSwitcher()}${picker}<div class="card"><div class="placeholder-note" style="margin:0;">아직 등록된 원천징수영수증이 없습니다. 연말정산이 끝나면 HR이 올립니다.</div></div>`;
+  const s = whSummary(whYear, WH_DATA[key][whYear]), amt = Math.abs(s.settle);
+  const yearBtns = years.map(y=>`<button type="button" class="pay-year${y===whYear?' on':''}" onclick="whYear=${y}; renderContent()" aria-pressed="${y===whYear}">${y}년 귀속</button>`).join('');
+  const fx = s.refund
+    ? `<img class="wh-fly" src="img/pay/money-wings.png" alt="">${[18,46,74].map((x,i)=>`<img class="pay-coin" src="img/pay/coin.png" alt="" style="left:${x}%; animation-delay:${i*0.45}s">`).join('')}`
+    : `<img class="wh-heart" src="img/pay/heart.png" alt="">`;
+  const deds = Object.entries(s.deductions).map(([k,v])=>`<div class="wh-row"><span>${escapeHtml(k)}</span><span>${won(v)}</span></div>`).join('');
+  return `${roleSwitcher()}${picker}
+    <div class="card" style="margin-bottom:14px;">
+      <div class="card-title"><span>원천징수영수증 <span style="font-weight:500; color:var(--text-secondary);">${escapeHtml(KPI_USERS[key].name)} · 근로소득 연말정산</span></span><span class="pay-years" role="group" aria-label="귀속연도 선택">${yearBtns}</span></div>
+      <section class="wh-hero ${s.refund?'refund':'extra'}" aria-label="연말정산 결과">
+        <div>
+          <div class="wh-lead">${s.year}년 연말정산 결과 · ${s.settleMonth}에서 정산</div>
+          <div class="pay-amt-row"><span class="wh-big">${won(amt)} ${s.refund?'돌려받아요':'더 냈어요'}</span>
+            <button type="button" class="pay-eye" onclick="payShow=!payShow; renderContent()" aria-pressed="${payShow}" aria-label="${payShow?'금액 가리기':'금액 보기'}">${icon(payShow?'eyeOff':'eye')}</button></div>
+          <div class="wh-lead">${s.refund ? '미리 낸 세금이 실제 세금보다 많았어요. 차액을 급여와 함께 돌려받아요.' : '토닥토닥, 미리 낸 세금이 조금 모자랐어요. 차액은 급여에서 정산돼요.'}</div>
+        </div>
+        <div class="wh-fx" aria-hidden="true">${fx}</div>
+      </section>
+      <div class="wh-flow">
+        <div class="wh-step"><span>① 총급여 (급여 + 상여)</span><b>${won(s.gross)}</b></div>
+        <div class="wh-step"><span>② 결정세액 · 실제 세금</span><b>${won(s.decided + s.decidedLocal)}</b><small>소득세 ${won(s.decided)} + 지방 ${won(s.decidedLocal)}</small></div>
+        <div class="wh-step"><span>③ 미리 낸 세금 (매월 공제)</span><b>${won(s.prepaid + s.prepaidLocal)}</b><small>소득세 ${won(s.prepaid)} + 지방 ${won(s.prepaidLocal)}</small></div>
+        <div class="wh-step ${s.refund?'refund':'extra'}"><span>${s.refund?'③ − ② 환급':'② − ③ 추가 납부'}</span><b>${s.refund?'+':'−'}${won(amt)}</b></div>
+      </div>
+      <div class="wh-detail">
+        <div class="wh-head"><b>공제받은 주요 항목</b><span class="list-sub" style="margin:0;">실효세율 ${s.rate}%</span></div>
+        ${deds}
+        <div class="wh-actions">
+          <button class="btn sm" onclick="kpiFlash('시연 모드에서는 원본 PDF가 없습니다. 운영에서는 HR이 위하고 PDF를 올리면 여기서 내려받을 수 있습니다.', 'warning')">${icon('download')} 원본 PDF 내려받기</button>
+          <button class="btn sm" onclick="payYear=${s.year}; payViewKey='${key}'; goTo('pay','p1')">${s.year}년 급여명세서 보기</button>
+        </div>
+      </div>
+    </div>
+    ${kpiMsg ? kpiNote(kpiMsg.msg, kpiMsg.type) : ''}
+    <div class="list-sub">시연용 가상 금액입니다. 원본 서식에는 주민등록번호·주소·계좌번호가 있어 화면에는 요약만 보여줍니다.</div>`;
+}
+
 /* ---------------- NAV DATA ---------------- */
 const NAV = [
   { id:'home', label:'홈', icon:'home', tabs:[ {id:'dash', label:'대시보드', render:homeContent} ] },
   { id:'pay', label:'급여·계약', icon:'wallet', tabs:[
       {id:'p1', label:'급여명세서', render:payContent},
       {id:'p2', label:'전자연봉계약서', render:ctContent},
-      {id:'p3', label:'원천징수영수증', render:comingSoon},
+      {id:'p3', label:'원천징수영수증', render:whContent},
   ]},
   { id:'perf', label:'평가·성과', icon:'target', tabs:[
       {id:'e1', label:'목표설정 (KPI)', render:kpiContent},
