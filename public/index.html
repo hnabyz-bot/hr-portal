@@ -10,7 +10,7 @@
      글씨 색은 모두 배경 대비 4.5:1 이상. 글자 크기는 --fs-* 6단계만 쓴다. */
   :root{
     --accent:#255DAA; --accent-hover:#1E4C8F; --accent-light:#D2EEFA; --accent-soft:#EAF6FC;
-    --sky:#A3D8F1; --sky-mid:#54A6E1; --alert:#DE525E;
+    --sky:#A3D8F1; --sky-mid:#54A6E1; --alert:#DE525E; --coral-text:#C23A47;
     --sidebar-bg:#FFFFFF;
     --sidebar-hover:var(--accent-soft);
     --sidebar-active-bg:var(--accent-light);
@@ -51,8 +51,8 @@
     display:flex; flex-direction:column; height:100%;
   }
   .sidebar-logo{
-    display:flex; align-items:center; gap:10px;
-    padding:18px 20px 16px 20px; color:var(--text-primary);
+    display:flex; align-items:center; gap:10px; flex-shrink:0;
+    height:60px; padding:0 20px; color:var(--text-primary);
     border-bottom:1px solid var(--border);
   }
   .logo-word{ font-weight:800; font-size:var(--fs-lg); line-height:1.2; }
@@ -126,8 +126,8 @@
   .stat-label{ font-size:var(--fs-xs); color:var(--text-secondary); margin-bottom:6px; }
   .stat-value{ font-size:var(--fs-2xl); font-weight:700; letter-spacing:-0.02em; }
   .stat-sub{ font-size:var(--fs-xs); color:var(--text-muted); margin-top:4px; }
-  .bar-track{ height:6px; background:var(--accent-light); border-radius:4px; margin-top:10px; overflow:hidden; }
-  .bar-fill{ height:100%; background:var(--sky-mid); border-radius:4px; transition:width .4s var(--ease); }
+  .bar-track{ height:6px; background:var(--bg-warning); border-radius:4px; margin-top:10px; overflow:hidden; }
+  .bar-fill{ height:100%; background:var(--alert); border-radius:4px; transition:width .4s var(--ease); }
   table{ width:100%; border-collapse:collapse; font-size:var(--fs-sm); }
   th{ text-align:left; color:var(--text-muted); font-weight:600; font-size:var(--fs-xs); padding:8px 10px; border-bottom:1px solid var(--border); }
   td{ padding:10px 10px; border-bottom:1px solid var(--border); color:var(--text-primary); }
@@ -1218,7 +1218,7 @@ function kpiHomeCard(){
   } else {
     const items = s.confirmed.flatMap(g=>g.items), total = kpiProgress(s.confirmed), files = items.reduce((a,i)=>a+i.files.length,0);
     const bar = (pct,h)=>`<div class="bar-track" style="margin-top:0; height:${h}px;"><div class="bar-fill" style="width:${pct}%;"></div></div>`;
-    body = `<div style="display:flex; align-items:baseline; gap:8px; margin-bottom:6px;"><span class="stat-label" style="margin:0;">종합 달성률</span><span class="stat-value">${total}%</span><span class="stat-sub" style="margin:0;">가중치 반영 · 본인 입력 기준</span></div>
+    body = `<div style="display:flex; align-items:baseline; gap:8px; margin-bottom:6px;"><span class="stat-label" style="margin:0;">종합 달성률</span><span class="stat-value" style="color:var(--coral-text);">${total}%</span><span class="stat-sub" style="margin:0;">가중치 반영 · 본인 입력 기준</span></div>
       ${bar(total,8)}
       <div style="display:grid; grid-template-columns:minmax(0,1fr) 44px 110px 44px; gap:6px 10px; align-items:center; font-size:var(--fs-sm); margin-top:16px;">
         ${items.map(i=>`<span>${escapeHtml(i.action)}</span><span style="text-align:right; color:var(--text-muted); font-size:var(--fs-xs);">${i.weight}%</span>${bar(i.progress||0,6)}<span style="text-align:right;">${i.progress||0}%</span>`).join('')}
