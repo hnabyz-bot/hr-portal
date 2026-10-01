@@ -335,43 +335,48 @@
   .pay-ends{ display:flex; justify-content:space-between; font-size:var(--fs-xs); color:#7D6656; }
   .pay-years{ display:flex; gap:6px; }
   .pay-year{ border:1px solid var(--border); background:var(--surface); border-radius:var(--radius-sm); padding:6px 12px; font:inherit; font-size:var(--fs-sm); font-weight:600; color:var(--text-secondary); cursor:pointer; }
-  .pay-year.on{ background:var(--accent); border-color:var(--accent); color:#fff; }
+  .pay-year.on{ background:#C94F5B; border-color:#C94F5B; color:#fff; }
   .pay-mgrid{ display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:8px; margin-bottom:10px; }
   .pay-mbtn{ display:flex; flex-direction:column; align-items:center; gap:2px; border:1px solid var(--border); background:var(--surface); border-radius:var(--radius); padding:10px 4px; font:inherit; color:var(--text-primary); cursor:pointer; transition:border-color .2s var(--ease), background .2s var(--ease); }
   .pay-mbtn b{ font-size:var(--fs-md); }
   .pay-mbtn small{ font-size:var(--fs-xs); color:var(--text-muted); }
-  .pay-mbtn:hover:not(:disabled){ border-color:var(--sky); background:var(--accent-soft); }
-  .pay-mbtn.on{ border-color:var(--accent); background:var(--accent-light); }
+  .pay-mbtn:hover:not(:disabled){ border-color:#F3DCC8; background:#FFF9F2; }
+  .pay-mbtn.on{ border-color:#C94F5B; background:var(--bg-warning); }
   .pay-mbtn:disabled{ opacity:.45; cursor:default; }
   .pay-sum{ display:flex; flex-wrap:wrap; gap:6px 18px; font-size:var(--fs-sm); color:var(--text-secondary); margin-bottom:8px; }
   .pay-sum b{ color:var(--text-primary); }
   .pay-legend{ display:flex; flex-wrap:wrap; gap:14px; align-items:center; font-size:var(--fs-xs); color:var(--text-secondary); margin-bottom:10px; }
   .pay-legend span, .pay-tip span{ display:inline-flex; align-items:center; gap:6px; }
   .sw{ display:inline-block; width:10px; height:10px; border-radius:3px; }
-  .sw.net{ background:#255DAA; } .sw.ded{ background:#54A6E1; }
-  .pay-chart{ position:relative; height:calc(var(--h) + 26px); margin:0 0 6px 48px; }
+  .sw.net{ background:#C94F5B; } .sw.ded{ background:#E9A24B; }
+  .pay-chart{ position:relative; height:calc(var(--h) + 26px); margin:22px 0 6px 48px; }
+  .pay-val{ font-size:11px; font-weight:700; color:var(--text-primary); margin-bottom:4px; white-space:nowrap; letter-spacing:-0.02em; }
+  .pay-val .short{ display:none; }
+  .pay-unit{ display:none; }
+  @media (max-width:1180px){ .pay-val .full{ display:none; } .pay-val .short{ display:inline; } .pay-unit{ display:inline; } }
   .pay-grid{ position:absolute; left:0; right:0; border-top:1px solid var(--border); }
   .pay-grid span{ position:absolute; right:calc(100% + 6px); top:-8px; font-size:var(--fs-xs); color:var(--text-muted); white-space:nowrap; }
   .pay-cols{ position:absolute; inset:0; display:grid; grid-template-columns:repeat(12,minmax(0,1fr)); gap:4px; }
   .pay-col{ position:relative; display:flex; flex-direction:column; justify-content:flex-end; align-items:center; border:0; background:none; padding:0; font:inherit; cursor:pointer; border-radius:var(--radius-sm); }
   .pay-col.empty{ cursor:default; }
-  .pay-col:hover:not(.empty), .pay-col.on{ background:var(--accent-soft); }
+  .pay-col:hover:not(.empty), .pay-col.on{ background:#FFF4EC; }
   .pay-bar{ width:min(28px,70%); display:flex; flex-direction:column; gap:2px; }
   .pay-bar i{ display:block; width:100%; }
-  .pay-bar i.ded{ background:#54A6E1; border-radius:4px 4px 0 0; }
-  .pay-bar i.net{ background:#255DAA; }
+  .pay-bar i.ded{ background:#E9A24B; border-radius:4px 4px 0 0; }
+  .pay-bar i.net{ background:#C94F5B; }
   .pay-mlabel{ height:26px; line-height:26px; font-size:var(--fs-xs); color:var(--text-secondary); }
   .pay-col.empty .pay-mlabel{ color:var(--text-muted); }
   .pay-tip{ position:absolute; bottom:calc(100% - 20px); left:50%; transform:translateX(-50%); z-index:5; display:none; flex-direction:column; gap:3px; min-width:150px; text-align:left;
     background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-sm); box-shadow:0 8px 20px -8px rgba(27,36,51,.3); padding:8px 10px; font-size:var(--fs-xs); color:var(--text-primary); white-space:nowrap; }
   .pay-col:hover .pay-tip, .pay-col:focus-visible .pay-tip{ display:flex; }
-  .pay-table summary{ cursor:pointer; font-size:var(--fs-xs); font-weight:600; color:var(--accent); margin-top:6px; }
+  .pay-table summary{ cursor:pointer; font-size:var(--fs-xs); font-weight:600; color:#A33A45; margin-top:6px; }
   .pay-table table{ margin-top:8px; }
   @media (max-width:768px){
     .pay-mgrid{ grid-template-columns:repeat(4,minmax(0,1fr)); }
     .pay-chart{ margin-left:0; }
     .pay-grid span{ display:none; }
     .pay-cols{ gap:2px; }
+    .pay-val{ font-size:10px; letter-spacing:-0.04em; } .pay-val .u{ display:none; }
   }
   .pay-doc{ max-width:760px; margin:0 auto; padding:8px 4px; }
   .pay-doc-title{ text-align:center; font-size:var(--fs-xl); font-weight:800; margin-bottom:12px; }
@@ -2001,12 +2006,12 @@ function payYearChart(slips, year){   // 막대 = 세전, 아래 실수령(진�
     return `<button type="button" class="pay-col${sl.label===payOpen?' on':''}" onclick="payOpen='${sl.label}'; renderContent(); setTimeout(()=>{ const e=document.getElementById('paySlip'); if(e) e.scrollIntoView({behavior:'smooth', block:'start'}); }, 30)"
         aria-label="${m+1}월 세전 ${won(sl.gross)}, 실수령 ${won(sl.net)}, 공제 ${won(sl.deduct)}">
       <div class="pay-tip" role="tooltip"><b>${year}년 ${m+1}월분</b><span><i class="sw net"></i>실수령 ${won(sl.net)}</span><span><i class="sw ded"></i>공제 ${won(sl.deduct)}</span><span>세전 ${won(sl.gross)}</span></div>
-      <div class="pay-bar"><i class="ded" style="height:${hDed}px"></i><i class="net" style="height:${hNet}px"></i></div><span class="pay-mlabel">${m+1}월</span></button>`;
+      ${payShow ? `<span class="pay-val"><span class="full">${sl.gross.toLocaleString('ko-KR')}</span><span class="short">${Math.round(sl.gross/1e4).toLocaleString('ko-KR')}<span class="u">만</span></span></span>` : ''}<div class="pay-bar"><i class="ded" style="height:${hDed}px"></i><i class="net" style="height:${hNet}px"></i></div><span class="pay-mlabel">${m+1}월</span></button>`;
   }).join('');
   const list = Object.values(bym), net = list.reduce((a,s)=>a+s.net, 0), gross = list.reduce((a,s)=>a+s.gross, 0);
   const rows = list.sort((a,b)=>a.m-b.m).map(s=>`<tr><td>${s.m+1}월</td><td class="num">${won(s.gross)}</td><td class="num">${won(s.deduct)}</td><td class="num">${won(s.net)}</td></tr>`).join('');
   return `<div class="pay-sum"><span>${year}년 누적 실수령 <b>${won(net)}</b></span><span>월평균 <b>${won(list.length ? net/list.length : 0)}</b></span><span>세전 합계 ${won(gross)} · ${list.length}개월</span></div>
-    <div class="pay-legend"><span><i class="sw net"></i>실수령</span><span><i class="sw ded"></i>공제 (세금·4대보험)</span><span class="list-sub" style="margin:0;">막대 전체 = 세전</span></div>
+    <div class="pay-legend"><span><i class="sw net"></i>실수령</span><span><i class="sw ded"></i>공제 (세금·4대보험)</span><span class="list-sub" style="margin:0;">막대 전체 = 세전 · 막대 위 숫자 = 세전<span class="pay-unit">(만원)</span></span></div>
     <div class="pay-chart" style="--h:${H}px">${grid}<div class="pay-cols">${bars}</div></div>
     <details class="pay-table"><summary>표로 보기</summary><div class="ct-tbl"><table><thead><tr><th>월</th><th class="num">세전</th><th class="num">공제</th><th class="num">실수령</th></tr></thead><tbody>${rows}</tbody></table></div></details>`;
 }
