@@ -302,16 +302,17 @@
   .pay-eye{ width:36px; height:36px; border-radius:var(--radius-sm); border:1px solid #EBC9AE; background:var(--surface); color:var(--pay-ink); cursor:pointer; display:inline-flex; align-items:center; justify-content:center; padding:0; }
   .pay-eye svg{ width:18px; height:18px; }
   .pay-sub{ font-size:var(--fs-xs); color:#7D6656; }
-  .pay-road{ position:relative; height:150px; margin-top:4px; }
+  .pay-road{ position:relative; height:166px; margin-top:4px; }
   .pay-track{ position:absolute; left:0; right:0; bottom:14px; height:14px; background:var(--surface); border-radius:8px; overflow:hidden; box-shadow:inset 0 1px 3px rgba(27,36,51,.1); }
   .pay-fill{ height:100%; width:0; background:linear-gradient(90deg,var(--bg-warning),var(--alert)); border-radius:8px; transition:width 1s linear; }
   .pay-tick{ position:absolute; top:3px; width:2px; height:8px; border-radius:1px; background:#F3DCC8; }
-  .pay-walker{ position:absolute; bottom:22px; left:0; width:84px; height:120px; transition:left 1s linear; }
-  .pay-walker img{ position:absolute; bottom:0; left:0; height:120px; width:auto; transform-origin:50% 100%; animation:payStep .42s ease-in-out infinite alternate; }
-  @keyframes payStep{ from{ transform:translateY(0) rotate(-2deg); } to{ transform:translateY(-5px) rotate(2deg); } }
-  .pay-paper{ position:absolute; left:10px; top:62px; width:16px; height:20px; background:#fff; border:1px solid var(--border); border-radius:2px; box-shadow:0 2px 4px rgba(27,36,51,.12);
-    background-image:repeating-linear-gradient(180deg,transparent 0 4px,var(--accent-light) 4px 5px); opacity:0; animation:payPaper 2.2s ease-out infinite; }
-  @keyframes payPaper{ 0%{ transform:translate(0,0) rotate(0); opacity:0; } 12%{ opacity:1; } 100%{ transform:translate(-70px,-70px) rotate(-220deg); opacity:0; } }
+  .pay-walker{ position:absolute; bottom:20px; left:0; height:140px; transition:left 1s linear; }
+  .pay-walker img{ display:block; height:140px; width:auto; position:relative; z-index:1; transform-origin:50% 100%; animation:payStep .5s ease-in-out infinite alternate; }
+  @keyframes payStep{ from{ transform:translateY(0) rotate(-1.5deg); } to{ transform:translateY(-6px) rotate(1.5deg); } }
+  .pay-shadow{ position:absolute; left:15%; right:15%; bottom:-4px; height:8px; border-radius:50%; background:rgba(122,62,29,.18); animation:payShadow .5s ease-in-out infinite alternate; }
+  @keyframes payShadow{ from{ transform:scaleX(1); opacity:1; } to{ transform:scaleX(.82); opacity:.6; } }
+  .pay-glyph{ position:absolute; z-index:2; font-size:15px; font-weight:800; color:var(--accent); opacity:0; text-shadow:0 1px 0 #fff; animation:payGlyph 2.6s ease-out infinite; }
+  @keyframes payGlyph{ 0%{ transform:translate(0,0) scale(.6); opacity:0; } 15%{ opacity:1; } 100%{ transform:translate(var(--dx),-64px) scale(1.15); opacity:0; } }
   .pay-treasure{ position:absolute; right:0; bottom:18px; width:190px; }
   .pay-treasure img{ width:100%; height:auto; display:block; animation:payGlow 2.4s ease-in-out infinite; }
   @keyframes payGlow{ 0%,100%{ filter:drop-shadow(0 0 0 rgba(255,200,60,0)); } 50%{ filter:drop-shadow(0 0 10px rgba(255,200,60,.6)); } }
@@ -325,7 +326,7 @@
   .pay-demo{ border:0; background:none; color:var(--pay-ink); font:inherit; font-size:var(--fs-xs); font-weight:600; cursor:pointer; text-decoration:underline; text-underline-offset:3px; padding:0 4px; }
   @media (max-width:768px){
     .pay-road{ height:130px; }
-    .pay-walker, .pay-walker img{ height:100px; }
+    .pay-walker, .pay-walker img{ height:104px; }
     .pay-treasure{ width:130px; }
   }
   .pay-ends{ display:flex; justify-content:space-between; font-size:var(--fs-xs); color:#7D6656; }
@@ -1903,12 +1904,13 @@ function payHero(key){
   const g = PAY_PEOPLE[key].gender==='f' ? 'f' : 'm';
   const days = Math.round((w.next - new Date(now.getFullYear(), now.getMonth(), now.getDate()))/864e5);
   const lead = arrived ? '<b>오늘은 급여일!</b> 이번 달도 수고 많으셨어요' : `다음 급여일 <b>${payMd(w.next)}</b>까지 <b>${days}일</b> · 지금까지 모인 이번 달 급여`;
-  const papers = [0,1,2,3].map(i=>`<span class="pay-paper" style="animation-delay:${i*0.55}s"></span>`).join('');
+  const dev = g==='f' ? { x:80, y:24 } : { x:72, y:30 };   // 패드·노트북 화면 위치(그림 안 %)
+  const glyphs = ['가','A','₩','1','%','H','R','+','8'].map((ch,i)=>`<span class="pay-glyph" style="left:${dev.x + ((i*37)%11) - 5}%; top:${dev.y}%; animation-delay:${(i*0.37).toFixed(2)}s; --dx:${((i*53)%41) - 20}px">${ch}</span>`).join('');
   const scene = arrived
     ? `<div class="pay-win"><img src="img/pay/payday-${g}.png" alt="금은보화를 안고 기뻐하는 캐릭터">
         ${[12,30,52,70,88].map((x,i)=>`<img class="pay-coin" src="img/pay/coin.png" alt="" style="left:${x}%; animation-delay:${i*0.3}s">`).join('')}
         ${[[8,20],[86,14],[20,64],[78,58]].map(([x,y],i)=>`<span class="pay-spark" style="left:${x}%; top:${y}%; animation-delay:${i*0.4}s"></span>`).join('')}</div>`
-    : `<div class="pay-walker" id="payWalker">${papers}<img src="img/pay/walk-${g}.png" alt="급여일을 향해 걸어가는 캐릭터"></div>
+    : `<div class="pay-walker" id="payWalker"><img src="img/pay/walk-${g}.png" alt="${g==='f'?'패드':'노트북'}으로 일하며 급여일을 향해 걸어가는 캐릭터">${glyphs}<span class="pay-shadow"></span></div>
        <div class="pay-treasure"><img src="img/pay/treasure.png" alt="금은보화"><span class="pay-spark" style="left:18%; top:10%"></span><span class="pay-spark" style="left:70%; top:4%; animation-delay:.7s"></span></div>`;
   return `<section class="pay-hero${arrived?' arrived':''}" aria-label="급여일까지 진행 상황">
     <div class="pay-top"><div>
