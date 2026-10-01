@@ -293,6 +293,51 @@
     .ct-scroll, .ct-scroll.gated{ max-height:none; overflow:visible; border:0; }
   }
 
+  /* ---------- 급여명세서 ---------- */
+  .pay-hero{ background:linear-gradient(180deg,var(--accent-soft),var(--accent-light)); border-radius:var(--radius-lg); padding:20px 24px 14px; margin-bottom:14px; position:relative; overflow:hidden; }
+  .pay-lead{ font-size:var(--fs-sm); color:var(--text-secondary); }
+  .pay-lead b{ color:var(--text-primary); }
+  .pay-amt-row{ display:flex; align-items:center; gap:8px; margin:4px 0 2px; }
+  .pay-amt{ font-size:var(--fs-2xl); font-weight:800; letter-spacing:-0.02em; color:var(--accent); min-width:8ch; }
+  .pay-eye{ width:36px; height:36px; border-radius:var(--radius-sm); border:1px solid var(--sky); background:var(--surface); color:var(--accent); cursor:pointer; display:inline-flex; align-items:center; justify-content:center; padding:0; }
+  .pay-eye svg{ width:18px; height:18px; }
+  .pay-sub{ font-size:var(--fs-xs); color:var(--text-secondary); }
+  .pay-road{ position:relative; height:104px; margin-top:6px; }
+  .pay-track{ position:absolute; left:0; right:84px; bottom:16px; height:12px; background:var(--surface); border-radius:6px; overflow:hidden; box-shadow:inset 0 1px 2px rgba(27,36,51,.08); }
+  .pay-fill{ height:100%; width:0; background:linear-gradient(90deg,var(--bg-warning),var(--alert)); border-radius:6px; transition:width 1s linear; }
+  .pay-walker{ position:absolute; bottom:24px; left:0; width:60px; height:60px; transition:left 1s linear; animation:payStep .45s ease-in-out infinite alternate; }
+  @keyframes payStep{ from{ transform:translateY(0) rotate(-3deg); } to{ transform:translateY(-6px) rotate(3deg); } }
+  .pay-chest{ position:absolute; right:0; bottom:2px; width:84px; height:96px; }
+  .pay-chest img{ position:absolute; right:8px; bottom:6px; width:68px; height:68px; }
+  .pay-chest .pay-gem{ width:34px; height:34px; right:0; bottom:58px; animation:payGem 1.8s ease-in-out infinite; }
+  @keyframes payGem{ 0%,100%{ transform:scale(.9) rotate(-8deg); } 50%{ transform:scale(1.12) rotate(8deg); } }
+  .pay-coin{ position:absolute; top:0; width:24px; height:24px; opacity:0; animation:payCoin 1.5s ease-in infinite; }
+  @keyframes payCoin{ 0%{ transform:translateY(-16px) rotate(0); opacity:0; } 20%{ opacity:1; } 100%{ transform:translateY(46px) rotate(200deg); opacity:0; } }
+  .pay-hero.arrived .pay-walker{ animation:payJump .6s ease-in-out infinite alternate; }
+  @keyframes payJump{ from{ transform:translateY(0); } to{ transform:translateY(-16px); } }
+  .pay-ends{ display:flex; justify-content:space-between; font-size:var(--fs-xs); color:var(--text-secondary); }
+  .pay-months{ display:flex; gap:8px; overflow-x:auto; padding:2px 2px 8px; }
+  .pay-month{ flex:0 0 auto; display:flex; flex-direction:column; gap:2px; text-align:left; border:1px solid var(--border); background:var(--surface); border-radius:var(--radius); padding:10px 14px; cursor:pointer; font:inherit; color:var(--text-primary); transition:border-color .2s var(--ease), background .2s var(--ease); }
+  .pay-month:hover{ border-color:var(--sky); }
+  .pay-month.on{ border-color:var(--accent); background:var(--accent-light); }
+  .pay-month b{ font-size:var(--fs-sm); }
+  .pay-month span{ font-size:var(--fs-xs); color:var(--text-secondary); }
+  .pay-month small{ font-size:var(--fs-xs); color:var(--text-muted); }
+  .pay-doc{ max-width:760px; margin:0 auto; padding:8px 4px; }
+  .pay-doc-title{ text-align:center; font-size:var(--fs-xl); font-weight:800; margin-bottom:12px; }
+  .pay-meta{ display:flex; justify-content:space-between; font-size:var(--fs-xs); color:var(--text-secondary); margin-bottom:8px; }
+  .pay-kv{ grid-template-columns:72px minmax(0,1fr) 72px minmax(0,1fr) 72px minmax(0,1fr); margin-bottom:10px; }
+  .pay-doc table{ font-size:var(--fs-xs); min-width:480px; }
+  .pay-doc th, .pay-doc td{ border:1px solid var(--border); padding:6px 8px; }
+  .pay-doc th{ background:var(--bg-page); color:var(--text-secondary); font-weight:600; }
+  .pay-hours{ margin-bottom:10px; }
+  .pay-hours th, .pay-hours td{ text-align:center; }
+  .pay-net{ color:var(--accent); font-size:var(--fs-sm); }
+  @media (max-width:768px){
+    .pay-hero{ padding:16px 14px 12px; }
+    .pay-kv{ grid-template-columns:72px minmax(0,1fr); }
+  }
+
   /* ---------- MOBILE ---------- */
   .menu-btn{ display:none; width:34px; height:34px; border-radius:var(--radius-sm); align-items:center; justify-content:center;
     color:var(--text-secondary); cursor:pointer; flex-shrink:0; border:0; background:none; padding:0; }
@@ -389,6 +434,8 @@ const ICONS = {
   x:'<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>',
   download:'<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>',
   file:'<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>',
+  eye:'<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>',
+  eyeOff:'<path d="M17.9 17.9A10.1 10.1 0 0 1 12 20c-7 0-11-8-11-8a18.5 18.5 0 0 1 5.1-5.9"/><path d="M9.9 4.2A9.1 9.1 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.2 3.2"/><line x1="1" y1="1" x2="23" y2="23"/>',
   flag:'<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/>',
 };
 function icon(name, cls=''){ return `<svg class="${cls}" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICONS[name]}</svg>`; }
@@ -1748,11 +1795,166 @@ function ctContent(){
   return `${roleSwitcher()}${kpiMsg ? kpiNote(kpiMsg.msg, kpiMsg.type) : ''}${body}`;
 }
 
+/* ---------------- 급여명세서 ----------------
+   시연용: 명세서 금액·사원정보는 전부 가상 값(브라우저 메모리). 실제 명세서는 위하고 산출물을 서버에 올리는 방식으로 나중에 연결.
+   화면 규칙 (인사담당자 2026-10-01 결정)
+   - 위쪽: 지난 급여일에 0원 → 다음 급여일에 세전 금액(지급액 계) 전액. 화면을 보고 있으면 1초마다 늘어남
+   - 급여일 = 매월 20일, 주말·공휴일이면 바로 앞 평일
+   - 금액은 처음에 가리고, 눈 버튼을 누르면 보임
+   - 아래쪽: 달별 명세서가 쌓이고, 달을 누르면 그 아래에 명세서가 열림. 열람은 본인과 HR */
+// ponytail: 공휴일 목록은 코드에 고정. 매년 HR이 확인해서 추가해야 한다 (급여일 앞뒤 날짜만 영향).
+const PAY_HOLIDAYS = new Set(['2026-01-01','2026-02-16','2026-02-17','2026-02-18','2026-03-02','2026-05-05','2026-05-25','2026-06-03','2026-08-17','2026-09-24','2026-09-25','2026-10-05','2026-10-09','2026-12-25',
+  '2027-01-01','2027-02-08','2027-02-09','2027-03-01','2027-05-05','2027-05-13','2027-08-16','2027-09-14','2027-09-15','2027-09-16','2027-10-04','2027-10-11','2027-12-27']);
+const PAY_PEOPLE = {   // 시연 역할별 가상 사원 정보와 월 지급 항목
+  emp:  { code:'10301', birth:'1990.03.15', dept:'국내영업팀',     title:'대리',   step:'2호봉', base:2491500, ability:1283700, ot:285850, pos:0 },
+  lead: { code:'10142', birth:'1985.07.02', dept:'국내영업팀',     title:'팀장',   step:'',      base:2491500, ability:1620000, ot:311490, pos:300000 },
+  head: { code:'10057', birth:'1978.09.11', dept:'전략마케팅본부', title:'본부장', step:'',      base:2491500, ability:1976000, ot:353760, pos:500000 },
+  hr:   { code:'10188', birth:'1988.11.27', dept:'지원팀',         title:'HR 담당', step:'',     base:2491500, ability:1350000, ot:300120, pos:100000 },
+};
+let paySlips = null, payOpen = null, payShow = false, payViewKey = null, payTimer = null;
+
+/* ----- 규칙 (순수 로직, paySelfCheck가 검증) ----- */
+function payIsOff(d){ return d.getDay()===0 || d.getDay()===6 || PAY_HOLIDAYS.has(ctYmd(d)); }
+function payDayOf(y, m){ const d = new Date(y, m, 20); while(payIsOff(d)) d.setDate(d.getDate()-1); return d; }   // m: 0~11
+function payWindow(now){   // 지난 급여일(그날 0시) ~ 다음 급여일(그날 0시). 급여일 당일은 도착 상태
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  let next = payDayOf(now.getFullYear(), now.getMonth());
+  if(next < today) next = payDayOf(now.getFullYear(), now.getMonth()+1);
+  const prev = payDayOf(next.getFullYear(), next.getMonth()-1);
+  return { prev, next, isPayday: +next===+today };
+}
+function payProgress(now, w){ if(w.isPayday) return 1; return Math.min(1, Math.max(0, (now - w.prev) / (w.next - w.prev))); }
+function payRound10(x){ return Math.floor(x/10)*10; }   // 공제액은 10원 미만 절사
+function paySlip(p, y, m){   // m: 귀속 월(0~11). 시연용 공제율 — 실제 값은 위하고 명세서를 그대로 쓴다
+  const raise = (y>2026 || (y===2026 && m>=2)) ? 1 : 0.97;   // 3월분부터 새 연봉
+  const pay = { '기본급':Math.round(p.base*raise), '능력급':Math.round(p.ability*raise), '고정연장근로수당':Math.round(p.ot*raise) };
+  if(p.pos) pay['직책수당'] = p.pos;
+  const gross = Object.values(pay).reduce((a,b)=>a+b, 0), taxable = gross - (p.pos||0);
+  const health = payRound10(taxable*0.03545);
+  const ded = { '국민연금':payRound10(taxable*0.045), '건강보험':health, '고용보험':payRound10(gross*0.009), '장기요양보험료':payRound10(health*0.1295), '소득세':payRound10(gross*0.068) };
+  ded['지방소득세'] = payRound10(ded['소득세']*0.1);
+  const deduct = Object.values(ded).reduce((a,b)=>a+b, 0);
+  const hourly = Math.round((pay['기본급'] + pay['능력급'] + (p.pos||0) + pay['기본급']/12) / 209);
+  return { y, m, label:`${y}년 ${String(m+1).padStart(2,'0')}월분`, payday:ctYmd(payDayOf(y, m+1)), pay, ded, gross, deduct, net:gross-deduct, hourly };
+}
+function payTarget(slips, w){   // 다음 급여일에 받을 명세서가 있으면 그 금액, 없으면 가장 최근 명세서 금액(예상)
+  const due = slips.find(s=>s.payday===ctYmd(w.next));
+  return due ? { amount:due.gross, estimate:false, slip:due } : { amount:slips.length ? slips[0].gross : 0, estimate:true, slip:slips[0] };
+}
+function payCanView(role, key){ return role==='hr' || role===key; }
+function paySelfCheck(){   // 브라우저 콘솔에서 paySelfCheck() 실행
+  const ok = (c,msg)=>{ if(!c) throw new Error('paySelfCheck 실패: '+msg); };
+  ok(ctYmd(payDayOf(2026, 8))==='2026-09-18', '9/20(일) → 9/18(금)');
+  ok(ctYmd(payDayOf(2026, 9))==='2026-10-20', '10/20(화) 그대로');
+  ok(ctYmd(payDayOf(2026, 11))==='2026-12-18', '12/20(일) → 12/18(금)');
+  ok(ctYmd(payDayOf(2027, 1))==='2027-02-19', '2027-02-20(토) → 2/19(금)');
+  const w = payWindow(new Date(2026, 9, 1, 12));
+  ok(ctYmd(w.prev)==='2026-09-18' && ctYmd(w.next)==='2026-10-20' && !w.isPayday, '10/1의 구간 = 9/18 ~ 10/20');
+  const pd = payWindow(new Date(2026, 9, 20, 9));
+  ok(pd.isPayday && payProgress(new Date(2026, 9, 20, 9), pd)===1, '급여일 당일은 전액');
+  ok(ctYmd(payWindow(new Date(2026, 9, 21)).next)==='2026-11-20', '급여일 다음 날 새 구간');
+  ok(payProgress(w.prev, w)===0 && Math.abs(payProgress(new Date((+w.prev + +w.next)/2), w)-0.5)<1e-9, '진행률 0 → 0.5');
+  const s = paySlip(PAY_PEOPLE.emp, 2026, 7);
+  ok(s.gross===Object.values(s.pay).reduce((a,b)=>a+b,0) && s.net===s.gross-s.deduct && s.payday==='2026-09-18', '명세서 합계·지급일');
+  ok(payTarget([s], payWindow(new Date(2026, 8, 1))).estimate===false && payTarget([s], w).estimate===true, '명세서 없으면 예상 금액');
+  ok(payCanView('emp','emp') && !payCanView('lead','emp') && payCanView('hr','head'), '본인과 HR만 열람');
+  return 'paySelfCheck 통과';
+}
+
+/* ----- 시연 데이터: 지급일이 지난 최근 12개월 ----- */
+function paySlipsFor(key){
+  paySlips = paySlips || {};
+  if(!paySlips[key]){
+    const today = ctYmd(new Date()), list = [];
+    for(let i=1; list.length<12 && i<15; i++){ const d = new Date(); d.setDate(1); d.setMonth(d.getMonth()-i); const s = paySlip(PAY_PEOPLE[key], d.getFullYear(), d.getMonth()); if(s.payday<=today) list.push(s); }
+    paySlips[key] = list;
+  }
+  return paySlips[key];
+}
+
+/* ----- 화면 ----- */
+const PAY_MASK = '●,●●●,●●●원';
+function payWon(n){ return Math.round(n).toLocaleString('ko-KR')+'원'; }
+function payMd(d){ return `${d.getMonth()+1}월 ${d.getDate()}일`; }
+function payTick(){
+  const el = document.getElementById('payAmt');
+  if(!el){ clearInterval(payTimer); payTimer = null; return; }
+  const key = payViewKey, slips = paySlipsFor(key), now = new Date(), w = payWindow(now), t = payTarget(slips, w), p = payProgress(now, w);
+  el.textContent = payShow ? payWon(t.amount*p) : PAY_MASK;
+  const pct = (p*100).toFixed(3)+'%';
+  document.getElementById('payFill').style.width = pct;
+  document.getElementById('payWalker').style.left = `calc((100% - 84px) * ${p})`;
+}
+function payHero(key){
+  const slips = paySlipsFor(key), now = new Date(), w = payWindow(now), t = payTarget(slips, w);
+  const days = Math.round((w.next - new Date(now.getFullYear(), now.getMonth(), now.getDate()))/864e5);
+  const lead = w.isPayday ? '<b>오늘은 급여일!</b> 이번 달도 수고 많으셨어요' : `다음 급여일 <b>${payMd(w.next)}</b>까지 <b>${days}일</b> · 지금까지 모인 이번 달 급여`;
+  return `<section class="pay-hero${w.isPayday?' arrived':''}" aria-label="급여일까지 진행 상황">
+    <div class="pay-top"><div>
+      <div class="pay-lead">${lead}</div>
+      <div class="pay-amt-row"><span class="pay-amt" id="payAmt" aria-live="off">${payShow ? '' : PAY_MASK}</span>
+        <button type="button" class="pay-eye" onclick="payShow=!payShow; renderContent()" aria-pressed="${payShow}" aria-label="${payShow?'금액 가리기':'금액 보기'}">${icon(payShow?'eyeOff':'eye')}</button></div>
+      <div class="pay-sub">${t.slip ? `${escapeHtml(t.slip.label)} 기준 ` : ''}세전 ${payShow ? payWon(t.amount) : PAY_MASK}${t.estimate ? ' <span class="badge neutral">예상</span>' : ''}</div>
+    </div></div>
+    <div class="pay-road">
+      <div class="pay-track"><div class="pay-fill" id="payFill"></div></div>
+      <img class="pay-walker" id="payWalker" src="img/pay/walker.png" alt="">
+      ${w.isPayday ? '<img class="pay-coin" src="img/pay/coin.png" alt="" style="right:58px"><img class="pay-coin" src="img/pay/coin.png" alt="" style="right:24px; animation-delay:.5s"><img class="pay-coin" src="img/pay/coin.png" alt="" style="right:40px; animation-delay:.9s">' : '<img class="pay-coin" src="img/pay/coin.png" alt="" style="right:40px">'}
+      <div class="pay-chest"><img src="img/pay/moneybag.png" alt=""><img class="pay-gem" src="img/pay/gem.png" alt=""></div>
+    </div>
+    <div class="pay-ends"><span>${payMd(w.prev)} 지난 급여일</span><span>${payMd(w.next)} 급여일</span></div>
+  </section>`;
+}
+function payDetail(key, s){
+  const p = PAY_PEOPLE[key], u = KPI_USERS[key];
+  const payRows = Object.entries(s.pay), dedRows = Object.entries(s.ded), n = Math.max(payRows.length, dedRows.length);
+  const rows = Array.from({length:n}, (_,i)=>{ const a = payRows[i]||['',''], b = dedRows[i]||['',''];
+    return `<tr><td>${a[0]}</td><td class="num">${a[1]!==''?a[1].toLocaleString('ko-KR'):''}</td><td>${b[0]}</td><td class="num">${b[1]!==''?b[1].toLocaleString('ko-KR'):''}</td></tr>`; }).join('');
+  return `<div class="card ct-print pay-slip" id="paySlip">
+    <div class="card-title"><span>${escapeHtml(s.label)} 급여명세서</span><button class="btn sm no-print" onclick="window.print()">${icon('download')} 인쇄 / PDF 저장</button></div>
+    <div class="pay-doc">
+      <div class="pay-doc-title">${escapeHtml(s.label)} 급여명세서</div>
+      <div class="pay-meta"><span>회사명 : 주식회사에이치앤아비즈</span><span>지급일 : ${s.payday.replace(/-/g,'.')}</span></div>
+      <div class="ct-kv pay-kv">
+        <div class="k">사원코드</div><div>${p.code}</div><div class="k">사원명</div><div>${escapeHtml(u.name)}</div>
+        <div class="k">생년월일</div><div>${p.birth}</div><div class="k">부서</div><div>${escapeHtml(p.dept)}</div>
+        <div class="k">직급</div><div>${escapeHtml(p.title)}</div><div class="k">호봉</div><div>${escapeHtml(p.step)}</div>
+      </div>
+      <div class="ct-tbl"><table class="pay-hours"><tr><th>연장근로시간</th><th>야간근로시간</th><th>휴일근로시간</th><th>통상시급(원)</th></tr><tr><td></td><td></td><td></td><td class="num">${s.hourly.toLocaleString('ko-KR')}</td></tr></table></div>
+      <div class="ct-tbl"><table class="pay-main">
+        <thead><tr><th>지급 내역</th><th class="num">지급액</th><th>공제 내역</th><th class="num">공제액</th></tr></thead>
+        <tbody>${rows}</tbody>
+        <tfoot><tr><th>지급액 계</th><th class="num">${s.gross.toLocaleString('ko-KR')}</th><th>공제액 계</th><th class="num">${s.deduct.toLocaleString('ko-KR')}</th></tr>
+          <tr><th colspan="2"></th><th>차인지급액 (실수령)</th><th class="num pay-net">${s.net.toLocaleString('ko-KR')}</th></tr></tfoot>
+      </table></div>
+      <p class="list-sub" style="text-align:right;">(단위, 원)</p>
+      <p class="ct-center list-sub" style="margin-top:12px;">귀하의 노고에 감사드립니다.</p>
+    </div>
+  </div>`;
+}
+function payContent(){
+  const role = kpiRole;
+  if(!payViewKey || !payCanView(role, payViewKey)) payViewKey = role;
+  const key = payViewKey, slips = paySlipsFor(key);
+  if(!slips.some(s=>s.label===payOpen)) payOpen = null;
+  const picker = role==='hr' ? `<div class="card" style="margin-bottom:14px;"><div class="field" style="max-width:320px;"><label>볼 직원 (HR)</label><select onchange="payViewKey=this.value; payOpen=null; renderContent()">${Object.keys(PAY_PEOPLE).map(k=>`<option value="${k}" ${k===key?'selected':''}>${escapeHtml(KPI_USERS[k].name)} ${escapeHtml(KPI_USERS[k].title)}</option>`).join('')}</select></div></div>` : '';
+  const months = slips.map(s=>`<button type="button" class="pay-month${s.label===payOpen?' on':''}" onclick="payOpen=${s.label===payOpen?'null':`'${s.label}'`}; renderContent(); setTimeout(()=>{ const e=document.getElementById('paySlip'); if(e) e.scrollIntoView({behavior:'smooth', block:'start'}); }, 30)" aria-expanded="${s.label===payOpen}">
+      <b>${escapeHtml(s.label)}</b><span>${payShow ? payWon(s.net) : PAY_MASK} 실수령</span><small>지급 ${s.payday.slice(5).replace('-','/')}</small></button>`).join('');
+  const open = slips.find(s=>s.label===payOpen);
+  if(!payTimer) payTimer = setInterval(payTick, 1000);
+  setTimeout(payTick, 0);
+  return `${roleSwitcher()}${picker}${payHero(key)}
+    <div class="card" style="margin-bottom:14px;"><div class="card-title"><span>월별 급여명세서 <span style="font-weight:500; color:var(--text-secondary);">${escapeHtml(KPI_USERS[key].name)} · 최근 ${slips.length}개월</span></span></div>
+      <div class="pay-months">${months}</div>
+      <div class="list-sub">달을 누르면 아래에 명세서가 열립니다. 시연용 가상 금액이며, 실제 명세서는 위하고 자료를 올리면 표시됩니다.</div></div>
+    ${open ? payDetail(key, open) : ''}`;
+}
+
 /* ---------------- NAV DATA ---------------- */
 const NAV = [
   { id:'home', label:'홈', icon:'home', tabs:[ {id:'dash', label:'대시보드', render:homeContent} ] },
   { id:'pay', label:'급여·계약', icon:'wallet', tabs:[
-      {id:'p1', label:'급여명세서', render:comingSoon},
+      {id:'p1', label:'급여명세서', render:payContent},
       {id:'p2', label:'전자연봉계약서', render:ctContent},
       {id:'p3', label:'원천징수영수증', render:comingSoon},
   ]},
