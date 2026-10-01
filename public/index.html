@@ -246,6 +246,53 @@
   @media (min-width:1100px){ .celeb-row{ display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); overflow:visible; } }
   @media (prefers-reduced-motion:reduce){ .fx{ display:none; } }
 
+  /* ---------- 전자연봉계약서 ---------- */
+  .ct-rates{ display:grid; grid-template-columns:minmax(0,1fr) minmax(0,2fr); gap:12px; }
+  .ct-rates > div{ background:var(--bg-page); border-radius:var(--radius-sm); padding:10px 12px; }
+  .ct-rate{ display:inline-flex; align-items:center; gap:4px; font-weight:600; font-size:var(--fs-sm); }
+  .ct-rate input{ width:64px; border:1px solid var(--border); border-radius:var(--radius-sm); padding:5px 7px; font:inherit; text-align:right; background:var(--surface); }
+  .ct-tbl{ overflow-x:auto; }
+  td.num, th.num{ text-align:right; }
+  .ct-scroll{ border:1px solid var(--border); border-radius:var(--radius-sm); background:var(--surface); }
+  .ct-scroll.gated{ max-height:560px; overflow-y:auto; }
+  .ct-doc{ padding:24px 28px; line-height:1.75; font-size:var(--fs-sm); max-width:860px; margin:0 auto; }
+  .ct-doc h4{ font-size:var(--fs-md); font-weight:700; margin:18px 0 4px; }
+  .ct-doc p{ margin:0 0 2px; }
+  .ct-doc table{ font-size:var(--fs-xs); margin:6px 0 8px; min-width:560px; }
+  .ct-doc th, .ct-doc td{ border:1px solid var(--border); padding:6px; text-align:center; }
+  .ct-doc th{ background:var(--bg-page); color:var(--text-secondary); }
+  .ct-doc-title{ text-align:center; font-size:var(--fs-xl); font-weight:800; letter-spacing:.4em; margin-bottom:16px; }
+  .ct-kv{ display:grid; grid-template-columns:80px minmax(0,1fr) 90px minmax(0,1fr); border:1px solid var(--border); border-radius:var(--radius-sm); overflow:hidden; font-size:var(--fs-xs); }
+  .ct-kv > div{ padding:7px 9px; border-bottom:1px solid var(--border); }
+  .ct-kv .k{ background:var(--bg-page); color:var(--text-secondary); font-weight:600; }
+  .ct-kv .span3{ grid-column:span 3; }
+  .ct-amt{ color:var(--accent); font-size:var(--fs-md); }
+  .ct-center{ text-align:center; }
+  .ct-signs{ display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:12px; align-items:center; }
+  .ct-sigline{ display:inline-block; width:90px; border-bottom:1px solid var(--sky); margin-left:6px; vertical-align:middle; }
+  .ct-sigimg{ height:40px; vertical-align:middle; margin-left:6px; }
+  .ct-signbox{ margin-top:14px; padding-top:14px; border-top:1px solid var(--border); }
+  .ct-signgrid{ display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:14px; align-items:end; }
+  .ct-check{ display:flex; gap:8px; align-items:center; font-size:var(--fs-sm); font-weight:600; }
+  .ct-check input{ width:18px; height:18px; accent-color:var(--accent); }
+  .ct-pad{ width:100%; height:110px; border:1.5px dashed var(--border); border-radius:var(--radius); background:var(--bg-page); touch-action:none; cursor:not-allowed; }
+  .ct-pad.on{ border-color:var(--sky); background:var(--surface); cursor:crosshair; }
+  @media (max-width:768px){
+    .ct-rates, .ct-signgrid, .ct-signs{ grid-template-columns:1fr; }
+    .ct-doc{ padding:16px 12px; }
+    .ct-kv{ grid-template-columns:72px minmax(0,1fr); }
+    .ct-kv .span3{ grid-column:auto; }
+  }
+  @media print{
+    html, body{ height:auto; overflow:visible; display:block; background:#fff; }
+    .sidebar, .topbar, .subtabs, .breadcrumb, .sidebar-backdrop, .no-print, .ct-signbox{ display:none !important; }
+    .main, .content{ height:auto; overflow:visible; padding:0; }
+    #contentArea > *:not(.ct-print){ display:none !important; }
+    .ct-print{ border:0; padding:0; }
+    .ct-print .card-title, .ct-print .placeholder-note{ display:none; }
+    .ct-scroll, .ct-scroll.gated{ max-height:none; overflow:visible; border:0; }
+  }
+
   /* ---------- MOBILE ---------- */
   .menu-btn{ display:none; width:34px; height:34px; border-radius:var(--radius-sm); align-items:center; justify-content:center;
     color:var(--text-secondary); cursor:pointer; flex-shrink:0; border:0; background:none; padding:0; }
@@ -1377,12 +1424,336 @@ function celebDelete(id){
   orgCloseModal(); renderContent();
 }
 
+/* ---------------- 전자연봉계약서 ----------------
+   시연용: 사람·금액·주민번호(앞자리만)는 전부 가상 값이고 브라우저 메모리에만 있다. 새로고침하면 초기화.
+   계약서 본문·계산식: 인사담당자가 준 회사 양식(2026 연봉계약서 샘플) 그대로. 대표이사 실명은 넣지 않는다.
+   규칙 원본: docs/superpowers/specs/2026-08-24-hr-evaluation-contract-design.md §2·§5.4~5.6
+   - 기본급은 전 직원 같은 인상률, 능력급은 평가 등급별 인상률, 인상 후 100원 단위 반올림. HR은 사유를 적고 금액 조정 가능
+   - 재직자 계약기간 3/1 ~ 다음 해 2월 말일 고정, 신규 입사자는 HR이 입력
+   - 본인만 서명(본문 끝까지 읽어야 서명 가능). 서명 즉시 잠금. 파기는 HR만(사유 필수), 재발송은 원본 보존 + 새 버전
+   - 열람: 본인 · 자기 본부 본부장 · HR (팀장은 본인 것만) */
+const CT_COMPANY = { name:'㈜에이치앤아비즈', ceo:'○○○', kind:'제조업', addr:'경기도 용인시 처인구 처인성로 41-16' };
+const CT_PEOPLE = [   // key = 시연 역할(kpiRole). null이면 시연에서 로그인 불가
+  { pid:1, key:'emp',  name:'홍길동', title:'대리',   team:'국내영업팀', division:'전략마케팅본부', rrn:'900315-1******' },
+  { pid:2, key:'lead', name:'김영희', title:'팀장',   team:'국내영업팀', division:'전략마케팅본부', rrn:'850702-2******' },
+  { pid:3, key:'head', name:'이철수', title:'본부장', team:'',           division:'전략마케팅본부', rrn:'780911-1******' },
+  { pid:4, key:null,   name:'신에스', title:'사원',   team:'SCM팀',      division:'연구개발본부',   rrn:'990120-1******' },
+];
+const CT_GRADES = ['S','A','B','C','D'];
+const ctRates = { base:3, S:8, A:6, B:4, C:2, D:0 };   // 시연용 인상률(%) — 실제 값은 HR이 화면에서 입력
+let ctSeq = 0, ctSelected = new Set(), ctOpenId = null;
+
+/* ----- 규칙 (순수 로직, ctSelfCheck가 검증) ----- */
+function ctYmd(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function ctFebEnd(year){ return ctYmd(new Date(year, 2, 0)); }   // 3월 0일 = 2월 말일 (윤년 자동)
+function ctPeriod(t){ const y = t.getMonth()>=2 ? t.getFullYear()+1 : t.getFullYear(); return { start:`${y}-03-01`, end:ctFebEnd(y+1), year:y }; }   // 다음 3월 시작 계약
+function ctNewHirePeriod(hireDate){ const [y,m] = hireDate.split('-').map(Number); const endY = m>=3 ? y+1 : y; return { start:hireDate, end:ctFebEnd(endY) }; }
+function ctRound100(x){ return Math.round(x/100)*100; }
+function ctRaise(before, pct){ return ctRound100(before*(1+pct/100)); }
+function ctCalc(c){   // 양식 계산식: 시급 = (기본급+능력급+직책수당+명절상여/12)/209, 시간외 = 시급×10×1.5
+  const bonus = c.base, pos = c.pos||0, site = c.site||0, qual = c.qual||0;
+  const hourly = (c.base + c.ability + pos + bonus/12) / 209;
+  const ot = hourly*10*1.5;
+  const monthly = c.base + ot + c.ability + pos + site + qual;
+  const annual = (monthly - qual - pos)*12 + bonus;
+  return { hourly:Math.round(hourly), ot:Math.round(ot), monthly:Math.round(monthly), annual:Math.round(annual), bonus };
+}
+function ctApplyRates(c, rates){   // 작성 중(DRAFT)이고 HR이 직접 조정하지 않은 계약만 인상률로 다시 계산
+  if(c.status!=='DRAFT' || c.adjReason || c.newHire) return;
+  c.base = ctRaise(c.baseBefore, rates.base);
+  c.ability = ctRaise(c.abilityBefore, c.grade ? rates[c.grade] : 0);
+}
+function ctPerson(pid){ return CT_PEOPLE.find(p=>p.pid===pid); }
+function ctActor(role){ return CT_PEOPLE.find(p=>p.key===role); }
+function ctCanView(role, c){
+  if(role==='hr') return true;
+  const me = ctActor(role), p = ctPerson(c.pid);
+  if(!me) return false;
+  if(me.pid===p.pid) return c.status!=='DRAFT';   // 본인은 발송된 것부터
+  return me.title==='본부장' && me.division===p.division && c.status!=='DRAFT';
+}
+function ctActive(list, pid){ return list.filter(c=>c.pid===pid && c.status!=='CANCELLED').sort((a,b)=>b.version-a.version)[0]; }
+function ctAdjust(c, isHr, base, ability, reason, period){
+  if(!isHr) return ['금액 조정은 HR만 할 수 있습니다.'];
+  if(c.status!=='DRAFT') return ['발송한 계약서는 고칠 수 없습니다. 파기 후 재발송하세요.'];
+  const errs = [];
+  if(!(base>0) || !(ability>=0)) errs.push('기본급과 능력급을 올바르게 입력해 주세요.');
+  if(!reason.trim() && !c.newHire) errs.push('조정 사유를 입력해 주세요.');
+  if(period && !(period.start && period.end && period.start<period.end)) errs.push('계약 기간을 확인해 주세요.');
+  if(errs.length) return errs;
+  c.base = base; c.ability = ability; c.adjReason = reason.trim() || c.adjReason;
+  if(period){ c.start = period.start; c.end = period.end; }
+  return [];
+}
+function ctSend(c, isHr, today){
+  if(!isHr) return '발송은 HR만 할 수 있습니다.';
+  if(c.status!=='DRAFT') return '이미 발송된 계약서입니다.';
+  c.status = 'SENT'; c.sentAt = today; return null;
+}
+function ctSign(c, actorPid, sig){   // sig = {consent, name, image, read}
+  if(c.pid!==actorPid) return '본인 계약서만 서명할 수 있습니다.';
+  if(c.status!=='SENT') return c.status==='SIGNED' ? '이미 서명한 계약서입니다.' : '서명할 수 있는 상태가 아닙니다.';
+  const errs = [];
+  if(!sig.read) errs.push('계약서 본문을 끝까지 읽어 주세요.');
+  if(!sig.consent) errs.push('동의 체크를 해 주세요.');
+  if(sig.name.trim()!==ctPerson(c.pid).name) errs.push('성명을 본인 이름과 똑같이 입력해 주세요.');
+  if(!sig.image) errs.push('서명란에 서명해 주세요.');
+  if(errs.length) return errs.join('\n');
+  Object.assign(c, { status:'SIGNED', locked:true, signerName:sig.name.trim(), signature:sig.image, signedAt:sig.at });
+  return null;
+}
+function ctCancel(c, isHr, reason, at){
+  if(!isHr) return '파기는 HR만 할 수 있습니다.';
+  if(!reason.trim()) return '파기 사유를 입력해 주세요.';
+  if(c.status==='CANCELLED') return '이미 파기된 계약서입니다.';
+  Object.assign(c, { status:'CANCELLED', cancelReason:reason.trim(), cancelledAt:at }); return null;
+}
+function ctResend(list, c, isHr, reason, at){   // 원본은 파기로 보존, 같은 조건의 새 버전을 발송
+  const err = ctCancel(c, isHr, reason, at);
+  if(err) return err;
+  const n = { ...c, id:++ctSeq, version:c.version+1, resentFrom:c.id, status:'SENT', sentAt:at.slice(0,10), locked:false,
+    signerName:null, signature:null, signedAt:null, hash:null, cancelReason:null, cancelledAt:null };
+  list.push(n); return null;
+}
+function ctSelfCheck(){   // 브라우저 콘솔에서 ctSelfCheck() 실행
+  const ok = (c,m)=>{ if(!c) throw new Error('ctSelfCheck 실패: '+m); };
+  const s = ctCalc({ base:2418900, ability:1211000, pos:300000 });
+  ok(s.annual===49535908 && s.monthly===4226417 && s.hourly===19768 && s.ot===296517, '양식 샘플 금액과 일치');
+  ok(ctPeriod(new Date(2026,9,1)).end==='2028-02-29' && ctPeriod(new Date(2027,0,10)).start==='2027-03-01' && ctPeriod(new Date(2027,0,10)).end==='2028-02-29', '3/1 ~ 다음 해 2월 말일(윤년)');
+  ok(ctNewHirePeriod('2026-09-14').end==='2027-02-28' && ctNewHirePeriod('2027-01-05').end==='2027-02-28', '신규 입사자 기간');
+  ok(ctRaise(2418900,3)===2491500 && ctRaise(1211000,6)===1283700, '인상 후 100원 단위 반올림');
+  const mk = o=>({ id:1, pid:1, version:1, status:'DRAFT', grade:'A', baseBefore:2418900, abilityBefore:1211000, base:0, ability:0, pos:0, adjReason:'', newHire:false, ...o });
+  const a = mk({}); ctApplyRates(a, ctRates); ok(a.base===2491500 && a.ability===1283700, '인상률 적용');
+  const adj = mk({ adjReason:'승진', base:1, ability:1 }); ctApplyRates(adj, ctRates); ok(adj.base===1, 'HR 조정분은 인상률로 덮어쓰지 않음');
+  ok(ctAdjust(mk({}), false, 1, 1, 'x').length===1 && ctAdjust(mk({}), true, 1, 1, ' ').length===1 && ctAdjust(mk({status:'SENT'}), true, 1, 1, 'x').length===1, '조정: HR·사유·발송 전만');
+  ok(!ctCanView('lead', mk({pid:1, status:'SENT'})) && ctCanView('head', mk({pid:1, status:'SENT'})) && !ctCanView('head', mk({pid:4, status:'SENT'})) && ctCanView('hr', mk({})) && !ctCanView('emp', mk({pid:1})), '열람 권한');
+  const c = mk({}); ok(ctSend(c, false, 'd') && !ctSend(c, true, '2026-10-01') && c.status==='SENT', '발송은 HR만');
+  const sig = { consent:true, name:'홍길동', image:'x', read:true, at:'t' };
+  ok(ctSign(c, 2, sig) && c.status==='SENT', '남의 계약서 서명 불가');
+  ok(ctSign(c, 1, {...sig, read:false}) && ctSign(c, 1, {...sig, consent:false}) && ctSign(c, 1, {...sig, name:'홍길'}) && ctSign(c, 1, {...sig, image:null}), '서명 조건 4가지');
+  ok(!ctSign(c, 1, sig) && c.status==='SIGNED' && c.locked && ctSign(c, 1, sig), '서명 → 잠금, 재서명 불가');
+  ok(ctCancel(c, false, '오류', 't') && ctCancel(c, true, ' ', 't') && c.status==='SIGNED', '파기: HR·사유 필수');
+  const list = [c]; ok(!ctResend(list, c, true, '금액 오류', '2026-10-02 10:00') && list.length===2 && c.status==='CANCELLED' && list[1].status==='SENT' && list[1].version===2 && ctActive(list, 1)===list[1], '재발송: 원본 보존 + 새 버전');
+  return 'ctSelfCheck 통과';
+}
+
+/* ----- 시연 데이터 ----- */
+const ctContracts = [];
+(function ctSeed(){
+  const t = new Date(), per = ctPeriod(t), today = ctYmd(t);
+  const mk = (pid, o)=>{ const c = { id:++ctSeq, pid, version:1, status:'DRAFT', grade:null, baseBefore:2418900, abilityBefore:1000000, base:0, ability:0, pos:0, site:0, qual:0,
+    adjReason:'', newHire:false, start:per.start, end:per.end, sentAt:null, locked:false, signerName:null, signature:null, signedAt:null, hash:null, cancelReason:null, cancelledAt:null, resentFrom:null, ...o };
+    ctApplyRates(c, ctRates); if(!c.base){ c.base = c.baseBefore; c.ability = c.abilityBefore; } ctContracts.push(c); return c; };
+  mk(1, { grade:'A', abilityBefore:1211000 }).status = 'SENT';
+  const lead = mk(2, { grade:'S', abilityBefore:1500000, pos:300000 });
+  mk(3, { grade:'B', abilityBefore:1900000, pos:500000 });
+  const hire = (orgMembers.find(m=>m.name==='신에스')||{}).hireDate || today;
+  mk(4, { newHire:true, abilityBefore:1100000, ...ctNewHirePeriod(hire), adjReason:'신규 입사' });
+  ctContracts.forEach(c=>{ if(c.status==='SENT') c.sentAt = today; });
+  // 김영희 팀장: 서명 완료 예시 (손글씨 서명 그림을 코드로 그림)
+  lead.status = 'SENT'; lead.sentAt = today;
+  const cv = document.createElement('canvas'); cv.width = 240; cv.height = 80; const g = cv.getContext('2d');
+  g.strokeStyle = '#1B2433'; g.lineWidth = 2.4; g.lineCap = 'round'; g.beginPath(); g.moveTo(20,55);
+  [[40,20],[55,60],[75,25],[90,58],[120,30],[140,52],[170,28],[200,50],[220,40]].forEach(([x,y])=>g.lineTo(x,y)); g.stroke();
+  ctSign(lead, 2, { consent:true, name:'김영희', image:cv.toDataURL(), read:true, at:today+' 09:12' });
+  ctHash(lead);
+})();
+async function ctHash(c){   // 서명 시점 본문의 고유번호(SHA-256) — 나중에 본문이 바뀌었는지 확인하는 용도
+  const text = ctDocHtml(c, true).replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim();
+  if(!(window.crypto && crypto.subtle)){ c.hash = '(이 브라우저에서는 계산 불가)'; return; }
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+  c.hash = [...new Uint8Array(buf)].map(b=>b.toString(16).padStart(2,'0')).join('');
+}
+
+/* ----- 계약서 본문 (회사 양식) ----- */
+function ctWon(n){ return Math.round(n).toLocaleString('ko-KR')+'원'; }
+function ctKDate(ymd){ if(!ymd) return ''; const [y,m,d] = ymd.slice(0,10).split('-').map(Number); return `${y}년 ${m}월 ${d}일`; }
+function ctDocHtml(c, forHash){
+  const p = ctPerson(c.pid), k = ctCalc(c);
+  const sign = c.signature && !forHash ? `<img src="${c.signature}" alt="${escapeHtml(p.name)} 서명" class="ct-sigimg">` : `<span class="ct-sigline"></span>`;
+  return `<div class="ct-doc">
+    <div class="ct-doc-title">연 봉 계 약 서</div>
+    <div class="ct-kv">
+      <div class="k">사업주</div><div>${CT_COMPANY.name} · 대표이사 ${CT_COMPANY.ceo}</div><div class="k">사업의 종류</div><div>${CT_COMPANY.kind}</div>
+      <div class="k">소재지</div><div class="span3">${CT_COMPANY.addr}</div>
+      <div class="k">근로자</div><div>${escapeHtml(p.name)} (${escapeHtml(p.rrn)})</div><div class="k">소속 · 직급</div><div>${escapeHtml(p.team||p.division)} · ${escapeHtml(p.title)}</div>
+    </div>
+    <h4>제1조 (임금)</h4>
+    <p>총 계약 연봉금액 : <b class="ct-amt">${ctWon(k.annual)}</b> <span class="list-sub" style="display:inline;">((월급여 − 자격수당, 직책수당) × 12 + 명절상여)</span></p>
+    <p>1) 급여 구성은 기본급과 수당으로 구성되며, 내역은 아래와 같다.</p>
+    <div class="ct-tbl"><table>
+      <tr><th colspan="5">월 급여 / 月</th><th colspan="2">연봉 외 수당</th><th>명절상여/年</th></tr>
+      <tr><th>계</th><th>시간급</th><th>기본급(209H)</th><th>시간외근로(10H)</th><th>능력급(209H)</th><th>현장관리수당</th><th>직책수당</th><th></th></tr>
+      <tr><td>${ctWon(k.monthly)}</td><td>${ctWon(k.hourly)}</td><td>${ctWon(c.base)}</td><td>${ctWon(k.ot)}</td><td>${ctWon(c.ability)}</td><td>${ctWon(c.site||0)}</td><td>${ctWon(c.pos||0)}</td><td>${ctWon(k.bonus)}</td></tr>
+    </table></div>
+    <p>2) 상기 월급여는 기본급 209시간, 시간외근로수당(연장/야간/휴일근로를 포함한다) 10시간 150% 상당액을 포함한다.<br>&nbsp;&nbsp;- 직책수당, 자격수당은 사업주의 급여규정에 의거 지급한다.</p>
+    <p>3) 중도 입·퇴사자 월급여는 해당월의 일수로 일할 계산한다.</p>
+    <p>4) 직책수당, 자격수당은 연봉에 포함하지 않으며, 면직 시 해당월의 일수로 일할 계산한다.</p>
+    <p>5) 교대수당은 매월 1일부터 말일 기간 동안 교대근무(주말근무) 4회 이상 시 일당 12,500원을 지급한다.</p>
+    <p>6) 명절상여는 연봉에 포함되며(설, 추석 2회로 분할하여 지급), 근속 1년 이상자에 한하여 100% 지급되며, 근속 1년 미만의 경우 아래 표와 같이 지급된다.</p>
+    <div class="ct-tbl"><table>
+      <tr><th>구분</th><th>1개월 미만</th><th>3개월 미만</th><th>3개월 이상<br>6개월 미만</th><th>6개월 이상<br>1년 미만</th><th>1년 이상</th></tr>
+      <tr><td>설</td><td>10만원</td><td>30만원</td><td>월 기본급의 30%</td><td>월 기본급의 40%</td><td>월 기본급의 50%</td></tr>
+      <tr><td>추석</td><td>10만원</td><td>30만원</td><td>월 기본급의 30%</td><td>월 기본급의 40%</td><td>월 기본급의 50%</td></tr>
+    </table></div>
+    <h4>제2조 (임금 지급방법 및 시기)</h4>
+    <p>1) 임금 산정기간 및 지급일 : 당월 1일 ~ 당월 말일까지 기간으로 하여 익월 20일에 지급한다.</p>
+    <p>2) 임금 지급방법 : 본인 명의 통장 입금</p>
+    <h4>제3조 (기밀유지)</h4>
+    <p>1) 근로계약 내용 및 급여명세서는 절대 비밀을 유지하며, 이를 위반 시는 이로 인한 모든 민·형사상의 불이익을 감수한다.</p>
+    <p>2) 재직하는 동안 취득한 업무상 기밀 및 회사의 중요한 정보를 누설함으로써 회사에 피해를 끼치는 일이 없도록 할 것이며, 만일 이를 위반함으로써 발생하는 법적, 사회적 문제에 대해 근로자(을)은 민·형사상 책임을 진다.</p>
+    <h4>제4조 (계약기간)</h4>
+    <p>1) 계약기간 : <b>${ctKDate(c.start)}부터 ${ctKDate(c.end)}</b>로 한다. 단, 회사 경영상의 이유가 있을 때에는 영업 종료일로 한다.</p>
+    <p>2) 입사일로부터 3개월 간은 수습기간으로 하며, 이 기간 중 사고를 유발하거나 직원으로 부적격하다고 판단될 때는 중도에 해고예고 없이 계약을 해지할 수 있다. 이 기간의 임금은 회사가 정한 지급기준에 의거하여 지급한다.</p>
+    <p>3) 근무 중 고의로 회사에 손해를 끼치거나, 불성실한 태도로 근무 또는 잘못이 있을 시는 그에 따른 이 계약을 해지(해고)한다.</p>
+    <h4>제5조 (그 밖의 사항)</h4>
+    <p>1) 이 계약서에 명시되지 않은 사항은 취업규칙 및 근로기준법의 관련 조항을 준용하도록 한다.</p>
+    <p>2) 이 계약서는 2부를 작성하여 각자 1부씩 보관한다. ※ 근로계약의 내용을 이해하고 1부를 교부받았음을 확인함.</p>
+    <p>3) 사업주와 근로자의 계약 내용에 관한 모든 법적 문제는 사업주의 관할 법원을 원칙으로 한다.</p>
+    <p>4) 이 계약을 연장 또는 갱신한 때에 이 계약의 내용은 조정·변경한 사항을 제외하고 계속 유효하다.</p>
+    <p class="ct-center" style="margin-top:18px;">위와 같이 연봉 계약을 체결합니다.</p>
+    <p class="ct-center list-sub">${ctKDate(c.sentAt) || '(발송일)'}</p>
+    <div class="ct-signs"><div>사업주 : ${CT_COMPANY.name} 대표이사 ${CT_COMPANY.ceo} <span class="list-sub" style="display:inline;">(인)</span></div><div>근로자 : ${escapeHtml(p.name)} ${sign}</div></div>
+  </div>`;
+}
+
+/* ----- 화면 ----- */
+const CT_STATUS = { DRAFT:['작성 중','neutral'], SENT:['서명 대기','warning'], SIGNED:['서명 완료','success'], CANCELLED:['파기','danger'] };
+function ctBadge(c){ const [l,cls] = CT_STATUS[c.status]; return `<span class="badge ${cls}">${l}${c.version>1?` · ${c.version}차`:''}</span>`; }
+function ctPrint(id){ ctOpenId = id; renderContent(); setTimeout(()=>window.print(), 50); }
+function ctHrPanel(){
+  const per = ctPeriod(new Date());
+  const rows = CT_PEOPLE.map(p=>ctActive(ctContracts, p.pid)).filter(Boolean).map(c=>{
+    const p = ctPerson(c.pid), k = ctCalc(c), draft = c.status==='DRAFT';
+    return `<tr><td>${draft ? `<input type="checkbox" aria-label="${escapeHtml(p.name)} 선택" ${ctSelected.has(c.id)?'checked':''} onchange="this.checked?ctSelected.add(${c.id}):ctSelected.delete(${c.id}); kpiFlash(null)">` : ''}</td>
+      <td>${escapeHtml(p.name)} ${escapeHtml(p.title)}${c.newHire?' <span class="badge neutral">신규</span>':''}<div class="list-sub">${escapeHtml(p.team||p.division)}</div></td>
+      <td>${c.grade||'—'}</td><td class="num">${c.base.toLocaleString('ko-KR')}</td><td class="num">${c.ability.toLocaleString('ko-KR')}</td><td class="num"><b>${k.annual.toLocaleString('ko-KR')}</b></td>
+      <td>${ctBadge(c)}${c.adjReason?`<div class="list-sub">조정: ${escapeHtml(c.adjReason)}</div>`:''}</td>
+      <td style="white-space:nowrap;">${draft?`<button class="btn sm" onclick="ctEdit(${c.id})">조정</button> `:''}<button class="btn sm" onclick="ctOpenId=${c.id}; kpiFlash(null)">보기</button>${draft?'':` <button class="btn sm" onclick="ctCancelForm(${c.id})">파기·재발송</button>`}</td></tr>`;
+  }).join('');
+  const rate = (k, label)=>`<label class="ct-rate">${label}<input type="number" step="0.1" min="-100" max="100" value="${ctRates[k]}" onchange="ctSetRate('${k}', this.value)"> %</label>`;
+  return `<div class="card" style="margin-bottom:14px;">
+    <div class="card-title"><span>${per.year}년 연봉계약 <span style="font-weight:500; color:var(--text-secondary);">${ctKDate(per.start)} ~ ${ctKDate(per.end)} · 재직자 고정 기간</span></span></div>
+    <div class="ct-rates"><div><div class="stat-label">기본급 인상률 (전 직원 동일)</div>${rate('base','')}</div>
+      <div><div class="stat-label">능력급 인상률 (평가 등급별)</div><div style="display:flex; gap:10px; flex-wrap:wrap;">${CT_GRADES.map(g=>rate(g, g)).join('')}</div></div></div>
+    <div class="ct-tbl" style="margin-top:12px;"><table><thead><tr><th></th><th>이름</th><th>등급</th><th class="num">기본급</th><th class="num">능력급</th><th class="num">새 연봉</th><th>상태</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
+    <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; margin-top:12px;">
+      <span class="list-sub" style="margin:0;">인상률을 바꾸면 작성 중인 계약서가 다시 계산됩니다(HR이 조정한 건 제외). 인상 후 금액은 100원 단위 반올림.</span>
+      <button class="btn primary" ${ctSelected.size?'':'disabled'} onclick="ctSendSelected()">선택한 ${ctSelected.size}명에게 발송</button>
+    </div>
+    <div class="list-sub">시연용 등급·인상률·금액은 가상 값입니다. 평가 결과(등급)는 평가 메뉴가 생기면 자동으로 연결됩니다.</div>
+  </div>`;
+}
+function ctSetRate(k, v){ ctRates[k] = Math.round((+v||0)*10)/10; ctContracts.forEach(c=>ctApplyRates(c, ctRates)); kpiFlash('인상률을 바꿔 작성 중인 계약서를 다시 계산했습니다.'); }
+function ctSendSelected(){
+  const today = ctYmd(new Date()); let n = 0;
+  ctSelected.forEach(id=>{ const c = ctContracts.find(x=>x.id===id); if(c && !ctSend(c, orgIsHr(), today)) n++; });
+  ctSelected.clear(); kpiFlash(`${n}명에게 계약서를 발송했습니다. 직원이 서명하면 상태가 바뀝니다.`);
+}
+function ctEdit(id){
+  const c = ctContracts.find(x=>x.id===id), p = ctPerson(c.pid);
+  orgModal(`<div class="card-title"><span>금액 조정 · ${escapeHtml(p.name)} ${escapeHtml(p.title)}</span><button type="button" class="x-btn" onclick="orgCloseModal()" aria-label="닫기">${icon('x')}</button></div><div id="ctErr"></div>
+    <div class="list-sub" style="margin-bottom:10px;">작년 기본급 ${c.baseBefore.toLocaleString('ko-KR')}원 · 능력급 ${c.abilityBefore.toLocaleString('ko-KR')}원${c.grade?` · 등급 ${c.grade}`:''}</div>
+    <div class="field-row"><div class="field"><label>기본급 (원)</label><input id="ctF_base" type="number" step="100" value="${c.base}"></div><div class="field"><label>능력급 (원)</label><input id="ctF_ability" type="number" step="100" value="${c.ability}"></div></div>
+    ${c.newHire ? `<div class="field-row"><div class="field"><label>계약 시작일 (입사일)</label><input id="ctF_start" type="date" value="${c.start}"></div><div class="field"><label>계약 종료일</label><input id="ctF_end" type="date" value="${c.end}"></div></div>` : ''}
+    <div class="field" style="margin-bottom:14px;"><label>조정 사유 ${c.newHire?'(선택)':'(필수)'}</label><input id="ctF_reason" value="${escapeHtml(c.adjReason||'')}" placeholder="승진, 직무 변경 등"></div>
+    <div style="display:flex; gap:8px;"><button class="btn primary" onclick="ctSaveEdit(${c.id})">저장</button><button class="btn" onclick="orgCloseModal()">취소</button></div>`);
+}
+function ctSaveEdit(id){
+  const c = ctContracts.find(x=>x.id===id), v = k=>{ const el = document.getElementById('ctF_'+k); return el ? el.value : ''; };
+  const errs = ctAdjust(c, orgIsHr(), Math.round(+v('base')), Math.round(+v('ability')), v('reason'), c.newHire ? { start:v('start'), end:v('end') } : null);
+  if(errs.length){ document.getElementById('ctErr').innerHTML = kpiNote(errs.map(escapeHtml).join('<br>'), 'danger'); return; }
+  orgCloseModal(); kpiFlash('금액을 조정했습니다.');
+}
+function ctCancelForm(id){
+  const c = ctContracts.find(x=>x.id===id), p = ctPerson(c.pid);
+  orgModal(`<div class="card-title"><span>파기 · 재발송 · ${escapeHtml(p.name)}</span><button type="button" class="x-btn" onclick="orgCloseModal()" aria-label="닫기">${icon('x')}</button></div><div id="ctErr"></div>
+    ${kpiNote('파기해도 원본은 지워지지 않고 "파기" 상태로 보관됩니다. 재발송하면 같은 조건의 새 계약서(다음 차수)가 직원에게 갑니다.')}
+    <div class="field" style="margin-bottom:14px;"><label>사유 (필수)</label><input id="ctF_cancel" placeholder="금액 오기재 등"></div>
+    <div style="display:flex; gap:8px; flex-wrap:wrap;"><button class="btn primary" onclick="ctDoCancel(${id}, true)">파기 후 재발송</button><button class="btn" onclick="ctDoCancel(${id}, false)">파기만</button><button class="btn" onclick="orgCloseModal()">취소</button></div>`);
+}
+function ctDoCancel(id, resend){
+  const c = ctContracts.find(x=>x.id===id), reason = document.getElementById('ctF_cancel').value, at = ctYmd(new Date())+' '+new Date().toTimeString().slice(0,5);
+  const err = resend ? ctResend(ctContracts, c, orgIsHr(), reason, at) : ctCancel(c, orgIsHr(), reason, at);
+  if(err){ document.getElementById('ctErr').innerHTML = kpiNote(escapeHtml(err), 'danger'); return; }
+  if(!resend){ const p = ctPerson(c.pid); const n = { ...c, id:++ctSeq, version:c.version+1, resentFrom:c.id, status:'DRAFT', sentAt:null, locked:false, signerName:null, signature:null, signedAt:null, hash:null, cancelReason:null, cancelledAt:null }; ctContracts.push(n); ctOpenId = null; orgCloseModal(); return kpiFlash(`${escapeHtml(p.name)} 님 계약서를 파기했습니다. 새 계약서(작성 중)를 고쳐서 다시 발송하세요.`); }
+  ctOpenId = null; orgCloseModal(); kpiFlash('파기 후 새 계약서를 재발송했습니다. 원본은 보관됩니다.');
+}
+function ctViewer(c){
+  const p = ctPerson(c.pid), me = ctActor(kpiRole), mine = me && me.pid===c.pid, signable = mine && c.status==='SENT';
+  const history = ctContracts.filter(x=>x.pid===c.pid && x.id!==c.id && x.status==='CANCELLED').map(x=>`<div class="list-row"><div><div class="list-title">${x.version}차 계약서 ${ctBadge(x)}</div><div class="list-sub">파기 ${escapeHtml(x.cancelledAt||'')} · 사유: ${escapeHtml(x.cancelReason||'')}</div></div><button class="btn sm" onclick="ctOpenId=${x.id}; kpiFlash(null)">보기</button></div>`).join('');
+  const signed = c.status==='SIGNED' ? kpiNote(`${escapeHtml(c.signedAt)} ${escapeHtml(c.signerName)} 서명 · 잠김(수정 불가) · 문서 고유번호 ${escapeHtml((c.hash||'계산 중').slice(0,12))}…`, 'success') : '';
+  const cancelled = c.status==='CANCELLED' ? kpiNote(`파기된 계약서입니다 (${escapeHtml(c.cancelledAt||'')}, 사유: ${escapeHtml(c.cancelReason||'')}). 보관용으로만 볼 수 있습니다.`, 'danger') : '';
+  const signBox = !signable ? '' : `<div class="ct-signbox" id="ctSignBox">
+      <div class="list-sub" id="ctReadHint" style="margin:0 0 10px;">본문을 끝까지 내리면 서명할 수 있습니다.</div>
+      <div class="ct-signgrid">
+        <div><label class="ct-check"><input type="checkbox" id="ctConsent" disabled> 위 계약 내용을 모두 읽고 이해했으며 동의합니다</label>
+          <div class="field" style="margin-top:10px;"><label>성명</label><input id="ctName" disabled placeholder="${escapeHtml(p.name)}" autocomplete="off"></div></div>
+        <div><div class="stat-label">서명 (손가락·마우스로)</div><canvas id="ctPad" class="ct-pad" width="560" height="160" aria-label="서명 입력란"></canvas></div>
+      </div>
+      <div id="ctErr"></div>
+      <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:10px;"><button class="btn" id="ctClear" disabled onclick="ctPadClear()">다시 쓰기</button><button class="btn primary" id="ctSubmit" disabled onclick="ctSubmitSign(${c.id})">서명하고 제출</button></div>
+    </div>`;
+  if(signable) setTimeout(ctInitSign, 0);
+  return `<div class="card ct-print" style="margin-bottom:14px;">
+    <div class="card-title"><span>${c.start.slice(0,4)}년 연봉계약서 <span style="font-weight:500; color:var(--text-secondary);">${escapeHtml(p.name)} ${escapeHtml(p.title)}</span></span><span style="display:flex; gap:8px; align-items:center;">${ctBadge(c)}<button class="btn sm no-print" onclick="ctPrint(${c.id})">${icon('download')} 인쇄 / PDF 저장</button>${kpiRole==='hr'||!mine?`<button class="btn sm no-print" onclick="ctOpenId=null; kpiFlash(null)">목록으로</button>`:''}</span></div>
+    ${signed}${cancelled}
+    <div class="ct-scroll${signable?' gated':''}" id="ctScroll" tabindex="0" aria-label="계약서 본문">${ctDocHtml(c)}</div>
+    ${signBox}
+  </div>${history ? `<div class="card no-print"><div class="card-title">이전 계약서 (파기·보관)</div>${history}</div>` : ''}`;
+}
+let ctPadDirty = false;
+function ctInitSign(){
+  const sc = document.getElementById('ctScroll'), pad = document.getElementById('ctPad');
+  if(!sc || !pad) return;
+  const unlock = ()=>{ if(sc.scrollTop + sc.clientHeight < sc.scrollHeight - 8) return;
+    ['ctConsent','ctName','ctClear','ctSubmit'].forEach(id=>document.getElementById(id).disabled = false);
+    pad.classList.add('on'); document.getElementById('ctReadHint').textContent = '본문을 끝까지 확인했습니다. 동의하고 서명해 주세요.'; sc.dataset.read = '1'; };
+  sc.addEventListener('scroll', unlock); unlock();
+  const g = pad.getContext('2d'); g.lineWidth = 3; g.lineCap = 'round'; g.strokeStyle = '#1B2433'; ctPadDirty = false;
+  let drawing = false;
+  const pos = e=>{ const r = pad.getBoundingClientRect(); return [(e.clientX-r.left)*pad.width/r.width, (e.clientY-r.top)*pad.height/r.height]; };
+  pad.addEventListener('pointerdown', e=>{ if(!sc.dataset.read) return; drawing = true; pad.setPointerCapture(e.pointerId); g.beginPath(); g.moveTo(...pos(e)); });
+  pad.addEventListener('pointermove', e=>{ if(!drawing) return; g.lineTo(...pos(e)); g.stroke(); ctPadDirty = true; });
+  ['pointerup','pointercancel'].forEach(t=>pad.addEventListener(t, ()=>{ drawing = false; }));
+}
+function ctPadClear(){ const pad = document.getElementById('ctPad'); pad.getContext('2d').clearRect(0,0,pad.width,pad.height); ctPadDirty = false; }
+async function ctSubmitSign(id){
+  const c = ctContracts.find(x=>x.id===id), me = ctActor(kpiRole), pad = document.getElementById('ctPad');
+  const now = new Date(), at = ctYmd(now)+' '+now.toTimeString().slice(0,5);
+  const err = ctSign(c, me ? me.pid : -1, { read:!!document.getElementById('ctScroll').dataset.read, consent:document.getElementById('ctConsent').checked,
+    name:document.getElementById('ctName').value, image:ctPadDirty ? pad.toDataURL() : null, at });
+  if(err){ document.getElementById('ctErr').innerHTML = kpiNote(escapeHtml(err).replace(/\n/g,'<br>'), 'danger'); return; }
+  await ctHash(c);
+  kpiFlash('서명을 완료했습니다. 계약서가 잠겼고, 인쇄·PDF 저장으로 1부를 보관할 수 있습니다.');
+}
+function ctContent(){
+  const role = kpiRole, me = ctActor(role);
+  const open = ctOpenId && ctContracts.find(c=>c.id===ctOpenId);
+  let body = '';
+  if(open && ctCanView(role, open)) body = ctViewer(open);
+  else {
+    ctOpenId = null;
+    if(role==='hr') body = ctHrPanel();
+    else {
+      const mine = ctActive(ctContracts, me.pid);
+      body = mine && ctCanView(role, mine) ? ctViewer(mine) : `<div class="card" style="margin-bottom:14px;"><div class="card-title">연봉계약서</div><div class="placeholder-note" style="margin:0;">아직 받은 계약서가 없습니다. HR이 발송하면 여기에 표시됩니다.</div></div>`;
+      if(me.title==='본부장'){
+        const rows = CT_PEOPLE.filter(p=>p.pid!==me.pid).map(p=>ctActive(ctContracts, p.pid)).filter(c=>c && ctCanView(role, c));
+        body += `<div class="card"><div class="card-title">우리 본부 계약 현황 <span class="more">${rows.length}명</span></div>${rows.map(c=>{ const p = ctPerson(c.pid); return `<div class="list-row"><div><div class="list-title">${escapeHtml(p.name)} ${escapeHtml(p.title)} ${ctBadge(c)}</div><div class="list-sub">${escapeHtml(p.team||p.division)} · 연봉 ${ctWon(ctCalc(c).annual)}</div></div><button class="btn sm" onclick="ctOpenId=${c.id}; kpiFlash(null)">보기</button></div>`; }).join('') || '<div class="list-sub">발송된 계약서가 없습니다.</div>'}
+          <div class="list-sub" style="margin-top:8px;">본부장은 자기 본부 직원의 계약서를 볼 수만 있습니다. 팀장은 본인 계약서만 볼 수 있습니다.</div></div>`;
+      }
+    }
+  }
+  return `${roleSwitcher()}${kpiMsg ? kpiNote(kpiMsg.msg, kpiMsg.type) : ''}${body}`;
+}
+
 /* ---------------- NAV DATA ---------------- */
 const NAV = [
   { id:'home', label:'홈', icon:'home', tabs:[ {id:'dash', label:'대시보드', render:homeContent} ] },
   { id:'pay', label:'급여·계약', icon:'wallet', tabs:[
       {id:'p1', label:'급여명세서', render:comingSoon},
-      {id:'p2', label:'전자연봉계약서', render:comingSoon},
+      {id:'p2', label:'전자연봉계약서', render:ctContent},
       {id:'p3', label:'원천징수영수증', render:comingSoon},
   ]},
   { id:'perf', label:'평가·성과', icon:'target', tabs:[
