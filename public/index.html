@@ -454,6 +454,16 @@
   .ev-count{ font-size:var(--fs-xs); font-weight:500; color:var(--text-secondary); background:var(--bg-page); border-radius:var(--radius-sm); padding:3px 7px; }
   .ev-count b{ color:var(--text-primary); }
 
+  /* ---------- 현장직 평가 ---------- */
+  .ev-g.no{ background:var(--bg-page); color:var(--text-muted); text-decoration:line-through; border-style:solid; }
+  .evl-warn{ color:var(--coral-text); font-size:var(--fs-xs); }
+  .evl-chips{ display:flex; gap:8px; flex-wrap:wrap; margin:10px 0; }
+  .evl-chips span{ background:var(--bg-page); border-radius:var(--radius-sm); padding:6px 10px; font-size:var(--fs-sm); font-weight:600; }
+  .evl-chips span.warn{ background:var(--bg-danger); color:var(--danger); }
+  .evl-res{ display:flex; align-items:center; gap:10px; background:#FBF3E6; border-radius:var(--radius); padding:10px 12px; margin-bottom:10px; cursor:pointer; font-size:var(--fs-sm); font-weight:600; color:#7A4A0E; }
+  .evl-grade{ width:36px; height:36px; border-radius:50%; background:#fff; border:2px solid #D08A2E; display:inline-flex; align-items:center; justify-content:center; font-size:var(--fs-lg); font-weight:800; }
+  .evr-tile b.evr-att{ font-size:var(--fs-md); }
+
   /* ---------- 평가 결과 ---------- */
   .evr-hero{ display:grid; grid-template-columns:140px minmax(0,1fr); gap:16px; align-items:center; background:#FBF3E6; border-radius:var(--radius-lg); padding:16px; }
   .evr-grade{ width:92px; height:92px; margin:0 auto; border-radius:50%; background:#fff; border:3px solid #D08A2E; display:flex; align-items:center; justify-content:center; font-size:44px; font-weight:800; color:#7A4A0E; animation:evr-pop .5s var(--ease) both; }
@@ -1172,6 +1182,7 @@ const KPI_USERS = {   // approvers = 결재선 (순서대로)
   lead: { name:'김영희', title:'팀장',    dept:'국내영업팀',   switchLabel:'팀장',   approvers:['head'] },
   head: { name:'이철수', title:'본부장',  dept:'전략마케팅본부', switchLabel:'본부장', approvers:['hr'] },
   hr:   { name:'박인사', title:'HR 담당', dept:'지원팀',       switchLabel:'HR',     approvers:[] },
+  line: { name:'최현장', title:'사원',    dept:'국내영업팀',   switchLabel:'현장직', approvers:[] },   // KPI 없음 — kpiSheets에 없다
 };
 function kpiDay(offset){
   const d = new Date(); d.setDate(d.getDate()+offset);
@@ -1416,7 +1427,7 @@ function roleSwitcher(){
 function kpiContent(){
   return `${roleSwitcher()}
     ${kpiMsg ? kpiNote(kpiMsg.msg, kpiMsg.type) : ''}
-    ${kpiRole==='hr' ? kpiHrPanel() : ''}${kpiInbox()}${kpiSheets[kpiRole] ? kpiMySheet() : ''}`;
+    ${kpiRole==='hr' ? kpiHrPanel() : ''}${kpiInbox()}${kpiSheets[kpiRole] ? kpiMySheet() : kpiRole==='line' ? kpiNote(`현장직은 KPI를 작성하지 않습니다. 팀장이 <span class="more" onclick="goTo('perf','e2')">평가 진행 탭</span>에서 등급을 매깁니다.`) : ''}`;
 }
 
 function kpiScheduleCard(){
@@ -1429,6 +1440,7 @@ function kpiScheduleCard(){
   </div>`;
 }
 function kpiHomeCard(){
+  const evP = evPeople.find(p=>p.key===kpiRole); if(evP && evIsLine(evP)) return evLineHomeCard(evP);   // 현장직: KPI 대신 평가 안내
   const s = kpiSheets[kpiRole], me = KPI_USERS[kpiRole];
   const waiting = Object.keys(kpiSheets).filter(k=>{ const p = kpiSheets[k].pending; return p && KPI_USERS[k].approvers[p.step]===kpiRole; }).length;
   const inboxLine = waiting ? `<span style="color:var(--warning); font-weight:600; cursor:pointer;" onclick="goTo('perf','e1')">팀원 KPI 승인 대기 ${waiting}건 →</span>` : '';
@@ -1611,6 +1623,7 @@ const CT_PEOPLE = [   // key = 시연 역할(kpiRole). null이면 시연에서 �
   { pid:2, key:'lead', name:'김영희', title:'팀장',   team:'국내영업팀', division:'전략마케팅본부', rrn:'850702-2******' },
   { pid:3, key:'head', name:'이철수', title:'본부장', team:'',           division:'전략마케팅본부', rrn:'780911-1******' },
   { pid:4, key:null,   name:'신에스', title:'사원',   team:'SCM팀',      division:'연구개발본부',   rrn:'990120-1******' },
+  { pid:5, key:'line', name:'최현장', title:'사원',   team:'국내영업팀', division:'전략마케팅본부', rrn:'960805-1******' },
 ];
 const CT_GRADES = ['S','A','B','C','D'];
 const ctRates = { base:3, S:8, A:6, B:4, C:2, D:0 };   // 시연용 인상률(%) — 실제 값은 HR이 화면에서 입력
@@ -1722,6 +1735,7 @@ const ctContracts = [];
   mk(3, { grade:'B', abilityBefore:1900000, pos:500000 });
   const hire = (orgMembers.find(m=>m.name==='신에스')||{}).hireDate || today;
   mk(4, { newHire:true, abilityBefore:1100000, ...ctNewHirePeriod(hire), adjReason:'신규 입사' });
+  mk(5, { abilityBefore:1050000 });
   ctContracts.forEach(c=>{ if(c.status==='SENT') c.sentAt = today; });
   // 김영희 팀장: 서명 완료 예시 (손글씨 서명 그림을 코드로 그림)
   lead.status = 'SENT'; lead.sentAt = today;
@@ -1936,6 +1950,7 @@ const PAY_PEOPLE = {   // 시연 역할별 가상 사원 정보와 월 지급 �
   lead: { gender:'f', code:'10142', birth:'1985.07.02', dept:'국내영업팀',     title:'팀장',   step:'',      base:2491500, ability:1620000, ot:311490, pos:300000 },
   head: { gender:'m', code:'10057', birth:'1978.09.11', dept:'전략마케팅본부', title:'본부장', step:'',      base:2491500, ability:1976000, ot:353760, pos:500000 },
   hr:   { gender:'f', code:'10188', birth:'1988.11.27', dept:'지원팀',         title:'HR 담당', step:'',     base:2491500, ability:1350000, ot:300120, pos:100000 },
+  line: { gender:'m', code:'10420', birth:'1996.08.05', dept:'국내영업팀',     title:'사원',   step:'1호봉', base:2491500, ability:1081500, ot:269630, pos:0 },
 };
 let payYear = null, paySlips = null, payOpen = null, payShow = false, payViewKey = null, payTimer = null, payPreview = false;   // payPreview: 시연용 급여일 모습 미리보기
 
@@ -2231,7 +2246,8 @@ function evValidate(roster, assign, quota, full){   // roster:[{pid,name,score}]
     const g = assign[r.pid];
     if(!g){ if(full) errors.push(`${r.name} 님의 등급이 없습니다.`); return; }
     cnt[g]++;
-    if(g==='S' && !(r.score > 100)) errors.push(`${r.name} 님은 총점 ${r.score}점이라 S를 줄 수 없습니다. (100점 초과만)`);
+    if(g==='S' && r.kpi!==false && !(r.score > 100)) errors.push(`${r.name} 님은 총점 ${r.score}점이라 S를 줄 수 없습니다. (100점 초과만)`);   // 현장직은 총점이 없어 제외
+    if(r.blocked && 'SAB'.includes(g)) errors.push(`${r.name} 님은 연차 초과 ${EV_LEAVE_LIMIT}일 이상이라 S·A·B를 줄 수 없습니다.`);
   });
   const K = cnt.S;
   if(K > quota.capS) errors.push(`S는 최대 ${quota.capS}명입니다. (현재 ${K}명)`);
@@ -2311,7 +2327,9 @@ const evPeople = [   // key = 시연 역할, evaluator = 평가자 pid 또는 'h
       evK('해외 매출 확대','영업 활동','바이어 미팅','월평균 미팅 수',40,'10회 이상','8회','7회','6회','6회 미만'),
       evK('브랜드','자료 정비','영문 카탈로그 개편','완료 여부·시점',20,'상반기 완료','3분기 완료','연내 완료','초안만','미착수')],
     entries:[['162건','A',['리드목록.xlsx'],'A'],['월 7회','A',[],'B'],['연내 완료','B',['카탈로그_최종.pdf'],'B']] },
-].map(p=>({ comment:'', headComment:'', bonus:0, bonusReason:'', grade:null, ...p,
+  { pid:7, key:'line', name:'최현장', title:'사원', team:'국내영업팀', line:'출하 라인', kpi:false, late:3, leaveOver:1, evaluator:2, stage:'SCORE' },   // 현장직: KPI 없음, 팀장 평가
+  { pid:8, key:null,   name:'윤라인', title:'주임', team:'국내영업팀', line:'출하 라인', kpi:false, late:0, leaveOver:6, evaluator:2, stage:'SCORE' },
+].map(p=>({ comment:'', headComment:'', bonus:0, bonusReason:'', grade:null, kpi:true, late:0, leaveOver:0, line:'', ...p,
   ev:(p.entries||[]).map(([note, selfGrade, files, grade])=>({ note, selfGrade, grade:grade||null, files:files.map(name=>({ name, demo:true })) })) }));
 function evFind(pid){ return evPeople.find(p=>p.pid===pid); }
 function evMe(){ return evPeople.find(p=>p.key===kpiRole); }
@@ -2327,7 +2345,7 @@ function evKpi(p){   // 목표설정 확정본이 있으면 그것을 실시간�
 function evEntry(p, i){ return p.ev[i] || (p.ev[i] = { note:'', selfGrade:null, grade:null, files:[] }); }
 function evRows(p){ return evKpi(p).map((k,i)=>({ weight:k.weight, grade:evEntry(p,i).grade })); }
 function evTotal(p){ return evScore(evRows(p), p.bonus); }
-function evRoster(){ return evPeople.map(p=>({ pid:p.pid, name:p.name, score:evTotal(p) })); }
+function evRoster(){ return evPeople.map(p=>({ pid:p.pid, name:p.name, score:evTotal(p), kpi:!evIsLine(p), blocked:evLeaveBlocked(p) })); }
 function evFileCount(p){ return evKpi(p).reduce((a,_,i)=>a + evEntry(p,i).files.length, 0); }
 
 /* ----- 화면 조각 ----- */
@@ -2347,7 +2365,7 @@ function evFiles(p, i, canEdit){
   return (list || '<span class="list-sub" style="margin:0;">증빙 없음</span>')
     + (canEdit ? `<label class="btn sm" style="margin-top:4px;">＋ 증빙 첨부<input type="file" multiple hidden accept="${KPI_ACCEPT}" onchange="evAddFiles(${p.pid},${i},this.files)"></label>` : '');
 }
-function evStageBadge(p){ const cls = { SELF:'neutral', SCORE:'warning', GRADE:'warning', HR:'warning', DONE:'success' }[p.stage]; return `<span class="badge ${cls}">${EV_STAGES[p.stage]}</span>`; }
+function evStageBadge(p){ const cls = { SELF:'neutral', SCORE:'warning', GRADE:'warning', HR:'warning', DONE:'success' }[p.stage]; return `<span class="badge ${cls}">${evIsLine(p) && p.stage==='SCORE' ? '팀장 평가 대기' : EV_STAGES[p.stage]}</span>`; }
 function evSteps(p){
   const order = ['SELF','SCORE','GRADE','HR','DONE'], at = order.indexOf(p.stage), labels = ['자기평가','평가자 점수','본부장 등급','HR 확정','확정'];
   return `<ol class="ev-steps">${labels.map((l,i)=>`<li class="${i<at?'done':i===at?'now':''}">${l}</li>`).join('')}</ol>`;
@@ -2391,8 +2409,8 @@ function evMyTargets(){
   if(!mine.length) return '';
   return `<div class="card" style="margin-bottom:14px;"><div class="card-title"><span>내가 평가할 사람 <span class="more">${mine.length}명</span></span></div>
     ${mine.map(p=>{ const open = evOpen===p.pid;
-      return `<div class="list-row"><div><div class="list-title">${escapeHtml(p.name)} ${escapeHtml(p.title)} ${evStageBadge(p)}</div><div class="list-sub">${escapeHtml(p.team||EV_DIVISION)} · 현재 총점 ${evTotal(p).toFixed(1)} · 증빙 ${evFileCount(p)}건</div></div>
-        <button class="btn sm" onclick="evOpen=${open?'null':p.pid}; kpiFlash(null)" ${p.stage==='SELF'?'disabled title="자기평가 제출 전입니다"':''}>${open?'닫기':p.stage==='SCORE'?'평가하기':'보기'}</button></div>${open ? evScorePanel(p) : ''}`; }).join('')}
+      return `<div class="list-row"><div><div class="list-title">${escapeHtml(p.name)} ${escapeHtml(p.title)} ${evStageBadge(p)}</div><div class="list-sub">${escapeHtml(p.team||EV_DIVISION)} · ${evIsLine(p) ? `현장직 · ${evAttendance(p)}` : `현재 총점 ${evTotal(p).toFixed(1)} · 증빙 ${evFileCount(p)}건`}</div></div>
+        <button class="btn sm" onclick="evOpen=${open?'null':p.pid}; kpiFlash(null)" ${p.stage==='SELF'?'disabled title="자기평가 제출 전입니다"':''}>${open?'닫기':p.stage==='SCORE'?'평가하기':'보기'}</button></div>${open ? (evIsLine(p) ? evLinePanel(p) : evScorePanel(p)) : ''}`; }).join('')}
   </div>`;
 }
 function evGradeCard(hrMode){   // 본부장: 본인 제외 배정 / HR: 본부장 포함 전체 확정
@@ -2401,12 +2419,12 @@ function evGradeCard(hrMode){   // 본부장: 본인 제외 배정 / HR: 본부�
   const rows = evPeople.filter(p=>hrMode || p!==head).sort((a,b)=>evTotal(b)-evTotal(a)).map(p=>{
     const ready = hrMode ? p.stage==='HR' || (p===head && p.stage==='GRADE') : p.stage==='GRADE';
     const can = ready && evPeriodOpen() && (hrMode ? p===head : true), open = evOpen===('g'+p.pid);
-    const gradeCell = ready ? `<span class="ev-grades">${KPI_GRADES.map(([g])=>`<button type="button" class="ev-g${p.grade===g?' on':''}" ${can?`onclick="evAssign(${p.pid},'${g}')"`:'disabled'}>${g}</button>`).join('')}</span>`
+    const gradeCell = ready ? (evIsLine(p) ? evLineGradeBtns(p, can, 'evAssign') : `<span class="ev-grades">${KPI_GRADES.map(([g])=>`<button type="button" class="ev-g${p.grade===g?' on':''}" ${can?`onclick="evAssign(${p.pid},'${g}')"`:'disabled'}>${g}</button>`).join('')}</span>`)
       : (p.grade ? `<b class="ev-final">${p.grade}</b>` : '<span class="list-sub" style="margin:0;">점수 대기</span>');
-    return `<tr><td>${escapeHtml(p.name)} ${escapeHtml(p.title)}<div class="list-sub">${escapeHtml(p.team||'본부 직속')} · 증빙 ${evFileCount(p)}건</div></td><td>${evStageBadge(p)}</td>
-      <td class="num">${evTotal(p).toFixed(1)}${p.bonus?`<div class="list-sub">가점 +${p.bonus}</div>`:''}</td><td>${gradeCell}</td>
+    return `<tr><td>${escapeHtml(p.name)} ${escapeHtml(p.title)}<div class="list-sub">${escapeHtml(p.team||'본부 직속')} · ${evIsLine(p) ? `현장직 · ${evAttendance(p)}` : `증빙 ${evFileCount(p)}건`}</div></td><td>${evStageBadge(p)}</td>
+      <td class="num">${evIsLine(p) ? '<span class="list-sub" style="margin:0;">팀장 평가</span>' : evTotal(p).toFixed(1)}${p.bonus?`<div class="list-sub">가점 +${p.bonus}</div>`:''}</td><td>${gradeCell}</td>
       <td style="white-space:nowrap;">${p.stage!=='SELF' ? `<button class="btn sm" onclick="evOpen=${open?'null':`'g${p.pid}'`}; kpiFlash(null)">${open?'닫기':'상세'}</button> ` : ''}${can && !hrMode ? `<button class="btn sm" onclick="evBonus(${p.pid})">가점·코멘트</button>` : ''}</td></tr>
-      ${open ? `<tr><td colspan="5" style="padding:0;">${evScorePanel(p)}</td></tr>` : ''}`;
+      ${open ? `<tr><td colspan="5" style="padding:0;">${evIsLine(p) ? evLinePanel(p) : evScorePanel(p)}</td></tr>` : ''}`;
   }).join('');
   const assign = Object.fromEntries(evPeople.filter(p=>p.grade).map(p=>[p.pid, p.grade]));
   const scope = hrMode ? roster : roster.filter(r=>r.pid!==head.pid);
@@ -2416,7 +2434,7 @@ function evGradeCard(hrMode){   // 본부장: 본인 제외 배정 / HR: 본부�
   const counts = ['S','A','B','C','D'].map(g=>`<span class="ev-count">${g} <b>${v.cnt[g]}</b></span>`).join('');
   return `<div class="card" style="margin-bottom:14px;">
     <div class="card-title"><span>${hrMode?'④ HR 확정':'③ 본부 등급 배정'} <span style="font-weight:500; color:var(--text-secondary);">${EV_DIVISION} ${evPeople.length}명</span></span><span class="ev-counts">${counts}</span></div>
-    <div class="ev-quota">${qText} · <b>S는 총점 100 초과만</b> · 본부장 본인 등급은 HR이 배정 · "상세"에서 KPI 기준·자기평가·평가자 등급·증빙을 볼 수 있습니다</div>
+    <div class="ev-quota">${qText} · <b>S는 총점 100 초과만</b> (현장직 제외) · <b>현장직 연차 초과 ${EV_LEAVE_LIMIT}일 이상은 S·A·B 불가</b> · 본부장 본인 등급은 HR이 배정 · "상세"에서 KPI 기준·자기평가·평가자 등급·증빙을 볼 수 있습니다</div>
     <div class="ct-tbl"><table class="ev-table"><thead><tr><th>이름</th><th>단계</th><th class="num">총점</th><th>최종 등급</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
     ${v.errors.length ? kpiNote(v.errors.map(escapeHtml).join('<br>'), 'danger') : ''}${v.warnings.length ? kpiNote(v.warnings.map(escapeHtml).join('<br>')+'<br>정원보다 적은 건 경고만 하고 제출할 수 있습니다.', 'warning') : ''}
     <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; margin-top:10px;">
@@ -2427,14 +2445,13 @@ function evGradeCard(hrMode){   // 본부장: 본인 제외 배정 / HR: 본부�
 }
 function evHrPanel(){
   const d = k=>`<input type="date" value="${kpiPeriod[k]}" onchange="kpiPeriod.${k}=this.value; kpiFlash('기간을 변경했습니다.')">`;
-  const rows = evPeople.map(p=>[`${p.name} ${p.title}`, p.team||'본부 직속', EV_STAGES[p.stage], evTotal(p).toFixed(1), evFileCount(p)+'건', p.grade||'—']);
   return `<div class="card" style="margin-bottom:14px;"><div class="card-title">평가 기간 · 증빙 마감 (HR)</div>
       <div class="field-row">
         <div class="field"><label>평가 기간 — 자기평가·점수·등급 입력</label><div style="display:flex; gap:8px; align-items:center;">${d('evalFrom')} ~ ${d('evalTo')}</div></div>
         <div class="field"><label>증빙 마감일 — 직원이 이 날까지 증빙을 올리고 고칠 수 있음</label>${d('evidDue')}</div>
       </div>
       <button class="btn sm" onclick="kpiPeriod.evalFrom=kpiDay(-1); kpiPeriod.evalTo=kpiDay(14); kpiPeriod.evidDue=kpiDay(7); kpiFlash('시연용으로 평가 기간(오늘부터 2주)과 증빙 마감(1주 뒤)을 열었습니다.')">시연: 평가 기간 열기</button></div>
-    <div style="margin-bottom:14px;">${simpleTableCard('진행 현황', ['이름','소속','단계','총점','증빙','등급'], rows, r=>r[2]==='확정'?'success':r[2]==='자기평가 중'?'neutral':'warning', 2)}</div>`;
+    ${evRosterCard()}`;
 }
 
 /* ----- 동작 ----- */
@@ -2495,11 +2512,121 @@ function evConfirm(){
 }
 function evContent(){
   const me = evMe(), role = kpiRole;
-  const mine = me ? (me.stage==='SELF' || evCanUpload(me, role, kpiDay(0)) ? evSelfCard(me) : `<div class="card" style="margin-bottom:14px;"><div class="card-title"><span>나의 ${KPI_YEAR}년 평가</span>${evStageBadge(me)}</div>${evSteps(me)}<div class="list-sub">자기평가를 제출했습니다. 결과는 확정 후 평가 결과 탭에서 공개됩니다.</div></div>`) : '';
+  const mine = me && evIsLine(me) ? evLineMyCard(me) : me ? (me.stage==='SELF' || evCanUpload(me, role, kpiDay(0)) ? evSelfCard(me) : `<div class="card" style="margin-bottom:14px;"><div class="card-title"><span>나의 ${KPI_YEAR}년 평가</span>${evStageBadge(me)}</div>${evSteps(me)}<div class="list-sub">자기평가를 제출했습니다. 결과는 확정 후 평가 결과 탭에서 공개됩니다.</div></div>`) : '';
   return `${roleSwitcher()}${kpiMsg ? kpiNote(kpiMsg.msg, kpiMsg.type) : ''}
     ${role==='hr' ? evHrPanel() : ''}${mine}${evMyTargets()}
     ${role==='head' ? evGradeCard(false) : ''}${role==='hr' ? evGradeCard(true) : ''}
-    <div class="list-sub">시연용 가상 인원(${EV_DIVISION} ${evPeople.length}명)입니다. 홍길동은 목표설정 탭의 확정 KPI를 그대로 씁니다. 박영업·문해외·정해외는 미리 일부 단계를 진행해 두었습니다.</div>`;
+    <div class="list-sub">시연용 가상 인원(${EV_DIVISION} ${evPeople.length}명)입니다. 홍길동은 목표설정 탭의 확정 KPI를 그대로 씁니다. 박영업·문해외·정해외는 미리 일부 단계를 진행해 두었습니다. 최현장·윤라인은 KPI 없는 현장직(팀장 평가)입니다.</div>`;
+}
+
+/* ---------------- 현장직 (KPI 없는 직원) 평가 ----------------
+   규칙 (인사담당자 2026-10-01): HR이 명단에서 "KPI 작성" 체크를 해제한 사람 = 현장직. 문항지 없음.
+   팀장이 사람마다 S~D를 매기고 → 본부장 등급 배정 → HR 확정 (KPI 직원과 같은 흐름·같은 본부 정원).
+   HR이 연말에 지각 횟수·연차 초과일수를 넣는다. 지각은 참고만, 연차 초과 5일 이상이면 S·A·B 불가. 이의 신청은 KPI 직원과 같다. */
+const EV_LEAVE_LIMIT = 5;
+function evIsLine(p){ return p.kpi===false; }
+function evLeaveBlocked(p){ return evIsLine(p) && p.leaveOver >= EV_LEAVE_LIMIT; }
+function evSetKpi(p, on){   // KPI 작성 여부는 평가 시작 전(자기평가 중 / 팀장 평가 대기)에만 바꾼다
+  if(!(p.stage==='SELF' || (evIsLine(p) && p.stage==='SCORE'))) return '평가가 이미 진행 중이라 평가 방식을 바꿀 수 없습니다.';
+  p.kpi = on; p.stage = on ? 'SELF' : 'SCORE'; if(!on) p.grade = null; return null;
+}
+function evSetAttendance(p, late, over){
+  p.late = Math.max(0, Math.round(+late||0)); p.leaveOver = Math.max(0, Math.round((+over||0)*2)/2);
+  if(evLeaveBlocked(p) && 'SAB'.includes(p.grade)) p.grade = null;   // 이미 매긴 S·A·B는 지운다
+}
+function evParseAttendance(text){   // 엑셀에서 복사한 "이름 ⇥ 지각 ⇥ 연차초과" 줄. 숫자가 아닌 줄(제목)은 건너뛴다
+  const done = [], miss = [];
+  text.split(/\r?\n/).map(l=>l.trim()).filter(Boolean).forEach(l=>{
+    const [name, late, over] = l.split(/\t|,|\s+/);
+    if(late===undefined || over===undefined || isNaN(+late) || isNaN(+over)) return;
+    const p = evPeople.find(x=>x.name===name && evIsLine(x));
+    if(!p) return miss.push(name);
+    evSetAttendance(p, late, over); done.push(name);
+  });
+  return { done, miss };
+}
+function evLineSelfCheck(){   // 브라우저 콘솔에서 evLineSelfCheck() 실행
+  const ok = (c,m)=>{ if(!c) throw new Error('evLineSelfCheck 실패: '+m); };
+  const R = Array.from({length:10}, (_,i)=>({ pid:i+1, name:'p'+(i+1), score:i<2?0:95, kpi:i>=2, blocked:i===0 })), q = evQuota(10);
+  ok(evValidate(R, {1:'A'}, q, false).errors.some(e=>e.includes('연차')) && evValidate(R, {1:'S'}, q, false).errors.some(e=>e.includes('연차')), '연차 초과 5일 이상 → S·A 불가');
+  ok(!evValidate(R, {1:'C'}, q, false).errors.length, '연차 초과자도 C는 가능');
+  ok(!evValidate(R, {2:'S'}, q, false).errors.length, '현장직 S는 총점(100 초과) 규칙 없음');
+  ok(evValidate(R, {3:'S'}, q, false).errors.some(e=>e.includes('100점')), 'KPI 직원 S는 100점 초과만');
+  const line = evPeople.filter(evIsLine), keep = line.map(p=>({ p, k:{ late:p.late, leaveOver:p.leaveOver, grade:p.grade, kpi:p.kpi, stage:p.stage } }));
+  try {
+    const [a, b] = line; b.grade = 'A';
+    const r = evParseAttendance(`이름\t지각\t연차초과\n${a.name}\t2\t0\n${b.name}\t1\t6\n없는사람\t1\t1`);
+    ok(r.done.length===2 && r.miss.join()==='없는사람' && a.late===2 && b.leaveOver===6, '엑셀 붙여넣기: 제목 줄 건너뛰고 이름으로 반영');
+    ok(b.grade===null, '연차 초과 5일 이상이 되면 매긴 A를 지움');
+    ok(evLeaveBlocked(b) && !evLeaveBlocked(a), '5일 기준');
+    b.stage = 'GRADE'; ok(evSetKpi(b, true), '진행 중엔 평가 방식 변경 불가');
+    b.stage = 'SCORE'; ok(!evSetKpi(b, true) && b.stage==='SELF' && !evIsLine(b), 'KPI 작성으로 바꾸면 자기평가부터');
+  } finally { keep.forEach(({p,k})=>Object.assign(p, k)); }
+  return 'evLineSelfCheck 통과';
+}
+
+/* ----- 화면 ----- */
+function evAttendance(p){
+  return `지각 ${p.late}회 <small>(참고)</small> · 연차 초과 ${p.leaveOver}일${evLeaveBlocked(p) ? ` <b class="evl-warn">→ S·A·B 불가</b>` : ''}`;
+}
+function evLineGradeBtns(p, editable, fn){   // fn = 누르면 부를 함수 이름
+  return `<span class="ev-grades" role="radiogroup">${KPI_GRADES.map(([g])=>{ const no = evLeaveBlocked(p) && 'SAB'.includes(g);
+    return `<button type="button" class="ev-g${p.grade===g?' on':''}${no?' no':''}" ${editable && !no ? `onclick="${fn}(${p.pid},'${g}')"` : 'disabled'} aria-pressed="${p.grade===g}"${no?' title="연차 초과 5일 이상이라 줄 수 없습니다"':''}>${g}</button>`; }).join('')}</span>`;
+}
+function evLinePanel(p){
+  const editable = p.stage==='SCORE' && evPeriodOpen() && evEvaluatorOf(p)===kpiRole;
+  return `<div class="ev-panel">
+    <div class="list-sub" style="margin-bottom:8px;">현장직 · KPI 없이 팀장이 등급을 매깁니다 · ${evAttendance(p)}</div>
+    ${evLineGradeBtns(p, editable, 'evSetLine')}
+    <div class="field" style="margin-top:10px;"><label>팀장 코멘트 (선택 · 직원에게 공개)</label>${editable ? `<textarea rows="2" oninput="evFind(${p.pid}).comment=this.value" placeholder="한 해 근무에 대한 한 줄 평">${escapeHtml(p.comment)}</textarea>` : `<div class="placeholder-note" style="margin:0;">${escapeHtml(p.comment)||'—'}</div>`}</div>
+    ${editable ? `<div style="text-align:right; margin-top:10px;"><button class="btn primary" onclick="evSubmitLine(${p.pid})">등급 제출</button></div>` : ''}
+  </div>`;
+}
+function evLineMyCard(me){
+  return `<div class="card" style="margin-bottom:14px;"><div class="card-title"><span>나의 ${KPI_YEAR}년 평가</span>${evStageBadge(me)}</div>
+    <div class="list-sub">KPI 없이 <b>${escapeHtml(evEvaluatorName(me))}</b>의 팀장 평가로 진행됩니다. 따로 작성할 것은 없습니다.</div>
+    <div class="evl-chips"><span>지각 ${me.late}회</span><span>연차 초과 ${me.leaveOver}일</span></div>
+    <div class="list-sub">지각은 참고자료로만 쓰입니다. 연차를 ${EV_LEAVE_LIMIT}일 이상 초과 사용하면 S·A·B 등급을 받을 수 없습니다. 결과는 공개 후 평가 결과 탭에서 볼 수 있습니다.</div></div>`;
+}
+function evLineHomeCard(me){
+  const res = evReleased(me) ? `<div class="evl-res" onclick="goTo('perf','e3')"><span class="evl-grade">${evFinalGrade(me)==='WAIT' ? '…' : me.grade}</span><span>${KPI_YEAR}년 평가 결과가 나왔습니다 →</span></div>` : '';
+  return `<div class="card" style="grid-column:span 2;">
+    <div class="card-title"><span>나의 평가 <span style="font-weight:500; color:var(--text-secondary);">${KPI_YEAR}년 · ${escapeHtml(me.name)} ${escapeHtml(me.title)}</span></span>${evStageBadge(me)}</div>
+    <div class="list-sub" style="margin:0 0 10px;">팀장 평가로 진행돼요. 따로 작성할 것은 없어요.</div>
+    <div class="evl-chips"><span>지각 ${me.late}회</span><span${evLeaveBlocked(me)?' class="warn"':''}>연차 초과 ${me.leaveOver}일</span></div>
+    ${res}
+    <div class="stat-sub">연차를 ${EV_LEAVE_LIMIT}일 이상 초과 사용하면 S·A·B 등급을 받을 수 없어요. 숫자는 HR이 연말에 넣습니다.</div>
+  </div>`;
+}
+function evRosterCard(){   // HR: 평가 방식(KPI 작성 여부) + 근태 명단
+  const rows = evPeople.map(p=>{ const line = evIsLine(p), lock = !(p.stage==='SELF' || (line && p.stage==='SCORE'));
+    const num = (f, v)=>`<input type="number" min="0" step="${f==='late'?1:0.5}" value="${v}" style="width:64px;" aria-label="${escapeHtml(p.name)} ${f==='late'?'지각 횟수':'연차 초과일수'}" onchange="evAttSet(${p.pid},'${f}',this.value)">`;
+    return `<tr><td>${escapeHtml(p.name)} ${escapeHtml(p.title)}<div class="list-sub">${escapeHtml(p.team||'본부 직속')}${p.line?' · '+escapeHtml(p.line):''}</div></td>
+      <td><input type="checkbox" ${line?'':'checked'} ${lock?'disabled title="평가가 이미 진행 중입니다"':''} aria-label="${escapeHtml(p.name)} KPI 작성" onchange="evKpiToggle(${p.pid}, this.checked)"> <span class="badge ${line?'success':'neutral'}">${line?'현장직':'KPI'}</span></td>
+      <td>${line ? num('late', p.late) : '—'}</td><td>${line ? num('leaveOver', p.leaveOver)+(evLeaveBlocked(p)?' <b class="evl-warn">S·A·B 불가</b>':'') : '—'}</td>
+      <td>${evStageBadge(p)}</td><td class="num">${line ? '—' : evTotal(p).toFixed(1)}</td><td>${p.grade||'—'}</td></tr>`; }).join('');
+  return `<div class="card" style="margin-bottom:14px;"><div class="card-title"><span>평가 대상 명단 · 근태 (HR) <span class="more">KPI ${evPeople.filter(p=>!evIsLine(p)).length}명 · 현장직 ${evPeople.filter(evIsLine).length}명</span></span></div>
+    <div class="list-sub" style="margin-bottom:8px;">"KPI 작성"을 해제하면 현장직(팀장 평가)이 됩니다. 평가가 시작되기 전에만 바꿀 수 있습니다. 지각·연차 초과는 현장직만 입력합니다.</div>
+    <div class="ct-tbl"><table class="ev-table"><thead><tr><th>이름</th><th>KPI 작성</th><th>지각(회)</th><th>연차 초과(일)</th><th>단계</th><th class="num">총점</th><th>등급</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <details style="margin-top:10px;"><summary class="list-sub" style="cursor:pointer; margin:0;">엑셀에서 붙여넣기 (이름 · 지각 · 연차초과 세 칸)</summary>
+      <textarea id="evPaste" rows="4" style="margin-top:8px;" placeholder="최현장&#9;3&#9;1"></textarea>
+      <div style="text-align:right; margin-top:6px;"><button class="btn sm" onclick="evPasteApply()">반영</button></div></details>
+  </div>`;
+}
+
+/* ----- 동작 ----- */
+function evSetLine(pid, g){ const p = evFind(pid); p.grade = p.grade===g ? null : g; kpiFlash(null); }
+function evSubmitLine(pid){
+  const p = evFind(pid);
+  if(!p.grade) return kpiFlash('등급을 골라 주세요.', 'danger');
+  if(evLeaveBlocked(p) && 'SAB'.includes(p.grade)) return kpiFlash('연차 초과 5일 이상이라 S·A·B를 줄 수 없습니다.', 'danger');
+  p.stage = 'GRADE'; evOpen = null; kpiFlash(`${escapeHtml(p.name)} 님 등급(${p.grade})을 제출했습니다. 본부장 등급 배정으로 넘어갑니다.`);
+}
+function evKpiToggle(pid, on){ const err = evSetKpi(evFind(pid), on); kpiFlash(err ? escapeHtml(err) : `${escapeHtml(evFind(pid).name)} 님을 ${on?'KPI 작성 대상':'현장직(팀장 평가)'}으로 바꿨습니다.`, err ? 'danger' : 'success'); }
+function evAttSet(pid, f, v){ const p = evFind(pid); evSetAttendance(p, f==='late'?v:p.late, f==='late'?p.leaveOver:v); kpiFlash(null); }
+function evPasteApply(){
+  const r = evParseAttendance(document.getElementById('evPaste').value);
+  kpiFlash(`${r.done.length}명 반영했습니다.${r.miss.length ? ` 현장직 명단에 없는 이름: ${escapeHtml(r.miss.join(', '))}` : ''}`, r.miss.length ? 'warning' : 'success');
 }
 
 /* ---------------- 평가 결과 ----------------
@@ -2511,6 +2638,7 @@ const EV_HISTORY = {   // 시연용 지난 결과 (가상 값): [최종 등급, 
   emp:  { 2025:['B', '거래처 발굴 성과가 좋았습니다. 회신 속도를 더 끌어올려 봅시다.', '', [['병원 신규 거래처 발굴',40,'A','A'],['견적 회신 시간 단축',30,'A','B'],['고객 만족도 개선',30,'B','B']]],
           2024:['C', '첫해 적응을 잘했습니다.', '', [['담당 지역 거래처 관리',40,'B','B'],['견적 회신 시간 단축',30,'B','C'],['제품 교육 이수',30,'B','C']]] },
   lead: { 2025:['A', '팀 목표를 안정적으로 달성했습니다.', '대리점 채널이 크게 늘었습니다.', [['신규 대리점 발굴',40,'S','S'],['팀 매출 목표 달성',40,'A','A'],['팀원 1:1 면담',20,'A','A']]] },
+  line: { 2025:['B', '출하 라인에서 성실하게 근무했습니다.', '', []] },   // 현장직: 실행목표 없음
   head: { 2025:['A', '본부 매출 목표를 달성했습니다.', '', [['본부 매출 달성',50,'A','A'],['해외 신규 시장 진출',30,'A','B'],['핵심 인재 유지율',20,'A','A']]] },
 };
 let evResYear = null, evResView = null;   // 보고 있는 연도 / 펼친 사람(pid)
@@ -2543,8 +2671,8 @@ function evSyncContracts(){   // 공개된 확정 등급 → 작성 중인 연�
     c.gradeWait = g==='WAIT'; c.grade = c.gradeWait ? null : g; ctApplyRates(c, ctRates);
   });
 }
-function evDemoFillData(){   // 시연: 모든 단계를 끝낸 확정 상태 (6명 정원 = A·B·D 1명, C 3명)
-  const fin = { 1:'A', 2:'C', 3:'C', 4:'D', 5:'B', 6:'C' };
+function evDemoFillData(){   // 시연: 모든 단계를 끝낸 확정 상태 (8명 정원 = A·B·D 1명, C 5명)
+  const fin = { 1:'A', 2:'C', 3:'C', 4:'D', 5:'B', 6:'C', 7:'C', 8:'C' };
   evPeople.forEach(p=>{
     evKpi(p).forEach((_,i)=>{ const e = evEntry(p,i); e.grade = fin[p.pid]; e.selfGrade = e.selfGrade || (i===1 ? 'S' : fin[p.pid]); e.note = e.note || '시연 실적'; });
     p.comment = p.comment || '목표를 성실히 수행했습니다. 내년에는 한 단계 더 도전해 봅시다.'; p.grade = fin[p.pid]; p.stage = 'DONE';
@@ -2566,7 +2694,7 @@ function evrSelfCheck(){   // 브라우저 콘솔에서 evrSelfCheck() 실행 (�
     const hong = evFind(1), park = evFind(4), lee = evFind(3);
     evRelease.at = null; evDemoFillData();
     ok(evFinalGrade(hong)===null && !evCanAppeal(hong,'emp','2027-01-16'), '공개 전엔 결과·이의 신청 없음');
-    ok(!evValidate(evRoster(), Object.fromEntries(evPeople.map(p=>[p.pid,p.grade])), evQuota(6), true).errors.length, '시연 확정 등급은 정원 규칙 통과');
+    ok(!evValidate(evRoster(), Object.fromEntries(evPeople.map(p=>[p.pid,p.grade])), evQuota(evPeople.length), true).errors.length, '시연 확정 등급은 정원 규칙 통과');
     evRelease.at = '2027-01-15';
     ok(evCanAppeal(hong,'emp','2027-01-22') && !evCanAppeal(hong,'emp','2027-01-23') && !evCanAppeal(hong,'lead','2027-01-20'), '이의 신청: 본인만, 공개일부터 7일');
     ok(evAppeal(hong,'emp',' ','2027-01-16') && !hong.appeal, '사유 필수');
@@ -2598,23 +2726,23 @@ function evDaysLeft(due){ return Math.round((Date.parse(due) - Date.parse(kpiDay
 function evResultCard(p, r, past){
   const fg = past ? r.grade : evFinalGrade(p), wait = fg==='WAIT';
   const score = evScore(r.rows, r.bonus), self = evScore(r.rows.map(x=>({ weight:x.weight, grade:x.self })));
-  const diff = Math.round((score-self)*10)/10;
+  const diff = Math.round((score-self)*10)/10, line = !r.rows.length;   // 실행목표가 없으면 현장직(팀장 평가)
   const rows = r.rows.map(x=>`<tr><td>${escapeHtml(x.action)}</td><td class="num">${x.weight}%</td><td>${x.self||'—'}</td><td>${evrGrade(x.grade)}</td><td class="num">${x.grade?((+x.weight)*EV_PCT[x.grade]/100).toFixed(1):'—'}</td></tr>`).join('');
   const changed = !past && p.appeal && p.appeal.status==='DONE' && p.appeal.before!==p.appeal.after ? ` · 이의 신청으로 ${p.appeal.before} → ${p.appeal.after}` : '';
   const note = past ? `${r.year}년 확정 결과` : `공개일 ${evRelease.at}${changed} · 이 등급이 ${ctPeriod(new Date()).year}년 3월 연봉계약서 능력급에 반영됩니다${wait?' (이의 처리 후)':''}`;
   return `<section class="evr-hero" aria-label="${r.year}년 최종 등급">
       <div><div class="evr-grade${wait?' wait':''}">${wait ? '처리 중' : r.grade}</div><div class="evr-cap">${wait ? '이의 신청 처리 중' : '최종 등급'}</div></div>
       <div class="evr-tiles">
-        <div class="evr-tile"><small>총점</small><b>${score.toFixed(1)}점</b></div>
-        <div class="evr-tile"><small>자기평가 대비</small><b>${diff===0 ? '같음' : (diff>0?'+':'')+diff+'점'}</b></div>
+        ${line ? `<div class="evr-tile"><small>평가 방식</small><b>팀장 평가</b></div><div class="evr-tile"><small>근태</small><b class="evr-att">지각 ${past?'—':p.late+'회'} · 연차 초과 ${past?'—':p.leaveOver+'일'}</b></div>`
+          : `<div class="evr-tile"><small>총점</small><b>${score.toFixed(1)}점</b></div><div class="evr-tile"><small>자기평가 대비</small><b>${diff===0 ? '같음' : (diff>0?'+':'')+diff+'점'}</b></div>`}
         <div class="evr-tile"><small>능력급 인상률</small><b>${past ? '—' : wait ? '대기' : '+'+ctRates[fg]+'%'}</b></div>
         <div class="evr-note">${note}</div>
       </div>
     </section>
-    <div class="ct-tbl" style="margin-top:12px;"><table><thead><tr><th>실행목표</th><th class="num">가중치</th><th>자기평가</th><th>최종</th><th class="num">점수</th></tr></thead>
-      <tbody>${rows}${r.bonus?`<tr><td colspan="4">가점 (${escapeHtml(r.bonusReason||'')})</td><td class="num">+${r.bonus}</td></tr>`:''}</tbody></table></div>
+    ${line ? '' : `<div class="ct-tbl" style="margin-top:12px;"><table><thead><tr><th>실행목표</th><th class="num">가중치</th><th>자기평가</th><th>최종</th><th class="num">점수</th></tr></thead>
+      <tbody>${rows}${r.bonus?`<tr><td colspan="4">가점 (${escapeHtml(r.bonusReason||'')})</td><td class="num">+${r.bonus}</td></tr>`:''}</tbody></table></div>`}
     <div class="evr-comments">
-      <div class="evr-comment"><small>평가자${past?'':' '+escapeHtml(evEvaluatorName(p))}</small>${escapeHtml(r.comment)||'—'}</div>
+      <div class="evr-comment"><small>${line?'팀장':'평가자'}${past?'':' '+escapeHtml(evEvaluatorName(p))}</small>${escapeHtml(r.comment)||'—'}</div>
       ${r.head ? `<div class="evr-comment"><small>본부장</small>${escapeHtml(r.head)}</div>` : ''}
     </div>`;
 }
@@ -2641,7 +2769,7 @@ function evMyResult(me){
 }
 function evPersonRows(list, hr){
   return list.map(p=>{ const open = evResView===p.pid, a = p.appeal;
-    return `<tr><td>${escapeHtml(p.name)} ${escapeHtml(p.title)}<div class="list-sub">${escapeHtml(p.team||'본부 직속')}</div></td><td>${evReleased(p)||hr ? evrGrade(p.grade) : '—'}</td><td class="num">${evTotal(p).toFixed(1)}</td>
+    return `<tr><td>${escapeHtml(p.name)} ${escapeHtml(p.title)}<div class="list-sub">${escapeHtml(p.team||'본부 직속')}</div></td><td>${evReleased(p)||hr ? evrGrade(p.grade) : '—'}</td><td class="num">${evIsLine(p) ? '—' : evTotal(p).toFixed(1)}</td>
       <td>${a ? (a.status==='OPEN' ? '<span class="badge warning">이의 처리 중</span>' : '<span class="badge success">이의 답변 완료</span>') : '—'}</td>
       <td><button class="btn sm" onclick="evResView=${open?'null':p.pid}; kpiFlash(null)">${open?'닫기':'보기'}</button></td></tr>
       ${open ? `<tr><td colspan="5"><div class="ev-panel">${evResultCard(p, evResultNow(p), false)}${evAppealBox(p, false)}</div></td></tr>` : ''}`; }).join('');
@@ -2680,7 +2808,7 @@ function evResHrPanel(){
 }
 
 /* ----- 동작 ----- */
-function evDemoFill(){ evDemoFillData(); kpiFlash('시연용으로 6명 모두 HR 확정까지 끝난 상태로 채웠습니다. 이제 "전 직원에게 결과 공개"를 누르세요.'); }
+function evDemoFill(){ evDemoFillData(); kpiFlash(`시연용으로 ${evPeople.length}명 모두 HR 확정까지 끝난 상태로 채웠습니다. 이제 "전 직원에게 결과 공개"를 누르세요.`); }
 function evPublish(){
   if(!orgIsHr()) return;
   if(evPeople.some(p=>p.stage!=='DONE')) return kpiFlash('아직 확정되지 않은 사람이 있습니다. 평가 진행 탭에서 HR 확정을 먼저 끝내 주세요.', 'danger');
