@@ -219,6 +219,32 @@
   .x-btn:hover{ background:var(--bg-page); color:var(--text-primary); }
   .x-btn svg{ width:18px; height:18px; }
 
+  /* ---------- 경조사 배너 ---------- */
+  .celeb{ margin-bottom:14px; }
+  .celeb-head{ display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:10px; }
+  .celeb-head h3{ font-size:var(--fs-md); font-weight:700; margin:0; }
+  .celeb-row{ display:flex; gap:12px; overflow-x:auto; padding:4px 2px 10px; scroll-snap-type:x mandatory; }
+  .celeb-bn{ position:relative; flex:0 0 232px; aspect-ratio:670/290; border-radius:var(--radius-lg); overflow:hidden; cursor:pointer; border:0; padding:0; background:none; scroll-snap-align:start; transition:transform .25s var(--ease), box-shadow .25s var(--ease); }
+  .celeb-bn:hover{ transform:translateY(-4px); box-shadow:0 10px 22px -10px rgba(37,93,170,.35); }
+  .celeb-bn > img{ width:100%; height:100%; object-fit:cover; transform:scale(1.035); display:block; }
+  .celeb-count{ position:absolute; right:10px; bottom:8px; font-size:var(--fs-xs); font-weight:700; color:var(--text-primary); background:rgba(255,255,255,.85); padding:2px 8px; border-radius:var(--radius-sm); }
+  .fx{ position:absolute; pointer-events:none; }
+  .fx-flame{ width:7%; height:17%; border-radius:50%; background:radial-gradient(ellipse at 50% 60%,rgba(255,245,180,.95) 0 22%,rgba(255,190,60,.55) 45%,rgba(255,150,40,0) 70%); mix-blend-mode:screen; transform-origin:50% 90%; animation:fxFlick .45s ease-in-out infinite alternate; }
+  @keyframes fxFlick{ 0%{transform:translate(-50%,-55%) scale(.85,1) rotate(-5deg); opacity:.75} 100%{transform:translate(-50%,-60%) scale(1.1,1.25) rotate(5deg); opacity:1} }
+  .fx-heart{ color:#FF6FA0; font-size:14px; opacity:0; text-shadow:0 1px 2px rgba(255,255,255,.7); animation:fxRise 3s ease-in infinite; }
+  @keyframes fxRise{ 0%{transform:translateY(0) scale(.5); opacity:0} 20%{opacity:1} 100%{transform:translateY(-58px) scale(1.15) rotate(12deg); opacity:0} }
+  .fx-spark{ width:12px; height:12px; background:#fff; opacity:0; clip-path:polygon(50% 0,62% 38%,100% 50%,62% 62%,50% 100%,38% 62%,0 50%,38% 38%); animation:fxTwinkle 2.2s ease-in-out infinite; }
+  @keyframes fxTwinkle{ 0%,100%{transform:scale(.3) rotate(0); opacity:0} 50%{transform:scale(1) rotate(45deg); opacity:1} }
+  .fx-wave{ width:22px; height:30px; border:3px solid #FF7FA8; border-color:transparent transparent transparent #FF7FA8; border-radius:50%; opacity:0; animation:fxWave 1.5s ease-out infinite; }
+  @keyframes fxWave{ 0%{transform:translate(-50%,-50%) scale(.5); opacity:0} 30%{opacity:.9} 100%{transform:translate(-130%,-50%) scale(1.5); opacity:0} }
+  .fx-shine{ inset:0; background:linear-gradient(105deg,transparent 40%,rgba(255,255,255,.55) 50%,transparent 60%); background-size:250% 100%; animation:fxShine 3.6s ease-in-out infinite; }
+  @keyframes fxShine{ 0%,40%{background-position:120% 0} 100%{background-position:-60% 0} }
+  .celeb-person{ display:grid; grid-template-columns:40px minmax(0,1fr); gap:12px; padding:12px 0; border-bottom:1px solid var(--border); }
+  .celeb-person:last-child{ border-bottom:none; }
+  .celeb-av{ width:40px; height:40px; border-radius:var(--radius); background:var(--accent-light); color:var(--accent); display:flex; align-items:center; justify-content:center; font-weight:700; }
+  .celeb-acts{ display:flex; gap:6px; margin-top:8px; flex-wrap:wrap; }
+  @media (min-width:1100px){ .celeb-row{ display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); overflow:visible; } }
+  @media (prefers-reduced-motion:reduce){ .fx{ display:none; } }
 
   /* ---------- MOBILE ---------- */
   .menu-btn{ display:none; width:34px; height:34px; border-radius:var(--radius-sm); align-items:center; justify-content:center;
@@ -247,6 +273,7 @@
     .card{ overflow-x:auto; }
     table{ min-width:420px; }
     .org-grid{ --org-cols:2; }
+    .celeb-bn{ flex-basis:78%; }
     /* 손가락으로 누르기 쉬운 크기 (44px) */
     .nav-item, .subtab, .btn, .menu-btn, .icon-btn, .x-btn{ min-height:44px; }
     .menu-btn, .icon-btn, .x-btn{ min-width:44px; }
@@ -344,6 +371,7 @@ function homeContent(){
       </div>`).join('')}
     </div>
   </div>
+  ${celebBanners()}
   <div class="grid g3">
     ${kpiHomeCard()}
     <div style="display:flex; flex-direction:column; gap:14px;">
@@ -696,7 +724,7 @@ const ORG_TREE = [
 let orgSeq = 0;
 function orgMember(name, title, division, team, lead='', hideMobile=false){   // team '' = 본부 직속
   const n = ++orgSeq;
-  return { id:n, name, title, division, team, lead, hideMobile,
+  return { id:n, name, title, division, team, lead, hideMobile, hireDate:'', birthday:'', hideBirthday:false,
     mobile:'010-0000-'+String(n).padStart(4,'0'), ext:String(1000+n), email:`user${String(n).padStart(2,'0')}@example.com` };
 }
 const orgMembers = [
@@ -734,6 +762,7 @@ function orgValidate(m, members){
   if(m.lead==='TEAM' && others.some(o=>o.lead==='TEAM' && o.division===m.division && o.team===m.team)) errs.push('이 팀에는 이미 팀장이 있습니다.');
   if(m.lead==='DIVISION' && others.some(o=>o.lead==='DIVISION' && o.division===m.division)) errs.push('이 본부에는 이미 본부장이 있습니다.');
   if(m.email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(m.email)) errs.push('메일 형식이 올바르지 않습니다.');
+  if(m.birthday && !celebValidMd(m.birthday)) errs.push('생일은 월-일 형식으로 입력해 주세요. (예: 03-15)');
   return errs;
 }
 function orgUpsert(members, m, isHr){
@@ -844,7 +873,7 @@ function orgShow(id){
 function orgTeamOptions(div, selected){ return `<option value="">(본부 직속)</option>`+orgTeamsOf(div).map(t=>`<option ${t===selected?'selected':''}>${escapeHtml(t)}</option>`).join(''); }
 function orgEdit(id){
   if(!orgIsHr()) return;
-  const m = id ? {...orgFind(id)} : { id:0, name:'', title:'', division:ORG_TREE[0].division, team:'', lead:'', hideMobile:false, mobile:'', ext:'', email:'' };
+  const m = id ? {...orgFind(id)} : { id:0, name:'', title:'', division:ORG_TREE[0].division, team:'', lead:'', hideMobile:false, mobile:'', ext:'', email:'', hireDate:'', birthday:'', hideBirthday:false };
   const f = (label, key, type='text')=>`<div class="field"><label>${label}</label><input id="orgF_${key}" type="${type}" value="${escapeHtml(m[key])}"></div>`;
   const sel = (label, key, opts)=>`<div class="field"><label>${label}</label><select id="orgF_${key}">${opts.map(([v,l])=>`<option value="${v}" ${String(m[key]||'')===v?'selected':''}>${l}</option>`).join('')}</select></div>`;
   orgModal(`<div class="card-title">${id?'구성원 수정':'구성원 추가'}</div><div id="orgFormErr"></div>
@@ -854,11 +883,13 @@ function orgEdit(id){
     <div class="field-row">${sel('직책','lead',[['','없음'],['TEAM','팀장'],['DIVISION','본부장']])}${sel('휴대폰 공개','hideMobile',[['','공개'],['true','비공개 (본인 요청)']])}</div>
     <div class="field-row">${f('회사 휴대폰','mobile','tel')}${f('내선','ext')}</div>
     ${f('회사 메일','email','email')}
+    <div class="field-row" style="margin-top:14px;">${f('입사일','hireDate','date')}<div class="field"><label>생일 (월-일, 연도 제외)</label><input id="orgF_birthday" value="${escapeHtml(m.birthday||'')}" placeholder="03-15" maxlength="5"></div></div>
+    <div class="field-row">${sel('생일 배너','hideBirthday',[['','표시'],['true','숨김 (본인 요청)']])}<div></div></div>
     <div style="display:flex; gap:8px; margin-top:6px;"><button class="btn primary" onclick="orgSave(${m.id})">저장</button><button class="btn" onclick="orgCloseModal()">취소</button></div>`);
 }
 function orgSave(id){
   const v = k=>document.getElementById('orgF_'+k).value;
-  const m = { id, name:v('name'), title:v('title'), division:v('division'), team:v('team'), lead:v('lead'), hideMobile:v('hideMobile')==='true', mobile:v('mobile').trim(), ext:v('ext').trim(), email:v('email').trim() };
+  const m = { id, name:v('name'), title:v('title'), division:v('division'), team:v('team'), lead:v('lead'), hideMobile:v('hideMobile')==='true', mobile:v('mobile').trim(), ext:v('ext').trim(), email:v('email').trim(), hireDate:v('hireDate'), birthday:v('birthday').trim(), hideBirthday:v('hideBirthday')==='true' };
   const errs = orgUpsert(orgMembers, m, orgIsHr());
   if(errs.length){ document.getElementById('orgFormErr').innerHTML = kpiNote(errs.map(escapeHtml).join('<br>'), 'danger'); return; }
   orgCloseModal(); kpiFlash(`${escapeHtml(m.name)} 님을 ${id?'수정':'등록'}했습니다.`);
@@ -1203,6 +1234,147 @@ function kpiHomeCard(){
     <div class="card-title"><span>나의 KPI 현황 <span style="font-weight:500; color:var(--text-secondary);">${KPI_YEAR}년 · ${me.name} ${me.title}</span></span><span class="badge ${cls}">${label}</span></div>
     ${body}${(!s || !s.confirmed) && inboxLine ? `<div style="margin-top:10px;">${inboxLine}</div>` : ''}
   </div>`;
+}
+
+/* ---------------- 경조사 배너 (홈) ----------------
+   입사 환영·생일·입사 N주년은 직원 정보(입사일·생일)로 자동, 경사·조사는 HR이 본인 동의를 받고 등록.
+   규칙: 입사 환영 = 입사 후 30일 / 생일 = 이번 주(월~일), 본인이 숨기면 제외 / N주년 = 이번 달, 1·3·5·10년 이후 5년마다.
+   배너 그림: public/img/banners (인사담당자 제작). 시연용 데이터는 브라우저 메모리에만 있다. */
+const celebEvents = [];
+let celebSeq = 2;
+const CELEB = [
+  { key:'welcome',     label:'입사 환영',     img:'welcome',     fx:'<span class="fx fx-shine"></span><span class="fx fx-spark" style="left:66%;top:22%"></span><span class="fx fx-spark" style="left:88%;top:62%;animation-delay:.8s"></span><span class="fx fx-spark" style="left:48%;top:70%;animation-delay:1.5s"></span>' },
+  { key:'birthday',    label:'생일 축하',     img:'birthday',    fx:'<span class="fx fx-flame" style="left:70.7%;top:25%"></span><span class="fx fx-flame" style="left:77.8%;top:15.5%;animation-delay:.15s"></span><span class="fx fx-flame" style="left:84.5%;top:26%;animation-delay:.3s"></span><span class="fx fx-spark" style="left:93%;top:40%;animation-delay:.4s"></span>' },
+  { key:'anniversary', label:'입사 N주년',    img:'anniversary', fx:'<span class="fx fx-heart" style="left:58%;top:62%">♥</span><span class="fx fx-heart" style="left:90%;top:55%;animation-delay:1s;font-size:11px">♥</span><span class="fx fx-heart" style="left:72%;top:35%;animation-delay:2s;color:#B58CFF">♥</span>' },
+  { key:'joy',         label:'야호 경사',     img:'joy',         fx:'<span class="fx fx-wave" style="left:59%;top:44%"></span><span class="fx fx-wave" style="left:59%;top:44%;animation-delay:.5s"></span><span class="fx fx-wave" style="left:59%;top:44%;animation-delay:1s"></span><span class="fx fx-spark" style="left:86%;top:20%;animation-delay:.6s"></span>' },
+  { key:'condol',      label:'토닥토닥 조사', img:'condolence',  fx:'<span class="fx fx-heart" style="left:88%;top:30%;font-size:11px;color:#FF9DBB">♥</span><span class="fx fx-spark" style="left:60%;top:25%;animation-delay:1.1s"></span>' },
+];
+
+/* 시연용 입사일·생일 — 오늘 기준으로 만들어 배너가 늘 보이게 한다 (가상 값) */
+(function celebSeed(){
+  const t = new Date(), ymd = d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+  const md = d=>ymd(d).slice(5), shift = (days, years=0)=>{ const d = new Date(t); d.setFullYear(d.getFullYear()-years); d.setDate(d.getDate()+days); return d; };
+  const mon = celebMonday(t), sun = new Date(mon); sun.setDate(mon.getDate()+6);
+  const other = new Date(t.getFullYear()-6, (t.getMonth()+4)%12, 12);   // 이번 달·이번 주와 겹치지 않는 날
+  orgMembers.forEach(m=>{ m.hireDate = ymd(other); m.birthday = md(new Date(2000, (t.getMonth()+6)%12, 20)); });
+  const set = (name, o)=>Object.assign(orgMembers.find(m=>m.name===name), o);
+  set('신에스', { hireDate:ymd(shift(-10)) });
+  set('문해외', { hireDate:ymd(shift(-21)) });
+  set('홍길동', { birthday:md(t) });
+  set('김영희', { birthday:md(mon) });
+  set('오디바', { birthday:md(sun) });
+  set('최지원', { birthday:md(t), hideBirthday:true });   // 본인이 숨김 → 배너에 안 나옴
+  set('이철수', { hireDate:ymd(new Date(t.getFullYear()-5, t.getMonth(), 1)) });
+  set('정씨에', { hireDate:ymd(new Date(t.getFullYear()-1, t.getMonth(), 15)) });
+  celebEvents.push({ id:1, type:'joy', memberId:orgMembers.find(m=>m.name==='서솔루').id, label:'결혼', until:ymd(shift(10)) });
+  celebEvents.push({ id:2, type:'condol', memberId:orgMembers.find(m=>m.name==='강총무').id, label:'부친상', until:ymd(shift(3)) });
+})();
+
+/* ----- 규칙 (순수 로직, celebSelfCheck가 검증) ----- */
+function celebParse(ymd){ const [y,m,d] = ymd.split('-').map(Number); return new Date(y, m-1, d); }
+function celebMonday(t){ const d = new Date(t.getFullYear(), t.getMonth(), t.getDate()); d.setDate(d.getDate()-((d.getDay()+6)%7)); return d; }
+function celebValidMd(md){ if(!/^\d{2}-\d{2}$/.test(md)) return false; const [m,d] = md.split('-').map(Number); const x = new Date(2000, m-1, d); return x.getMonth()===m-1 && x.getDate()===d; }
+function celebIsWelcome(hireDate, t){ if(!hireDate) return false; const days = Math.round((new Date(t.getFullYear(),t.getMonth(),t.getDate()) - celebParse(hireDate))/864e5); return days>=0 && days<=30; }
+function celebBirthdayThisWeek(md, t){
+  if(!md || !celebValidMd(md)) return false;
+  const mon = celebMonday(t);
+  for(let i=0; i<7; i++){
+    const d = new Date(mon); d.setDate(mon.getDate()+i);
+    const leap = new Date(d.getFullYear(), 1, 29).getMonth()===1;
+    const target = (md==='02-29' && !leap) ? '02-28' : md;   // 윤년 생일은 평년에 2월 28일
+    if(String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')===target) return true;
+  }
+  return false;
+}
+function celebMilestone(y){ return y===1 || y===3 || y===5 || (y>=10 && y%5===0); }
+function celebAnnivYears(hireDate, t){
+  if(!hireDate) return 0;
+  const h = celebParse(hireDate), y = t.getFullYear()-h.getFullYear();
+  return h.getMonth()===t.getMonth() && celebMilestone(y) ? y : 0;
+}
+function celebEventActive(e, t){ return celebParse(e.until) >= new Date(t.getFullYear(), t.getMonth(), t.getDate()); }
+function celebList(key, members, events, t){
+  const md = s=>`${+s.slice(-5,-3)}월 ${+s.slice(-2)}일`;
+  if(key==='welcome') return members.filter(m=>celebIsWelcome(m.hireDate, t)).map(m=>({ m, note:md(m.hireDate)+' 입사' }));
+  if(key==='birthday') return members.filter(m=>!m.hideBirthday && celebBirthdayThisWeek(m.birthday, t)).sort((a,b)=>a.birthday.localeCompare(b.birthday)).map(m=>({ m, note:md(m.birthday)+' 생일' }));
+  if(key==='anniversary') return members.map(m=>({ m, y:celebAnnivYears(m.hireDate, t) })).filter(x=>x.y).map(x=>({ m:x.m, note:`입사 ${x.y}주년 · ${md(x.m.hireDate)}` }));
+  return events.filter(e=>e.type===key && celebEventActive(e, t)).map(e=>({ m:members.find(m=>m.id===e.memberId), note:e.label, ev:e })).filter(x=>x.m);
+}
+function celebValidateEvent(e, members, t){
+  const errs = [];
+  if(!['joy','condol'].includes(e.type)) errs.push('종류를 선택해 주세요.');
+  if(!members.some(m=>m.id===e.memberId)) errs.push('대상자를 선택해 주세요.');
+  if(!e.label.trim()) errs.push('내용을 입력해 주세요. (예: 결혼, 부친상)');
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(e.until) || !celebEventActive(e, t)) errs.push('게시 종료일은 오늘이나 그 이후여야 합니다.');
+  return errs;
+}
+function celebSelfCheck(){   // 브라우저 콘솔에서 celebSelfCheck() 실행
+  const ok = (c,msg)=>{ if(!c) throw new Error('celebSelfCheck 실패: '+msg); };
+  const t = new Date(2026, 9, 1);   // 2026-10-01 (목) → 이번 주 9/28(월)~10/4(일)
+  ok(celebIsWelcome('2026-09-01', t) && !celebIsWelcome('2026-08-31', t) && celebIsWelcome('2026-10-01', t) && !celebIsWelcome('2026-10-02', t), '입사 환영 30일');
+  ok(celebBirthdayThisWeek('09-28', t) && celebBirthdayThisWeek('10-04', t) && !celebBirthdayThisWeek('09-27', t) && !celebBirthdayThisWeek('10-05', t), '생일 이번 주 월~일');
+  ok(celebBirthdayThisWeek('01-02', new Date(2026, 11, 31)) && celebBirthdayThisWeek('12-28', new Date(2027, 0, 1)), '연말연초 주');
+  ok(celebBirthdayThisWeek('02-29', new Date(2027, 1, 28)), '윤일 생일은 평년 2/28');
+  ok(!celebValidMd('13-01') && !celebValidMd('02-30') && celebValidMd('02-29') && !celebValidMd('3-5'), '생일 형식');
+  ok([1,3,5,10,15,20].every(celebMilestone) && ![2,4,6,7,9,11,12].some(celebMilestone), '주년 1·3·5·10 이후 5년마다');
+  ok(celebAnnivYears('2021-10-20', t)===5 && celebAnnivYears('2022-10-01', t)===0 && celebAnnivYears('2021-09-20', t)===0 && celebAnnivYears('2026-10-01', t)===0, 'N주년 이번 달');
+  const ms = [{id:1, hideBirthday:true, birthday:'10-01', hireDate:''}, {id:2, hideBirthday:false, birthday:'10-01', hireDate:''}];
+  ok(celebList('birthday', ms, [], t).length===1, '생일 숨김 존중');
+  const evs = [{type:'joy', memberId:2, label:'결혼', until:'2026-10-01'}, {type:'joy', memberId:2, label:'출산', until:'2026-09-30'}];
+  ok(celebList('joy', ms, evs, t).length===1 && celebList('condol', ms, evs, t).length===0, '경사 게시 기간');
+  ok(celebValidateEvent({type:'joy', memberId:2, label:' ', until:'2026-10-05'}, ms, t).length===1, '내용 필수');
+  ok(celebValidateEvent({type:'joy', memberId:9, label:'결혼', until:'2026-09-30'}, ms, t).length===2, '대상자·종료일');
+  return 'celebSelfCheck 통과';
+}
+
+/* ----- 화면 ----- */
+function celebBanners(){
+  const t = new Date(), hr = orgIsHr();
+  const items = CELEB.map(c=>({ c, n:celebList(c.key, orgMembers, celebEvents, t).length })).filter(x=>x.n);
+  if(!items.length && !hr) return '';
+  return `<section class="celeb" aria-label="이번 주 소식">
+    <div class="celeb-head"><h3>이번 주 소식</h3>${hr ? '<button class="btn sm" onclick="celebEdit()">＋ 경조사 등록</button>' : ''}</div>
+    <div class="celeb-row">${items.map(({c,n})=>`<button type="button" class="celeb-bn" onclick="celebShow('${c.key}')" aria-label="${c.label} ${n}명 보기"><img src="img/banners/${c.img}.jpg" alt="">${c.fx}<span class="celeb-count">${n}명</span></button>`).join('')
+      || '<div class="list-sub">이번 주에 보일 소식이 없습니다. 경사·조사는 위 버튼으로 등록하세요.</div>'}</div>
+  </section>`;
+}
+function celebShow(key){
+  const c = CELEB.find(x=>x.key===key), list = celebList(key, orgMembers, celebEvents, new Date()), hr = orgIsHr();
+  const people = list.map(({m, note, ev})=>{
+    const ct = orgVisibleContacts(m);
+    return `<div class="celeb-person"><div class="celeb-av">${escapeHtml(m.name.slice(0,1))}</div><div>
+      <div><span class="org-name" onclick="orgShow(${m.id})">${escapeHtml(m.name)}</span> ${escapeHtml(m.title)} <span class="list-sub" style="display:inline;">· ${escapeHtml(m.team || m.division)}</span></div>
+      <div class="list-sub">${escapeHtml(note)} · 내선 ${escapeHtml(ct.ext)} · ${escapeHtml(ct.email)}</div>
+      <div class="celeb-acts">${ct.mobile ? `<a class="btn sm" href="tel:${escapeHtml(ct.mobile)}">${icon('phone')} 전화</a>` : ''}<a class="btn sm" href="mailto:${escapeHtml(ct.email)}">${icon('mail')} 메일</a>
+        ${hr && ev ? `<button class="btn sm" onclick="celebDelete(${ev.id})">게시 내리기</button>` : ''}</div>
+    </div></div>`;
+  }).join('');
+  orgModal(`<div class="card-title"><span>${c.label} <span style="font-weight:500; color:var(--text-secondary);">${list.length}명</span></span><button type="button" class="x-btn" onclick="orgCloseModal()" aria-label="닫기">${icon('x')}</button></div>
+    ${people || '<div class="list-sub">해당하는 분이 없습니다.</div>'}
+    <div class="list-sub" style="margin-top:10px;">이름을 누르면 전체 연락처가 나옵니다. 휴대폰은 본인이 공개한 경우에만 보입니다.</div>`);
+}
+function celebEdit(){
+  if(!orgIsHr()) return;
+  const until = kpiDay(7);
+  orgModal(`<div class="card-title"><span>경조사 등록</span><button type="button" class="x-btn" onclick="orgCloseModal()" aria-label="닫기">${icon('x')}</button></div><div id="celebErr"></div>
+    ${kpiNote('본인(또는 가족) 동의를 받은 경우에만 등록하세요. 게시 종료일이 지나면 배너에서 자동으로 내려갑니다.')}
+    <div class="field-row"><div class="field"><label>종류</label><select id="celebF_type"><option value="joy">야호 경사 (결혼·출산 등)</option><option value="condol">토닥토닥 조사 (부고)</option></select></div>
+      <div class="field"><label>대상자</label><select id="celebF_member">${orgMembers.map(m=>`<option value="${m.id}">${escapeHtml(m.name)} ${escapeHtml(m.title)} · ${escapeHtml(m.team||m.division)}</option>`).join('')}</select></div></div>
+    <div class="field-row"><div class="field"><label>내용</label><input id="celebF_label" placeholder="결혼"></div>
+      <div class="field"><label>게시 종료일</label><input id="celebF_until" type="date" value="${until}"></div></div>
+    <div style="display:flex; gap:8px;"><button class="btn primary" onclick="celebSave()">등록</button><button class="btn" onclick="orgCloseModal()">취소</button></div>`);
+}
+function celebSave(){
+  const v = k=>document.getElementById('celebF_'+k).value;
+  const e = { id:celebSeq+1, type:v('type'), memberId:+v('member'), label:v('label').trim(), until:v('until') };
+  const errs = celebValidateEvent(e, orgMembers, new Date());
+  if(errs.length){ document.getElementById('celebErr').innerHTML = kpiNote(errs.map(escapeHtml).join('<br>'), 'danger'); return; }
+  celebSeq++; celebEvents.push(e); orgCloseModal(); renderContent();
+}
+function celebDelete(id){
+  if(!orgIsHr() || !confirm('이 소식을 배너에서 내릴까요?')) return;
+  const i = celebEvents.findIndex(e=>e.id===id); if(i>=0) celebEvents.splice(i,1);
+  orgCloseModal(); renderContent();
 }
 
 /* ---------------- NAV DATA ---------------- */
