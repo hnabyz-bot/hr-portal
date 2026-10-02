@@ -993,7 +993,7 @@ function ruleMark(html, terms){
 function ruleCellClass(c){
   const cls = [];
   const longest = Math.max(...c.t.split('\n').map(l=>l.length));
-  if(c.t.length > 18 || c.t.includes('\n') || /^(\d+[.)]|\(\d+\)|[-※<])/.test(c.t)) cls.push('l');
+  if(c.t.length > 18 || c.t.includes('\n') || /^(\d+[.)]|\(\d+\)|-\s|※|<)/.test(c.t)) cls.push('l');
   if(longest > 18) cls.push('wide');          // 문장 칸은 너무 좁아지지 않게
   else if(longest <= 10) cls.push('nw');      // '100% ~ 60%' 같은 짧은 값은 한 줄로
   if(c.rs >= 6) cls.push('top');

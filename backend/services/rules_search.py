@@ -180,10 +180,12 @@ def _loose_rows(region, t) -> list[list[dict]]:
     return [[{"t": _tidy(" ".join(c)), "cs": 1, "rs": 1} for c in cols] for _, cols in sorted(lines.items())]
 
 
-def _table_rows(t, chars) -> tuple[list[list[dict]], int]:
-    """pdfplumber 표 → [[{t, cs, rs}]] (합친 칸은 cs/rs로). 칸 경계선 좌표로 몇 칸을 덮는지 센다."""
+def _table_rows(t, chars, xs_ref: list[float] | None = None) -> tuple[list[list[dict]], list[float]]:
+    """pdfplumber 표 → [[{t, cs, rs}]] (합친 칸은 cs/rs로). 칸 경계선 좌표로 몇 칸을 덮는지 센다.
+    xs_ref: 앞 쪽에서 이어지는 표면 앞 표의 세로선 위치 — 이 쪽에 세로선이 덜 그려져 있어도 칸을 위치로 맞춘다."""
     boxes = [b for row in t.rows for b in row.cells if b]
-    xs = _edges([b[0] for b in boxes] + [b[2] for b in boxes])
+    own = _edges([b[0] for b in boxes] + [b[2] for b in boxes])  # 이 쪽에 그려진 세로선 — 빈틈 찾기용
+    xs = xs_ref or own  # 칸 너비(cs)를 셀 기준
     ys = _edges([b[1] for b in boxes] + [b[3] for b in boxes])
     tops = [min(b[1] for b in row.cells if b) for row in t.rows] + [t.bbox[3]]
     rows = []
@@ -192,13 +194,13 @@ def _table_rows(t, chars) -> tuple[list[list[dict]], int]:
         for c, b in enumerate(row.cells):
             if b is None:
                 # 다른 칸에 합쳐진 자리면 건너뛴다. 아무 칸도 덮지 않은 빈틈(가로 테두리가 빠진 줄)이면 그 자리 글자로 칸을 만든다
-                if len(row.cells) != len(xs) - 1:
+                if len(row.cells) != len(own) - 1:
                     continue
-                hole = (xs[c], tops[r], xs[c + 1], tops[r + 1])
+                hole = (own[c], tops[r], own[c + 1], tops[r + 1])
                 cx, cy = (hole[0] + hole[2]) / 2, (hole[1] + hole[3]) / 2
                 if hole[3] - hole[1] < 4 or any(o[0] <= cx <= o[2] and o[1] <= cy <= o[3] for o in boxes):
                     continue
-                cells.append({"t": _cell_text(chars, hole), "cs": 1, "rs": 1})
+                cells.append({"t": _cell_text(chars, hole), "cs": sum(1 for x in xs if hole[0] + 2 < x < hole[2] - 2) + 1, "rs": 1})
                 continue
             cells.append({
                 "t": _cell_text(chars, b),
@@ -207,7 +209,7 @@ def _table_rows(t, chars) -> tuple[list[list[dict]], int]:
             })
         if cells:
             rows.append(cells)
-    return _merge_head(rows), len(xs) - 1
+    return (rows if xs_ref else _merge_head(rows)), xs
 
 
 def _join_left(rows: list[list[dict]]) -> None:
@@ -235,7 +237,7 @@ def _join_left(rows: list[list[dict]]) -> None:
                 col += 1
             up = above.get(col)
             join = (not c["t"] and i > 1 and up is not None and up[1] == i
-                    and up[0]["cs"] == c["cs"] and up[0]["rs"] > 1)
+                    and up[0]["cs"] == c["cs"] and (up[0]["rs"] > 1 or c.get("cont")))
             owner = up[0] if join else c
             if join:
                 owner["rs"] += c["rs"]
@@ -291,16 +293,19 @@ def _extract_pdf(path: str) -> tuple[list[str], list[dict]]:
             for (t, continued, loose), box in zip(picked, boxes):
                 if box[1] > y:
                     parts.append(text_only.crop((x0, y, x1, box[1])).extract_text(keep_blank_chars=True))
-                rows, ncols = _table_rows(t, page.chars)
+                rows, xs = _table_rows(t, page.chars, open_table["xs"] if continued else None)
                 if loose is not None:
                     rows = _loose_rows(loose, t) + rows
                 if continued:
-                    gap = open_table["cols"] - ncols  # 이어진 쪽엔 맨 왼쪽 '구분' 칸이 없는 경우가 있다
+                    # 이어진 쪽엔 맨 왼쪽 '구분' 칸이 아예 없기도 하다 → 앞 표 세로선 기준으로 모자란 칸만큼 채운다
+                    gap = sum(1 for x in xs[:-1] if x < t.bbox[0] - 2)
                     if gap > 0:
                         rows = [[{"t": "", "cs": gap, "rs": len(rows)}] + rows[0]] + rows[1:]
+                    for c in rows[0]:
+                        c["cont"] = True  # 쪽 경계 첫 줄 — 위 칸이 한 줄짜리여도 이어 붙일 수 있다
                     open_table["rows"] += rows
                 else:
-                    open_table = {"page": page.page_number, "rows": rows, "cols": ncols}
+                    open_table = {"page": page.page_number, "rows": rows, "xs": xs}
                     tables.append(open_table)
                     parts.append(f"\n⟦표{len(tables) - 1}⟧\n")
                 y = t.bbox[3]
@@ -310,8 +315,11 @@ def _extract_pdf(path: str) -> tuple[list[str], list[dict]]:
                 open_table = None
             pages.append("\n".join(parts))
     for t in tables:
-        t.pop("cols")
+        t.pop("xs")
         _join_left(t["rows"])
+        for row in t["rows"]:
+            for c in row:
+                c.pop("cont", None)
     return pages, tables
 
 
@@ -575,4 +583,7 @@ if __name__ == "__main__":
             [c1(""), c1("팀웍")]]
     _join_left(rows)
     assert rows[1][1]["rs"] == 3 and rows[3] == [c1("팀웍")], "가운데 칸도 쪽이 바뀌며 끊기면 잇는다"
+    rows = [[c1("구분"), c1("기준")], [c1("각종 시상"), c1("개인")], [dict(c1(""), cont=True), dict(c1("1점"), cont=True)]]
+    _join_left(rows)
+    assert rows[1][0]["rs"] == 2 and len(rows[2]) == 1, "다음 쪽 첫 줄의 빈칸은 한 줄짜리 위 칸에도 잇는다"
     print("rules_search 자체 점검 통과")
