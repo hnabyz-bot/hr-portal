@@ -81,6 +81,10 @@ jobs:
         working-directory: backend
         run: python -m hr_eval.selfcheck
 
+      - name: 규정 조항 나누기·검색 자체 검증
+        working-directory: backend
+        run: python -m services.rules_search
+
   sqlite:
     name: SQLite 기능 검증
     runs-on: ubuntu-latest

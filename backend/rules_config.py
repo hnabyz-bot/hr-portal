@@ -15,9 +15,9 @@ REGULATIONS_DIR = os.environ.get("REGULATIONS_DIR", "/app/regulations")
 
 RULES = [
     {"id": "hr", "title": "인사규정", "filename": "1. 인사규정(2026.05).pdf"},
-    {"id": "eval", "title": "인사평가규정", "filename": "2. 인사평가규정(2025.03).docx"},
-    {"id": "service", "title": "복무관리규정", "filename": "3. 복무관리규정(2025.01).docx"},
-    {"id": "pay", "title": "급여규정", "filename": "4. 급여규정(2025.01).docx"},
+    {"id": "eval", "title": "인사평가규정", "filename": "2. 인사평가규정(2025.03).pdf"},
+    {"id": "service", "title": "복무관리규정", "filename": "3. 복무관리규정(2025.01).pdf"},
+    {"id": "pay", "title": "급여규정", "filename": "4. 급여규정(2025.01).pdf"},
     {"id": "welfare", "title": "직원복리후생규정", "filename": "5. 직원복리후생규정(2026.07).pdf"},
     {"id": "travel", "title": "출장여비규정", "filename": "6. 출장여비규정(2026.07).pdf"},
     {"id": "discipline", "title": "표창징계규정(상벌규정)", "filename": "7. 표창징계규정(상벌규정)(2026.05).pdf"},
@@ -33,4 +33,7 @@ def get_rule(rule_id: str) -> dict | None:
 
 
 def rule_file_path(rule: dict) -> str:
-    return os.path.join(REGULATIONS_DIR, rule["filename"])
+    """PDF가 없고 같은 이름의 DOCX가 있으면 그것을 쓴다(예전에 DOCX로 올린 서버 호환)."""
+    path = os.path.join(REGULATIONS_DIR, rule["filename"])
+    docx = os.path.splitext(path)[0] + ".docx"
+    return docx if not os.path.isfile(path) and os.path.isfile(docx) else path

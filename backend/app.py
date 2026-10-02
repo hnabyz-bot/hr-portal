@@ -258,7 +258,23 @@ def rules_search_route():
         raise ApiError("검색어를 입력해 주세요.")
     if len(query) > 100:
         raise ApiError("검색어가 너무 깁니다.")
-    return jsonify({"results": rules_search.search(query)})
+    return jsonify(rules_search.search(query))
+
+
+@app.get("/api/rules")
+def rules_list_route():
+    return jsonify({"rules": rules_search.list_rules()})
+
+
+@app.get("/api/rules/<rule_id>")
+def rules_doc_route(rule_id: str):
+    rule = rules_config.get_rule(rule_id)
+    if not rule:
+        raise ApiError("존재하지 않는 규정입니다.", status=404)
+    doc = rules_search.get_doc(rule)
+    if not doc:
+        raise ApiError("아직 서버에 등록되지 않은 규정 파일입니다. 담당자에게 문의해 주세요.", status=404)
+    return jsonify({"id": rule["id"], "title": rule["title"], **doc})
 
 
 @app.get("/api/rules/<rule_id>/file")
