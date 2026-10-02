@@ -526,6 +526,69 @@
   @media (prefers-reduced-motion:reduce){
     *, *::before, *::after{ transition-duration:.01ms !important; animation-duration:.01ms !important; animation-iteration-count:1 !important; }
   }
+  /* ---------- 규정 검색 ---------- */
+  .rule-chips{ display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin-top:10px; }
+  .rule-chips > span{ font-size:var(--fs-xs); color:var(--text-muted); margin-right:2px; }
+  .rule-chip{ font:inherit; font-size:var(--fs-xs); padding:4px 11px; border-radius:999px; border:1px solid var(--border); background:var(--surface); color:var(--text-secondary); cursor:pointer; }
+  .rule-chip:hover{ border-color:var(--sky-mid); color:var(--accent); }
+  .rule-grid{ display:grid; grid-template-columns:repeat(auto-fill, minmax(200px, 1fr)); gap:10px; }
+  .rule-tile{ font:inherit; text-align:left; display:flex; flex-direction:column; gap:4px; padding:12px 14px; border:1px solid var(--border); border-radius:var(--radius); background:var(--surface); cursor:pointer; color:var(--text-primary); }
+  .rule-tile:hover{ border-color:var(--sky-mid); background:var(--accent-soft); }
+  .rule-tile b{ font-size:var(--fs-md); }
+  .rule-tile span{ font-size:var(--fs-xs); color:var(--text-muted); }
+  .rule-tile.off{ cursor:default; opacity:.7; }
+  .rule-group{ padding:4px 0 10px; border-bottom:1px solid var(--border); margin-bottom:8px; }
+  .rule-group:last-child{ border-bottom:none; margin-bottom:0; }
+  .rule-group-head{ display:flex; align-items:center; gap:8px; margin:6px 0 4px; }
+  .rule-link{ font:inherit; font-size:var(--fs-md); font-weight:700; color:var(--accent); background:none; border:none; padding:0; cursor:pointer; }
+  .rule-hit{ font:inherit; display:block; width:100%; text-align:left; background:none; border:none; border-radius:var(--radius-sm); padding:9px 10px; cursor:pointer; color:var(--text-primary); }
+  .rule-hit:hover{ background:var(--accent-soft); }
+  .rule-hit-title{ display:block; font-weight:700; font-size:var(--fs-md); }
+  .rule-hit-snip{ display:block; margin-top:3px; font-size:var(--fs-sm); color:var(--text-secondary); line-height:1.6; }
+  .rule-mark{ background:#FFF0B8; color:inherit; border-radius:3px; padding:0 1px; }
+  .rule-view-head{ position:sticky; top:-24px; z-index:2; background:var(--surface); display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding:12px 0; border-bottom:1px solid var(--border); margin:-12px 0 14px; }
+  .rule-view-title{ flex:1; min-width:180px; font-size:var(--fs-xl); font-weight:700; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .rule-view-grid{ display:grid; grid-template-columns:220px minmax(0,1fr); gap:20px; align-items:start; }
+  .rule-toc{ position:sticky; top:52px; max-height:calc(100vh - 260px); overflow-y:auto; border-right:1px solid var(--border); padding-right:8px; }
+  .rule-toc-ch{ font-size:var(--fs-xs); font-weight:700; color:var(--text-muted); margin:10px 0 4px; }
+  .rule-toc-ch:first-child{ margin-top:0; }
+  .rule-toc-item{ font:inherit; display:block; width:100%; text-align:left; font-size:var(--fs-sm); color:var(--text-secondary); background:none; border:none; border-radius:var(--radius-sm); padding:5px 8px; cursor:pointer; }
+  .rule-toc-item:hover{ background:#FEF5F5; }
+  .rule-toc-item.on{ background:var(--bg-danger); color:var(--danger); font-weight:700; }   /* 지금 보는 조항 = 사이트 알림색(붉은색) */
+  .rule-toc-select{ display:none; }
+  .rule-ch{ font-size:var(--fs-lg); font-weight:700; margin:22px 0 8px; padding-bottom:6px; border-bottom:1px solid var(--border); }
+  .rule-ch:first-child{ margin-top:0; }
+  .rule-sec{ padding:10px 12px; margin:0 -12px 4px; border-left:3px solid transparent; scroll-margin-top:72px; }
+  .rule-sec.on{ border-left-color:#D08A2E; background:#FBF3E6; }   /* 찾은 조항 = 사이트 베이지(평가 결과와 같은 색) */
+  .rule-sec h3{ font-size:var(--fs-md); margin:0 0 6px; display:flex; align-items:baseline; gap:8px; flex-wrap:wrap; }
+  .rule-page{ font-size:var(--fs-xs); font-weight:400; }
+  .rule-text{ white-space:pre-line; font-size:var(--fs-md); line-height:1.75; color:var(--text-primary); }
+  .rule-table-wrap{ overflow-x:auto; margin:10px 0 12px; border:1px solid #C9DCEA; border-radius:var(--radius); background:var(--surface); }
+  .rule-table{ border-collapse:collapse; font-size:var(--fs-sm); min-width:100%; }
+  .rule-table th, .rule-table td{ border:1px solid var(--border); padding:8px 8px; min-width:48px; white-space:pre-line; text-align:center; vertical-align:middle;
+    line-height:1.55; word-break:keep-all; overflow-wrap:break-word; text-wrap:pretty; color:var(--text-primary); }
+  .rule-table th{ background:#EAF3FA; border-color:#C9DCEA; font-weight:700; color:#1E4C8F; }
+  .rule-table td.l{ text-align:left; }
+  .rule-table td.top{ vertical-align:top; }
+  .rule-table td.nw{ white-space:nowrap; }
+  .rule-table td.wide{ min-width:160px; }
+  .rule-table tr:hover > td{ background:#F7FBFE; }
+  .rule-table tr > :first-child{ border-left:none; } .rule-table tr > :last-child{ border-right:none; }
+  .rule-table tr:first-child > *{ border-top:none; } .rule-table tr:last-child > *{ border-bottom:none; }
+  .rule-faq{ border-bottom:1px solid var(--border); }
+  .rule-faq summary{ cursor:pointer; padding:12px 0; font-weight:700; font-size:var(--fs-md); display:flex; align-items:center; gap:8px; }
+  .rule-faq-a{ padding:0 0 14px; }
+  .rule-faq-src{ font-size:var(--fs-xs); color:var(--accent); font-weight:700; margin-bottom:6px; }
+  @media (max-width:768px){
+    .rule-view{ overflow:visible; }   /* 모바일 .card 가로 스크롤이 아래 고정(sticky)을 막는다 */
+    .rule-view-head{ position:static; }
+    .rule-view-title{ font-size:var(--fs-lg); }
+    .rule-sec{ scroll-margin-top:64px; }
+    .rule-view-grid{ grid-template-columns:minmax(0,1fr); }
+    .rule-toc{ display:none; }
+    .rule-toc-select{ display:block; position:sticky; top:-16px; z-index:2; width:100%; min-height:44px; margin-bottom:12px; font:inherit; padding:8px; border:1px solid var(--border); border-radius:var(--radius-sm); background:var(--surface); }
+    .rule-chip{ min-height:36px; }
+  }
 </style>
 </head>
 <body>
@@ -897,55 +960,219 @@ function settlementContent(){
     (r)=> r[3]==='정산중' ? 'warning':'success', 3);
 }
 
+/* ---------------- 규정 검색 ----------------
+   원문은 서버(regulations/)에만 있다 — 이 파일에는 규정 문장을 넣지 않는다(Public 저장소).
+   서버가 규정을 장·조로 나눠 주면(/api/rules/…), 검색은 조항 단위로 보여 주고
+   조항을 누르면 포털 안 본문 보기가 그 조항 위치에서 열린다. 표는 원본 PDF 해당 쪽으로. */
+const RULE_CHIPS = ['연차','출장비','경조사','육아휴직','급여일','시간외','자격증','징계'];
+let ruleState = { q:'', data:null, view:null };   // view = {id, key} 이면 본문 보기
+const ruleDocs = {};
+let ruleList = null;
+
+async function ruleFetch(url){
+  const res = await fetch(url);
+  const data = await res.json().catch(()=>({}));
+  if(!res.ok) throw new Error(data.error || '규정을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.');
+  return data;
+}
+function ruleGetDoc(id){   // 같은 규정을 동시에 여러 번 열어도 요청은 한 번 (실패하면 다음에 다시)
+  return ruleDocs[id] || (ruleDocs[id] = ruleFetch('/api/rules/'+encodeURIComponent(id)).catch(e=>{ delete ruleDocs[id]; throw e; }));
+}
+function ruleSecLabel(s){ return s.no!=null ? `제${s.no}조 ${s.title}` : s.title; }
+function ruleErr(msg){ return `<div class="placeholder-note" style="background:var(--bg-danger); color:var(--danger);">${escapeHtml(msg)}</div>`; }
+/* 검색어를 칠한다. 글자 사이 띄어쓰기는 무시 — 서버 검색과 같은 규칙. html은 이미 escape된 문자열 */
+function ruleMark(html, terms){
+  const pats = (terms||[]).map(t=>[...t.replace(/\s/g,'')].map(ch=>ch.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')).join('\\s*')).filter(Boolean);
+  if(!pats.length) return html;
+  return html.replace(new RegExp('('+pats.join('|')+')','gi'), '<mark class="rule-mark">$1</mark>');
+}
+
+/* 조항 본문 그리기 — 본문 속 ⟦표n⟧ 자리에 서버가 칸까지 읽어 준 표(doc.tables[n])를 그린다.
+   첫 줄은 머리줄, 합친 칸은 colspan/rowspan 그대로. 넓은 표는 가로로 밀어 본다.
+   글자는 가운데 정렬. 문장·목록처럼 긴 칸만 왼쪽 정렬, 여러 줄을 덮는 칸은 위쪽에 붙여 이름이 화면 밖으로 밀리지 않게. */
+function ruleCellClass(c){
+  const cls = [];
+  const longest = Math.max(...c.t.split('\n').map(l=>l.length));
+  if(c.t.length > 18 || c.t.includes('\n') || /^(\d+[.)]|\(\d+\)|-\s|※|<)/.test(c.t)) cls.push('l');
+  if(longest > 18) cls.push('wide');          // 문장 칸은 너무 좁아지지 않게
+  else if(longest <= 10) cls.push('nw');      // '100% ~ 60%' 같은 짧은 값은 한 줄로
+  if(c.rs >= 6) cls.push('top');
+  return cls.length ? ` class="${cls.join(' ')}"` : '';
+}
+function ruleBodyHtml(doc, body, terms){
+  return body.split(/⟦표(\d+)⟧/).map((part, i)=>{
+    if(i%2===0) return part.trim() ? `<div class="rule-text">${ruleMark(escapeHtml(part.trim()), terms)}</div>` : '';
+    const t = doc.tables[+part];
+    if(!t) return '';
+    return `<div class="rule-table-wrap"><table class="rule-table">${t.rows.map((row, r)=>`<tr>${row.map(c=>{
+      const tag = r===0 ? 'th' : 'td';
+      return `<${tag}${r===0?'':ruleCellClass(c)}${c.cs>1?` colspan="${c.cs}"`:''}${c.rs>1?` rowspan="${c.rs}"`:''}>${ruleMark(escapeHtml(c.t), terms)}</${tag}>`;
+    }).join('')}</tr>`).join('')}</table></div>`;
+  }).join('');
+}
+
 function ruleSearch(){
-  setTimeout(()=>{
-    const input = document.getElementById('ruleQuery');
-    if(input) input.addEventListener('keydown', e=>{ if(e.key==='Enter') ruleDoSearch(); });
-  }, 0);
-  return `
+  setTimeout(ruleRender, 0);
+  return `<div id="ruleArea"></div>`;
+}
+function ruleRender(){
+  const area = document.getElementById('ruleArea');
+  if(!area) return;
+  if(ruleState.view) return ruleRenderView(area);
+  area.innerHTML = `
   <div class="card" style="margin-bottom:14px;">
     <div style="display:flex; gap:8px;">
-      <div class="field" style="flex:1;"><input id="ruleQuery" placeholder="예: 연차, 출장비 한도, 정보보안..."/></div>
-      <span class="btn primary" style="flex-shrink:0; height:38px;" onclick="ruleDoSearch()">검색</span>
+      <div class="field" style="flex:1;"><input id="ruleQuery" aria-label="규정 검색어" placeholder="예: 연차, 출장비, 경조사, 육아휴직" value="${escapeHtml(ruleState.q)}"/></div>
+      <button class="btn primary" style="flex-shrink:0;" onclick="ruleDoSearch()">${icon('search')} 검색</button>
     </div>
+    <div class="rule-chips"><span>자주 찾는 말</span>${RULE_CHIPS.map(c=>`<button class="rule-chip" onclick="ruleDoSearch('${c}')">${c}</button>`).join('')}</div>
   </div>
   <div id="ruleResults"></div>`;
+  document.getElementById('ruleQuery').addEventListener('keydown', e=>{ if(e.key==='Enter') ruleDoSearch(); });
+  if(ruleState.data) ruleShowResults(); else ruleShowList();
 }
-async function ruleDoSearch(){
-  const q = document.getElementById('ruleQuery').value.trim();
-  const resultsEl = document.getElementById('ruleResults');
-  if(!q){ resultsEl.innerHTML=''; return; }
-  resultsEl.innerHTML = '<div class="placeholder-note">검색 중...</div>';
+async function ruleShowList(){
+  const el = document.getElementById('ruleResults');
+  el.innerHTML = '<div class="placeholder-note">규정 목록을 불러오는 중...</div>';
   try{
-    const res = await fetch('/api/rules/search?q='+encodeURIComponent(q));
-    const data = await res.json();
-    if(!res.ok) throw new Error(data.error || '검색에 실패했습니다.');
-    if(!data.results.length){
-      resultsEl.innerHTML = '<div class="card"><div class="placeholder-note">검색 결과가 없습니다.</div></div>';
-      return;
-    }
-    resultsEl.innerHTML = `<div class="card"><div class="card-title">검색 결과 (${data.results.length}건)</div>${
-      data.results.map(r=>`
-      <div class="list-row">
-        <div><div class="list-title">${escapeHtml(r.title)}</div><div class="list-sub">${escapeHtml(r.snippet)}</div></div>
-        ${r.available
-          ? `<a class="btn" href="/api/rules/${encodeURIComponent(r.id)}/file" target="_blank">전문 보기</a>`
-          : `<span class="badge neutral">준비 중</span>`}
-      </div>`).join('')}
-    </div>`;
-  }catch(err){
-    resultsEl.innerHTML = `<div class="placeholder-note" style="background:var(--bg-danger); color:var(--danger);">${escapeHtml(err.message)}</div>`;
-  }
+    ruleList = ruleList || (await ruleFetch('/api/rules')).rules;
+    el.innerHTML = `<div class="card"><div class="card-title">사내 규정 전체 (${ruleList.length}개)</div>
+      <div class="rule-grid">${ruleList.map(r=> r.available
+        ? `<button class="rule-tile" onclick="ruleOpen('${r.id}')"><b>${escapeHtml(r.title)}</b><span>${r.effective?r.effective+' 시행 · ':''}${r.count}개 조항</span></button>`
+        : `<div class="rule-tile off"><b>${escapeHtml(r.title)}</b><span>준비 중</span></div>`).join('')}</div>
+      <div class="placeholder-note">규정 이름을 누르면 전문을 읽을 수 있습니다. 궁금한 내용은 위에서 검색하면 해당 조항을 바로 찾아 줍니다.</div></div>`;
+  }catch(err){ el.innerHTML = ruleErr(err.message); }
 }
+async function ruleDoSearch(q){
+  const input = document.getElementById('ruleQuery');
+  if(q!==undefined && input) input.value = q;
+  q = (input ? input.value : q || '').trim();
+  ruleState.q = q;
+  if(!q){ ruleState.data = null; return ruleShowList(); }
+  const el = document.getElementById('ruleResults');
+  el.innerHTML = '<div class="placeholder-note">검색 중...</div>';
+  try{
+    ruleState.data = await ruleFetch('/api/rules/search?q='+encodeURIComponent(q));
+    ruleShowResults();
+  }catch(err){ ruleState.data = null; el.innerHTML = ruleErr(err.message); }
+}
+function ruleShowResults(){
+  const el = document.getElementById('ruleResults'), d = ruleState.data;
+  const total = d.results.reduce((n,r)=>n+r.hits.length, 0);
+  if(!d.results.length){
+    el.innerHTML = `<div class="card"><div class="placeholder-note" style="margin-top:0;">"${escapeHtml(ruleState.q)}"이(가) 들어간 조항이 없습니다. 더 짧은 말(예: "연차휴가" → "연차")이나 위의 자주 찾는 말로 찾아 보세요.</div>
+      <div style="margin-top:10px;"><button class="btn sm" onclick="ruleDoSearch('')">규정 전체 보기</button></div></div>`;
+    return;
+  }
+  el.innerHTML = `<div class="card"><div class="card-title"><span>검색 결과 — 조항 ${total}건</span><button class="btn sm" onclick="ruleDoSearch('')">규정 전체 보기</button></div>${
+    d.results.map(r=>`
+    <div class="rule-group">
+      <div class="rule-group-head"><button class="rule-link" onclick="ruleOpen('${r.id}')">${escapeHtml(r.title)}</button>
+        <span class="badge neutral">${r.effective?r.effective+' 시행 · ':''}${r.hits.length}건</span></div>
+      ${r.hits.map(h=>`
+      <button class="rule-hit" onclick="ruleOpen('${r.id}','${h.key}')">
+        <span class="rule-hit-title">${ruleMark(escapeHtml(ruleSecLabel(h)), d.terms)}</span>
+        <span class="rule-hit-snip">${ruleMark(escapeHtml(h.snippet), d.terms)}</span>
+      </button>`).join('')}
+    </div>`).join('')}</div>`;
+}
+
+function ruleOpen(id, key){
+  ruleState.view = { id, key };
+  if(currentNav.id==='rule' && currentTab.id==='r1') ruleRender(); else goTo('rule','r1');
+}
+function ruleBack(){ ruleState.view = null; ruleRender(); document.querySelector('.content').scrollTop = 0; }
+async function ruleRenderView(area){
+  const { id, key } = ruleState.view;
+  area.innerHTML = '<div class="placeholder-note">규정을 불러오는 중...</div>';
+  let doc;
+  try{ doc = await ruleGetDoc(id); }
+  catch(err){ area.innerHTML = `<button class="btn sm" onclick="ruleBack()">← 돌아가기</button>${ruleErr(err.message)}`; return; }
+  const terms = ruleState.data ? ruleState.data.terms : [];
+  const file = `/api/rules/${encodeURIComponent(id)}/file`;
+  let chapter = null, toc = '', body = '';
+  doc.sections.forEach(s=>{
+    if(s.chapter && s.chapter!==chapter){
+      chapter = s.chapter;
+      toc += `<div class="rule-toc-ch">${escapeHtml(chapter)}</div>`;
+      body += `<div class="rule-ch">${escapeHtml(chapter)}</div>`;
+    }
+    toc += `<button class="rule-toc-item" data-key="${s.key}" onclick="ruleGo('${s.key}')">${escapeHtml(ruleSecLabel(s))}</button>`;
+    body += `<section class="rule-sec" id="rs-${s.key}">
+      <h3>${ruleMark(escapeHtml(ruleSecLabel(s)), terms)}${doc.pdf?`<a class="rule-page" href="${file}#page=${s.page}" target="_blank" rel="noopener">원본 ${s.page}쪽</a>`:''}</h3>
+      ${ruleBodyHtml(doc, s.body, terms)}</section>`;
+  });
+  area.innerHTML = `
+  <div class="card rule-view">
+    <div class="rule-view-head">
+      <button class="btn sm" onclick="ruleBack()">← ${ruleState.data?'검색 결과로':'규정 목록으로'}</button>
+      <div class="rule-view-title">${escapeHtml(doc.title)} ${doc.effective?`<span class="badge neutral">${doc.effective} 시행</span>`:''}</div>
+      <a class="btn sm" href="${file}" target="_blank" rel="noopener">${icon('file')} ${doc.pdf?'원본 PDF':'원본 파일 받기'}</a>
+    </div>
+    <select class="rule-toc-select" aria-label="조항 바로가기" onchange="ruleGo(this.value)">
+      ${doc.sections.map(s=>`<option value="${s.key}"${s.key===key?' selected':''}>${escapeHtml(ruleSecLabel(s))}</option>`).join('')}
+    </select>
+    <div class="rule-view-grid">
+      <nav class="rule-toc" aria-label="${escapeHtml(doc.title)} 목차">${toc}</nav>
+      <div class="rule-body">${body}
+        <div class="placeholder-note">표 모양이 원본과 다르게 보이면 조항 제목 옆 "원본 n쪽"으로 원본을 확인해 주세요.</div>
+      </div>
+    </div>
+  </div>`;
+  if(key) ruleGo(key); else document.querySelector('.content').scrollTop = 0;
+}
+function ruleGo(key){
+  const sec = document.getElementById('rs-'+key);
+  if(!sec) return;
+  document.querySelectorAll('.rule-sec.on, .rule-toc-item.on').forEach(e=>e.classList.remove('on'));
+  sec.classList.add('on');
+  const t = document.querySelector(`.rule-toc-item[data-key="${key}"]`);
+  if(t){ t.classList.add('on'); t.scrollIntoView({block:'nearest'}); }
+  const sel = document.querySelector('.rule-toc-select'); if(sel) sel.value = key;
+  sec.scrollIntoView({block:'start'});
+}
+
+/* 자주 묻는 질문 — 답은 규정 조항 원문을 그대로 펼친다(규정이 바뀌면 답도 따라 바뀜).
+   [분류, 질문, 규정 id, 조 번호] */
+const RULE_FAQ = [
+  ['휴가','연차는 며칠 생기나요? 반차 쓸 때 출퇴근 시간은요?','service',18],
+  ['휴가','남은 연차는 이월되나요? 초과해서 쓰면 어떻게 되나요?','service',19],
+  ['휴가','아파서 쉬어야 하면(병가) 어떻게 하나요?','service',14],
+  ['휴가','출산휴가는 며칠인가요?','service',16],
+  ['휴가','육아휴직은 얼마나 쓸 수 있나요?','service',17],
+  ['급여','급여일은 언제인가요?','pay',5],
+  ['급여','연장근무(야근)를 하면 수당이 나오나요?','pay',11],
+  ['출장','국내 출장 활동비·숙박비·식대는 얼마인가요?','travel',12],
+  ['출장','자차로 출장 가면 유류비는 어떻게 계산하나요?','travel',15],
+  ['출장','해외 출장 일비와 정산 기한은 어떻게 되나요?','travel',17],
+  ['복리후생','경조사 휴가와 경조금은 얼마인가요?','welfare',4],
+  ['복리후생','자격증을 따면 지원받을 수 있나요?','welfare',3],
+  ['복리후생','장기근속 포상은 언제 받나요?','welfare',8],
+  ['인사','퇴사하려면 언제까지 알려야 하나요?','hr',37],
+  ['신고','차별·괴롭힘은 어디에 신고하나요?','nondiscrimination',8],
+];
 function faqContent(){
-  const qs = [
-    ['연차는 언제부터 사용할 수 있나요?','입사일 기준 1개월 근속 시 1일씩 부여되며, 1년 근속 시 15일이 일괄 부여됩니다.'],
-    ['출장비는 언제 정산되나요?','출장 종료 후 5영업일 이내 경비 산출기로 신청하면 익월 급여일에 함께 지급됩니다.'],
-    ['평가 이의제기는 어떻게 하나요?','평가결과 확정 후 7일 이내 인사팀에 이의제기 신청서를 제출하시면 됩니다.'],
-  ];
-  return `<div class="card"><div class="card-title">자주 묻는 질문</div>${
-    qs.map(q=>`<div style="padding:12px 0; border-bottom:1px solid var(--border);"><div style="font-weight:700; font-size:var(--fs-md); margin-bottom:6px;">Q. ${q[0]}</div><div style="color:var(--text-secondary); font-size:var(--fs-sm);">A. ${q[1]}</div></div>`).join('')
-  }</div>`;
+  return `<div class="card"><div class="card-title">자주 묻는 질문</div>
+    ${RULE_FAQ.map((f,i)=>`
+    <details class="rule-faq" ontoggle="if(this.open) ruleFaqLoad(${i})">
+      <summary><span class="badge neutral">${f[0]}</span> ${escapeHtml(f[1])}</summary>
+      <div class="rule-faq-a" id="ruleFaq${i}"><div class="placeholder-note">규정을 불러오는 중...</div></div>
+    </details>`).join('')}
+    <div class="placeholder-note">답은 사내 규정 조항을 그대로 보여 줍니다. 찾는 질문이 없으면 "규정 검색" 탭에서 검색해 보세요.</div>
+  </div>`;
+}
+async function ruleFaqLoad(i){
+  const [, , id, no] = RULE_FAQ[i], el = document.getElementById('ruleFaq'+i);
+  try{
+    const doc = await ruleGetDoc(id), s = doc.sections.find(x=>x.no===no);
+    if(!s) throw new Error('근거 조항을 찾지 못했습니다. 규정이 바뀌었을 수 있으니 "규정 검색" 탭에서 찾아 주세요.');
+    el.innerHTML = `<div class="rule-faq-src">근거: ${escapeHtml(doc.title)} ${escapeHtml(ruleSecLabel(s))}</div>
+      ${ruleBodyHtml(doc, s.body, [])}
+      <div style="display:flex; gap:8px; margin-top:10px; flex-wrap:wrap;">
+        <button class="btn sm" onclick="ruleState.data=null; ruleOpen('${id}','${s.key}')">규정에서 보기</button>
+        ${doc.pdf?`<a class="btn sm" href="/api/rules/${encodeURIComponent(id)}/file#page=${s.page}" target="_blank" rel="noopener">원본 ${s.page}쪽</a>`:''}
+      </div>`;
+  }catch(err){ el.innerHTML = ruleErr(err.message); }
 }
 function formsContent(){
   return simpleTableCard('서식함', ['서식명','분류',''],

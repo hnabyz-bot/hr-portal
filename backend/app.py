@@ -33,6 +33,9 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
+# 규정 11개를 장·조·표로 나누는 데 30초쯤 걸린다(요청 제한 30초). 서버가 요청을 받기 전에 한 번 읽어 둔다 —
+# gunicorn --preload라 이 결과를 작업 프로세스들이 함께 쓴다. 이후 규정 파일이 바뀌면 그 파일만 다시 읽는다(수 초).
+rules_search.list_rules()
 
 VEHICLE_TYPES = {"under_1800", "over_1800"}
 FUEL_TYPES = {"gasoline", "diesel", "lpg", "electric"}
@@ -258,7 +261,23 @@ def rules_search_route():
         raise ApiError("검색어를 입력해 주세요.")
     if len(query) > 100:
         raise ApiError("검색어가 너무 깁니다.")
-    return jsonify({"results": rules_search.search(query)})
+    return jsonify(rules_search.search(query))
+
+
+@app.get("/api/rules")
+def rules_list_route():
+    return jsonify({"rules": rules_search.list_rules()})
+
+
+@app.get("/api/rules/<rule_id>")
+def rules_doc_route(rule_id: str):
+    rule = rules_config.get_rule(rule_id)
+    if not rule:
+        raise ApiError("존재하지 않는 규정입니다.", status=404)
+    doc = rules_search.get_doc(rule)
+    if not doc:
+        raise ApiError("아직 서버에 등록되지 않은 규정 파일입니다. 담당자에게 문의해 주세요.", status=404)
+    return jsonify({"id": rule["id"], "title": rule["title"], **doc})
 
 
 @app.get("/api/rules/<rule_id>/file")
