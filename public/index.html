@@ -563,10 +563,16 @@
   .rule-sec h3{ font-size:var(--fs-md); margin:0 0 6px; display:flex; align-items:baseline; gap:8px; flex-wrap:wrap; }
   .rule-page{ font-size:var(--fs-xs); font-weight:400; }
   .rule-text{ white-space:pre-line; font-size:var(--fs-md); line-height:1.75; color:var(--text-primary); }
-  .rule-table-wrap{ overflow-x:auto; margin:8px 0 10px; border:1px solid var(--border); border-radius:var(--radius-sm); background:var(--surface); }
+  .rule-table-wrap{ overflow-x:auto; margin:10px 0 12px; border:1px solid #C9DCEA; border-radius:var(--radius); background:var(--surface); }
   .rule-table{ border-collapse:collapse; font-size:var(--fs-sm); min-width:100%; }
-  .rule-table th, .rule-table td{ border:1px solid var(--border); padding:6px 9px; white-space:pre-line; vertical-align:top; line-height:1.5; word-break:keep-all; color:var(--text-primary); }
-  .rule-table th{ background:var(--accent-soft); font-weight:700; text-align:center; font-size:var(--fs-xs); }
+  .rule-table th, .rule-table td{ border:1px solid var(--border); padding:8px 8px; min-width:48px; white-space:pre-line; text-align:center; vertical-align:middle;
+    line-height:1.55; word-break:keep-all; overflow-wrap:break-word; text-wrap:pretty; color:var(--text-primary); }
+  .rule-table th{ background:#EAF3FA; border-color:#C9DCEA; font-weight:700; color:#1E4C8F; }
+  .rule-table td.l{ text-align:left; }
+  .rule-table td.top{ vertical-align:top; }
+  .rule-table td.nw{ white-space:nowrap; }
+  .rule-table td.wide{ min-width:160px; }
+  .rule-table tr:hover > td{ background:#F7FBFE; }
   .rule-table tr > :first-child{ border-left:none; } .rule-table tr > :last-child{ border-right:none; }
   .rule-table tr:first-child > *{ border-top:none; } .rule-table tr:last-child > *{ border-bottom:none; }
   .rule-faq{ border-bottom:1px solid var(--border); }
@@ -982,7 +988,17 @@ function ruleMark(html, terms){
 }
 
 /* 조항 본문 그리기 — 본문 속 ⟦표n⟧ 자리에 서버가 칸까지 읽어 준 표(doc.tables[n])를 그린다.
-   첫 줄은 머리줄, 합친 칸은 colspan/rowspan 그대로. 넓은 표는 가로로 밀어 본다. */
+   첫 줄은 머리줄, 합친 칸은 colspan/rowspan 그대로. 넓은 표는 가로로 밀어 본다.
+   글자는 가운데 정렬. 문장·목록처럼 긴 칸만 왼쪽 정렬, 여러 줄을 덮는 칸은 위쪽에 붙여 이름이 화면 밖으로 밀리지 않게. */
+function ruleCellClass(c){
+  const cls = [];
+  const longest = Math.max(...c.t.split('\n').map(l=>l.length));
+  if(c.t.length > 18 || c.t.includes('\n') || /^(\d+[.)]|\(\d+\)|[-※<])/.test(c.t)) cls.push('l');
+  if(longest > 18) cls.push('wide');          // 문장 칸은 너무 좁아지지 않게
+  else if(longest <= 10) cls.push('nw');      // '100% ~ 60%' 같은 짧은 값은 한 줄로
+  if(c.rs >= 6) cls.push('top');
+  return cls.length ? ` class="${cls.join(' ')}"` : '';
+}
 function ruleBodyHtml(doc, body, terms){
   return body.split(/⟦표(\d+)⟧/).map((part, i)=>{
     if(i%2===0) return part.trim() ? `<div class="rule-text">${ruleMark(escapeHtml(part.trim()), terms)}</div>` : '';
@@ -990,7 +1006,7 @@ function ruleBodyHtml(doc, body, terms){
     if(!t) return '';
     return `<div class="rule-table-wrap"><table class="rule-table">${t.rows.map((row, r)=>`<tr>${row.map(c=>{
       const tag = r===0 ? 'th' : 'td';
-      return `<${tag}${c.cs>1?` colspan="${c.cs}"`:''}${c.rs>1?` rowspan="${c.rs}"`:''}>${ruleMark(escapeHtml(c.t), terms)}</${tag}>`;
+      return `<${tag}${r===0?'':ruleCellClass(c)}${c.cs>1?` colspan="${c.cs}"`:''}${c.rs>1?` rowspan="${c.rs}"`:''}>${ruleMark(escapeHtml(c.t), terms)}</${tag}>`;
     }).join('')}</tr>`).join('')}</table></div>`;
   }).join('');
 }

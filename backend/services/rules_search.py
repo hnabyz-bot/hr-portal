@@ -66,6 +66,8 @@ _PARA_START = re.compile(r"^([①-⑳]|\d+\)|\(\d+\)|[-*※•]|단\s*,)")
 _DATE = re.compile(r"(\d{4})\s*년\s*(\d{1,2})\s*월\s*(\d{1,2})\s*일")
 _TABLE_MARK = re.compile(r"⟦표(\d+)⟧")  # 본문 안 표 자리. 화면이 doc["tables"][n]으로 바꿔 그린다
 _LIST_NO = re.compile(r"^(\d+\)|\(\d+\)|[①-⑳])$")
+# 칸 안에서 새 줄로 남길 줄: 목록 기호로 시작하거나 '임원 : 6만원'처럼 '이름 :' 꼴
+_CELL_BREAK = re.compile(r"^(\d+[.)]|\(\d+\)|\[[^\]]{1,3}\]|[①-⑳]|[-*※•·<]|[^\s:]{1,6}\s*:)")
 
 
 def _filled(row: list) -> list[str]:
@@ -82,6 +84,77 @@ def _is_table(data: list[list], continued: bool) -> bool:
         return True
     head = _filled(data[0])
     return len(cells) >= 4 and len(head) >= 2 and not _LIST_NO.match(head[0])
+
+
+def _white_rect(obj: dict) -> bool:
+    """칸 배경으로 깔린 흰 사각형. 테두리가 안 보이는데도 칸선으로 잡혀 표를 잘게 쪼갠다(인사규정 제16조)."""
+    c = obj.get("non_stroking_color")
+    return (obj.get("object_type") == "rect" and isinstance(c, (tuple, list)) and len(c) > 0
+            and all(isinstance(v, (int, float)) and v >= 0.95 for v in c))
+
+
+def _cell_lines(chars: list[dict], bbox) -> list[dict]:
+    """칸 안 글자를 줄로 묶는다 → [{text(줄 끝 공백 포함), x0, x1}]. 쪽 글자 목록에서 바로 고른다(crop보다 수십 배 빠름)."""
+    x0, top, x1, bottom = bbox
+    inside = [c for c in chars if x0 <= (c["x0"] + c["x1"]) / 2 <= x1 and top <= (c["top"] + c["bottom"]) / 2 <= bottom]
+    lines: list[list[dict]] = []
+    for c in sorted(inside, key=lambda c: (c["top"], c["x0"])):
+        if lines and abs(c["top"] - lines[-1][0]["top"]) <= 3:
+            lines[-1].append(c)
+        else:
+            lines.append([c])
+    out = []
+    for ln in lines:
+        ln.sort(key=lambda c: c["x0"])
+        ink = [c for c in ln if c["text"].strip()]
+        if ink:
+            out.append({"text": "".join(c["text"] for c in ln), "x0": ink[0]["x0"], "x1": ink[-1]["x1"]})
+    return out
+
+
+def _cell_text(chars: list[dict], bbox) -> str:
+    """칸 글자. 원본 칸이 좁아 생긴 줄바꿈은 이어 붙이고(줄 끝 공백이 있으면 띄어 씀), 일부러 바꾼 줄은 남긴다:
+    목록·'이름 :' 줄, 또는 왼쪽 정렬인데 오른쪽이 많이 비고 끝난 줄."""
+    out: list[str] = []
+    prev = None
+    for line in _cell_lines(chars, bbox):
+        text = _tidy(line["text"].strip())
+        if not text:
+            continue
+        joined = False
+        if out and prev and not _CELL_BREAK.match(text):
+            rgap, lgap = bbox[2] - prev["x1"], prev["x0"] - bbox[0]
+            if not (rgap > 14 and lgap < rgap / 2):
+                out[-1] += (" " if prev["text"].endswith(" ") else "") + text
+                joined = True
+        if not joined:
+            out.append(text)
+        prev = line
+    return "\n".join(out)
+
+
+def _merge_head(rows: list[list[dict]]) -> list[list[dict]]:
+    """머리줄의 빈칸(원본의 보이지 않는 칸 나눔)을 아래 줄 칸 경계에 맞춰 옆 칸과 합친다.
+    예: 출장 여비표 ['', '항목', '', '', '지원 금액', ''] → ['항목'(3칸), '지원 금액'(3칸)]."""
+    if len(rows) < 2 or not any(not c["t"] for c in rows[0]) or any(c["rs"] > 1 for c in rows[0] + rows[1]):
+        return rows
+    head, groups, pos = rows[0], [], 0
+    for c in rows[1]:
+        groups.append((pos, pos + c["cs"]))
+        pos += c["cs"]
+    if sum(c["cs"] for c in head) != pos:
+        return rows
+    merged, i, at = [], 0, 0
+    for g0, g1 in groups:
+        part = []
+        while i < len(head) and at < g1:
+            part.append(head[i])
+            at += head[i]["cs"]
+            i += 1
+        if at != g1 or len([c for c in part if c["t"]]) > 1:
+            return rows
+        merged.append({"t": next((c["t"] for c in part if c["t"]), ""), "cs": g1 - g0, "rs": 1})
+    return [merged] + rows[1:]
 
 
 def _edges(vals: list[float]) -> list[float]:
@@ -107,9 +180,8 @@ def _loose_rows(region, t) -> list[list[dict]]:
     return [[{"t": _tidy(" ".join(c)), "cs": 1, "rs": 1} for c in cols] for _, cols in sorted(lines.items())]
 
 
-def _table_rows(t, page) -> tuple[list[list[dict]], int]:
+def _table_rows(t, chars) -> tuple[list[list[dict]], int]:
     """pdfplumber 표 → [[{t, cs, rs}]] (합친 칸은 cs/rs로). 칸 경계선 좌표로 몇 칸을 덮는지 센다."""
-    data = t.extract()
     boxes = [b for row in t.rows for b in row.cells if b]
     xs = _edges([b[0] for b in boxes] + [b[2] for b in boxes])
     ys = _edges([b[1] for b in boxes] + [b[3] for b in boxes])
@@ -126,17 +198,53 @@ def _table_rows(t, page) -> tuple[list[list[dict]], int]:
                 cx, cy = (hole[0] + hole[2]) / 2, (hole[1] + hole[3]) / 2
                 if hole[3] - hole[1] < 4 or any(o[0] <= cx <= o[2] and o[1] <= cy <= o[3] for o in boxes):
                     continue
-                text = page.crop(hole).extract_text()
-                cells.append({"t": _tidy(text.replace("\n", " ")), "cs": 1, "rs": 1})
+                cells.append({"t": _cell_text(chars, hole), "cs": 1, "rs": 1})
                 continue
             cells.append({
-                "t": "\n".join(_tidy(l) for l in (data[r][c] or "").split("\n") if l.strip()),
+                "t": _cell_text(chars, b),
                 "cs": sum(1 for x in xs if b[0] + 2 < x < b[2] - 2) + 1,
                 "rs": sum(1 for y in ys if b[1] + 2 < y < b[3] - 2) + 1,
             })
         if cells:
             rows.append(cells)
-    return rows, len(xs) - 1
+    return _merge_head(rows), len(xs) - 1
+
+
+def _join_left(rows: list[list[dict]]) -> None:
+    """쪽이 바뀌거나 줄마다 빈칸으로 그려져 끊긴 합친 칸('성실의무 위반', '국가 기술자격', '자격기준' 등)을 잇는다.
+    1) 스스로 폭을 다 채우는 줄까지 내려온 칸은 그 위에서 자른다(쪽 경계에서 한 줄 길게 읽힌 경우).
+    2) 여러 줄을 덮는 칸이 끝난 바로 아래, 같은 자리의 빈칸은 그 칸에 합친다."""
+    if not rows:
+        return
+    width = sum(c["cs"] for c in rows[0])
+    tall: list[tuple[int, dict]] = []
+    for i, row in enumerate(rows):
+        if row and sum(c["cs"] for c in row) == width:
+            for start, c in tall:
+                if start + c["rs"] > i:
+                    c["rs"] = i - start
+            tall = []
+        tall += [(i, c) for c in row if c["rs"] > 1]
+
+    covered: set[tuple[int, int]] = set()
+    above: dict[int, tuple[dict, int]] = {}  # 칸 자리 → (그 자리 맨 아래 칸, 끝나는 줄)
+    for i, row in enumerate(rows):
+        col, kept = 0, []
+        for c in row:
+            while (i, col) in covered:
+                col += 1
+            up = above.get(col)
+            join = (not c["t"] and i > 1 and up is not None and up[1] == i
+                    and up[0]["cs"] == c["cs"] and up[0]["rs"] > 1)
+            owner = up[0] if join else c
+            if join:
+                owner["rs"] += c["rs"]
+            else:
+                kept.append(c)
+            covered.update((i + dr, col + dc) for dr in range(c["rs"]) for dc in range(c["cs"]))
+            above[col] = (owner, i + c["rs"])
+            col += c["cs"]
+        row[:] = kept
 
 
 def _only_noise(text: str) -> bool:
@@ -153,7 +261,7 @@ def _extract_pdf(path: str) -> tuple[list[str], list[dict]]:
     open_table = None  # 앞 쪽이 표로 끝났으면 그 표 (다음 쪽에서 이어질 수 있음)
     with pdfplumber.open(path) as pdf:
         for page in pdf.pages:
-            found = sorted(page.find_tables(), key=lambda t: t.bbox[1])
+            found = sorted(page.filter(lambda o: not _white_rect(o)).find_tables(), key=lambda t: t.bbox[1])
             x0, y0, x1, y1 = page.bbox
             picked = []
             y = y0
@@ -183,13 +291,13 @@ def _extract_pdf(path: str) -> tuple[list[str], list[dict]]:
             for (t, continued, loose), box in zip(picked, boxes):
                 if box[1] > y:
                     parts.append(text_only.crop((x0, y, x1, box[1])).extract_text(keep_blank_chars=True))
-                rows, ncols = _table_rows(t, page)
+                rows, ncols = _table_rows(t, page.chars)
                 if loose is not None:
                     rows = _loose_rows(loose, t) + rows
                 if continued:
                     gap = open_table["cols"] - ncols  # 이어진 쪽엔 맨 왼쪽 '구분' 칸이 없는 경우가 있다
                     if gap > 0:
-                        rows = [[{"t": "", "cs": gap, "rs": 1}] + r for r in rows]
+                        rows = [[{"t": "", "cs": gap, "rs": len(rows)}] + rows[0]] + rows[1:]
                     open_table["rows"] += rows
                 else:
                     open_table = {"page": page.page_number, "rows": rows, "cols": ncols}
@@ -203,6 +311,7 @@ def _extract_pdf(path: str) -> tuple[list[str], list[dict]]:
             pages.append("\n".join(parts))
     for t in tables:
         t.pop("cols")
+        _join_left(t["rows"])
     return pages, tables
 
 
@@ -442,4 +551,28 @@ if __name__ == "__main__":
     assert not _is_table([["제1조 [목적]", None], ["이 규정은", "..."]], False), "조문을 감싼 상자는 표가 아니다"
     assert not _is_table([["2)", "계속하여 근로한"], ["", "로자에게"], ["3)", "연차"]], False), "번호 문단 상자는 표가 아니다"
     assert _is_table([[None, "산업위생기사"], [None, "소방설비기사"]], True), "앞 쪽 표의 이어짐"
+    def ch(text, x, top):  # 글자 하나 = 폭 6
+        return [{"text": c, "x0": x + 6 * i, "x1": x + 6 * i + 6, "top": top, "bottom": top + 8} for i, c in enumerate(text)]
+    box = (0, 0, 100, 100)
+    assert _cell_text(ch("경영지도사(생산", 4, 10) + ch("관리)", 16, 22), (0, 0, 56, 40)) == "경영지도사(생산관리)", "좁은 칸 줄바꿈은 붙인다"
+    assert _cell_text(ch("중과실 및 ", 6, 10) + ch("고의", 18, 22), (0, 0, 42, 40)) == "중과실 및 고의", "가운데 정렬 줄 + 줄 끝 공백이면 띄어 붙인다"
+    assert _cell_text(ch("[C] 근로자 ", 2, 10) + ch("기타 상황", 2, 22), box) == "[C] 근로자\n기타 상황", "왼쪽 정렬·오른쪽 빈 줄은 일부러 바꾼 줄"
+    assert _cell_text(ch("임원 : 6만원", 20, 10) + ch("직원 : 4만원", 20, 22), box) == "임원 : 6만원\n직원 : 4만원"
+    c1 = lambda t, cs=1: {"t": t, "cs": cs, "rs": 1}
+    assert _merge_head([[c1(""), c1("항목"), c1(""), c1(""), c1("금액"), c1("")], [c1("일비", 3), c1("4만원", 3)]])[0] == [c1("항목", 3), c1("금액", 3)]
+    assert _merge_head([[c1("구분"), c1("")], [c1("A"), c1("B")]])[0] == [c1("구분"), c1("")], "아래 줄과 칸이 같으면 그대로"
+    rows = [[c1("구분"), c1("항목")],
+            [{"t": "성실의무", "cs": 1, "rs": 2}, c1("1.")], [c1("2.")],
+            [c1(""), c1("3.")], [c1(""), c1("4.")], [c1("질서"), c1("5.")]]
+    _join_left(rows)
+    assert rows[1][0]["rs"] == 4 and rows[3] == [c1("3.")] and rows[4] == [c1("4.")] and rows[5][0]["t"] == "질서", \
+        "끊긴 왼쪽 합친 칸이 이어진다"
+    rows = [[c1("구분"), c1("항목")], [{"t": "루비상", "cs": 1, "rs": 3}, c1("a")], [c1("b")], [c1(""), c1("c")]]
+    _join_left(rows)
+    assert rows[1][0]["rs"] == 3 and rows[3] == [c1("c")], "한 줄 길게 읽힌 칸은 잘라 맞춘 뒤 잇는다"
+    rows = [[c1("구분"), c1("기준"), c1("내용")],
+            [{"t": "에메랄드", "cs": 1, "rs": 3}, {"t": "자격기준", "cs": 1, "rs": 2}, c1("1)")], [c1("2)")],
+            [c1(""), c1("팀웍")]]
+    _join_left(rows)
+    assert rows[1][1]["rs"] == 3 and rows[3] == [c1("팀웍")], "가운데 칸도 쪽이 바뀌며 끊기면 잇는다"
     print("rules_search 자체 점검 통과")

@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import logging
 import os
-import threading
 from datetime import date
 from urllib.parse import quote
 
@@ -34,7 +33,9 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
-threading.Thread(target=rules_search.list_rules, daemon=True).start()
+# 규정 11개를 장·조·표로 나누는 데 30초쯤 걸린다(요청 제한 30초). 서버가 요청을 받기 전에 한 번 읽어 둔다 —
+# gunicorn --preload라 이 결과를 작업 프로세스들이 함께 쓴다. 이후 규정 파일이 바뀌면 그 파일만 다시 읽는다(수 초).
+rules_search.list_rules()
 
 VEHICLE_TYPES = {"under_1800", "over_1800"}
 FUEL_TYPES = {"gasoline", "diesel", "lpg", "electric"}
