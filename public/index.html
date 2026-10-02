@@ -563,6 +563,12 @@
   .rule-sec h3{ font-size:var(--fs-md); margin:0 0 6px; display:flex; align-items:baseline; gap:8px; flex-wrap:wrap; }
   .rule-page{ font-size:var(--fs-xs); font-weight:400; }
   .rule-text{ white-space:pre-line; font-size:var(--fs-md); line-height:1.75; color:var(--text-primary); }
+  .rule-table-wrap{ overflow-x:auto; margin:8px 0 10px; border:1px solid var(--border); border-radius:var(--radius-sm); background:var(--surface); }
+  .rule-table{ border-collapse:collapse; font-size:var(--fs-sm); min-width:100%; }
+  .rule-table th, .rule-table td{ border:1px solid var(--border); padding:6px 9px; white-space:pre-line; vertical-align:top; line-height:1.5; word-break:keep-all; color:var(--text-primary); }
+  .rule-table th{ background:var(--accent-soft); font-weight:700; text-align:center; font-size:var(--fs-xs); }
+  .rule-table tr > :first-child{ border-left:none; } .rule-table tr > :last-child{ border-right:none; }
+  .rule-table tr:first-child > *{ border-top:none; } .rule-table tr:last-child > *{ border-bottom:none; }
   .rule-faq{ border-bottom:1px solid var(--border); }
   .rule-faq summary{ cursor:pointer; padding:12px 0; font-weight:700; font-size:var(--fs-md); display:flex; align-items:center; gap:8px; }
   .rule-faq-a{ padding:0 0 14px; }
@@ -572,7 +578,7 @@
     .rule-view-head{ position:static; }
     .rule-view-title{ font-size:var(--fs-lg); }
     .rule-sec{ scroll-margin-top:64px; }
-    .rule-view-grid{ grid-template-columns:1fr; }
+    .rule-view-grid{ grid-template-columns:minmax(0,1fr); }
     .rule-toc{ display:none; }
     .rule-toc-select{ display:block; position:sticky; top:-16px; z-index:2; width:100%; min-height:44px; margin-bottom:12px; font:inherit; padding:8px; border:1px solid var(--border); border-radius:var(--radius-sm); background:var(--surface); }
     .rule-chip{ min-height:36px; }
@@ -975,6 +981,20 @@ function ruleMark(html, terms){
   return html.replace(new RegExp('('+pats.join('|')+')','gi'), '<mark class="rule-mark">$1</mark>');
 }
 
+/* 조항 본문 그리기 — 본문 속 ⟦표n⟧ 자리에 서버가 칸까지 읽어 준 표(doc.tables[n])를 그린다.
+   첫 줄은 머리줄, 합친 칸은 colspan/rowspan 그대로. 넓은 표는 가로로 밀어 본다. */
+function ruleBodyHtml(doc, body, terms){
+  return body.split(/⟦표(\d+)⟧/).map((part, i)=>{
+    if(i%2===0) return part.trim() ? `<div class="rule-text">${ruleMark(escapeHtml(part.trim()), terms)}</div>` : '';
+    const t = doc.tables[+part];
+    if(!t) return '';
+    return `<div class="rule-table-wrap"><table class="rule-table">${t.rows.map((row, r)=>`<tr>${row.map(c=>{
+      const tag = r===0 ? 'th' : 'td';
+      return `<${tag}${c.cs>1?` colspan="${c.cs}"`:''}${c.rs>1?` rowspan="${c.rs}"`:''}>${ruleMark(escapeHtml(c.t), terms)}</${tag}>`;
+    }).join('')}</tr>`).join('')}</table></div>`;
+  }).join('');
+}
+
 function ruleSearch(){
   setTimeout(ruleRender, 0);
   return `<div id="ruleArea"></div>`;
@@ -1064,7 +1084,7 @@ async function ruleRenderView(area){
     toc += `<button class="rule-toc-item" data-key="${s.key}" onclick="ruleGo('${s.key}')">${escapeHtml(ruleSecLabel(s))}</button>`;
     body += `<section class="rule-sec" id="rs-${s.key}">
       <h3>${ruleMark(escapeHtml(ruleSecLabel(s)), terms)}${doc.pdf?`<a class="rule-page" href="${file}#page=${s.page}" target="_blank" rel="noopener">원본 ${s.page}쪽</a>`:''}</h3>
-      <div class="rule-text">${ruleMark(escapeHtml(s.body), terms)}</div></section>`;
+      ${ruleBodyHtml(doc, s.body, terms)}</section>`;
   });
   area.innerHTML = `
   <div class="card rule-view">
@@ -1079,7 +1099,7 @@ async function ruleRenderView(area){
     <div class="rule-view-grid">
       <nav class="rule-toc" aria-label="${escapeHtml(doc.title)} 목차">${toc}</nav>
       <div class="rule-body">${body}
-        <div class="placeholder-note">표는 글자로 옮기면서 칸이 흐트러질 수 있습니다. 표가 있는 조항은 제목 옆 "원본 n쪽"으로 원본을 확인해 주세요.</div>
+        <div class="placeholder-note">표 모양이 원본과 다르게 보이면 조항 제목 옆 "원본 n쪽"으로 원본을 확인해 주세요.</div>
       </div>
     </div>
   </div>`;
@@ -1131,7 +1151,7 @@ async function ruleFaqLoad(i){
     const doc = await ruleGetDoc(id), s = doc.sections.find(x=>x.no===no);
     if(!s) throw new Error('근거 조항을 찾지 못했습니다. 규정이 바뀌었을 수 있으니 "규정 검색" 탭에서 찾아 주세요.');
     el.innerHTML = `<div class="rule-faq-src">근거: ${escapeHtml(doc.title)} ${escapeHtml(ruleSecLabel(s))}</div>
-      <div class="rule-text">${escapeHtml(s.body)}</div>
+      ${ruleBodyHtml(doc, s.body, [])}
       <div style="display:flex; gap:8px; margin-top:10px; flex-wrap:wrap;">
         <button class="btn sm" onclick="ruleState.data=null; ruleOpen('${id}','${s.key}')">규정에서 보기</button>
         ${doc.pdf?`<a class="btn sm" href="/api/rules/${encodeURIComponent(id)}/file#page=${s.page}" target="_blank" rel="noopener">원본 ${s.page}쪽</a>`:''}

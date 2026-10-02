@@ -112,7 +112,7 @@ CI(`.github/workflows/ci.yml`)가 자동 검사하는 것: 한글 인코딩, HTM
 
 규정 원문(PDF/DOCX, 인사규정·급여규정·정보보안규정 등)은 **저장소에 절대 올리지 않는다** — hr-portal이 Public 저장소라 사내 규정을 영구 공개하게 된다. `.env`와 같은 패턴: 서버의 `regulations/` 폴더(gitignore됨, `regulations/README.md`만 예외)에 관리자가 SSH로 직접 넣어야 한다. 파일명은 `backend/rules_config.py`의 `RULES` 목록과 정확히 일치해야 한다.
 
-- `backend/services/rules_search.py`: PDF는 `pypdf`, DOCX는 `python-docx`로 텍스트를 뽑아 **장·조 단위로 나눈다**(표지·개정이력은 버림, 부칙에서 시행일 추출, 조마다 PDF 쪽 번호). 검색은 조항 단위·띄어쓰기 무시·`SYNONYMS`(출장비→여비 등)·여러 단어 AND. 자체 점검 `python -m services.rules_search`(CI에서 실행). 파일이 없으면 `available:false` — 서버가 죽지 않는다. `.pdf`가 없고 같은 이름 `.docx`가 있으면 그것을 읽는다.
+- `backend/services/rules_search.py`: PDF는 `pdfplumber`(표의 칸·합친 칸까지 읽음 → `doc.tables`, 본문 속 `⟦표n⟧` 자리에 화면이 표로 그림. 여러 쪽 표는 합치고, 조문을 감싼 테두리 상자·표지 개정이력 표는 제외), DOCX는 `python-docx`로 텍스트를 뽑아 **장·조 단위로 나눈다**(표지·개정이력은 버림, 부칙에서 시행일 추출, 조마다 PDF 쪽 번호). 검색은 조항 단위·띄어쓰기 무시·`SYNONYMS`(출장비→여비 등)·여러 단어 AND. 자체 점검 `python -m services.rules_search`(CI에서 실행). 파일이 없으면 `available:false` — 서버가 죽지 않는다. `.pdf`가 없고 같은 이름 `.docx`가 있으면 그것을 읽는다.
 - `GET /api/rules`(목록·시행일·조항 수), `GET /api/rules/<id>`(장·조 본문), `GET /api/rules/search?q=`(규정별로 묶은 조항 결과), `GET /api/rules/<id>/file` (PDF는 `inline` — 화면은 `#page=N`으로 해당 쪽을 연다, DOCX는 `attachment`).
 - 화면(`ruleSearch`·`faqContent`): 검색 → 조항 클릭 → 포털 안 본문 보기(목차·검색어 표시·원본 n쪽). 자주 묻는 질문은 `RULE_FAQ`의 [규정 id, 조 번호]로 서버 본문을 펼친다 — **규정 문장을 index.html에 적지 않는다**(Public 저장소).
 - **서버에 원문 11개 파일 업로드 완료 (2026-08-07)** — SSH 키 등록 후 로컬 파일을 scp로 직접 전달함. 절차는 `regulations/README.md`에 그대로 있음 (새 규정 추가/교체할 때 재사용).

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
 from datetime import date
 from urllib.parse import quote
 
@@ -33,6 +34,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
+threading.Thread(target=rules_search.list_rules, daemon=True).start()
 
 VEHICLE_TYPES = {"under_1800", "over_1800"}
 FUEL_TYPES = {"gasoline", "diesel", "lpg", "electric"}

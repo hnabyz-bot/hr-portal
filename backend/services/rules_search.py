@@ -7,7 +7,11 @@
 직원 화면에 필요한 것:
 - 검색 결과가 "어느 규정 몇 조"인지 바로 보일 것 (조항 단위 결과)
 - 띄어쓰기가 달라도("연차휴가"/"연차 휴가"), 흔한 다른 말("출장비"→여비)로도 찾을 것
-- 조항을 누르면 본문이 그 위치에서 열리고, 표는 원본 PDF 해당 쪽으로 바로 갈 것 (page)
+- 조항을 누르면 본문이 그 위치에서 열리고, 원본 PDF 해당 쪽으로도 바로 갈 것 (page)
+- 표(경조금표·자격증 목록·징계양정표 등)는 칸이 살아 있는 표로 보일 것 (tables)
+
+PDF는 pdfplumber로 읽는다 — 표의 칸(합친 칸 포함)을 알아보고, 줄 끝 공백도 지켜
+줄바꿈이 단어 사이인지 단어 중간인지 구분할 수 있다.
 """
 
 from __future__ import annotations
@@ -60,18 +64,156 @@ _APPENDIX = re.compile(r"^-?\s*별\s*[첨표]")
 _NOISE = re.compile(r"^(㈜에이치앤아비즈|H&abyz\s*\d*)$")
 _PARA_START = re.compile(r"^([①-⑳]|\d+\)|\(\d+\)|[-*※•]|단\s*,)")
 _DATE = re.compile(r"(\d{4})\s*년\s*(\d{1,2})\s*월\s*(\d{1,2})\s*일")
+_TABLE_MARK = re.compile(r"⟦표(\d+)⟧")  # 본문 안 표 자리. 화면이 doc["tables"][n]으로 바꿔 그린다
+_LIST_NO = re.compile(r"^(\d+\)|\(\d+\)|[①-⑳])$")
 
 
-def _extract_pages(path: str) -> list[str]:
+def _filled(row: list) -> list[str]:
+    return [c.strip() for c in row if c and c.strip()]
+
+
+def _is_table(data: list[list], continued: bool) -> bool:
+    """진짜 표만 고른다. 조문 문단을 테두리 상자로 감싼 규정도 있어서(인사평가규정 등)
+    조 제목이 들어 있거나 머리줄이 없으면 표가 아니다. 앞 쪽 표의 이어짐이면 머리줄이 없어도 표."""
+    cells = [c for r in data for c in _filled(r)]
+    if len(cells) < 2 or any(_ARTICLE.match(c) or re.match(r"^제\s*\d+\s*조", c) for c in cells):
+        return False
+    if continued:
+        return True
+    head = _filled(data[0])
+    return len(cells) >= 4 and len(head) >= 2 and not _LIST_NO.match(head[0])
+
+
+def _edges(vals: list[float]) -> list[float]:
+    out: list[float] = []
+    for v in sorted(vals):
+        if not out or v - out[-1] > 2:
+            out.append(v)
+    return out
+
+
+def _loose_rows(region, t) -> list[list[dict]]:
+    """표 위쪽 테두리가 없어 표 밖으로 빠진 줄(이어지는 쪽 첫 줄)을 낱말 위치로 칸에 나눠 표 줄로 되살린다."""
+    boxes = [b for row in t.rows for b in row.cells if b]
+    xs = _edges([b[0] for b in boxes] + [b[2] for b in boxes])
+    lines: dict[int, list[list[str]]] = {}
+    for w in region.extract_words(keep_blank_chars=True):
+        cx = (w["x0"] + w["x1"]) / 2
+        col = next((i for i in range(len(xs) - 1) if xs[i] <= cx < xs[i + 1]), None)
+        if col is None:
+            continue
+        line = lines.setdefault(round(w["top"]), [[] for _ in range(len(xs) - 1)])
+        line[col].append(w["text"].strip())
+    return [[{"t": _tidy(" ".join(c)), "cs": 1, "rs": 1} for c in cols] for _, cols in sorted(lines.items())]
+
+
+def _table_rows(t, page) -> tuple[list[list[dict]], int]:
+    """pdfplumber 표 → [[{t, cs, rs}]] (합친 칸은 cs/rs로). 칸 경계선 좌표로 몇 칸을 덮는지 센다."""
+    data = t.extract()
+    boxes = [b for row in t.rows for b in row.cells if b]
+    xs = _edges([b[0] for b in boxes] + [b[2] for b in boxes])
+    ys = _edges([b[1] for b in boxes] + [b[3] for b in boxes])
+    tops = [min(b[1] for b in row.cells if b) for row in t.rows] + [t.bbox[3]]
+    rows = []
+    for r, row in enumerate(t.rows):
+        cells = []
+        for c, b in enumerate(row.cells):
+            if b is None:
+                # 다른 칸에 합쳐진 자리면 건너뛴다. 아무 칸도 덮지 않은 빈틈(가로 테두리가 빠진 줄)이면 그 자리 글자로 칸을 만든다
+                if len(row.cells) != len(xs) - 1:
+                    continue
+                hole = (xs[c], tops[r], xs[c + 1], tops[r + 1])
+                cx, cy = (hole[0] + hole[2]) / 2, (hole[1] + hole[3]) / 2
+                if hole[3] - hole[1] < 4 or any(o[0] <= cx <= o[2] and o[1] <= cy <= o[3] for o in boxes):
+                    continue
+                text = page.crop(hole).extract_text()
+                cells.append({"t": _tidy(text.replace("\n", " ")), "cs": 1, "rs": 1})
+                continue
+            cells.append({
+                "t": "\n".join(_tidy(l) for l in (data[r][c] or "").split("\n") if l.strip()),
+                "cs": sum(1 for x in xs if b[0] + 2 < x < b[2] - 2) + 1,
+                "rs": sum(1 for y in ys if b[1] + 2 < y < b[3] - 2) + 1,
+            })
+        if cells:
+            rows.append(cells)
+    return rows, len(xs) - 1
+
+
+def _only_noise(text: str) -> bool:
+    return all(not l.strip() or _NOISE.match(l.strip()) for l in text.split("\n"))
+
+
+def _extract_pdf(path: str) -> tuple[list[str], list[dict]]:
+    """쪽마다 '표 밖 글자'와 표 자리 표시(⟦표n⟧)를 위에서 아래 순서로 이어 붙인다.
+    쪽 끝 표가 다음 쪽 맨 위 표로 이어지면 한 표로 합친다(자격증 목록·징계양정표처럼 여러 쪽짜리)."""
+    import pdfplumber
+
+    pages: list[str] = []
+    tables: list[dict] = []
+    open_table = None  # 앞 쪽이 표로 끝났으면 그 표 (다음 쪽에서 이어질 수 있음)
+    with pdfplumber.open(path) as pdf:
+        for page in pdf.pages:
+            found = sorted(page.find_tables(), key=lambda t: t.bbox[1])
+            x0, y0, x1, y1 = page.bbox
+            picked = []
+            y = y0
+            for t in found:
+                data = t.extract()
+                above = page.crop((x0, y, x1, t.bbox[1])) if t.bbox[1] > y else None
+                lead = [l for l in (above.extract_text() if above else "").split("\n") if l.strip() and not _NOISE.match(l.strip())]
+                # 앞 쪽 표의 이어짐: 위에 아무것도 없거나, 표 바로 위 한두 줄이 표 폭 안에만 있을 때(테두리 빠진 첫 줄)
+                loose = None
+                if open_table is not None and not picked and 0 < len(lead) <= 2:
+                    near = page.crop((t.bbox[0] - 2, max(y, t.bbox[1] - 16 * len(lead) - 4), t.bbox[2] + 2, t.bbox[1]))
+                    if len([l for l in near.extract_text().split("\n") if l.strip()]) == len(lead):
+                        loose = near
+                continued = open_table is not None and not picked and (not lead or loose is not None)
+                if _is_table(data, continued):
+                    picked.append((t, continued, loose))
+                    y = t.bbox[3]
+            boxes = [(t.bbox[0], loose.bbox[1] if loose else t.bbox[1], t.bbox[2], t.bbox[3]) for t, _, loose in picked]
+
+            def outside(obj: dict) -> bool:
+                cx, cy = (obj["x0"] + obj["x1"]) / 2, (obj["top"] + obj["bottom"]) / 2
+                return not any(b[0] - 1 <= cx <= b[2] + 1 and b[1] - 1 <= cy <= b[3] + 1 for b in boxes)
+
+            text_only = page.filter(outside)
+            parts: list[str] = []
+            y = y0
+            for (t, continued, loose), box in zip(picked, boxes):
+                if box[1] > y:
+                    parts.append(text_only.crop((x0, y, x1, box[1])).extract_text(keep_blank_chars=True))
+                rows, ncols = _table_rows(t, page)
+                if loose is not None:
+                    rows = _loose_rows(loose, t) + rows
+                if continued:
+                    gap = open_table["cols"] - ncols  # 이어진 쪽엔 맨 왼쪽 '구분' 칸이 없는 경우가 있다
+                    if gap > 0:
+                        rows = [[{"t": "", "cs": gap, "rs": 1}] + r for r in rows]
+                    open_table["rows"] += rows
+                else:
+                    open_table = {"page": page.page_number, "rows": rows, "cols": ncols}
+                    tables.append(open_table)
+                    parts.append(f"\n⟦표{len(tables) - 1}⟧\n")
+                y = t.bbox[3]
+            tail = text_only.crop((x0, y, x1, y1)).extract_text(keep_blank_chars=True) if y < y1 else ""
+            parts.append(tail)
+            if not picked or not _only_noise(tail):
+                open_table = None
+            pages.append("\n".join(parts))
+    for t in tables:
+        t.pop("cols")
+    return pages, tables
+
+
+def _extract_pages(path: str) -> tuple[list[str], list[dict]]:
     ext = os.path.splitext(path)[1].lower()
     if ext == ".pdf":
-        from pypdf import PdfReader
-
-        return [page.extract_text() or "" for page in PdfReader(path).pages]
+        return _extract_pdf(path)
     if ext == ".docx":
         import docx
 
-        return ["\n".join(p.text for p in docx.Document(path).paragraphs)]
+        return ["\n".join(p.text for p in docx.Document(path).paragraphs)], []
     raise ValueError(f"지원하지 않는 파일 형식: {ext}")
 
 
@@ -90,7 +232,9 @@ def _reflow(lines: list[str]) -> str:
     prev_raw = ""
     for raw in lines:
         line = raw.strip()
-        if not line:
+        if not line or _TABLE_MARK.fullmatch(line):
+            if line:
+                out.append(line)
             prev_raw = ""
             continue
         if out and prev_raw and not _PARA_START.match(line) and len(prev_raw.strip()) >= 30:
@@ -102,8 +246,9 @@ def _reflow(lines: list[str]) -> str:
     return "\n".join(_tidy(l) for l in out)
 
 
-def _parse(pages: list[str]) -> dict:
-    """페이지 텍스트 → {effective, sections:[{key, chapter, no, title, page, body}]}.
+def _parse(pages: list[str], tables: list[dict] | None = None) -> dict:
+    """페이지 텍스트 → {effective, sections:[{key, chapter, no, title, page, body}], tables}.
+    본문 속 ⟦표n⟧은 tables[n] 자리.
     첫 장·조 앞의 표지(개정 이력·작성자 이름)는 버린다."""
     sections: list[dict] = []
     chapter = ""
@@ -143,11 +288,14 @@ def _parse(pages: list[str]) -> dict:
                 cur["lines"].append(raw)
 
     effective = None
+    used: set[int] = set()
     for sec in sections:
         sec["body"] = _reflow(sec.pop("lines"))
+        used.update(int(n) for n in _TABLE_MARK.findall(sec["body"]))
         if sec["key"] == "addenda" and (m := _DATE.search(sec["body"])):
             effective = f"{m.group(1)}.{int(m.group(2)):02d}.{int(m.group(3)):02d}"
-    return {"effective": effective, "sections": sections}
+    tables = [t if i in used else None for i, t in enumerate(tables or [])]  # 번호는 그대로 두고 비운다
+    return {"effective": effective, "sections": sections, "tables": tables}
 
 
 def get_doc(rule: dict) -> dict | None:
@@ -162,7 +310,7 @@ def get_doc(rule: dict) -> dict | None:
         return cached[1]
 
     try:
-        doc = _parse(_extract_pages(path))
+        doc = _parse(*_extract_pages(path))
     except Exception as exc:
         logger.warning("규정 텍스트 추출 실패 (%s): %s", path, exc)
         return None
@@ -196,19 +344,28 @@ def _snippet(body: str, rx: re.Pattern) -> str:
     return ("…" if start else "") + flat[start:end] + ("…" if end < len(flat) else "")
 
 
+def _plain(body: str, tables: list[dict]) -> str:
+    """표 자리 표시를 표 안 글자로 바꾼 본문 — 검색·미리보기용."""
+    def cells(m: re.Match) -> str:
+        t = tables[int(m.group(1))] or {"rows": []}
+        return "\n".join(" ".join(c["t"] for c in row if c["t"]) for row in t["rows"])
+    return _TABLE_MARK.sub(cells, body)
+
+
 def search_doc(doc: dict, groups: list[list[str]]) -> list[dict]:
-    """한 규정 안에서 모든 검색어가 들어 있는 조항. 제목에 맞으면 점수를 더 준다."""
+    """한 규정 안에서 모든 검색어가 들어 있는 조항(표 안 글자 포함). 제목에 맞으면 점수를 더 준다."""
     rxs = [re.compile("|".join(_pattern(a) for a in alts), re.I) for alts in groups]
     any_rx = re.compile("|".join(r.pattern for r in rxs), re.I)
     hits = []
     for sec in doc["sections"]:
-        hay = sec["title"] + "\n" + sec["body"]
+        body = _plain(sec["body"], doc.get("tables", []))
+        hay = sec["title"] + "\n" + body
         if not all(r.search(hay) for r in rxs):
             continue
-        score = sum(3 * len(r.findall(sec["title"])) + len(r.findall(sec["body"])) for r in rxs)
+        score = sum(3 * len(r.findall(sec["title"])) + len(r.findall(body)) for r in rxs)
         hits.append({
             "key": sec["key"], "no": sec["no"], "title": sec["title"], "page": sec["page"],
-            "snippet": _snippet(sec["body"], any_rx) if any_rx.search(sec["body"]) else sec["body"][:100],
+            "snippet": _snippet(body, any_rx) if any_rx.search(body) else body[:100],
             "score": score,
         })
     return hits
@@ -274,4 +431,15 @@ if __name__ == "__main__":
     assert [h["no"] for h in search_doc(d, expand_terms("연차 휴 가"))] == [18]
     assert [h["no"] for h in search_doc(d, expand_terms("출장비"))] == [3]
     assert search_doc(d, expand_terms("연차 여비")) == []
+    t = _parse(["제 4 조 【경조사 지원】\n1) 지원범위에 따라 지원하도록 하며 아래 표와 같이 지급하고 그 밖의 경우는 따로 정한다.\n⟦표0⟧\n2) 화환을 보낸다.\n"],
+               [{"page": 1, "rows": [[{"t": "본인결혼", "cs": 1, "rs": 1}, {"t": "1,000,000원", "cs": 1, "rs": 1}]]}])
+    assert t["sections"][0]["body"].split("\n") == [
+        "1) 지원범위에 따라 지원하도록 하며 아래 표와 같이 지급하고 그 밖의 경우는 따로 정한다.", "⟦표0⟧", "2) 화환을 보낸다."]
+    assert "본인결혼 1,000,000원" in search_doc(t, expand_terms("본인 결혼"))[0]["snippet"]
+    t2 = _parse(["표지 ⟦표0⟧\n제 1 조 【목적】\n본문\n"], [{"page": 1, "rows": [[{"t": "작성자 홍길동", "cs": 1, "rs": 1}]]}])
+    assert t2["tables"] == [None], "본문에 자리가 없는 표(표지 개정 이력·작성자)는 내보내지 않는다"
+    assert _is_table([["구분", "경조금"], ["본인결혼", "1,000,000원"]], False)
+    assert not _is_table([["제1조 [목적]", None], ["이 규정은", "..."]], False), "조문을 감싼 상자는 표가 아니다"
+    assert not _is_table([["2)", "계속하여 근로한"], ["", "로자에게"], ["3)", "연차"]], False), "번호 문단 상자는 표가 아니다"
+    assert _is_table([[None, "산업위생기사"], [None, "소방설비기사"]], True), "앞 쪽 표의 이어짐"
     print("rules_search 자체 점검 통과")
