@@ -91,7 +91,7 @@ def _register_korean_font() -> str:
 
 def result_to_summary_dict(result: TripCalculationResult) -> dict[str, str]:
     """계산 결과를 화면/문서용 요약 딕셔너리로 변환한다."""
-    route_lines = [result.departure, *result.destinations]
+    route_lines = [result.departure, *result.destinations, *([result.departure] if result.returns_to_departure else [])]
 
     return {
         "출장일자": result.trip_date.strftime("%Y-%m-%d"),
@@ -108,8 +108,8 @@ def result_to_summary_dict(result: TripCalculationResult) -> dict[str, str]:
         "연비": format_fuel_efficiency(result.fuel_efficiency, result.fuel_type),
         get_fuel_usage_label(result.fuel_type): format_liters(result.fuel_used_liters, result.fuel_type),
         get_fuel_cost_label(result.fuel_type): format_won(result.fuel_cost),
-        "일비": format_won(result.daily_allowance),
-        "일비 사유": get_allowance_reason(result.one_way_distance_km, result.destination_count),
+        "활동비": format_won(result.daily_allowance),
+        "활동비 사유": get_allowance_reason(result.one_way_distance_km, result.destination_count),
         "최종 지급금액": format_won(result.total_payment),
     }
 
@@ -155,7 +155,7 @@ def export_to_excel(result: TripCalculationResult) -> bytes:
     row += 1
 
     for segment in result.route_segments:
-        ws.cell(row=row, column=1, value=segment.get("segment_no", ""))
+        ws.cell(row=row, column=1, value="복귀" if segment.get("is_return") else segment.get("segment_no", ""))
         ws.cell(row=row, column=2, value=segment.get("start", ""))
         ws.cell(row=row, column=3, value=segment.get("goal", ""))
         ws.cell(row=row, column=4, value=segment.get("distance_km", 0))
@@ -232,7 +232,7 @@ def export_application_form(result: TripCalculationResult, applicant_name: str =
         ["총 이동거리", format_distance(result.total_distance_km)],
         ["예상 소요시간", format_duration(result.total_duration_min)],
         [get_fuel_cost_label(result.fuel_type), format_won(result.fuel_cost)],
-        ["일비", format_won(result.daily_allowance)],
+        ["활동비", format_won(result.daily_allowance)],
         ["합계 지급금액", format_won(result.total_payment)],
         ["출장 목적", "(입력 필요)"],
         ["비고", get_allowance_reason(result.one_way_distance_km, result.destination_count)],
