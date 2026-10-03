@@ -97,6 +97,7 @@ CI(`.github/workflows/ci.yml`)가 자동 검사하는 것: 한글 인코딩, HTM
 ```
 
 - `backend/`: Flask 앱. `/api/calculate`(핵심 계산), `/api/search-places`, `/api/export/{excel,pdf,application-form}`.
+- **회계전표 입력용 목록 (2026-10-03)**: 계산 결과를 "전표에 담기"로 모아 ERP 전표 입력창에 붙여넣을 줄을 만든다 — `/api/export/voucher`(엑셀), `/api/voucher`(표 복사용 JSON). 줄 구성은 `services/calculator.py`의 `build_voucher_rows`, 부서별 계정과목·세목은 `app_config.py`의 `VOUCHER_*`(인사담당자 지정). 귀속부서 이름은 화면 `ORG_TREE`의 팀 이름과 같아야 한다. 목록은 브라우저 메모리에만 있다(저장은 로그인 이후).
 - `nginx.conf`: `/api/`만 `api` 컨테이너로 proxy_pass, 나머지는 기존처럼 정적 서빙.
 - `docker-compose.yml`: `api` 서비스는 `expose`만 하고 host 포트를 열지 않음 (nginx만 접근 가능, 새 Cloudflare Tunnel 규칙 불필요).
 - API 키 5개(NAVER_CLIENT_ID/SECRET, NAVER_LOCAL_CLIENT_ID/SECRET, OPINET_API_KEY)는 저장소 루트 `.env`에서 `${VAR:-}` 치환으로 주입 — CI에는 `.env`가 없어도 빈 값으로 통과한다(계산 API를 실제로 호출하는 스모크 테스트는 없음).

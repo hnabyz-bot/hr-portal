@@ -62,6 +62,17 @@ DAILY_ALLOWANCE_AMOUNT = 20_000
 ONE_WAY_DISTANCE_THRESHOLD_KM = 100
 MIN_DESTINATIONS_FOR_ALLOWANCE = 3
 
+# 회계전표 입력용(ERP 붙여넣기) — 계정과목은 귀속부서에 따라 갈린다. 부서 이름은 조직도(화면 ORG_TREE)의 팀 이름과 같다.
+VOUCHER_ACCOUNT_BY_TEAM = {
+    "DR제조팀": "(제)D여비교통비",
+    "CsI팀": "(제)C여비교통비",
+    "솔루션 제조팀": "(제)S여비교통비",
+}
+VOUCHER_ACCOUNT_DEFAULT = "(판)여비교통비"
+VOUCHER_SUBACCOUNT_FUEL = "차량 주유 및 교통비"
+VOUCHER_SUBACCOUNT_ALLOWANCE = "국내출장비"
+VOUCHER_CREDIT_ACCOUNT = "미지급금"
+
 
 def get_fuel_type_label(fuel_type: str) -> str:
     fuel_config = FUEL_TYPE_OPTIONS.get(fuel_type)
