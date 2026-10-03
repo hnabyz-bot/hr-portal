@@ -18,13 +18,15 @@ import export_utils
 from services import opinet_api
 from services.calculator import (
     TripCalculationResult,
+    apply_return_trip,
     build_manual_route_data,
     build_trip_result,
     get_allowance_reason,
     get_fuel_efficiency,
     get_vehicle_type_label,
+    split_return_trip,
 )
-from services.naver_api import NaverMapAPIError, calculate_route_segments, search_places_by_keyword
+from services.naver_api import NaverMapAPIError, calculate_route_segments, get_driving_route, search_places_by_keyword
 from services import rules_search
 import rules_config
 from app_config import get_fuel_price_label, get_fuel_price_unit, get_fuel_type_label
@@ -176,6 +178,7 @@ def calculate():
     """
     거리 직접 입력 모드에서는 출발지/출장지 주소가 필요 없다.
     (원본 앱과 동일하게 출발지="거리 직접 입력", 출장지=["출장지 1", ...]로 자동 채운다)
+    주소 모드에서 return_trip이 참이면 마지막 출장지 -> 출발지 복귀 구간을 더한다(출장지 수에는 세지 않음).
     """
     payload = request.get_json(silent=True) or {}
 
@@ -202,8 +205,14 @@ def calculate():
         route_data = build_manual_route_data(total_km)
     else:
         departure = _require_str(payload, "departure")
-        destinations = _require_destinations(payload)
-        route_data = calculate_route_segments([departure, *destinations])
+        destinations, return_trip = split_return_trip(departure, _require_destinations(payload), bool(payload.get("return_trip")))
+        route_data = calculate_route_segments([departure, *destinations, *([departure] if return_trip else [])])
+        if return_trip:
+            apply_return_trip(route_data)
+        elif len(destinations) == 2:
+            # 복귀 없는 2곳 출장: 두 번째 출장지가 회사에서 얼마나 먼지는 구간 거리로 알 수 없어 따로 잰다
+            direct_km = get_driving_route(departure, destinations[1])["distance_km"]
+            route_data["one_way_distance_km"] = max(route_data["one_way_distance_km"], direct_km)
 
     fuel_price_info = opinet_api.get_gyeonggi_previous_month_avg_price(trip_date, fuel_type)
     result = build_trip_result(trip_date, departure, destinations, vehicle_type, fuel_type, route_data, fuel_price_info)

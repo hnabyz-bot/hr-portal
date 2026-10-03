@@ -85,6 +85,10 @@ jobs:
         working-directory: backend
         run: python -m services.rules_search
 
+      - name: 출장경비 계산(활동비 기준·복귀 구간) 자체 검증
+        working-directory: backend
+        run: python -m services.calculator
+
   sqlite:
     name: SQLite 기능 검증
     runs-on: ubuntu-latest

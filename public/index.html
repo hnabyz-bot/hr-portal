@@ -723,7 +723,7 @@ function comingSoon(){
 }
 
 function expenseCalculator(){
-  const today = new Date().toISOString().slice(0,10);
+  const today = new Date(Date.now() - new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);   // 한국 날짜 (toISOString만 쓰면 오전 9시 전엔 어제)
   expDestinations = [''];
   expLastResult = null;
   setTimeout(expRenderDestinations, 0);
@@ -763,15 +763,19 @@ function expenseCalculator(){
       </div>
 
       <div id="expDestWrap"></div>
-      <div style="margin:6px 0 14px;"><span class="btn" onclick="expAddDestination()">+ 출장지 추가</span></div>
+      <div style="margin:6px 0 4px; display:flex; align-items:center; gap:14px; flex-wrap:wrap;">
+        <span class="btn" onclick="expAddDestination()">+ 출장지 추가</span>
+        <label class="ct-check"><input type="checkbox" id="expReturn" checked> 출발지로 복귀 (복귀 거리 포함)</label>
+      </div>
+      <div class="list-sub" style="margin-bottom:14px;">복귀는 출장지 수(3곳 기준)에 세지 않습니다. 복귀하지 않는 날만 체크를 풀어 주세요.</div>
     </div>
 
     <div id="expManualPanel" class="hidden" style="margin-bottom:14px;">
       <div class="field-row">
-        <div class="field"><label>총 이동거리 (km)</label><input id="expManualTotal" type="number" min="0" step="0.1" placeholder="예: 85.5"/></div>
+        <div class="field"><label>총 이동거리 (왕복 합계, km)</label><input id="expManualTotal" type="number" min="0" step="0.1" placeholder="예: 85.5"/></div>
         <div class="field"><label>출장지 개수</label><input id="expManualDestCount" type="number" min="1" max="10" step="1" value="1"/></div>
       </div>
-      <div class="placeholder-note">네이버 지도 등에서 확인한 총 이동거리를 직접 입력하세요. 출장지 개수는 일비 지급 기준(3곳 이상)에만 쓰입니다 — 출발지/출장지 주소는 입력하지 않아도 됩니다.</div>
+      <div class="placeholder-note">네이버 지도 등에서 확인한 왕복 총 이동거리를 직접 입력하세요. 활동비는 총 이동거리가 200km를 넘거나(편도 100km 초과) 출장지가 3곳 이상일 때 붙습니다 — 출발지/출장지 주소는 입력하지 않아도 됩니다.</div>
     </div>
 
     <div style="text-align:right;"><span class="btn primary" onclick="expCalculate()">${icon('calc')} 경비 계산</span></div>
@@ -885,6 +889,7 @@ async function expCalculate(){
     if(!destinations.length){ msgEl.innerHTML = expErrorBox('출장지를 1곳 이상 입력해 주세요.'); return; }
     payload.departure = departure;
     payload.destinations = destinations;
+    payload.return_trip = document.getElementById('expReturn').checked;
   }
 
   msgEl.innerHTML = '<div class="placeholder-note">계산 중입니다... (지도·유가 조회에 몇 초 걸릴 수 있습니다)</div>';
@@ -902,7 +907,7 @@ async function expCalculate(){
 function expRenderResult(r){
   const warn = r.fuel_price_is_fallback ? `<div class="placeholder-note" style="background:var(--bg-warning); color:var(--warning); margin-bottom:10px;">${escapeHtml(r.fuel_price_source)}</div>` : '';
   const costLabel = r.fuel_type==='electric' ? '충전비' : '유류비';
-  const segRows = (r.route_segments||[]).map(s=>[`구간 ${s.segment_no}`, s.start, s.goal, s.distance_km+' km', s.duration_min+'분']);
+  const segRows = (r.route_segments||[]).map(s=>[s.is_return ? '복귀' : `구간 ${s.segment_no}`, escapeHtml(s.start), escapeHtml(s.goal), s.distance_km+' km', s.duration_min+'분']);
   return `
   <div style="background:var(--accent); color:#fff; padding:22px 24px; border-radius:12px; text-align:center; margin-bottom:14px;">
     <div style="font-size:var(--fs-sm); color:var(--accent-light);">최종 지급금액</div>
@@ -912,7 +917,7 @@ function expRenderResult(r){
     <div class="card"><div class="stat-label">총 이동거리</div><div class="stat-value" style="font-size:var(--fs-xl);">${r.total_distance_km} km</div></div>
     <div class="card"><div class="stat-label">${escapeHtml(r.fuel_type_label)} 단가</div><div class="stat-value" style="font-size:var(--fs-xl);">${Math.round(r.fuel_price).toLocaleString('ko-KR')}원/${r.fuel_price_unit}</div></div>
     <div class="card"><div class="stat-label">${costLabel}</div><div class="stat-value" style="font-size:var(--fs-xl);">${r.fuel_cost.toLocaleString('ko-KR')}원</div></div>
-    <div class="card"><div class="stat-label">일비</div><div class="stat-value" style="font-size:var(--fs-xl);">${r.daily_allowance.toLocaleString('ko-KR')}원</div></div>
+    <div class="card"><div class="stat-label">활동비</div><div class="stat-value" style="font-size:var(--fs-xl);">${r.daily_allowance.toLocaleString('ko-KR')}원</div></div>
   </div>
   ${warn}
   <div class="placeholder-note">${escapeHtml(r.allowance_reason)}</div>
