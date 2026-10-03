@@ -182,7 +182,7 @@ def get_gyeonggi_previous_month_avg_price(reference_date: date | None = None, fu
             "fuel_type": fuel_type,
             "fuel_label": fuel_label,
             "price_label": price_label,
-            "source": f"Opinet {month_label} 경기도 {fuel_label} 월평균 ({day_count}일 평균)",
+            "source": f"{month_label} 경기도 {fuel_label} 평균 ({day_count}일) · 출처: 오피넷(한국석유공사)",
             "is_fallback": False,
         }
     except Exception as exc:
