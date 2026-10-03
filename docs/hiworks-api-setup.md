@@ -147,11 +147,30 @@
 
 | 항목 | 내용 |
 |---|---|
-| `.env` 변수 | `HIWORKS_OFFICE_TOKEN`, `HIWORKS_DOMAIN`, `HIWORKS_APPROVAL_FORM_ID` — `.env.example`에 이름 반영 완료. `docker-compose.yml`의 api 서비스 환경변수 연결은 구현 PR에서 추가. 결재 양식이 여러 개(KPI 승인·연봉계약·증명서)가 되면 양식별 변수는 해당 구현 PR에서 추가한다 |
+| `.env` 변수 | `HIWORKS_OFFICE_TOKEN`, `HIWORKS_DOMAIN` — `.env.example`에 이름 반영 완료. 결재 양식 아이디는 아래 "결재 양식 아이디 이름 규칙"을 따른다. `docker-compose.yml`의 api 서비스 환경변수 연결은 구현 PR에서 추가 |
 | API 기본 주소 | `https://api.hiworks.com` |
 | SSO 토큰 조회 주소 | `https://link-api.hiworks.com/v4/tokens/{token}` |
 | 인증 헤더 | `Authorization: Bearer <오피스 토큰>` |
 | 새 서버 경로 (예정) | `/api/auth/hiworks` (SSO 수신), `/api/approval/callback` (결재 상태 수신) |
+
+### 결재 양식 아이디 이름 규칙
+
+결재 종류마다 하이웍스 양식이 하나씩 있고, 양식마다 아이디가 하나씩 생긴다. **결재 종류 하나 = `.env` 변수 하나**로 둔다.
+
+| 규칙 | 내용 |
+|---|---|
+| 형식 | `HIWORKS_FORM_ID_<결재 종류>` — 결재 종류는 영어 대문자·밑줄 |
+| 값 | 하이웍스 [전자결재 > 관리자 설정 > 양식함 관리] → 양식 상세 상단의 양식 아이디 (2장 6번) |
+| 추가 시점 | 그 결재를 연동하는 **구현 PR에서** 변수 이름을 정하고 `.env.example`·`docker-compose.yml`·코드에 같은 이름으로 넣는다. 이 표에도 한 줄 추가한다 |
+| 비어 있을 때 | 그 결재 기능만 꺼진 상태로 동작해야 한다 (다른 결재와 무관) |
+
+예시 (확정 아님 — 구현 PR에서 확정 후 이 표를 고친다):
+
+| 결재 | 변수 이름 (예시) | 상태 |
+|---|---|---|
+| KPI 승인 | `HIWORKS_FORM_ID_KPI` | 미구현 |
+| 연봉계약 확정 | `HIWORKS_FORM_ID_CONTRACT` | 미구현 |
+| 증명서 신청 | `HIWORKS_FORM_ID_CERT` | 미구현 |
 
 ### 사용할 API
 
