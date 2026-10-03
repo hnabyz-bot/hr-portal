@@ -144,7 +144,7 @@ flowchart LR
     A["Claude Code로 작업<br/>feature/·fix/ 브랜치"] --> B[커밋·푸시]
   end
   B --> C[PR 생성]
-  C --> D{"자동 검사(CI)<br/>필수 4종 + SQLite 기능 검증"}
+  C --> D{"자동 검사(CI) 필수 5종<br/>코드·사이트·도메인·스키마·SQLite"}
   D -- 실패 --> A
   D -- 통과 --> E["merge<br/>브랜치 자동 삭제"]
   E --> F[release 자동 갱신]

@@ -10,7 +10,7 @@
 
 - 기능 하나 = 브랜치 하나 = PR 하나. 여러 기능을 한 PR에 섞지 않는다.
 - 브랜치 네이밍: `feature/짧은-설명` 또는 `fix/짧은-설명` 지향 (지금까지는 설명적 이름만 써왔음 — 앞으로는 접두사 붙인다).
-- `main`/`release` 직접 push 금지 — **2026-08-26부터 브랜치 보호 규칙으로 실제로 차단된다.** `main`은 PR 필수 + CI 필수 4종 통과(코드 검사·사이트 동작 확인·평가·계약 도메인 검사·DB 스키마 검사, 승인자 0명, 관리자 우회 금지). **SQLite 기능 검증은 실행되지만 필수 목록에서 빠져 있다** (2026-10-03 API 확인) — 필수 추가 예정, 아래 브랜치 보호 항목 참고, `release`는 강제 push·삭제만 금지(CI가 직접 갱신해야 하므로).
+- `main`/`release` 직접 push 금지 — **2026-08-26부터 브랜치 보호 규칙으로 실제로 차단된다.** `main`은 PR 필수 + CI 필수 5종 통과(코드 검사·사이트 동작 확인·평가·계약 도메인 검사·DB 스키마 검사·SQLite 기능 검증, 승인자 0명, 관리자 우회 금지). SQLite 기능 검증은 2026-10-03에 필수로 추가됨, `release`는 강제 push·삭제만 금지(CI가 직접 갱신해야 하므로).
 - **merge된 브랜치는 정리(삭제)한다** — 지금까지 안 해서 원격에 브랜치가 쌓여 있었음. merge 직후 바로 삭제하는 걸 새 기본 동작으로 한다.
 - PR 본문에는 무엇을/왜/배포 시 주의사항을 명확히 적는다. 백엔드·시크릿이 필요한 기능이면 배포 전 필요한 절차(`.env` 생성, `docker compose up` 등)를 PR 본문에 반드시 포함한다 — 지금까지 해온 방식 그대로 유지.
 - **API 키·비밀번호·규정 원문 등 민감 자료를 절대 커밋하지 않는다.** hr-portal은 Public 저장소다. 서버용 시크릿은 저장소 루트의 `.env`(gitignore됨, 서버에 직접 생성)로, 규정 원문은 `regulations/`(마찬가지로 gitignore)로 전달한다. `.env.example`에 필요한 변수 이름만 적어둔다.
@@ -81,7 +81,7 @@
 - **포털 서버에서 실행하는 세션의 경우 — 이 환경이 곧 포털 서버다 (2026-08-26 확인)**: 별도 SSH 접속이 필요 없고 `docker` 명령이 바로 된다. 실제 서비스를 `http://127.0.0.1:8080` 으로 직접 확인할 수 있고, `backend/` 변경도 `docker compose up -d --build` 로 실물 검증이 가능하다. 다만 이건 **실제 운영 서버**이고 같은 서버에 무관한 서비스(`voc-mr-ecr`)도 같이 떠 있으니 그쪽은 절대 건드리지 않는다. 시크릿 값은 `cat`/`Read`로 열어보지 않는다.
 - **⚠️ 작업은 워크트리에서 한다**: 저장소 폴더(`~/workspace/github-hnabyz-bot/hr-portal`)는 배포 대상이라 systemd 타이머가 **2분마다 `git reset --hard origin/release`** 를 실행한다. 여기서 브랜치를 만들어 작업하면 **미커밋 변경이 최대 2분 안에 사라진다.** 코드 작업은 워크트리 `~/workspace/hr-portal-dev` 에서 하고, 저장소 폴더는 서비스 전용으로 둔다 (`.env`·`regulations/` 원문이 있는 곳이기도 하다).
 - **PR 생성·merge**: `gh` CLI 없음. REST API(`api.github.com/repos/hnabyz-bot/hr-portal/...`)를 직접 호출해 이슈·PR 생성·merge까지 처리한다. 토큰은 두 개이며 용도가 다르다 — 일반 작업은 `git credential fill`로 얻는 협업자 토큰, 저장소 관리자 작업(브랜치 보호 등)은 `~/.config/hr-portal/owner-token`(권한 600). 토큰 값 자체는 화면에 띄우지 않는다.
-- **브랜치 보호 적용됨 (2026-08-26)**: `main`은 PR 필수 + CI 필수 4종 통과(승인자 0명이라 검사만 통과하면 merge 가능), 강제 push·삭제 금지. **할 일: `SQLite 기능 검증`을 필수 목록에 추가** (Settings → Branches → `main` → Require status checks, 또는 owner-token으로 `POST .../branches/main/protection/required_status_checks/contexts`). 추가하면 이 문서의 "4종"을 "5종"으로 고친다. `release`는 강제 push·삭제만 금지(CI가 직접 갱신해야 하므로 PR 필수는 걸지 않음). **`main` 직접 push는 이제 막힌다** — 반드시 PR을 거친다.
+- **브랜치 보호 적용됨 (2026-08-26)**: `main`은 PR 필수 + CI 필수 5종 통과(승인자 0명이라 검사만 통과하면 merge 가능), 강제 push·삭제 금지. `SQLite 기능 검증`은 2026-10-03 필수 추가(그 전에는 실행만 되고 필수가 아니었음). `release`는 강제 push·삭제만 금지(CI가 직접 갱신해야 하므로 PR 필수는 걸지 않음). **`main` 직접 push는 이제 막힌다** — 반드시 PR을 거친다.
 - **PR별 미리보기(Cloudflare Pages)는 아직 미구성** — beginner-guide 5장이 설명하는 미리보기 링크는 지금 뜨지 않는다.
 
 CI(`.github/workflows/ci.yml`)가 자동 검사하는 것: 한글 인코딩, HTML 구조, 시크릿, 개인정보 패턴, `public/` 노출 범위, 스모크 테스트. 실패하면 원인을 그대로 알려준다.
