@@ -243,6 +243,8 @@
   .celeb-person:last-child{ border-bottom:none; }
   .celeb-av{ width:40px; height:40px; border-radius:var(--radius); background:var(--accent-light); color:var(--accent); display:flex; align-items:center; justify-content:center; font-weight:700; }
   .celeb-acts{ display:flex; gap:6px; margin-top:8px; flex-wrap:wrap; }
+  .btn.celeb-gift{ background:#FEE500; border-color:#F2D900; color:#3C1E1E; }   /* 카카오톡 노랑 */
+  .btn.celeb-gift:hover{ background:#F7DC00; border-color:#F2D900; }
   @media (min-width:1100px){ .celeb-row{ display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); overflow:visible; } }
   @media (prefers-reduced-motion:reduce){ .fx{ display:none; } }
 
@@ -644,6 +646,7 @@ const ICONS = {
   phone:'<path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z"/>',
   message:'<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',
   mail:'<rect x="2" y="4" width="20" height="16" rx="2"/><path d="M22 6l-10 7L2 6"/>',
+  gift:'<path d="M20 12v10H4V12"/><rect x="2" y="7" width="20" height="5"/><path d="M12 22V7"/><path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z"/><path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z"/>',
   x:'<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>',
   download:'<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>',
   file:'<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>',
@@ -1896,18 +1899,20 @@ function celebBanners(){
 }
 function celebShow(key){
   const c = CELEB.find(x=>x.key===key), list = celebList(key, orgMembers, celebEvents, new Date()), hr = orgIsHr();
+  // 카카오톡 선물하기는 받는 사람을 주소로 지정할 수 없어 첫 화면만 연다(친구는 누른 사람이 고른다). 조사에는 넣지 않는다 — 인사담당자 결정
+  const gift = key==='condol' ? '' : `<a class="btn sm celeb-gift" href="https://gift.kakao.com/home" target="_blank" rel="noopener noreferrer">${icon('gift')} 선물하기</a>`;
   const people = list.map(({m, note, ev})=>{
     const ct = orgVisibleContacts(m);
     return `<div class="celeb-person"><div class="celeb-av">${escapeHtml(m.name.slice(0,1))}</div><div>
       <div><span class="org-name" onclick="orgShow(${m.id})">${escapeHtml(m.name)}</span> ${escapeHtml(m.title)} <span class="list-sub" style="display:inline;">· ${escapeHtml(m.team || m.division)}</span></div>
       <div class="list-sub">${escapeHtml(note)} · 내선 ${escapeHtml(ct.ext)} · ${escapeHtml(ct.email)}</div>
-      <div class="celeb-acts">${ct.mobile ? `<a class="btn sm" href="tel:${escapeHtml(ct.mobile)}">${icon('phone')} 전화</a>` : ''}<a class="btn sm" href="mailto:${escapeHtml(ct.email)}">${icon('mail')} 메일</a>
+      <div class="celeb-acts">${ct.mobile ? `<a class="btn sm" href="tel:${escapeHtml(ct.mobile)}">${icon('phone')} 전화</a>` : ''}<a class="btn sm" href="mailto:${escapeHtml(ct.email)}">${icon('mail')} 메일</a>${gift}
         ${hr && ev ? `<button class="btn sm" onclick="celebDelete(${ev.id})">게시 내리기</button>` : ''}</div>
     </div></div>`;
   }).join('');
   orgModal(`<div class="card-title"><span>${c.label} <span style="font-weight:500; color:var(--text-secondary);">${list.length}명</span></span><button type="button" class="x-btn" onclick="orgCloseModal()" aria-label="닫기">${icon('x')}</button></div>
     ${people || '<div class="list-sub">해당하는 분이 없습니다.</div>'}
-    <div class="list-sub" style="margin-top:10px;">이름을 누르면 전체 연락처가 나옵니다. 휴대폰은 본인이 공개한 경우에만 보입니다.</div>`);
+    <div class="list-sub" style="margin-top:10px;">이름을 누르면 전체 연락처가 나옵니다. 휴대폰은 본인이 공개한 경우에만 보입니다.${gift ? '<br>선물하기를 누르면 카카오톡 선물하기가 새 창으로 열립니다. 받는 분은 카카오톡 친구 목록에서 직접 골라 주세요.' : ''}</div>`);
 }
 function celebEdit(){
   if(!orgIsHr()) return;
