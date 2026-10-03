@@ -954,11 +954,6 @@ async function expDownload(kind){
     document.getElementById('expMessage').innerHTML = expErrorBox(err.message);
   }
 }
-function settlementContent(){
-  return simpleTableCard('정산 내역', ['출장지','기간','금액','상태'],
-    [['부산 사업장','2026.06.02~03','265,000원','정산완료'],['대전 협력사','2026.05.14','98,000원','정산완료'],['광주 지사','2026.04.20~21','312,000원','정산중']],
-    (r)=> r[3]==='정산중' ? 'warning':'success', 3);
-}
 
 /* ---------------- 규정 검색 ----------------
    원문은 서버(regulations/)에만 있다 — 이 파일에는 규정 문장을 넣지 않는다(Public 저장소).
@@ -3081,7 +3076,6 @@ const NAV = [
   ]},
   { id:'trip', label:'출장·경비', icon:'plane', tabs:[
       {id:'t2', label:'경비 산출기', render:expenseCalculator},
-      {id:'t3', label:'정산 내역', render:settlementContent},
   ]},
   { id:'org', label:'조직도', icon:'network', tabs:[
       {id:'o1', label:'부서별 조직도', render:orgChart},
