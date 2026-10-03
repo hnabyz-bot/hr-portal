@@ -791,7 +791,9 @@ let expDistanceMode = 'auto';
 let expLastResult = null;
 let expSearchCache = {};
 let expVoucher = [];                    // 전표에 담은 출장들 — 화면을 닫으면 사라진다 (저장은 로그인 이후)
-let expWho = { name:'', team:'' };      // 신청자 이름·귀속부서
+let expWho = { name:'', team:'' };      // 신청자 이름·귀속부서 — 로그인이 생기기 전까지는 이 브라우저가 기억한다
+try{ const saved = JSON.parse(localStorage.getItem('expWho') || '{}'); for(const k of ['name','team']) if(typeof saved[k]==='string') expWho[k] = saved[k]; }catch(_){}
+function expSaveWho(){ try{ localStorage.setItem('expWho', JSON.stringify(expWho)); }catch(_){} }
 const EXP_PRESETS = { yongin: '경기도 용인시 처인구 처인성로41-16', suwon: '경기도 수원시 신원로88' };
 
 function expSetPreset(target, key){
@@ -980,6 +982,7 @@ function expRegionOf(destinations){   // 주소에서 시·군 이름만 뽑는�
 }
 function expSetName(el){   // 이름 칸이 두 곳(출장신청서용·전표용)이라 한쪽에 적으면 다른 쪽도 맞춘다
   expWho.name = el.value;
+  expSaveWho();
   ['expApplicantName','expVoucherName'].forEach(id=>{ const o = document.getElementById(id); if(o && o!==el) o.value = el.value; });
 }
 function expVoucherAdd(){
@@ -999,6 +1002,8 @@ function expVoucherRender(){
   const wrap = document.getElementById('expVoucherWrap');
   if(!wrap) return;
   const won = n => n.toLocaleString('ko-KR');
+  const teams = ORG_TREE.flatMap(d=>d.teams);
+  if(!teams.includes(expWho.team)) expWho.team = '';   // 기억해 둔 부서가 조직도에서 없어졌으면 다시 고르게
   const total = expVoucher.reduce((sum,t)=>sum+t.fuel_cost+t.allowance, 0);
   const rows = expVoucher.map((t,i)=>`<tr><td>${t.date.slice(5).replace('-','/')}</td><td>${escapeHtml(t.region)} · ${t.count}건 · ${t.km}km</td><td class="num">${won(t.fuel_cost)}</td><td class="num">${won(t.allowance)}</td>
       <td class="num"><span style="font-size:var(--fs-xs); font-weight:600; color:var(--danger); cursor:pointer;" onclick="expVoucherRemove(${i})">삭제</span></td></tr>`).join('');
@@ -1008,7 +1013,7 @@ function expVoucherRender(){
     <div class="field-row">
       <div class="field"><label for="expVoucherName">신청자 이름</label><input id="expVoucherName" value="${escapeHtml(expWho.name)}" oninput="expSetName(this)" placeholder="예: 홍길동"/></div>
       <div class="field"><label for="expVoucherTeam">귀속부서</label>
-        <select id="expVoucherTeam" onchange="expWho.team=this.value"><option value="">부서를 골라 주세요</option>${ORG_TREE.flatMap(d=>d.teams).map(t=>`<option ${t===expWho.team?'selected':''}>${escapeHtml(t)}</option>`).join('')}</select>
+        <select id="expVoucherTeam" onchange="expWho.team=this.value; expSaveWho()"><option value="">부서를 골라 주세요</option>${teams.map(t=>`<option ${t===expWho.team?'selected':''}>${escapeHtml(t)}</option>`).join('')}</select>
       </div>
     </div>
     ${expVoucher.length ? `
@@ -1019,7 +1024,7 @@ function expVoucherRender(){
     <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:14px;">
       <span class="btn primary" onclick="expVoucherDownload()">${icon('download')} 전표 엑셀 내려받기</span>
       <span class="btn" onclick="expVoucherCopy()">${icon('file')} 표 복사 (엑셀 없이 바로 붙여넣기)</span>
-    </div>` : `<div class="placeholder-note">경비를 계산한 뒤 "전표에 담기"를 누르면 여기에 쌓입니다. 여러 건을 담아 한 번에 내려받을 수 있습니다. 화면을 닫으면 목록은 사라집니다.</div>`}
+    </div>` : `<div class="placeholder-note">경비를 계산한 뒤 "전표에 담기"를 누르면 여기에 쌓입니다. 여러 건을 담아 한 번에 내려받을 수 있습니다. 화면을 닫으면 목록은 사라지고, 이름과 부서는 이 PC에 기억됩니다.</div>`}
     <div id="expVoucherMsg" style="margin-top:12px;"></div>
   </div>`;
 }
