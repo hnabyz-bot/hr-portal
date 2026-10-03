@@ -17,10 +17,12 @@ from flask import Flask, Response, jsonify, request
 import export_utils
 from services import opinet_api
 from services.calculator import (
+    VOUCHER_HEADERS,
     TripCalculationResult,
     apply_return_trip,
     build_manual_route_data,
     build_trip_result,
+    build_voucher_rows,
     get_allowance_reason,
     get_fuel_efficiency,
     get_vehicle_type_label,
@@ -42,6 +44,7 @@ rules_search.list_rules()
 VEHICLE_TYPES = {"under_1800", "over_1800"}
 FUEL_TYPES = {"gasoline", "diesel", "lpg", "electric"}
 MAX_DESTINATIONS = 10
+MAX_VOUCHER_TRIPS = 50
 
 
 class ApiError(Exception):
@@ -255,6 +258,48 @@ def export_application_form():
     data = export_utils.export_application_form(result, applicant_name.strip()[:50])
     filename = f"출장신청서_{result.trip_date.isoformat()}.pdf"
     return _send_file(data, filename, "application/pdf")
+
+
+def _voucher_rows(payload: dict) -> list[list]:
+    """화면이 보낸 전표 목록(신청자·귀속부서·출장들)을 확인하고 전표 줄로 바꾼다."""
+    applicant = _require_str(payload, "applicant", max_len=50)
+    team = _require_str(payload, "team", max_len=50)
+    trips = payload.get("trips")
+    if not isinstance(trips, list) or not trips:
+        raise ApiError("전표에 담은 출장이 없습니다.")
+    if len(trips) > MAX_VOUCHER_TRIPS:
+        raise ApiError(f"전표에는 한 번에 {MAX_VOUCHER_TRIPS}건까지 담을 수 있습니다.")
+
+    cleaned = []
+    for trip in trips:
+        try:
+            item = {
+                "region": _require_str(trip, "region", max_len=50),
+                "count": int(trip["count"]),
+                "km": float(trip["km"]),
+                "fuel_cost": int(trip["fuel_cost"]),
+                "allowance": int(trip["allowance"]),
+            }
+        except (AttributeError, KeyError, TypeError, ValueError) as exc:
+            raise ApiError("전표 항목 형식이 올바르지 않습니다. 다시 담아 주세요.") from exc
+        if item["count"] < 1 or not item["km"] > 0 or item["fuel_cost"] < 0 or item["allowance"] < 0:
+            raise ApiError("전표 항목 값이 올바르지 않습니다. 다시 담아 주세요.")
+        cleaned.append(item)
+    return build_voucher_rows(applicant, team, cleaned)
+
+
+@app.post("/api/voucher")
+def voucher_rows():
+    """전표 줄을 그대로 돌려준다 (화면의 '표 복사'용)."""
+    payload = request.get_json(silent=True) or {}
+    return jsonify({"headers": VOUCHER_HEADERS, "rows": _voucher_rows(payload)})
+
+
+@app.post("/api/export/voucher")
+def export_voucher():
+    payload = request.get_json(silent=True) or {}
+    data = export_utils.export_voucher(_voucher_rows(payload))
+    return _send_file(data, "출장경비_회계전표.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 
 RULE_FILE_MIMETYPES = {

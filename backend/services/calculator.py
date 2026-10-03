@@ -178,6 +178,28 @@ def build_trip_result(
     )
 
 
+VOUCHER_HEADERS = ["계정과목", "비용구분", "계정세목", "차변금액", "대변금액", "적요", "증빙", "귀속부서"]
+
+
+def build_voucher_rows(applicant: str, team: str, trips: list[dict[str, Any]]) -> list[list[Any]]:
+    """
+    ERP 회계전표 입력창에 붙여넣을 줄을 만든다 (칸 순서는 VOUCHER_HEADERS).
+
+    출장 1건 = 유류비 한 줄 + (활동비가 있으면) 한 줄, 맨 끝에 미지급금 한 줄(대변 = 차변 합계).
+    비용구분은 ERP가 계정과목에 맞춰 스스로 채우고 증빙은 직원이 ERP에서 고르므로 비워 둔다.
+    """
+    account = app_config.VOUCHER_ACCOUNT_BY_TEAM.get(team, app_config.VOUCHER_ACCOUNT_DEFAULT)
+    rows: list[list[Any]] = []
+    for trip in trips:
+        memo = f"{applicant}_{trip['region']}_{trip['count']}건_{trip['km']:g}km"
+        rows.append([account, "", app_config.VOUCHER_SUBACCOUNT_FUEL, trip["fuel_cost"], 0, memo, "", team])
+        if trip["allowance"]:
+            rows.append([account, "", app_config.VOUCHER_SUBACCOUNT_ALLOWANCE, trip["allowance"], 0, memo, "", team])
+    total = sum(row[3] for row in rows)
+    rows.append([app_config.VOUCHER_CREDIT_ACCOUNT, "", "", 0, total, f"{applicant}_출장경비 {len(trips)}건", "", team])
+    return rows
+
+
 if __name__ == "__main__":
     # 자체 검증: python -m services.calculator (backend 폴더에서)
     def _manual(total_km: float, count: int) -> int:
@@ -203,4 +225,17 @@ if __name__ == "__main__":
     _route = apply_return_trip({"segments": [{"distance_km": 25.0}, {"distance_km": 370.0}, {"distance_km": 380.0}], "one_way_distance_km": 25.0})
     assert _route["one_way_distance_km"] == 380.0 and _route["segments"][-1]["is_return"] and "is_return" not in _route["segments"][0]
     assert calculate_daily_allowance(_route["one_way_distance_km"], 2) == app_config.DAILY_ALLOWANCE_AMOUNT
+    # 회계전표: 부서별 계정과목, 유류비·활동비 두 줄, 미지급금 대변 = 차변 합계
+    _trips = [{"region": "수원", "count": 1, "km": 49.95, "fuel_cost": 12138, "allowance": 0},
+              {"region": "부산", "count": 1, "km": 770.2, "fuel_cost": 187040, "allowance": 20000}]
+    _rows = build_voucher_rows("홍길동", "지원팀", _trips)
+    assert _rows == [
+        ["(판)여비교통비", "", "차량 주유 및 교통비", 12138, 0, "홍길동_수원_1건_49.95km", "", "지원팀"],
+        ["(판)여비교통비", "", "차량 주유 및 교통비", 187040, 0, "홍길동_부산_1건_770.2km", "", "지원팀"],
+        ["(판)여비교통비", "", "국내출장비", 20000, 0, "홍길동_부산_1건_770.2km", "", "지원팀"],
+        ["미지급금", "", "", 0, 219178, "홍길동_출장경비 2건", "", "지원팀"],
+    ]
+    assert all(len(row) == len(VOUCHER_HEADERS) for row in _rows)
+    assert [build_voucher_rows("홍길동", team, _trips[:1])[0][0] for team in ("DR제조팀", "CsI팀", "솔루션 제조팀", "총무팀")] == [
+        "(제)D여비교통비", "(제)C여비교통비", "(제)S여비교통비", "(판)여비교통비"]
     print("경비 계산 자체 검증 통과")

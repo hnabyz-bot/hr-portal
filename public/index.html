@@ -726,7 +726,7 @@ function expenseCalculator(){
   const today = new Date(Date.now() - new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);   // 한국 날짜 (toISOString만 쓰면 오전 9시 전엔 어제)
   expDestinations = [''];
   expLastResult = null;
-  setTimeout(expRenderDestinations, 0);
+  setTimeout(()=>{ expRenderDestinations(); expVoucherRender(); }, 0);
   return `
   <div class="card">
     <div class="card-title">출장경비 자동 산출기</div>
@@ -781,7 +781,8 @@ function expenseCalculator(){
     <div style="text-align:right;"><span class="btn primary" onclick="expCalculate()">${icon('calc')} 경비 계산</span></div>
     <div id="expMessage" style="margin-top:12px;"></div>
     <div id="expResult" style="margin-top:14px;"></div>
-  </div>`;
+  </div>
+  <div id="expVoucherWrap" style="margin-top:14px;"></div>`;
 }
 
 /* ---- 경비 산출기 로직 ---- */
@@ -789,6 +790,8 @@ let expDestinations = [''];
 let expDistanceMode = 'auto';
 let expLastResult = null;
 let expSearchCache = {};
+let expVoucher = [];                    // 전표에 담은 출장들 — 화면을 닫으면 사라진다 (저장은 로그인 이후)
+let expWho = { name:'', team:'' };      // 신청자 이름·귀속부서
 const EXP_PRESETS = { yongin: '경기도 용인시 처인구 처인성로41-16', suwon: '경기도 수원시 신원로88' };
 
 function expSetPreset(target, key){
@@ -923,8 +926,16 @@ function expRenderResult(r){
   <div class="placeholder-note">${escapeHtml(r.allowance_reason)}</div>
   ${segRows.length ? simpleTableCard('구간별 이동 상세', ['구간','출발','도착','거리','소요시간'], segRows, ()=>'neutral', -1) : ''}
   <div class="card" style="margin-top:14px;">
+    <div class="card-title">회계전표에 담기</div>
+    <div style="display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap;">
+      <div class="field" style="flex:1; min-width:180px;"><label for="expRegion">출장지역 (전표 적요에 들어갑니다)</label><input id="expRegion" value="${escapeHtml(expRegionOf(r.destinations))}" placeholder="예: 수원"/></div>
+      <span class="btn primary" onclick="expVoucherAdd()">+ 전표에 담기</span>
+    </div>
+    <div id="expVoucherAddMsg" class="list-sub" style="margin-top:8px;"></div>
+  </div>
+  <div class="card" style="margin-top:14px;">
     <div class="card-title">결과 내려받기</div>
-    <div class="field" style="margin-bottom:10px;"><label>신청자 이름 (출장신청서용)</label><input id="expApplicantName" placeholder="예: 홍길동"/></div>
+    <div class="field" style="margin-bottom:10px;"><label>신청자 이름 (출장신청서용)</label><input id="expApplicantName" value="${escapeHtml(expWho.name)}" oninput="expSetName(this)" placeholder="예: 홍길동"/></div>
     <div style="display:flex; gap:10px; flex-wrap:wrap;">
       <span class="btn" onclick="expDownload('excel')">${icon('download')} Excel 다운로드</span>
       <span class="btn" onclick="expDownload('pdf')">${icon('file')} PDF 다운로드</span>
@@ -939,25 +950,113 @@ async function expDownload(kind){
     const nameEl = document.getElementById('expApplicantName');
     payload.applicant_name = nameEl ? nameEl.value : '';
   }
-  try{
-    const res = await fetch(`/api/export/${kind}`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
-    if(!res.ok){
-      const data = await res.json().catch(()=>({}));
-      throw new Error(data.error || '다운로드에 실패했습니다.');
-    }
-    const blob = await res.blob();
-    const disposition = res.headers.get('Content-Disposition') || '';
-    const starMatch = disposition.match(/filename\*=UTF-8''([^;]+)/);
-    const plainMatch = disposition.match(/filename="?([^";]+)"?/);
-    const filename = starMatch ? decodeURIComponent(starMatch[1]) : (plainMatch ? plainMatch[1] : `출장경비.${kind==='excel'?'xlsx':'pdf'}`);
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = filename;
-    document.body.appendChild(a); a.click(); a.remove();
-    URL.revokeObjectURL(url);
-  }catch(err){
-    document.getElementById('expMessage').innerHTML = expErrorBox(err.message);
+  try{ await expSaveFile(kind, payload); }
+  catch(err){ document.getElementById('expMessage').innerHTML = expErrorBox(err.message); }
+}
+async function expSaveFile(kind, payload){   // /api/export/<kind> 응답을 파일로 저장한다. 실패하면 Error를 던진다
+  const res = await fetch(`/api/export/${kind}`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
+  if(!res.ok){
+    const data = await res.json().catch(()=>({}));
+    throw new Error(data.error || '다운로드에 실패했습니다.');
   }
+  const blob = await res.blob();
+  const disposition = res.headers.get('Content-Disposition') || '';
+  const starMatch = disposition.match(/filename\*=UTF-8''([^;]+)/);
+  const plainMatch = disposition.match(/filename="?([^";]+)"?/);
+  const filename = starMatch ? decodeURIComponent(starMatch[1]) : (plainMatch ? plainMatch[1] : `출장경비.${kind==='pdf'||kind==='application-form'?'pdf':'xlsx'}`);
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+}
+
+/* ---- 회계전표 입력용 목록 ----
+   직원이 ERP 전표 입력창에 그대로 붙여넣을 줄을 만든다. 계정과목·줄 구성 규칙은 서버(build_voucher_rows)에 있고,
+   화면은 계산 결과를 목록에 모아 서버에 보내기만 한다. */
+function expRegionOf(destinations){   // 주소에서 시·군 이름만 뽑는다: "경기도 수원시 신원로88" -> "수원"
+  const names = destinations.map(a => (a.split(/\s+/).find(t=>/[시군]$/.test(t)) || '').replace(/(특별자치시|특별시|광역시|시|군)$/, ''));
+  return [...new Set(names.filter(Boolean))].join('·');
+}
+function expSetName(el){   // 이름 칸이 두 곳(출장신청서용·전표용)이라 한쪽에 적으면 다른 쪽도 맞춘다
+  expWho.name = el.value;
+  ['expApplicantName','expVoucherName'].forEach(id=>{ const o = document.getElementById(id); if(o && o!==el) o.value = el.value; });
+}
+function expVoucherAdd(){
+  const r = expLastResult, msg = document.getElementById('expVoucherAddMsg');
+  const region = document.getElementById('expRegion').value.trim();
+  if(!region){ msg.innerHTML = expErrorBox('출장지역을 적어 주세요. (예: 수원)'); return; }
+  if(expVoucher.some(t=>t.src===r)){ msg.textContent = '이미 담은 계산입니다. 아래 목록을 확인해 주세요.'; return; }
+  expVoucher.push({ src:r, date:r.trip_date, region, count:r.destinations.length, km:r.total_distance_km, fuel_cost:r.fuel_cost, allowance:r.daily_allowance });
+  msg.textContent = '아래 "회계전표 입력용 목록"에 담았습니다.';
+  expVoucherRender();
+}
+function expVoucherRemove(i){
+  expVoucher.splice(i,1);
+  expVoucherRender();
+}
+function expVoucherRender(){
+  const wrap = document.getElementById('expVoucherWrap');
+  if(!wrap) return;
+  const won = n => n.toLocaleString('ko-KR');
+  const total = expVoucher.reduce((sum,t)=>sum+t.fuel_cost+t.allowance, 0);
+  const rows = expVoucher.map((t,i)=>`<tr><td>${t.date.slice(5).replace('-','/')}</td><td>${escapeHtml(t.region)} · ${t.count}건 · ${t.km}km</td><td class="num">${won(t.fuel_cost)}</td><td class="num">${won(t.allowance)}</td>
+      <td class="num"><span style="font-size:var(--fs-xs); font-weight:600; color:var(--danger); cursor:pointer;" onclick="expVoucherRemove(${i})">삭제</span></td></tr>`).join('');
+  wrap.innerHTML = `
+  <div class="card">
+    <div class="card-title">회계전표 입력용 목록</div>
+    <div class="field-row">
+      <div class="field"><label for="expVoucherName">신청자 이름</label><input id="expVoucherName" value="${escapeHtml(expWho.name)}" oninput="expSetName(this)" placeholder="예: 홍길동"/></div>
+      <div class="field"><label for="expVoucherTeam">귀속부서</label>
+        <select id="expVoucherTeam" onchange="expWho.team=this.value"><option value="">부서를 골라 주세요</option>${ORG_TREE.flatMap(d=>d.teams).map(t=>`<option ${t===expWho.team?'selected':''}>${escapeHtml(t)}</option>`).join('')}</select>
+      </div>
+    </div>
+    ${expVoucher.length ? `
+    <table><thead><tr><th>출장일</th><th>지역 · 건수 · 거리</th><th class="num">유류비</th><th class="num">활동비</th><th></th></tr></thead><tbody>
+      ${rows}
+      <tr><td colspan="2"><b>합계 (미지급금)</b></td><td class="num" colspan="2"><b>${won(total)}원</b></td><td></td></tr>
+    </tbody></table>
+    <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:14px;">
+      <span class="btn primary" onclick="expVoucherDownload()">${icon('download')} 전표 엑셀 내려받기</span>
+      <span class="btn" onclick="expVoucherCopy()">${icon('file')} 표 복사 (엑셀 없이 바로 붙여넣기)</span>
+    </div>` : `<div class="placeholder-note">경비를 계산한 뒤 "전표에 담기"를 누르면 여기에 쌓입니다. 여러 건을 담아 한 번에 내려받을 수 있습니다. 화면을 닫으면 목록은 사라집니다.</div>`}
+    <div id="expVoucherMsg" style="margin-top:12px;"></div>
+  </div>`;
+}
+function expVoucherPayload(){   // 이름·부서가 비었으면 안내하고 null
+  const msg = document.getElementById('expVoucherMsg');
+  if(!expWho.name.trim() || !expWho.team){ msg.innerHTML = expErrorBox('신청자 이름과 귀속부서를 먼저 적어 주세요.'); return null; }
+  msg.innerHTML = '';
+  return { applicant:expWho.name.trim(), team:expWho.team, trips:expVoucher.map(({region,count,km,fuel_cost,allowance})=>({region,count,km,fuel_cost,allowance})) };
+}
+async function expVoucherDownload(){
+  const payload = expVoucherPayload();
+  if(!payload) return;
+  try{ await expSaveFile('voucher', payload); }
+  catch(err){ document.getElementById('expVoucherMsg').innerHTML = expErrorBox(err.message); }
+}
+async function expVoucherCopy(){
+  const payload = expVoucherPayload();
+  if(!payload) return;
+  const msg = document.getElementById('expVoucherMsg');
+  try{
+    const res = await fetch('/api/voucher', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
+    const data = await res.json();
+    if(!res.ok) throw new Error(data.error || '전표 줄을 만들지 못했습니다.');
+    try{ await navigator.clipboard.writeText(data.rows.map(row=>row.join('\t')).join('\r\n')); }
+    catch(_){ throw new Error('복사하지 못했습니다. "전표 엑셀 내려받기"를 이용해 주세요.'); }
+    msg.innerHTML = `<div class="placeholder-note">${data.rows.length}줄을 복사했습니다. ERP 전표 입력창 첫 줄의 계정과목 칸을 누르고 붙여넣기(Ctrl+V) 하세요.</div>`;
+  }catch(err){
+    msg.innerHTML = expErrorBox(err.message);
+  }
+}
+function expSelfCheck(){   // 브라우저 콘솔에서 expSelfCheck() 실행
+  const ok = (c,msg)=>{ if(!c) throw new Error('expSelfCheck 실패: '+msg); };
+  ok(expRegionOf(['경기도 수원시 신원로88'])==='수원', '시 이름만');
+  ok(expRegionOf(['부산광역시 해운대구 센텀로 1','경기도 평택시 중앙로 1','경기도 평택시 평택로 2'])==='부산·평택', '광역시·같은 지역은 한 번');
+  ok(expRegionOf(['충청북도 음성군 대소면'])==='음성', '군 이름');
+  ok(expRegionOf(['출장지 1','출장지 2'])==='', '거리 직접 입력은 빈칸(직접 적음)');
+  return 'expSelfCheck 통과';
 }
 
 /* ---------------- 규정 검색 ----------------

@@ -20,7 +20,7 @@ from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 from app_config import get_fuel_price_label, get_fuel_price_unit, get_fuel_type_label
-from services.calculator import TripCalculationResult, get_allowance_reason, get_vehicle_type_label
+from services.calculator import VOUCHER_HEADERS, TripCalculationResult, get_allowance_reason, get_vehicle_type_label
 
 _KOREAN_FONT_CANDIDATES = [
     "/usr/share/fonts/truetype/nanum/NanumGothic.ttf",
@@ -173,6 +173,24 @@ def export_to_excel(result: TripCalculationResult) -> bytes:
     buffer = io.BytesIO()
     wb.save(buffer)
     buffer.seek(0)
+    return buffer.getvalue()
+
+
+def export_voucher(rows: list[list[Any]]) -> bytes:
+    """회계전표 입력용 Excel. 1행은 칸 이름, 2행부터 복사해 ERP 전표 입력창에 붙여넣는다."""
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "전표입력"
+    ws.append(VOUCHER_HEADERS)
+    for cell in ws[1]:
+        cell.font = Font(bold=True)
+    for row in rows:
+        ws.append(row)
+    for column, width in zip("ABCDEFGH", (18, 10, 20, 12, 12, 36, 10, 14)):
+        ws.column_dimensions[column].width = width
+
+    buffer = io.BytesIO()
+    wb.save(buffer)
     return buffer.getvalue()
 
 
