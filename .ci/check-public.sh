@@ -4,7 +4,7 @@
 # public 폴더 안의 파일은 인터넷에 그대로 공개된다.
 set -uo pipefail
 
-ALLOWED_EXT="html|css|js|png|jpg|jpeg|gif|svg|ico|webp|woff|woff2|ttf|pdf"
+ALLOWED_EXT="html|css|js|png|jpg|jpeg|gif|svg|ico|webp|woff|woff2|ttf|pdf|webmanifest"
 FOUND=0
 
 if [ ! -d public ]; then
