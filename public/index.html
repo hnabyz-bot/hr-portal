@@ -251,6 +251,11 @@
   @keyframes fxWave{ 0%{transform:translate(-50%,-50%) scale(.5); opacity:0} 30%{opacity:.9} 100%{transform:translate(-130%,-50%) scale(1.5); opacity:0} }
   .fx-shine{ inset:0; background:linear-gradient(105deg,transparent 40%,rgba(255,255,255,.55) 50%,transparent 60%); background-size:250% 100%; animation:fxShine 3.6s ease-in-out infinite; }
   @keyframes fxShine{ 0%,40%{background-position:120% 0} 100%{background-position:-60% 0} }
+  /* 조사 배너: 흰 국화 꽃잎이 한 장씩 천천히 떨어진다 (꽃잎 자리는 --x,--y) */
+  .fx-petal{ inset:0; opacity:0; animation:fxFall 18s linear infinite; }
+  .fx-petal::before{ content:""; position:absolute; left:var(--x); top:var(--y); width:3.2%; aspect-ratio:2/3; background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 36'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='.15' y1='0' x2='.85' y2='1'%3E%3Cstop offset='.25' stop-color='%23fff'/%3E%3Cstop offset='1' stop-color='%23E2DED6'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath d='M11 2C5 8 2 18 5 27c2 6 9 8 13 4 5-5 3-19-7-29Z' fill='url(%23g)'/%3E%3Cpath d='M11 6c0 8 1 16 3 23' fill='none' stroke='%23D5D0C6' stroke-width='1' stroke-linecap='round' opacity='.7'/%3E%3C/svg%3E") center/contain no-repeat; filter:drop-shadow(0 1px 1.5px rgba(40,44,52,.3)); animation:fxSway 3s ease-in-out infinite alternate; }
+  @keyframes fxFall{ 0%{transform:translateY(0); opacity:0} 2%,26%{opacity:1} 31%,100%{transform:translateY(72%); opacity:0} }
+  @keyframes fxSway{ 0%{transform:translateX(-80%) rotate(-38deg)} 100%{transform:translateX(80%) rotate(30deg)} }
   .celeb-person{ display:grid; grid-template-columns:40px minmax(0,1fr); gap:12px; padding:12px 0; border-bottom:1px solid var(--border); }
   .celeb-person:last-child{ border-bottom:none; }
   .celeb-av{ width:40px; height:40px; border-radius:var(--radius); background:var(--accent-light); color:var(--accent); display:flex; align-items:center; justify-content:center; font-weight:700; }
@@ -1831,7 +1836,7 @@ const CELEB = [
   { key:'birthday',    label:'생일 축하',     img:'birthday',    fx:'<span class="fx fx-flame" style="left:70.7%;top:25%"></span><span class="fx fx-flame" style="left:77.8%;top:15.5%;animation-delay:.15s"></span><span class="fx fx-flame" style="left:84.5%;top:26%;animation-delay:.3s"></span><span class="fx fx-spark" style="left:93%;top:40%;animation-delay:.4s"></span>' },
   { key:'anniversary', label:'입사 N주년',    img:'anniversary', fx:'<span class="fx fx-heart" style="left:58%;top:62%">♥</span><span class="fx fx-heart" style="left:90%;top:55%;animation-delay:1s;font-size:11px">♥</span><span class="fx fx-heart" style="left:72%;top:35%;animation-delay:2s;color:#B58CFF">♥</span>' },
   { key:'joy',         label:'야호 경사',     img:'joy',         fx:'<span class="fx fx-wave" style="left:59%;top:44%"></span><span class="fx fx-wave" style="left:59%;top:44%;animation-delay:.5s"></span><span class="fx fx-wave" style="left:59%;top:44%;animation-delay:1s"></span><span class="fx fx-spark" style="left:86%;top:20%;animation-delay:.6s"></span>' },
-  { key:'condol',      label:'토닥토닥 조사', img:'condolence',  fx:'' },   // 조사(부고)에는 움직이는 효과를 넣지 않는다
+  { key:'condol',      label:'토닥토닥 조사', img:'condolence',  fx:'<span class="fx fx-petal" style="--x:63%;--y:36%"></span><span class="fx fx-petal" style="--x:84%;--y:40%;animation-delay:6s"></span><span class="fx fx-petal" style="--x:72%;--y:50%;animation-delay:12s"></span>' },
 ];
 
 /* 시연용 입사일·생일 — 오늘 기준으로 만들어 배너가 늘 보이게 한다 (가상 값) */
