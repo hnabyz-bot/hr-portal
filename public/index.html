@@ -173,9 +173,23 @@
   .btn:disabled{ opacity:.45; cursor:not-allowed; }
   .btn.sm{ font-size:var(--fs-xs); padding:5px 10px; }
   /* 경비 산출기 — 파란색을 줄이고 사이트의 따뜻한 색만 쓴다 (노랑·초록 = 홈 빠른 서비스, 살구 = 마감 임박) */
-  .exp-head{ display:flex; align-items:center; gap:12px; margin-bottom:16px; }
+  /* 제목 줄 = 도로. 자동차가 나무 두 그루 앞에서 쉬다가 왼쪽으로 나가고, 오른쪽에서 들어와 제목 뒤를 지나 돌아온다.
+     카드 양 끝에서 잘리도록 제목 줄을 카드 안쪽 여백만큼 넓혔다(.card 여백 18px 20px 과 같아야 한다). */
+  .exp-head{ display:flex; align-items:center; gap:12px; margin:-18px -20px 16px; padding:18px 20px 0; overflow:hidden; container-type:inline-size; }
   .exp-head .card-title{ margin:0; }
-  .exp-car{ width:48px; height:48px; border-radius:50%; background:#FFE9BF; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+  .exp-sign{ position:relative; z-index:1; align-self:stretch; display:flex; flex-direction:column; justify-content:center; padding:0 10px 0 4px; background:var(--surface); }
+  .exp-car{ position:relative; width:54px; height:48px; flex-shrink:0; }
+  .exp-car > img{ position:absolute; }   /* 나무 (차 뒤) */
+  .exp-drive{ position:absolute; left:10px; top:14px; display:flex; animation:expDrive 14s infinite; }
+  .exp-drive img{ animation:expBounce .36s ease-in-out infinite alternate; }
+  .exp-drive::before, .exp-drive::after{ content:""; position:absolute; left:100%; bottom:3px; width:9px; height:9px; border-radius:50%; background:#B9C0CA; opacity:0;
+    animation:expPuff 1s ease-out infinite, expSmoke 14s step-end infinite; }
+  .exp-drive::after{ animation-delay:.5s, 0s; }
+  @keyframes expDrive{ 0%,40%{ translate:0; animation-timing-function:ease-in; } 46%{ translate:-70px; animation-timing-function:step-end; }
+    46.01%{ translate:calc(100cqw + 20px); animation-timing-function:ease-out; } 100%{ translate:0; } }   /* 5.6초 쉼 → 나감 → 7.5초 동안 돌아옴 */
+  @keyframes expBounce{ to{ transform:translateY(-1.5px); } }
+  @keyframes expPuff{ 0%{ transform:scale(.4); opacity:.75; } 100%{ transform:translate(14px,-12px) scale(1.5); opacity:0; } }
+  @keyframes expSmoke{ 0%{ visibility:hidden; } 40%{ visibility:visible; } }   /* 연기는 달릴 때만 */
   .btn.exp-yongin{ background:#FFF4DE; border-color:#FFD9A0; color:#8A5A00; }
   .btn.exp-yongin:hover{ background:#FFE9BF; border-color:#FFD9A0; }
   .btn.exp-suwon{ background:var(--bg-success); border-color:#A9D9BD; color:var(--success); }
@@ -725,8 +739,8 @@ function expenseCalculator(){
   return `
   <div class="card">
     <div class="exp-head">
-      <div class="exp-car"><img src="img/quick/car.png" alt="" width="34" height="34"></div>
-      <div><div class="card-title">출장경비 자동 산출기</div><div class="list-sub">자차 출장의 유류비와 활동비를 계산합니다</div></div>
+      <div class="exp-car"><img src="img/quick/tree.png" alt="" width="46" height="46" style="left:-6px; top:0;"><img src="img/quick/pine.png" alt="" width="40" height="40" style="left:21px; top:6px;"><span class="exp-drive"><img src="img/quick/car.png" alt="" width="34" height="34"></span></div>
+      <div class="exp-sign"><div class="card-title">출장경비 자동 산출기</div><div class="list-sub">자차 출장의 유류비와 활동비를 계산합니다</div></div>
     </div>
     <div class="field-row">
       <div class="field"><label>출장일자</label><input id="expDate" type="date" value="${today}"/></div>
