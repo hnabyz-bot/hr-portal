@@ -7,8 +7,12 @@
 <link rel="icon" href="favicon.ico?v=2" sizes="48x48">
 <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png?v=2">
 <link rel="icon" type="image/png" sizes="16x16" href="favicon-16x16.png?v=2">
-<link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
+<link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png?v=3">
 <link rel="manifest" href="site.webmanifest">
+<meta name="theme-color" content="#ffffff">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="인사포털">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
 <style>
   /* 배색: 사용자 지정 6색(#D2EEFA #A3D8F1 #54A6E1 #255DAA #DE525E #FCE0D4) 기준.
@@ -159,6 +163,31 @@
   .hero-banner::after{ width:130px; height:130px; right:110px; bottom:-70px; background:var(--bg-warning); }
   .hero-title{ font-size:var(--fs-xl); font-weight:800; color:var(--text-primary); line-height:1.4; letter-spacing:-0.02em; margin:0 0 6px; position:relative; z-index:1; }
   .hero-sub{ font-size:var(--fs-sm); color:#3A4A5E; position:relative; z-index:1; }
+  /* 홈 배너의 "휴대폰에 설치" 버튼과 그 안내창 */
+  .hero-install{ position:absolute; z-index:2; right:28px; top:50%; transform:translateY(-50%); display:inline-flex; align-items:center; gap:8px;
+    padding:11px 18px; border:0; border-radius:999px; background:#fff; color:var(--accent); font-family:inherit; font-size:var(--fs-md); font-weight:700;
+    cursor:pointer; box-shadow:0 6px 18px rgba(37,93,170,.22); }
+  .hero-install:hover{ background:var(--accent-soft); }
+  .hero-install svg{ width:18px; height:18px; }
+  .org-modal .card:has(.inst-qr){ max-width:560px; }
+  .inst{ word-break:keep-all; }
+  .inst-body{ display:flex; gap:22px; align-items:flex-start; }
+  .inst-qr{ flex:none; width:188px; text-align:center; font-size:var(--fs-xs); color:var(--text-muted); }
+  .inst-qr svg{ display:block; width:100%; height:auto; margin-bottom:8px; padding:8px; box-sizing:border-box; border:1px solid var(--border); border-radius:var(--radius); background:#fff; }
+  .inst-steps{ flex:1; min-width:0; margin:0; padding:0; list-style:none; }
+  .inst-steps li{ display:flex; gap:10px; padding:9px 0; border-bottom:1px solid var(--border); line-height:1.5; }
+  .inst-steps li:last-child{ border-bottom:0; }
+  .inst-steps li > i{ flex:none; width:22px; height:22px; margin-top:1px; border-radius:50%; background:var(--accent); color:#fff; font-style:normal; font-size:12px; font-weight:700;
+    display:flex; align-items:center; justify-content:center; }
+  .inst-sub{ margin:12px 0 0; font-size:var(--fs-sm); font-weight:700; color:var(--text-secondary); }
+  .inst-tabs{ display:flex; gap:6px; }
+  .inst-tabs button{ flex:1; min-height:44px; border:1px solid var(--border); border-radius:var(--radius-sm); background:var(--surface); color:var(--text-secondary);
+    font-family:inherit; font-size:var(--fs-md); font-weight:600; cursor:pointer; }
+  .inst-tabs button[aria-pressed="true"]{ background:var(--accent-light); border-color:var(--accent-light); color:var(--accent); font-weight:700; }
+  .inst-app{ display:flex; align-items:center; gap:12px; margin-top:14px; padding:10px 12px; border-radius:var(--radius); background:var(--bg-page); font-size:var(--fs-sm); color:var(--text-secondary); }
+  .inst-app figure{ flex:none; margin:0; text-align:center; font-size:11px; color:var(--text-primary); }
+  .inst-app img{ display:block; width:52px; height:52px; margin:0 auto 4px; border-radius:14px; box-shadow:0 2px 8px rgba(27,36,51,.18); }
+  .inst-note{ margin-top:12px; padding:8px 10px; border-radius:var(--radius-sm); background:var(--bg-warning); color:var(--warning); font-size:var(--fs-xs); line-height:1.5; }
   .field-row{ display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-bottom:14px; }
   .field label{ display:block; font-size:var(--fs-xs); font-weight:600; color:var(--text-secondary); margin-bottom:6px; }
   .field input, .field select, .field textarea{
@@ -540,6 +569,7 @@
     .hero-banner{ padding:20px; }
     .hero-banner::before{ width:150px; height:150px; right:-60px; top:-60px; }
     .hero-banner::after{ display:none; }
+    .hero-install{ position:relative; right:auto; top:auto; transform:none; margin-top:14px; min-height:44px; padding:9px 16px; font-size:var(--fs-sm); }
     .quick-grid{ grid-template-columns:repeat(3,1fr); }
     .grid.g2, .grid.g3, .grid.g4{ grid-template-columns:1fr; }
     .field-row{ grid-template-columns:1fr; }
@@ -669,6 +699,7 @@ const ICONS = {
   eyeOff:'<path d="M17.9 17.9A10.1 10.1 0 0 1 12 20c-7 0-11-8-11-8a18.5 18.5 0 0 1 5.1-5.9"/><path d="M9.9 4.2A9.1 9.1 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.2 3.2"/><line x1="1" y1="1" x2="23" y2="23"/>',
   flag:'<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/>',
   monitor:'<rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/>',
+  mobile:'<rect x="7" y="2" width="10" height="20" rx="2"/><path d="M11 18h2"/>',
   coffee:'<path d="M18 8h1a4 4 0 0 1 0 8h-1"/><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"/><line x1="6" y1="1" x2="6" y2="4"/><line x1="10" y1="1" x2="10" y2="4"/><line x1="14" y1="1" x2="14" y2="4"/>',
 };
 function icon(name, cls=''){ return `<svg class="${cls}" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICONS[name]}</svg>`; }
@@ -688,6 +719,7 @@ function homeContent(){
   <div class="hero-banner">
     <h2 class="hero-title">함께 만드는 성장,<br>더 편리해지는 인사업무</h2>
     <div class="hero-sub">H&abyz 인사포털에서 급여·출장·평가·규정을 한 곳에서 확인하세요</div>
+    <button type="button" class="hero-install" onclick="installNotice()">${icon('mobile')}휴대폰에 설치</button>
   </div>
   <div class="card" style="margin-bottom:14px;">
     <div class="card-title">빠른 서비스</div>
@@ -3197,6 +3229,41 @@ function evResultContent(){
     <div class="list-sub">시연용 가상 결과입니다. 결과를 보려면 HR로 바꿔 "시연: 확정 상태로 채우기" → "전 직원에게 결과 공개"를 누르세요. 지난 연도 결과도 가상 값입니다.</div>`;
 }
 
+/* ---------------- 휴대폰에 설치 (홈 화면에 바로가기) ----------------
+   2026-10-08 인사담당자 지시. PC에서는 포털 주소 QR을, 휴대폰에서는 갤럭시·아이폰별 "홈 화면에 추가" 순서를 보여 준다.
+   앱 장터에서 받는 앱이 아니라 사이트 바로가기다 — 아이콘·이름·여는 방식은 site.webmanifest 가 정한다.
+   QR은 운영 주소 하나를 미리 바꿔 둔 무늬다(행마다 1=검은 칸). 주소가 바뀌면 다시 만든다 — 만드는 법은 CLAUDE.md. */
+const INSTALL_QR = '1111111001110110001111111|1000001010101000001000001|1011101011110011101011101|1011101011011101101011101|1011101001110000101011101|1000001000011100101000001|1111111010101010101111111|0000000010100000100000000|1000001011111100011001110|0011010010110111110111110|1011001111010111001001011|1000000000000001000011001|1111011111111000011100001|1001100011100011100100010|1011111110011111110111011|1000010100010000100101101|1011101101111110111110100|0000000010001101100010000|1111111000110000101010001|1000001000010011100010011|1011101000111111111110100|1011101000111000011000011|1011101001100101000001101|1000001000111000101110001|1111111010001000101001001';
+function installQrSvg(){
+  const rows = INSTALL_QR.split('|'), n = rows.length, q = 4;   // q = 둘레 흰 여백(칸). 없으면 카메라가 못 읽는다
+  let d = ''; rows.forEach((row, r)=>[...row].forEach((b, c)=>{ if(b==='1') d += `M${c+q} ${r+q}h1v1h-1z`; }));
+  return `<svg viewBox="0 0 ${n+2*q} ${n+2*q}" shape-rendering="crispEdges" role="img" aria-label="인사포털 주소 QR"><rect width="100%" height="100%" fill="#fff"/><path d="${d}" fill="#1B2433"/></svg>`;
+}
+const INSTALL_STEPS = {
+  galaxy: ['갤럭시', [
+    ['삼성 인터넷으로 열렸을 때', ['화면 아래쪽 <b>메뉴(≡)</b>를 누릅니다.', '<b>현재 페이지 추가</b>를 누릅니다.', '<b>홈 화면</b>을 고르고 <b>추가</b>를 누릅니다.']],
+    ['크롬으로 열렸을 때', ['화면 오른쪽 위 <b>⋮</b>를 누릅니다.', '<b>홈 화면에 추가</b>(또는 앱 설치)를 누릅니다.', '<b>설치</b>(또는 추가)를 누릅니다.']],
+  ]],
+  iphone: ['아이폰', [
+    ['사파리로 열렸을 때', ['화면 아래쪽 <b>공유 버튼</b>(네모에서 화살표가 위로 나가는 모양)을 누릅니다.', '목록을 위로 올려 <b>홈 화면에 추가</b>를 누릅니다.', '오른쪽 위 <b>추가</b>를 누릅니다.']],
+  ]],
+};
+function installNotice(tab){
+  const head = t=>`<div class="card-title"><span>${t}</span><button type="button" class="x-btn" onclick="orgCloseModal()" aria-label="닫기">${icon('x')}</button></div>`;
+  const steps = list=>`<ol class="inst-steps">${list.map((t, i)=>`<li><i>${i+1}</i><span>${t}</span></li>`).join('')}</ol>`;
+  const app = `<div class="inst-app"><figure><img src="android-chrome-192x192.png?v=3" alt="" width="52" height="52">인사포털</figure><span>설치하면 휴대폰 홈 화면에 <b>회사 리본 아이콘</b>이 생깁니다.</span></div>`;
+  if(!isPhone()) return orgModal(`<div class="inst">${head('휴대폰에 인사포털 설치')}
+    <div class="inst-body"><div class="inst-qr">${installQrSvg()}휴대폰 카메라로 찍어 주세요</div>
+      ${steps(['휴대폰 <b>기본 카메라</b>로 왼쪽 QR을 찍습니다.', '열린 인사포털에서 <b>휴대폰에 설치</b>를 누릅니다. 갤럭시·아이폰에 맞는 순서가 나옵니다.', '홈 화면에 생긴 아이콘으로 바로 들어옵니다.'])}</div>
+    ${app}<div class="inst-note">카카오톡으로 QR을 찍으면 설치가 되지 않습니다. 휴대폰 기본 카메라로 찍어 주세요.</div></div>`);
+  tab = tab || (/iPhone|iPad|iPod/.test(navigator.userAgent) ? 'iphone' : 'galaxy');
+  orgModal(`<div class="inst">${head('이 휴대폰에 설치하기')}
+    <div class="inst-tabs">${Object.keys(INSTALL_STEPS).map(k=>`<button type="button" aria-pressed="${k===tab}" onclick="installNotice('${k}')">${INSTALL_STEPS[k][0]}</button>`).join('')}</div>
+    ${INSTALL_STEPS[tab][1].map(g=>`<p class="inst-sub">${g[0]}</p>${steps(g[1])}`).join('')}
+    ${app}<div class="inst-note">카카오톡 안에서 열린 화면에서는 설치가 되지 않습니다. 메뉴에서 <b>다른 브라우저로 열기</b>를 먼저 눌러 주세요.</div>
+    <button type="button" class="btn primary" style="width:100%; justify-content:center; margin-top:14px;" onclick="orgCloseModal()">확인</button></div>`);
+}
+
 /* ---------------- 탕비실 ----------------
    게임 "X-ray 특공대"는 public/xray/ 에 따로 있는 화면이다(그림·음악·글꼴 포함). 게임 코드를 이 파일에 섞지 않는다.
    포털 안에 창(iframe)으로 띄우지 않고 그 주소로 바로 보낸다 — iframe 안에서는 휴대폰 "폰에 설치"가 안 된다(게임 원본의 연결 안내).
@@ -3296,7 +3363,8 @@ function renderSidebar(){
    휴대폰 기준은 화면이 휴대폰 배치로 바뀌는 폭(768px)과 같다. 들어오는 길(왼쪽 메뉴·홈 KPI 아이콘·홈 KPI 카드)이
    전부 selectNav를 거치므로 여기 한 곳에서 막는다. 화면만 막는 안내다 — 데이터 보호는 로그인 이후 서버에서 한다. */
 const PC_ONLY_NAV = 'perf';
-function pcOnlyBlocked(id){ return id===PC_ONLY_NAV && matchMedia('(max-width:768px)').matches; }
+function isPhone(){ return matchMedia('(max-width:768px)').matches; }   // 휴대폰 배치로 바뀌는 폭과 같다
+function pcOnlyBlocked(id){ return id===PC_ONLY_NAV && isPhone(); }
 function pcOnlyNotice(){
   closeSidebar();
   orgModal(`<div style="text-align:center; padding:8px 2px 0; word-break:keep-all;">
