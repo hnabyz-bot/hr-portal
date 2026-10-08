@@ -55,7 +55,7 @@ jobs:
             exit 1
           fi
 
-          if ! grep -q "인사 통합포털" /tmp/page.html; then
+          if ! grep -q "인사포털" /tmp/page.html; then
             echo "[실패] 응답은 왔지만 내용이 예상과 다릅니다."
             head -20 /tmp/page.html
             exit 1
