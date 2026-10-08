@@ -135,7 +135,7 @@
   .btn svg{ width:15px; height:15px; flex-shrink:0; }
   .btn.primary{ background:var(--accent); color:#fff; border-color:var(--accent); }
   .btn.primary:hover{ background:var(--accent-hover); border-color:var(--accent-hover); }
-  .quick-grid{ display:grid; grid-template-columns:repeat(5,1fr); gap:10px; }
+  .quick-grid{ display:grid; grid-template-columns:repeat(6,1fr); gap:10px; }
   .quick-btn{ display:flex; flex-direction:column; align-items:center; gap:8px; padding:6px 0;
     text-align:center; cursor:pointer; border-radius:var(--radius); }
   .quick-btn .qicon{ width:64px; height:64px; border-radius:50%;
@@ -143,6 +143,9 @@
   .quick-btn .qicon img{ width:40px; height:40px; }
   .quick-btn:hover .qicon{ transform:translateY(-3px) scale(1.04); }
   .quick-btn .qlabel{ font-size:var(--fs-sm); font-weight:600; color:var(--text-primary); }
+  /* 탕비실 게임 창 — 내용 영역 높이를 꽉 채운다 */
+  .pantry-game{ height:100%; min-height:420px; display:flex; flex-direction:column; gap:8px; }
+  .pantry-game iframe{ flex:1; min-height:0; width:100%; border:0; border-radius:var(--radius); background:#061131; }
   .hero-banner{
     background:var(--accent-light);
     border-radius:var(--radius-lg); padding:28px 32px; margin-bottom:14px;
@@ -659,6 +662,7 @@ const ICONS = {
   eye:'<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>',
   eyeOff:'<path d="M17.9 17.9A10.1 10.1 0 0 1 12 20c-7 0-11-8-11-8a18.5 18.5 0 0 1 5.1-5.9"/><path d="M9.9 4.2A9.1 9.1 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.2 3.2"/><line x1="1" y1="1" x2="23" y2="23"/>',
   flag:'<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/>',
+  coffee:'<path d="M18 8h1a4 4 0 0 1 0 8h-1"/><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"/><line x1="6" y1="1" x2="6" y2="4"/><line x1="10" y1="1" x2="10" y2="4"/><line x1="14" y1="1" x2="14" y2="4"/>',
 };
 function icon(name, cls=''){ return `<svg class="${cls}" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICONS[name]}</svg>`; }
 
@@ -671,6 +675,7 @@ function homeContent(){
     ['rule','규정 검색','#E8F1FF','#BCD4FA','rule','r1'],
     ['kpi','KPI','#FFECEC','#FBC2C2','perf','e1'],
     ['people','구성원 검색','#F1EDFF','#D3C8FA','org','o2'],
+    ['zombie','X-ray 특공대','#F6FBDD','#D5EDA4','pantry','g1'],
   ];
   return `
   <div class="hero-banner">
@@ -3185,6 +3190,16 @@ function evResultContent(){
     <div class="list-sub">시연용 가상 결과입니다. 결과를 보려면 HR로 바꿔 "시연: 확정 상태로 채우기" → "전 직원에게 결과 공개"를 누르세요. 지난 연도 결과도 가상 값입니다.</div>`;
 }
 
+/* ---------------- 탕비실 ----------------
+   게임 "X-ray 특공대"는 public/xray/ 에 따로 있는 화면이다(그림·음악·글꼴 포함). 포털에는 창(iframe)으로만 띄우고
+   게임 코드를 이 파일에 섞지 않는다. 게임 기록(점수·출동권)은 각자 브라우저에만 저장된다 — 실제 사내 랭킹은 로그인 이후. */
+function pantryGame(){
+  return `<div class="pantry-game">
+    <iframe src="xray/" title="X-ray 특공대 게임"></iframe>
+    <div class="list-sub">화면이 작으면 <a href="xray/" target="_blank" rel="noopener">새 창에서 크게 열기</a> · 휴대폰은 새 창으로 열어 가로로 돌리면 편해요</div>
+  </div>`;
+}
+
 /* ---------------- NAV DATA ---------------- */
 const NAV = [
   { id:'home', label:'홈', icon:'home', tabs:[ {id:'dash', label:'대시보드', render:homeContent} ] },
@@ -3209,6 +3224,9 @@ const NAV = [
   { id:'org', label:'조직도', icon:'network', tabs:[
       {id:'o1', label:'부서별 조직도', render:orgChart},
       {id:'o2', label:'구성원 검색', render:memberSearch},
+  ]},
+  { id:'pantry', label:'탕비실', icon:'coffee', tabs:[
+      {id:'g1', label:'X-ray 특공대', render:pantryGame},
   ]},
   { id:'mypage', label:'마이페이지', icon:'settings', tabs:[
       {id:'m1', label:'개인정보', render:comingSoon},
