@@ -3192,12 +3192,17 @@ function evResultContent(){
    포털 안에 창(iframe)으로 띄우지 않고 그 주소로 바로 보낸다 — iframe 안에서는 휴대폰 "폰에 설치"가 안 된다(게임 원본의 연결 안내).
    게임 기록(점수·출동권)은 각자 브라우저에만 저장된다 — 실제 사내 랭킹은 로그인 이후. */
 function pantryGame(){
-  return `<div class="card" style="text-align:center; padding:28px 20px;">
-    <a href="xray/"><img src="xray/assets/title.webp" alt="X-ray 특공대 게임 열기" width="1280" height="720" style="width:min(520px,100%); height:auto; border-radius:var(--radius);"></a>
-    <div style="font-size:var(--fs-lg); font-weight:700; margin-top:14px;">X-ray 특공대</div>
-    <div class="list-sub">좀비를 찍으면 해골만 남는다 · 점심시간과 퇴근 후에 즐겨 주세요</div>
-    <a class="btn primary" href="xray/" style="margin-top:14px; text-decoration:none;">게임 열기</a>
+  // 오픈시간은 게임(public/xray/index.html)의 OPEN_ROWS 와 같아야 한다 — 게임에서 시간을 바꾸면 여기도 고친다
+  const hours = [['평일 점심','12:00~13:30'], ['오후 휴식','15:30~16:00'], ['퇴근 후','18:00~다음날 9:00'], ['주말','하루 종일']];
+  return `<div class="card" style="text-align:center; padding:28px 20px; margin-bottom:14px;">
+    <a href="xray/"><img src="img/pantry/xray-title.jpg" alt="X-ray 특공대 — 좀비를 찍으면 해골만 남는다 (게임 열기)" width="602" height="291" style="width:min(602px,100%); height:auto; border-radius:12px;"></a>
+    <div><a class="btn primary" href="xray/" style="margin-top:14px; text-decoration:none;">게임 열기</a></div>
     <div class="list-sub" style="margin-top:12px;">휴대폰은 게임 화면에서 "폰에 설치"를 누르면 홈 화면에 아이콘이 생겨요 · 포털로 돌아올 때는 뒤로 가기</div>
+  </div>
+  <div class="card" style="max-width:520px; margin:0 auto;">
+    <div class="card-title">게임 오픈시간</div>
+    ${hours.map(h=>`<div class="list-row"><span>${h[0]}</span><b>${h[1]}</b></div>`).join('')}
+    <div class="list-sub" style="margin-top:8px;">근무시간에는 새 게임을 시작할 수 없고, 하던 판은 지금 구역까지만 하고 끝나요. 점수는 그대로 기록돼요.</div>
   </div>`;
 }
 
