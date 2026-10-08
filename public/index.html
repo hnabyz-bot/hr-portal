@@ -80,6 +80,12 @@
   .nav-badge{ margin-left:auto; min-width:18px; height:18px; padding:0 5px; border-radius:9px; background:var(--coral-text); color:#fff;
     font-size:var(--fs-xs); font-weight:700; line-height:18px; text-align:center; flex-shrink:0; }
   .subtab .nav-badge{ display:inline-block; margin-left:6px; vertical-align:1px; }
+  /* 휴대폰에서 열지 않는 메뉴(평가·성과)의 "PC 전용" 표시 — 휴대폰 폭에서만 보인다 (아래 768px 블록) */
+  .nav-pc{ display:none; margin-left:auto; padding:2px 8px; border:1px solid var(--border); border-radius:999px; background:var(--bg-page);
+    color:var(--text-muted); font-size:11px; font-weight:700; white-space:nowrap; }
+  .pc-only-ic{ width:60px; height:60px; margin:0 auto 14px; border-radius:50%; background:var(--accent-soft); color:var(--accent);
+    display:flex; align-items:center; justify-content:center; }
+  .pc-only-ic svg{ width:30px; height:30px; }
   .sidebar-foot{
     padding:14px 20px; border-top:1px solid var(--border);
     color:var(--text-muted); font-size:var(--fs-xs); line-height:1.5;
@@ -526,6 +532,9 @@
     }
     .sidebar.open{ transform:translateX(0); }
     .sidebar.open ~ .sidebar-backdrop{ display:block; }
+    .nav-item.pc-only{ opacity:.55; }
+    .nav-item.pc-only .nav-pc{ display:inline-block; }
+    .nav-item.pc-only .nav-badge{ display:none; }
     .topbar{ padding:0 14px; gap:8px; }
     .content{ padding:16px 14px 32px 14px; }
     .hero-banner{ padding:20px; }
@@ -659,6 +668,7 @@ const ICONS = {
   eye:'<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>',
   eyeOff:'<path d="M17.9 17.9A10.1 10.1 0 0 1 12 20c-7 0-11-8-11-8a18.5 18.5 0 0 1 5.1-5.9"/><path d="M9.9 4.2A9.1 9.1 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.2 3.2"/><line x1="1" y1="1" x2="23" y2="23"/>',
   flag:'<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/>',
+  monitor:'<rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/>',
   coffee:'<path d="M18 8h1a4 4 0 0 1 0 8h-1"/><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"/><line x1="6" y1="1" x2="6" y2="4"/><line x1="10" y1="1" x2="10" y2="4"/><line x1="14" y1="1" x2="14" y2="4"/>',
 };
 function icon(name, cls=''){ return `<svg class="${cls}" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICONS[name]}</svg>`; }
@@ -3277,9 +3287,25 @@ function todoSelfCheck(){   // 브라우저 콘솔에서 todoSelfCheck() 실행 
 
 function renderSidebar(){
   document.getElementById('sidebarNav').innerHTML = NAV.map(n => `
-    <div class="nav-item ${n.id===currentNav.id?'active':''}" onclick="selectNav('${n.id}')" ${n.id===currentNav.id?'aria-current="page"':''}>
-      ${icon(n.icon)}<span>${n.label}</span>${navBadge(n.tabs.reduce((a,t)=>a+todoCount(t), 0))}
+    <div class="nav-item ${n.id===currentNav.id?'active':''}${n.id===PC_ONLY_NAV?' pc-only':''}" onclick="selectNav('${n.id}')" ${n.id===currentNav.id?'aria-current="page"':''}>
+      ${icon(n.icon)}<span>${n.label}</span>${n.id===PC_ONLY_NAV?'<b class="nav-pc">PC 전용</b>':''}${navBadge(n.tabs.reduce((a,t)=>a+todoCount(t), 0))}
     </div>`).join('');
+}
+/* ---------------- 휴대폰에서는 평가·성과를 열지 않는다 ----------------
+   2026-10-08 인사담당자 지시: 작성과 평가의 정확성을 위해 PC에서만 작업한다.
+   휴대폰 기준은 화면이 휴대폰 배치로 바뀌는 폭(768px)과 같다. 들어오는 길(왼쪽 메뉴·홈 KPI 아이콘·홈 KPI 카드)이
+   전부 selectNav를 거치므로 여기 한 곳에서 막는다. 화면만 막는 안내다 — 데이터 보호는 로그인 이후 서버에서 한다. */
+const PC_ONLY_NAV = 'perf';
+function pcOnlyBlocked(id){ return id===PC_ONLY_NAV && matchMedia('(max-width:768px)').matches; }
+function pcOnlyNotice(){
+  closeSidebar();
+  orgModal(`<div style="text-align:center; padding:8px 2px 0; word-break:keep-all;">
+    <div class="pc-only-ic">${icon('monitor')}</div>
+    <div style="font-size:18px; font-weight:700; margin-bottom:8px;">PC에서 이용해 주세요</div>
+    <div style="color:var(--text-secondary); line-height:1.65;">평가·성과 메뉴는 <b>PC에서만</b> 작업할 수 있습니다.</div>
+    <div style="margin:14px 0 18px; padding:10px 12px; border-radius:var(--radius); background:var(--bg-page); font-size:var(--fs-sm); color:var(--text-secondary); line-height:1.55;">작성과 평가의 <b style="color:var(--accent);">정확성</b>을 위해 휴대폰에서는 열리지 않습니다.</div>
+    <button type="button" class="btn primary" style="width:100%; justify-content:center;" onclick="orgCloseModal()">확인</button>
+  </div>`);
 }
 function renderSubtabs(){   // 탭이 하나뿐이면 비워 둔다 (CSS가 빈 탭 줄을 숨긴다)
   document.getElementById('subtabsRow').innerHTML = currentNav.tabs.length<2 ? '' : currentNav.tabs.map(t => `<div class="subtab ${t.id===currentTab.id?'active':''}" onclick="selectTab('${t.id}')" role="tab" aria-selected="${t.id===currentTab.id}">${t.label}${navBadge(todoCount(t))}</div>`).join('');
@@ -3290,6 +3316,7 @@ function renderContent(){   // 화면을 다시 그릴 때마다 메뉴·탭 숫
   renderSidebar(); renderSubtabs();
 }
 function selectNav(id){
+  if(pcOnlyBlocked(id)){ pcOnlyNotice(); return false; }
   currentNav = NAV.find(n=>n.id===id);
   currentTab = currentNav.tabs[0];
   renderContent();
@@ -3300,7 +3327,7 @@ function selectTab(id){
   renderContent();
 }
 function goTo(navId, tabId){
-  selectNav(navId);
+  if(selectNav(navId) === false) return;   // 휴대폰에서 막힌 메뉴 — 안내창만 뜬다
   if(tabId) selectTab(tabId);
 }
 function toggleSidebar(){ document.querySelector('.sidebar').classList.toggle('open'); }
