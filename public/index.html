@@ -4,9 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>H&abyz | 인사포털</title>
-<link rel="icon" href="favicon.ico" sizes="48x48">
-<link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
-<link rel="icon" type="image/png" sizes="16x16" href="favicon-16x16.png">
+<link rel="icon" href="favicon.ico?v=2" sizes="48x48">
+<link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png?v=2">
+<link rel="icon" type="image/png" sizes="16x16" href="favicon-16x16.png?v=2">
 <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
 <link rel="manifest" href="site.webmanifest">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
@@ -1818,7 +1818,7 @@ function kpiHomeCard(){
 /* ---------------- 경조사 배너 (홈) ----------------
    입사 환영·생일·입사 N주년은 직원 정보(입사일·생일)로 자동, 경사·조사는 HR이 본인 동의를 받고 등록.
    규칙: 입사 환영 = 입사 후 30일 / 생일 = 이번 주(월~일), 본인이 숨기면 제외 / N주년 = 이번 달, 1·3·5·10년 이후 5년마다.
-   배너 그림: public/img/banners (인사담당자 제작). 시연용 데이터는 브라우저 메모리에만 있다. */
+   배너 그림: public/img/banners (인사담당자 제작). 같은 이름으로 그림을 바꾸면 주소 끝의 ?v= 번호를 올린다(브라우저가 예전 그림을 기억하므로). 시연용 데이터는 브라우저 메모리에만 있다. */
 const celebEvents = [];
 let celebSeq = 2;
 const CELEB = [
@@ -1913,7 +1913,7 @@ function celebBanners(){
   if(!items.length && !hr) return '';
   return `<section class="celeb" aria-label="이번 주 소식">
     <div class="celeb-head"><h3>이번 주 소식</h3>${hr ? '<button class="btn sm" onclick="celebEdit()">＋ 경조사 등록</button>' : ''}</div>
-    <div class="celeb-row">${items.map(({c,n})=>`<button type="button" class="celeb-bn" onclick="celebShow('${c.key}')" aria-label="${c.label} ${n}명 보기"><img src="img/banners/${c.img}.jpg" alt="">${c.fx}<span class="celeb-count">${n}명</span></button>`).join('')
+    <div class="celeb-row">${items.map(({c,n})=>`<button type="button" class="celeb-bn" onclick="celebShow('${c.key}')" aria-label="${c.label} ${n}명 보기"><img src="img/banners/${c.img}.jpg?v=2" alt="">${c.fx}<span class="celeb-count">${n}명</span></button>`).join('')
       || '<div class="list-sub">이번 주에 보일 소식이 없습니다. 경사·조사는 위 버튼으로 등록하세요.</div>'}</div>
   </section>`;
 }
