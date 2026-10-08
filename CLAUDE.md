@@ -138,7 +138,7 @@ CI(`.github/workflows/ci.yml`)가 자동 검사하는 것: 한글 인코딩, HTM
 - **휴대폰에 설치 (2026-10-08, 인사담당자 지시)** — 홈 배너의 "휴대폰에 설치" 버튼(`installNotice`). PC에서는 포털 주소 QR, 휴대폰(768px 이하)에서는 갤럭시·아이폰별 "홈 화면에 추가" 순서(`INSTALL_STEPS`)를 보여 준다. 앱 장터에서 받는 앱이 아니라 사이트 바로가기다.
   - 아이콘·이름·여는 방식은 `public/site.webmanifest`가 정한다(`display: standalone` — 주소창 없이 열림). 아이폰용으로 `apple-mobile-web-app-*` 메타도 넣었다.
   - 아이콘은 회사 로고 원본(일러스트 파일, 인사담당자 PC에만 있고 저장소에는 없음)에서 **리본 네 조각만** 뽑아 만들었다: `android-chrome-192x192`·`512x512`(일반), `maskable-512x512`(안드로이드가 동그랗게 잘라도 리본이 안 잘리게 여백을 넉넉히), `apple-touch-icon`(흰 배경 — 아이폰은 투명 배경을 검게 칠한다). **아이콘을 바꾸면 주소 뒤 `?v=` 숫자를 올린다**(manifest·index.html·안내창 세 곳).
-  - QR(`INSTALL_QR`)은 운영 주소를 미리 바꿔 둔 무늬다. 포털 주소가 바뀌면 다시 만든다(백엔드에 이미 있는 reportlab 사용): `python -c "from reportlab.graphics.barcode import qrencoder as q; c=q.QRCode(None,q.QRErrorCorrectLevel.M); c.addData('https://포털주소/'); c.make(); n=c.getModuleCount(); print('|'.join(''.join('1' if c.isDark(r,x) else '0' for x in range(n)) for r in range(n)))"`
+  - QR(`INSTALL_QR`)은 운영 주소를 미리 바꿔 둔 무늬다. 포털 주소가 바뀌면 다시 만든다(백엔드에 이미 있는 reportlab 사용. 검은 칸은 `#`, 흰 칸은 `.` — `0`·`1`로 적으면 CI 개인정보 검사가 전화번호로 오인한다): `python -c "from reportlab.graphics.barcode import qrencoder as q; c=q.QRCode(None,q.QRErrorCorrectLevel.M); c.addData('https://포털주소/'); c.make(); n=c.getModuleCount(); print('|'.join(''.join('#' if c.isDark(r,x) else '.' for x in range(n)) for r in range(n)))"`
   - 급여·계약은 휴대폰에서도 열린다 — 금액은 눈 표시를 눌러야 보이므로 우선 허용(인사담당자 결정). 평가·성과만 PC 전용(위 항목).
   - **로그인 이후 휴대폰으로 들어올 길은 아직 없다** — 설계상 출입구가 하이웍스 PC 메뉴 하나다(#51 댓글). 로그인 구현 전에 정해야 한다.
 - **공지사항 메뉴는 삭제됨 (2026-10-01, 인사담당자 지시)** — 하이웍스 공지와 겹친다. 홈 공지사항 카드도 함께 삭제.
