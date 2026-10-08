@@ -51,6 +51,7 @@
     letter-spacing:-0.01em;
     font-variant-numeric:tabular-nums;
     -webkit-font-smoothing:antialiased;
+    word-break:keep-all; overflow-wrap:break-word;   /* 한글은 낱말 단위로 줄바꿈. 한 줄에 못 들어가는 긴 낱말만 중간에서 끊는다 */
   }
   :focus-visible{ outline:2px solid var(--accent); outline-offset:2px; border-radius:var(--radius-sm); }
   a{ color:var(--accent); }
@@ -122,6 +123,7 @@
   .card{ background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:18px 20px; }
   .card-title{ font-size:var(--fs-md); font-weight:700; margin:0 0 12px 0; display:flex; align-items:center; justify-content:space-between; gap:8px; }
   .card-title .more{ font-size:var(--fs-xs); font-weight:600; color:var(--accent); cursor:pointer; }
+  .kpi-rows{ display:grid; grid-template-columns:minmax(0,1fr) 44px 110px 44px; gap:6px 10px; align-items:center; font-size:var(--fs-sm); margin-top:16px; }   /* 홈 KPI: 이름 · 가중치 · 막대 · 진행률 */
   .more{ color:var(--accent); cursor:pointer; font-weight:600; }
   .stat-label{ font-size:var(--fs-xs); color:var(--text-secondary); margin-bottom:6px; }
   .stat-value{ font-size:var(--fs-2xl); font-weight:700; letter-spacing:-0.02em; }
@@ -573,9 +575,16 @@
     .quick-grid{ grid-template-columns:repeat(3,1fr); }
     .grid.g2, .grid.g3, .grid.g4{ grid-template-columns:1fr; }
     .field-row{ grid-template-columns:1fr; }
-    .card[style*="grid-column:span 2"]{ grid-column:auto; }
+    .card[style*="grid-column:span 2"]{ grid-column:auto !important; }   /* 카드에 직접 적힌 값을 이겨야 해서 !important */
     .card{ overflow-x:auto; }
-    table{ min-width:420px; }
+    /* --- 휴대폰 정돈 (2026-10-08) --- */
+    .card-title{ flex-wrap:wrap; row-gap:8px; }                /* 제목 옆 단추(연도·인쇄 등)가 비좁으면 다음 줄로 */
+    .btn, .pay-year{ white-space:nowrap; }                     /* 단추 글자는 두 줄로 꺾지 않는다 */
+    .field input, .field select{ min-height:44px; }            /* 입력칸과 옆 단추 높이 맞춤 (손가락 크기) */
+    .wh-step b{ white-space:nowrap; font-size:var(--fs-md); }  /* 금액은 한 줄 — 가린 상태의 ● 뒤 '원'이 혼자 내려가지 않게 */
+    .org-list th:nth-child(5), .org-list td:nth-child(5){ display:none; }   /* 구성원 목록: 메일 칸 숨김 — 이름을 누르면 메일 단추가 나온다 */
+    .kpi-rows{ grid-template-columns:44px minmax(0,1fr) 44px; }             /* 홈 KPI: 이름을 한 줄 차지하게, 그 아래 가중치·막대·진행률 */
+    .kpi-rows > :nth-child(4n+1){ grid-column:1 / -1; margin-top:6px; }
     .org-grid{ --org-cols:2; }
     .celeb-bn{ flex-basis:58%; }
     /* 손가락으로 누르기 쉬운 크기 (44px) */
@@ -1476,7 +1485,7 @@ function memberSearch(){
   const q = orgQuery.trim().toLowerCase();
   const rows = orgMembers.filter(m=>!q || [m.name,m.title,m.division,m.team].join(' ').toLowerCase().includes(q));
   return `${roleSwitcher()}<div class="card" style="margin-bottom:14px;"><div class="field"><input id="orgSearch" placeholder="이름, 직급, 본부, 팀으로 검색" value="${escapeHtml(orgQuery)}" oninput="orgQuery=this.value; renderContent(); const i=document.getElementById('orgSearch'); i.focus(); i.setSelectionRange(i.value.length,i.value.length);"/></div></div>
-    <div class="card"><div class="card-title">구성원 목록 <span class="more">${rows.length}명</span></div><table><thead><tr><th>이름</th><th>직급</th><th>소속</th><th>내선</th><th>메일</th></tr></thead><tbody>
+    <div class="card"><div class="card-title">구성원 목록 <span class="more">${rows.length}명</span></div><table class="org-list"><thead><tr><th>이름</th><th>직급</th><th>소속</th><th>내선</th><th>메일</th></tr></thead><tbody>
     ${rows.map(m=>`<tr><td><span class="org-name" onclick="orgShow(${m.id})">${escapeHtml(m.name)}</span> ${orgLeadBadge(m)}</td><td>${escapeHtml(m.title)}</td><td>${escapeHtml(m.division)}${m.team?' › '+escapeHtml(m.team):''}</td><td>${escapeHtml(m.ext)}</td><td>${escapeHtml(m.email)}</td></tr>`).join('') || '<tr><td colspan="5" style="color:var(--text-muted);">검색 결과가 없습니다</td></tr>'}
     </tbody></table></div>`;
 }
@@ -1843,7 +1852,7 @@ function kpiHomeCard(){
     const bar = (pct,h)=>`<div class="bar-track" style="margin-top:0; height:${h}px;"><div class="bar-fill" style="width:${pct}%;"></div></div>`;
     body = `<div style="display:flex; align-items:baseline; gap:8px; margin-bottom:6px;"><span class="stat-label" style="margin:0;">종합 달성률</span><span class="stat-value" style="color:var(--coral-text);">${total}%</span><span class="stat-sub" style="margin:0;">가중치 반영 · 본인 입력 기준</span></div>
       ${bar(total,8)}
-      <div style="display:grid; grid-template-columns:minmax(0,1fr) 44px 110px 44px; gap:6px 10px; align-items:center; font-size:var(--fs-sm); margin-top:16px;">
+      <div class="kpi-rows">
         ${items.map(i=>`<span>${escapeHtml(i.action)}</span><span style="text-align:right; color:var(--text-muted); font-size:var(--fs-xs);">${i.weight}%</span>${bar(i.progress||0,6)}<span style="text-align:right;">${i.progress||0}%</span>`).join('')}
       </div>
       <div class="stat-sub">회색 숫자 = 가중치. 진행률은 본인 신고값이며 평가 점수와는 별개입니다.</div>
@@ -2409,7 +2418,7 @@ function paySlipsFor(key){
 }
 
 /* ----- 화면 ----- */
-const PAY_MASK = '●,●●●,●●●원';
+const PAY_MASK = '●,●●●,●●●\u2060원';   // \u2060: 보이지 않는 줄바꿈 금지 표시 — 가린 금액의 '원'만 다음 줄로 내려가지 않게
 function payWon(n){ return Math.round(n).toLocaleString('ko-KR')+'원'; }
 function payWon2(n){ return (Math.floor(n*100)/100).toLocaleString('ko-KR', {minimumFractionDigits:2, maximumFractionDigits:2})+'원'; }   // 쌓이는 금액용: 소수 둘째 자리까지(버림)
 const PAY_TICK_MS = matchMedia('(prefers-reduced-motion:reduce)').matches ? 1000 : 50;   // 움직임 줄이기를 켠 기기는 예전처럼 1초마다
