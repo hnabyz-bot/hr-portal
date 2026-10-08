@@ -19,10 +19,11 @@
 <link rel="preload" href="assets/btn2/c_bgm_on.webp" as="image">
 <link rel="preload" href="assets/btn2/c_sound_off.webp" as="image">
 <link rel="preload" href="assets/pixel.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="assets/stellar.otf" as="font" type="font/otf" crossorigin>
 <style>
-@font-face{font-family:'Stellar';src:url('assets/stellar.otf') format('opentype');font-weight:400;font-display:swap}
+@font-face{font-family:'Stellar';src:url('assets/stellar.otf') format('opentype');font-weight:400;font-display:block}
 /* 사내 픽셀 폰트 (XPixel = the pixel font file in assets/) — everything except the Stellar headings uses it */
-@font-face{font-family:'XPixel';src:url('assets/pixel.woff2') format('woff2');font-weight:400;font-display:swap}
+@font-face{font-family:'XPixel';src:url('assets/pixel.woff2') format('woff2');font-weight:400;font-display:block}
 /* Layout: one-screen arcade cabinet. A 16:9 pixel stage sits on X-ray film; the touch pad sits under it in portrait and floats over it in landscape. Single dark look by design (an X-ray lightbox). */
 :root{
   color-scheme: dark;
@@ -359,6 +360,8 @@ h3{display:inline-block;margin:0 0 10px;padding:4px 18px 4px 10px;font-weight:40
 .stamps li.on i{border:3px double #ff4b5f;color:#ff4b5f;background:rgba(255,75,95,.12);transform:rotate(-12deg);font-family:var(--f-display);font-size:15px}
 .stamps li.on span{color:var(--bone)}
 .stamps li.next i{border-color:var(--hazard);color:var(--hazard)}
+/* PC·넓은 화면: 출근 도장 카드를 휴대폰과 같은 폭으로 가운데에 (넓게 펴면 제목·도장이 흩어져 휴대폰과 다르게 보인다) */
+@media (min-width:561px){.stamps{width:min(360px,100%);align-self:center}}
 .howto{margin:0;display:grid;gap:6px;font-size:15px;color:var(--muted)}
 .howto div{display:grid;grid-template-columns:4.2em 1fr;gap:8px}
 .howto dt{color:var(--bone)}
@@ -2244,8 +2247,8 @@ AT.img.onload = () => {
 AT.img.decoding = 'async';
 AT.img.src = 'assets/chars.webp';
 trackLoad(AT.img);
-// the pixel font is part of the first screen too: the loading bar waits for it (fails open)
-try { if (document.fonts && document.fonts.load) { LOADQ.total++; const fin = () => { LOADQ.done++; loadProgress(); }; document.fonts.load('16px "XPixel"').then(fin, fin); } } catch (e) {}
+// the fonts are part of the first screen too: the loading bar waits for them (fails open) — Stellar as well, so the logo never shows in a fallback font first
+try { if (document.fonts && document.fonts.load) for (const ff of ['16px "XPixel"', '16px "Stellar"']) { LOADQ.total++; const fin = () => { LOADQ.done++; loadProgress(); }; document.fonts.load(ff).then(fin, fin); } } catch (e) {}
 try { const ki = document.getElementById('keyImg'); if (ki) trackLoad(ki); } catch (e) {}
 const AP = (k, tint) => tint ? tinted(AT.P[k], tint) : AT.P[k];
 function legAng(mode, ph) {
