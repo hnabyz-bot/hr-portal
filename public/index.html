@@ -76,6 +76,10 @@
   }
   .nav-item svg{ width:18px; height:18px; flex-shrink:0; }
   .nav-item span{ font-size:var(--fs-md); }
+  /* 메뉴·탭의 처리할 일 숫자 */
+  .nav-badge{ margin-left:auto; min-width:18px; height:18px; padding:0 5px; border-radius:9px; background:var(--coral-text); color:#fff;
+    font-size:var(--fs-xs); font-weight:700; line-height:18px; text-align:center; flex-shrink:0; }
+  .subtab .nav-badge{ display:inline-block; margin-left:6px; vertical-align:1px; }
   .sidebar-foot{
     padding:14px 20px; border-top:1px solid var(--border);
     color:var(--text-muted); font-size:var(--fs-xs); line-height:1.5;
@@ -84,27 +88,9 @@
   .main{ flex:1; display:flex; flex-direction:column; min-width:0; height:100%; }
   .topbar{
     height:60px; flex-shrink:0; background:var(--surface); border-bottom:1px solid var(--border);
-    display:flex; align-items:center; justify-content:space-between; padding:0 24px;
+    display:flex; align-items:center; padding:0 24px;
   }
   .topbar-title{ font-size:var(--fs-lg); font-weight:700; margin:0; }
-  .topbar-search{
-    display:flex; align-items:center; gap:8px; background:var(--bg-page);
-    border:1px solid var(--border); border-radius:var(--radius-sm); padding:7px 12px; width:320px; color:var(--text-muted);
-  }
-  .topbar-search:focus-within{ border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-light); }
-  .topbar-search svg{ width:15px;height:15px;flex-shrink:0; }
-  .topbar-search input{
-    border:none; background:transparent; outline:none; font:inherit; font-size:var(--fs-sm); width:100%; color:var(--text-primary);
-  }
-  .topbar-right{ display:flex; align-items:center; gap:16px; }
-  .icon-btn{ width:34px; height:34px; border-radius:var(--radius-sm); display:flex; align-items:center; justify-content:center;
-    color:var(--text-secondary); cursor:pointer; position:relative; border:0; background:none; padding:0;
-    transition:background .2s var(--ease); }
-  .icon-btn:hover{ background:var(--bg-page); }
-  .icon-btn svg{ width:18px; height:18px; }
-  .dot{ position:absolute; top:6px; right:6px; width:7px; height:7px; border-radius:50%; background:var(--alert); border:1.5px solid #fff; }
-  .avatar{ width:32px; height:32px; border-radius:var(--radius); background:var(--accent-light); color:var(--accent);
-    display:flex; align-items:center; justify-content:center; font-weight:700; font-size:var(--fs-xs); }
   .subtabs{
     height:46px; flex-shrink:0; background:var(--surface); border-bottom:1px solid var(--border);
     display:flex; align-items:center; gap:4px; padding:0 24px; overflow-x:auto;
@@ -113,11 +99,10 @@
     padding:8px 14px; border-radius:var(--radius-sm); color:var(--text-secondary); font-size:var(--fs-md);
     cursor:pointer; white-space:nowrap; font-weight:500; transition:background .2s var(--ease), color .2s var(--ease);
   }
+  .subtabs:empty{ display:none; }   /* 탭이 하나뿐인 메뉴 */
   .subtab:hover{ background:var(--bg-page); color:var(--text-primary); }
   .subtab.active{ background:var(--accent-light); color:var(--accent); font-weight:700; }
   .content{ flex:1; overflow-y:auto; padding:24px 28px 48px 28px; }
-  .breadcrumb{ font-size:var(--fs-xs); color:var(--text-muted); margin-bottom:14px; }
-  .breadcrumb b{ color:var(--text-secondary); font-weight:600; }
 
   /* ---------- CONTENT PRIMITIVES ---------- */
   .grid{ display:grid; gap:14px; }
@@ -309,7 +294,7 @@
   }
   @media print{
     html, body{ height:auto; overflow:visible; display:block; background:#fff; }
-    .sidebar, .topbar, .subtabs, .breadcrumb, .sidebar-backdrop, .no-print, .ct-signbox{ display:none !important; }
+    .sidebar, .topbar, .subtabs, .sidebar-backdrop, .no-print, .ct-signbox{ display:none !important; }
     .main, .content{ height:auto; overflow:visible; padding:0; }
     #contentArea > *:not(.ct-print){ display:none !important; }
     .ct-print{ border:0; padding:0; }
@@ -528,7 +513,6 @@
     .sidebar.open{ transform:translateX(0); }
     .sidebar.open ~ .sidebar-backdrop{ display:block; }
     .topbar{ padding:0 14px; gap:8px; }
-    .topbar-search{ display:none; }
     .content{ padding:16px 14px 32px 14px; }
     .hero-banner{ padding:20px; }
     .hero-banner::before{ width:150px; height:150px; right:-60px; top:-60px; }
@@ -542,8 +526,8 @@
     .org-grid{ --org-cols:2; }
     .celeb-bn{ flex-basis:78%; }
     /* 손가락으로 누르기 쉬운 크기 (44px) */
-    .nav-item, .subtab, .btn, .menu-btn, .icon-btn, .x-btn{ min-height:44px; }
-    .menu-btn, .icon-btn, .x-btn{ min-width:44px; }
+    .nav-item, .subtab, .btn, .menu-btn, .x-btn{ min-height:44px; }
+    .menu-btn, .x-btn{ min-width:44px; }
     .subtab{ display:flex; align-items:center; }
     .subtabs{ height:52px; }
   }
@@ -633,15 +617,6 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
     </button>
     <h1 class="topbar-title" id="pageTitle">홈</h1>
-    <div class="topbar-search">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-      <input placeholder="규정, 서식, 메뉴 통합검색" aria-label="통합검색"/>
-    </div>
-    <div class="topbar-right">
-      <button type="button" class="icon-btn" aria-label="알림"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg><span class="dot"></span></button>
-      <button type="button" class="icon-btn" aria-label="도움말"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></button>
-      <div class="avatar" aria-label="홍길동">홍</div>
-    </div>
   </header>
   <div class="subtabs" id="subtabsRow" role="tablist"></div>
   <main class="content" id="contentArea"></main>
@@ -1714,9 +1689,10 @@ function kpiHrPanel(){
   </div>
   <div style="margin-bottom:14px;">${simpleTableCard('전 직원 진행현황', ['이름','부서','상태','실행목표'], rows, r=>kpiStatus(Object.keys(kpiSheets)[rows.indexOf(r)])[1], 2)}</div>`;
 }
+function kpiWaiting(){ return Object.keys(kpiSheets).filter(k=>{ const p = kpiSheets[k].pending; return p && KPI_USERS[k].approvers[p.step]===kpiRole; }); }   // 지금 역할이 승인할 차례인 사람들
 function kpiInbox(){
   if(!Object.values(KPI_USERS).some(u=>u.approvers.includes(kpiRole))) return '';
-  const keys = Object.keys(kpiSheets).filter(k=>{ const p = kpiSheets[k].pending; return p && KPI_USERS[k].approvers[p.step]===kpiRole; });
+  const keys = kpiWaiting();
   const list = keys.map(k=>{
     const u = KPI_USERS[k], s = kpiSheets[k], open = kpiReviewKey===k;
     return `<div class="list-row"><div><div class="list-title">${u.name} ${u.title} · ${u.dept}</div>
@@ -1799,7 +1775,7 @@ function kpiScheduleCard(){
 function kpiHomeCard(){
   const evP = evPeople.find(p=>p.key===kpiRole); if(evP && evIsLine(evP)) return evLineHomeCard(evP);   // 현장직: KPI 대신 평가 안내
   const s = kpiSheets[kpiRole], me = KPI_USERS[kpiRole];
-  const waiting = Object.keys(kpiSheets).filter(k=>{ const p = kpiSheets[k].pending; return p && KPI_USERS[k].approvers[p.step]===kpiRole; }).length;
+  const waiting = kpiWaiting().length;
   const inboxLine = waiting ? `<span style="color:var(--warning); font-weight:600; cursor:pointer;" onclick="goTo('perf','e1')">팀원 KPI 승인 대기 ${waiting}건 →</span>` : '';
   let body;
   if(!s || !s.confirmed){
@@ -3229,31 +3205,61 @@ const NAV = [
 
 let currentNav = NAV[0], currentTab = NAV[0].tabs[0];
 
+/* ---------------- 메뉴 숫자 (내가 처리할 일) ----------------
+   탭 id → 지금 역할이 처리할 일 건수. 끝내면 0이 되어 숫자가 사라진다. 왼쪽 메뉴에는 탭 합계를 보인다.
+   새 소식(안 본 급여명세서 등)은 누가 봤는지 기억해야 해서 로그인 이후에 더한다. */
+const TODO = {
+  p2: ()=>{ const me = ctActor(kpiRole), c = me && ctActive(ctContracts, me.pid); return c && c.status==='SENT' ? 1 : 0; },   // 서명할 연봉계약서
+  e1: ()=>kpiWaiting().length + (kpiSheets[kpiRole]?.rejectNote ? 1 : 0),   // 승인할 KPI + 반려되어 다시 쓸 내 KPI
+  e2: ()=>{   // 평가 기간에만: 내 자기평가 + 내가 평가할 사람 + 본부장 등급 배정 + HR 확정
+    if(!evPeriodOpen()) return 0;
+    const me = evMe();
+    return (me && !evIsLine(me) && me.stage==='SELF' && evKpi(me).length ? 1 : 0)
+      + evPeople.filter(p=>evEvaluatorOf(p)===kpiRole && p.stage==='SCORE').length
+      + (kpiRole==='head' && evPeople.some(p=>p.stage==='GRADE' && p.title!=='본부장') ? 1 : 0)
+      + (kpiRole==='hr' && evPeople.some(p=>p.stage==='HR' || (p.title==='본부장' && p.stage==='GRADE')) ? 1 : 0);
+  },
+  e3: ()=>kpiRole==='hr' ? evPeople.filter(p=>p.appeal && p.appeal.status==='OPEN').length : 0,   // 답변할 이의 신청
+};
+function todoCount(tab){ return TODO[tab.id] ? TODO[tab.id]() : 0; }
+function navBadge(n){ return n ? `<b class="nav-badge" aria-label="처리할 일 ${n}건">${n}</b>` : ''; }
+function todoSelfCheck(){   // 브라우저 콘솔에서 todoSelfCheck() 실행 (시연 상태는 끝나면 되돌린다)
+  const ok = (c,m)=>{ if(!c) throw new Error('todoSelfCheck 실패: '+m); };
+  const s = kpiSheets.emp, keep = [kpiRole, s.pending, s.rejectNote];
+  try {
+    s.pending = { rows:[], reason:'', step:0 }; s.rejectNote = null;
+    kpiRole = 'lead'; ok(TODO.e1()===1, '팀장: 승인할 KPI 1건');
+    kpiRole = 'head'; ok(TODO.e1()===0, '본부장: 아직 차례가 아니면 0');
+    s.pending = null; s.rejectNote = '반려';
+    kpiRole = 'emp'; ok(TODO.e1()===1, '직원: 반려된 내 KPI 1건');
+    kpiRole = 'line'; ok(TODO.e1()===0 && todoCount({id:'r1'})===0, 'KPI 없는 역할·숫자 없는 탭은 0');
+  } finally { [kpiRole, s.pending, s.rejectNote] = keep; }
+  return 'todoSelfCheck 통과';
+}
+
 function renderSidebar(){
   document.getElementById('sidebarNav').innerHTML = NAV.map(n => `
     <div class="nav-item ${n.id===currentNav.id?'active':''}" onclick="selectNav('${n.id}')" ${n.id===currentNav.id?'aria-current="page"':''}>
-      ${icon(n.icon)}<span>${n.label}</span>
+      ${icon(n.icon)}<span>${n.label}</span>${navBadge(n.tabs.reduce((a,t)=>a+todoCount(t), 0))}
     </div>`).join('');
 }
-function renderSubtabs(){
-  document.getElementById('subtabsRow').innerHTML = currentNav.tabs.map(t => `
-    <div class="subtab ${t.id===currentTab.id?'active':''}" onclick="selectTab('${t.id}')" role="tab" aria-selected="${t.id===currentTab.id}">${t.label}</div>
-  `).join('');
+function renderSubtabs(){   // 탭이 하나뿐이면 비워 둔다 (CSS가 빈 탭 줄을 숨긴다)
+  document.getElementById('subtabsRow').innerHTML = currentNav.tabs.length<2 ? '' : currentNav.tabs.map(t => `<div class="subtab ${t.id===currentTab.id?'active':''}" onclick="selectTab('${t.id}')" role="tab" aria-selected="${t.id===currentTab.id}">${t.label}${navBadge(todoCount(t))}</div>`).join('');
 }
-function renderContent(){
+function renderContent(){   // 화면을 다시 그릴 때마다 메뉴·탭 숫자도 맞춘다 (승인·서명 직후 바로 줄어들게)
   document.getElementById('pageTitle').textContent = currentNav.label;
-  document.getElementById('contentArea').innerHTML =
-    `<div class="breadcrumb">${currentNav.label} <b>›</b> ${currentTab.label}</div>` + currentTab.render();
+  document.getElementById('contentArea').innerHTML = currentTab.render();
+  renderSidebar(); renderSubtabs();
 }
 function selectNav(id){
   currentNav = NAV.find(n=>n.id===id);
   currentTab = currentNav.tabs[0];
-  renderSidebar(); renderSubtabs(); renderContent();
+  renderContent();
   closeSidebar();
 }
 function selectTab(id){
   currentTab = currentNav.tabs.find(t=>t.id===id);
-  renderSubtabs(); renderContent();
+  renderContent();
 }
 function goTo(navId, tabId){
   selectNav(navId);
@@ -3287,7 +3293,7 @@ document.addEventListener('keydown', e=>{
   if((e.key==='Enter' || e.key===' ') && t.getAttribute && t.getAttribute('role')==='button' && t.tagName!=='BUTTON'){ e.preventDefault(); t.click(); }
 });
 
-renderSidebar(); renderSubtabs(); renderContent();
+renderContent();
 a11yEnhance(document.body);
 </script>
 </body>
