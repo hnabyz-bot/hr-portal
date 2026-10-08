@@ -129,7 +129,7 @@ CI(`.github/workflows/ci.yml`)가 자동 검사하는 것: 한글 인코딩, HTM
   - 게임 원본은 인사담당자의 Claude 아티팩트다. **고칠 때는 아티팩트에서 고친 뒤 파일을 통째로 다시 받아 `public/xray/`를 덮어쓴다** — 포털에서 직접 고치면 다음에 덮어쓸 때 사라진다. 받은 `index.html`은 `<title>`·`<link rel=manifest>`가 `<body>` 안에 있으므로 `</head><body>`를 게임 `<style>` 뒤(`<div id="loading">` 앞)로 옮기고 `<html lang="ko">`만 붙인다(크롬은 `<head>` 안 manifest만 읽는다).
   - **포털 사본에만 있는 수정 (2026-10-08, 인사담당자 지시)** — 원본 아티팩트에 같은 수정이 들어갔는지 확인하고, 안 들어갔으면 덮어쓴 뒤 다시 넣는다:
     1. 제목 글꼴이 중간에 바뀌지 않게: `stellar.otf`를 `<link rel="preload">`로 미리 받고, 두 `@font-face`의 `font-display`를 `swap` → `block`, 로딩 막대가 기다리는 글꼴에 `"Stellar"` 추가(`LOADQ`, 원래는 `"XPixel"`만).
-    2. 출근 도장을 PC에서도 휴대폰처럼: `@media (min-width:561px){.stamps{width:min(360px,100%);align-self:center}}`.
+    2. PC에서 출근 도장 그림이 휴대폰처럼 또렷하게: `@media (min-width:561px){.stamps li i{width:72px;height:72px;font-size:16px}.stamps li{gap:9px;font-size:13px}}`. 그림 파일은 같지만 PC는 화소가 성겨 40px 도장이 뭉개진다. 카드 폭은 손대지 않는다(메뉴 버튼과 같은 폭) — 처음에 요청을 잘못 이해해 카드 폭을 360px로 줄였다가 되돌렸다.
   - 저장: 점수·출동권 등은 **각자 브라우저(localStorage)에만** 남는다. 게임 속 사내 랭킹·동료 선물의 다른 직원은 예시 값이다 — 실제 랭킹은 로그인(#51) 이후에 서버를 붙여야 한다.
   - 게임에 운영 규칙이 들어 있다: 평일 12:00~13:30 · 15:30~16:00 · 18:00~다음날 9:00, 주말 종일만 열린다(근무시간에는 시작 불가). 인사담당자가 정한 값이다. **같은 시간이 탕비실 화면의 "게임 오픈시간" 표(`pantryGame()`의 `hours`)에도 적혀 있다** — 게임(`OPEN_ROWS`)에서 시간을 바꾸면 포털 표도 같이 고친다.
   - 탕비실 화면의 게임 그림은 `public/img/pantry/xray-title.jpg`(인사담당자가 준 타이틀 화면 캡처). 게임 폴더(`public/xray/`)는 통째로 덮어쓰므로 포털이 쓰는 그림은 그 밖에 둔다.

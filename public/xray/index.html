@@ -360,8 +360,8 @@ h3{display:inline-block;margin:0 0 10px;padding:4px 18px 4px 10px;font-weight:40
 .stamps li.on i{border:3px double #ff4b5f;color:#ff4b5f;background:rgba(255,75,95,.12);transform:rotate(-12deg);font-family:var(--f-display);font-size:15px}
 .stamps li.on span{color:var(--bone)}
 .stamps li.next i{border-color:var(--hazard);color:var(--hazard)}
-/* PC·넓은 화면: 출근 도장 카드를 휴대폰과 같은 폭으로 가운데에 (넓게 펴면 제목·도장이 흩어져 휴대폰과 다르게 보인다) */
-@media (min-width:561px){.stamps{width:min(360px,100%);align-self:center}}
+/* PC·넓은 화면: 도장을 크게 — 화소가 촘촘한 휴대폰에서는 40px 도장도 또렷하지만, PC에서는 작게 뭉개져 "출근" 글자·테두리가 안 보인다. 카드 폭은 메뉴 버튼(동료 선물)과 같다 */
+@media (min-width:561px){.stamps li i{width:72px;height:72px;font-size:16px}.stamps li{gap:9px;font-size:13px}}
 .howto{margin:0;display:grid;gap:6px;font-size:15px;color:var(--muted)}
 .howto div{display:grid;grid-template-columns:4.2em 1fr;gap:8px}
 .howto dt{color:var(--bone)}
