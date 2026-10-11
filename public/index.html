@@ -161,7 +161,7 @@
   .hm-hero > img{ position:absolute; right:0; bottom:-16%; height:116%;
     -webkit-mask-image:linear-gradient(90deg,transparent 0,#000 42%),linear-gradient(180deg,transparent 0,#000 30%); -webkit-mask-composite:source-in;
     mask-image:linear-gradient(90deg,transparent 0,#000 42%),linear-gradient(180deg,transparent 0,#000 30%); mask-composite:intersect; }
-  .hm-hero-text{ position:relative; z-index:1; padding:20px clamp(28px,6%,96px); }
+  .hm-hero-text{ position:relative; z-index:1; padding:20px clamp(28px,6%,96px) 20px clamp(20px,6% - 19px,77px); }   /* 왼쪽은 0.5cm(19px) 당겼다 (인사담당자 지시) */
   .hm-hero h2{ position:relative; display:inline-block; margin:0 0 20px; font-family:"Nanum Pen Script","hm-hand-fallback",sans-serif; font-weight:400;
     font-size:clamp(49px,4.8vw,75px); line-height:1.15; letter-spacing:0; text-shadow:0 2px 12px rgba(18,60,140,.35); }
   .hm-hero h2 span{ white-space:nowrap; }
@@ -1077,7 +1077,7 @@ function homeSelfCheck(){   // 브라우저 콘솔에서 homeSelfCheck() 실행
 function homeJump(id){ document.getElementById(id)?.scrollIntoView({ behavior:'smooth', block:'start' }); }
 function homePct(name, pct, cls=''){ return `<li class="hm-pct"><span>${name}</span><b>${pct==null ? '–' : pct+'%'}</b><div class="hm-bar ${cls}"><i style="width:${pct||0}%"></i></div></li>`; }   // 셀 것이 없으면(null) '–'
 function homeDonut(pct){ return `<div class="hm-donut"><svg viewBox="0 0 120 120" aria-hidden="true" fill="none" stroke-width="11"><circle cx="60" cy="60" r="50" stroke="#E8EEF5"/>${pct ? `<circle cx="60" cy="60" r="50" style="stroke:var(--donut, var(--accent))" stroke-linecap="round" stroke-dasharray="${(pct*3.1416).toFixed(1)} 314.2"/>` : ''}</svg><b>${pct==null ? '–' : pct+'%'}</b></div>`; }
-const HOME_HERO = 'img/home/hero.jpg?v=3';   // 배너의 하늘과 건물에 함께 쓴다. 사진을 바꾸면 번호를 올린다
+const HOME_HERO = 'img/home/hero.jpg?v=4';   // 배너의 하늘과 건물에 함께 쓴다. 사진을 바꾸면 번호를 올린다
 function homeHero(t){
   const me = KPI_USERS[kpiRole], om = orgMembers.find(m=>m.name===me.name), since = om && homeSince(om.hireDate, t);
   const worked = since && [since[0] && since[0]+'년', since[1] && since[1]+'개월', since[2] && since[2]+'일'].filter(Boolean).join(' ');
