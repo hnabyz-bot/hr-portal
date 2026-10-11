@@ -236,12 +236,17 @@
   .hm-calnav button:hover{ background:var(--bg-page); color:var(--text-primary); }
   .hm-calnav svg{ width:15px; height:15px; }
   .hm-cal{ display:grid; grid-template-columns:repeat(7,1fr); row-gap:2px; text-align:center; }
-  .hm-cal span{ position:relative; z-index:0; height:30px; display:grid; place-items:center; }
-  .hm-cal .dow{ height:26px; font-size:var(--fs-xs); color:var(--text-muted); }
+  .hm-cal .dow{ height:26px; display:grid; place-items:center; font-size:var(--fs-xs); color:var(--text-muted); }
   .hm-cal .red{ color:var(--coral-text); }
-  .hm-cal .today{ color:#fff; font-weight:700; }
-  .hm-cal .today::before{ content:""; position:absolute; z-index:-1; width:28px; height:28px; border-radius:50%; background:var(--accent); }
-  .hm-cal .dot::after{ content:""; position:absolute; bottom:0; width:4px; height:4px; border-radius:50%; background:var(--dot); }
+  .hm-day{ display:grid; grid-template-rows:28px 6px; row-gap:1px; justify-items:center; padding:0; border:0; background:none; color:inherit; font:inherit; cursor:pointer; }   /* 숫자 줄과 점 줄을 따로 둔다 — 점·오늘·고른 날 표시가 있어도 숫자 높이는 같다 (인사담당자 지시) */
+  .hm-day b{ width:28px; height:28px; display:grid; place-items:center; border-radius:50%; font-weight:400; }
+  .hm-day:hover b{ background:var(--bg-page); }
+  .hm-day.today b{ background:var(--accent); color:#fff; font-weight:700; }
+  .hm-day.sel b{ box-shadow:0 0 0 2px var(--coral-text); }
+  .hm-day i, .ws-day i{ display:flex; align-items:center; gap:2px; height:6px; }
+  .hm-day i span, .ws-day i span{ width:4px; height:4px; border-radius:50%; }
+  .hm-legend{ display:flex; flex-wrap:wrap; gap:4px 12px; margin-top:10px; font-size:var(--fs-xs); color:var(--text-muted); }
+  .hm-legend span::before{ content:""; display:inline-block; width:6px; height:6px; margin-right:5px; border-radius:50%; background:var(--dot); }
   .hm-sub{ margin:14px 0 2px; padding-top:14px; border-top:1px solid var(--border); font-weight:700; }
   .hm-ev{ display:flex; align-items:center; gap:10px; padding:8px 0; }
   .hm-ev::before{ content:""; flex:none; width:3px; height:16px; border-radius:2px; background:var(--dot); }
@@ -327,6 +332,26 @@
   .ws-btns{ display:flex; justify-content:space-between; align-items:center; gap:8px; margin-top:16px; }
   .ws-btns span:last-child{ display:flex; gap:8px; flex:none; }
   .ws-del{ color:var(--danger); }
+  .ws-sub2 .more{ font-size:var(--fs-xs); }
+  .ws-calbar{ display:flex; justify-content:space-between; align-items:center; gap:6px 10px; flex-wrap:wrap; margin:14px 0 8px; }
+  .ws-calbar > span{ display:flex; align-items:center; gap:8px; }
+  .ws-calbar small{ font-size:var(--fs-xs); color:var(--text-muted); }
+  .ws-cal{ display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); border-top:1px solid var(--border); border-left:1px solid var(--border); }
+  .ws-cal .dow{ padding:6px 0; border-right:1px solid var(--border); border-bottom:1px solid var(--border); text-align:center; font-size:var(--fs-xs); color:var(--text-muted); }
+  .ws-cal .dow.red, .ws-day.red > b{ color:var(--coral-text); }
+  .ws-day{ display:flex; flex-direction:column; gap:2px; min-width:0; min-height:90px; padding:4px; border-right:1px solid var(--border); border-bottom:1px solid var(--border); cursor:pointer; }   /* 숫자는 칸 맨 위 고정, 업무는 그 아래에 쌓인다 */
+  .ws-day.blank{ background:var(--bg-page); cursor:default; }
+  .ws-day:not(.blank):hover{ background:#FAFCFE; }
+  .ws-day > b{ align-self:flex-start; min-width:24px; height:24px; display:grid; place-items:center; border-radius:50%; font-size:var(--fs-xs); font-weight:500; }
+  .ws-day.today > b{ background:var(--coral-text); color:#fff; font-weight:700; }
+  .ws-day.sel{ box-shadow:inset 0 0 0 2px var(--coral-text); }
+  .ws-chip{ display:block; padding:1px 5px; border-radius:4px; background:#EEF2F6; color:var(--text-secondary); font-size:var(--fs-xs); font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; cursor:grab; }
+  .ws-chip.info{ background:var(--accent-soft); color:var(--accent); }
+  .ws-chip.late{ background:var(--bg-danger); color:var(--danger); }
+  .ws-chip.success{ background:none; color:var(--text-muted); font-weight:400; text-decoration:line-through; }
+  .ws-day small{ font-size:var(--fs-xs); color:var(--text-muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .ws-day small.ev::before{ content:""; display:inline-block; width:5px; height:5px; margin-right:4px; border-radius:50%; background:var(--dot); vertical-align:middle; }
+  .ws-day i{ display:none; }   /* 점은 칸이 좁은 휴대폰에서만 */
   @media (max-width:1100px){ .ws-cols{ grid-template-columns:1fr; } }
   @media (min-width:1101px){ .ws .hm-tiles{ grid-template-columns:repeat(3,minmax(0,1fr)) 300px; } }   /* 넷째 칸(이번 주 완료)을 아래 진척도 칸과 같은 폭·같은 자리에 (인사담당자 지시) */
   @media (max-width:1100px){ .hm-cols{ grid-template-columns:1fr 1fr; } .hm-cols > :last-child{ grid-column:1 / -1; } }
@@ -752,6 +777,11 @@
     .ws-kcard{ cursor:pointer; } .ws-kcard .ws-state{ display:block; align-self:flex-start; min-width:88px; }
     .ws-pick, .ws-seg button{ min-height:40px; } .ws-tools input.ws-pick{ flex:1; }
     .ws-toast{ bottom:16px; }
+    /* 달력: 홈은 누르기 쉽게 조금 크게. 나의 업무 달력은 칸이 좁아 제목 대신 점 — 날짜를 누르면 아래에 그날 업무가 나온다 */
+    .hm-day{ grid-template-rows:32px 6px; } .hm-day b{ width:32px; height:32px; }
+    .ws-day{ align-items:center; min-height:46px; padding:5px 0; } .ws-day > b{ align-self:center; }
+    .ws-day .ws-chip, .ws-day small{ display:none; } .ws-day i{ display:flex; }
+    .ws-calbar .pc{ display:none; }
     .grid.g2, .grid.g3, .grid.g4{ grid-template-columns:1fr; }
     .field-row{ grid-template-columns:1fr; }
     .card{ overflow-x:auto; }
@@ -914,7 +944,7 @@ const homeRoutines = [
   { id:4, title:'퇴근 전 내일 할 일 정리', done:false },
 ];
 const HOME_WEEK = { routine:[9,12] };   // 시연용: 이번 주 지난 요일의 루틴 [완료, 전체]. 오늘 것은 위 목록에서 센다
-let homeTaskTab = 'all', homeCalOff = 0;   // 업무 탭(all·mine·portal), 달력에서 넘긴 달 수
+let homeTaskTab = 'all', homeCalOff = 0, homeCalDay = '';   // 업무 탭(all·mine·portal), 달력에서 넘긴 달 수, 달력에서 누른 날('' = 안 누름)
 
 /* ----- 규칙 (순수 로직, homeSelfCheck가 검증) ----- */
 function homeSince(hireDate, t){   // 입사 후 지난 [년, 개월, 일]. 입사일이 없거나 앞날이면 null
@@ -1025,25 +1055,47 @@ function homeRoutineCards(){
     </div>
   </div>`;
 }
-function homeCalendar(t){
-  const first = new Date(t.getFullYear(), t.getMonth()+homeCalOff, 1), y = first.getFullYear(), m = first.getMonth(), today = ctYmd(t);
-  const due = {}, dow = '일월화수목금토'; wsTasks().forEach(x=>{ if(x.state!=='완료' && x.due) (due[x.due] ||= []).push(x.title); });   // 끝나지 않은 개인 업무의 마감일에도 점
-  const marks = { ...Object.fromEntries(Object.entries(due).map(([ymd, v])=>[ymd, { label:v.length>1 ? `업무 ${v.length}건` : v[0], color:'#D98A1F' }])), ...Object.fromEntries(homeDates(y, m).map(e=>[e.ymd, e])) };   // 같은 날이면 급여일·평가 기간 점이 이긴다
+const HOME_TASK_DOT = '#D98A1F';   // 달력에서 '내 업무'의 점·줄 색
+function homeDayMap(y, m, list=wsTasks()){   // 날짜 → { tasks:[마감이 그날인 개인 업무], evs:[그 달의 급여일·KPI·평가] }. 홈 달력과 나의 업무 달력이 함께 쓴다
+  const map = {}, at = k=>(map[k] ||= { tasks:[], evs:[] });
+  list.forEach(x=>{ if(x.due) at(x.due).tasks.push(x); });
+  homeDates(y, m).forEach(e=>at(e.ymd).evs.push(e));
+  return map;
+}
+function homeDots(it){ return [it?.tasks.some(x=>x.state!=='완료') && HOME_TASK_DOT, ...(it?.evs.map(e=>e.color) || [])].filter(Boolean).slice(0, 3); }   // 그날의 점: 끝나지 않은 내 업무 하나 + 일정마다 하나 (셋까지)
+function homePickDay(ymd){ homeCalDay = homeCalDay===ymd ? '' : ymd; renderContent(); document.getElementById('hmD'+ymd)?.focus(); }   // 다시 누르면 풀린다
+function homeCalendar(t){   // 날짜를 누르면 아래가 그날의 업무·일정으로, 안 눌렀으면 다가오는 일정
+  const first = new Date(t.getFullYear(), t.getMonth()+homeCalOff, 1), y = first.getFullYear(), m = first.getMonth(), today = ctYmd(t), dow = '일월화수목금토';
+  const map = homeDayMap(y, m);
   let cells = [...dow].map((d,i)=>`<span class="dow${i?'':' red'}">${d}</span>`).join('') + '<span></span>'.repeat(first.getDay());
   for(let d=1, last=new Date(y, m+1, 0).getDate(); d<=last; d++){
-    const ymd = ctYmd(new Date(y, m, d)), mk = marks[ymd];
-    const cls = [((first.getDay()+d-1)%7===0 || PAY_HOLIDAYS.has(ymd)) && 'red', ymd===today && 'today', mk && 'dot'].filter(Boolean).join(' ');
-    cells += `<span class="${cls}"${mk ? ` style="--dot:${mk.color}" title="${escapeHtml(mk.label)}"` : ''}${ymd===today ? ' aria-current="date"' : ''}>${d}</span>`;
+    const ymd = ctYmd(new Date(y, m, d)), it = map[ymd], tip = escapeHtml([...(it?.tasks || []).filter(x=>x.state!=='완료').map(x=>x.title), ...(it?.evs || []).map(e=>e.label)].join(', '));
+    const cls = [((first.getDay()+d-1)%7===0 || PAY_HOLIDAYS.has(ymd)) && 'red', ymd===today && 'today', ymd===homeCalDay && 'sel'].filter(Boolean).join(' ');
+    cells += `<button type="button" class="hm-day ${cls}" id="hmD${ymd}" aria-pressed="${ymd===homeCalDay}"${ymd===today ? ' aria-current="date"' : ''} aria-label="${m+1}월 ${d}일${tip ? ', '+tip : ''}"${tip ? ` title="${tip}"` : ''} onclick="homePickDay('${ymd}')"><b>${d}</b><i>${homeDots(it).map(c=>`<span style="background:${c}"></span>`).join('')}</i></button>`;
   }
-  const pay = payWindow(t).next, soon = homeDates(pay.getFullYear(), pay.getMonth()).filter(e=>e.ymd>=today).sort((a,b)=>a.ymd.localeCompare(b.ymd)).slice(0,4);   // 급여일은 가장 가까운 하루만
   const md = s=>{ const d = celebParse(s); return `${d.getMonth()+1}/${d.getDate()} (${dow[d.getDay()]})`; };
   const dday = s=>{ const n = Math.round((celebParse(s) - celebParse(today))/864e5); return n ? 'D-'+n : '오늘'; };
-  const nav = (off, name, label)=>`<button type="button" aria-label="${label}" onclick="homeCalOff+=${off}; renderContent()">${icon(name)}</button>`;
+  const ev = (color, label, when, tail)=>`<div class="hm-ev" style="--dot:${color}"><span>${label}</span><time>${when}</time><b>${tail}</b></div>`;
+  let head, rows;
+  if(homeCalDay){   // 누른 날: 마감이 그날인 개인 업무(끝낸 것 포함) + 그날의 급여일·KPI·평가
+    const it = map[homeCalDay] || { tasks:[], evs:[] };
+    head = `<span>${md(homeCalDay)}</span><span class="more" onclick="wsView='cal'; wsCalDay='${homeCalDay}'; wsCalOff=homeCalOff; goTo('ws','w1')">나의 업무에서 보기 ›</span>`;
+    rows = [...wsSorted(it.tasks).map(x=>ev(HOME_TASK_DOT, escapeHtml(x.title), escapeHtml(x.time), escapeHtml(x.state))), ...it.evs.map(e=>ev(e.color, e.label, '', ''))];
+  } else {   // 다가오는 일정: 끝나지 않은 개인 업무(날짜마다 한 줄) + 급여일·KPI·평가, 가까운 순으로 다섯
+    const pay = payWindow(t).next, byDay = {};
+    wsTasks().forEach(x=>{ if(x.due>=today && x.state!=='완료') (byDay[x.due] ||= []).push(x); });
+    const soon = [...homeDates(pay.getFullYear(), pay.getMonth()).filter(e=>e.ymd>=today),   // 급여일은 가장 가까운 하루만
+      ...Object.entries(byDay).map(([ymd, v])=>({ ymd, color:HOME_TASK_DOT, label:escapeHtml(wsSorted(v)[0].title) + (v.length>1 ? ` 외 ${v.length-1}건` : '') }))];
+    head = '<span>다가오는 일정</span>';
+    rows = soon.sort((a,b)=>a.ymd<b.ymd ? -1 : a.ymd>b.ymd ? 1 : 0).slice(0, 5).map(e=>ev(e.color, e.label, md(e.ymd), dday(e.ymd)));
+  }
+  const nav = (off, name, label)=>`<button type="button" aria-label="${label}" onclick="homeCalOff+=${off}; homeCalDay=''; renderContent()">${icon(name)}</button>`;
   return `<div class="card" id="hmCal">
     <div class="card-title"><span>일정</span><span class="hm-calnav">${nav(-1,'chevL','이전 달')}${y}년 ${m+1}월${nav(1,'chevR','다음 달')}</span></div>
     <div class="hm-cal">${cells}</div>
-    <div class="hm-sub">주요 일정</div>
-    ${soon.map(e=>`<div class="hm-ev" style="--dot:${e.color}"><span>${e.label}</span><time>${md(e.ymd)}</time><b>${dday(e.ymd)}</b></div>`).join('')}
+    <div class="hm-legend">${[['내 업무', HOME_TASK_DOT], ['급여일', 'var(--accent)'], ['KPI', '#7A56C8'], ['평가', 'var(--success)']].map(([name, c])=>`<span style="--dot:${c}">${name}</span>`).join('')}</div>
+    <div class="hm-sub ws-sub2">${head}</div>
+    ${rows.join('') || '<div class="hm-empty">일정이 없습니다</div>'}
   </div>`;
 }
 function homeKpi(){   // KPI가 있는 직원에게만, 진행률만. 현장직은 같은 자리에 '나의 평가' 카드
@@ -1090,11 +1142,11 @@ function homeContent(){
    업무 한 건: { id, title, due:'YYYY-MM-DD'|'', time:'HH:MM'|'', pri:긴급·보통·낮음, state:예정·진행 중·완료, memo, doneAt,
                 tags:[글자], subs:[{ t, done }], repeat:''·weekly·monthly, rday:반복 기준(매주 = 요일 0~6, 매월 = 날짜), from:이 회차를 만든 앞 회차 id } */
 const WS_STATES = ['예정','진행 중','완료'], WS_PRIS = ['긴급','보통','낮음'], WS_DOW = '일월화수목금토';
-const WS_FILTERS = { today:'오늘', week:'이번 주', all:'전체', late:'기한 초과', done:'완료' };
+const WS_FILTERS = { today:'오늘', week:'이번 주', late:'기한 초과', done:'완료', all:'전체' };   // 단추 순서 그대로 (전체는 맨 뒤 — 인사담당자 지시)
 const WS_GROUPS = { portal:'인사포털에서 온 일', late:'기한 초과', today:'오늘', tom:'내일', week:'이번 주', later:'나중에', none:'마감 없음', done:'완료' };
 const WS_REPEATS = { '':'반복 없음', weekly:'매주', monthly:'매월' };
 const wsStore = {}, wsFold = new Set();   // 역할 → 업무 목록, 접어 둔 묶음
-let wsFilter = 'today', wsView = 'list', wsQuery = '', wsTag = '', wsUndo = null;
+let wsFilter = 'today', wsView = 'list', wsQuery = '', wsTag = '', wsUndo = null, wsCalOff = 0, wsCalDay = '';   // …, 달력 보기에서 넘긴 달 수·누른 날('' = 오늘)
 const wsFill = x=>({ due:'', time:'', pri:'보통', state:'예정', memo:'', doneAt:'', repeat:'', ...x,
   tags:Array.isArray(x.tags) ? x.tags.map(String) : [], subs:Array.isArray(x.subs) ? x.subs.filter(s=>s && typeof s.t==='string') : [] });
 const wsNewId = list=>Math.max(0, ...list.map(x=>x.id)) + 1;
@@ -1175,7 +1227,7 @@ function wsParse(text, today){   // 빠른 등록: 제목 "끝"에 적은 날짜
   let s = raw, due = '', time = '';
   const take = rules=>{ for(const [re, f] of rules){ const m = s.match(re), v = m && f(m); if(v){ s = s.slice(0, m.index).trim(); return v; } } return ''; };
   for(let i=0; i<2; i++){ time ||= take(TIME); due ||= take(DATE); }   // 날짜와 시간, 순서는 상관없다
-  return s && (due || time) ? { title:s, due:due || today, time } : { title:raw, due:today, time:'' };
+  return s && (due || time) ? { title:s, due:due || today, time, dated:!!due } : { title:raw, due:today, time:'', dated:false };   // dated = 날짜를 읽었는가 (시간만 읽었으면 false)
 }
 function wsReportText(list, today, off, who){   // 주간 보고 초안 글. off = 몇 주 전(0 이번 주, 1 지난주)
   const [mon, sun] = wsWeek(wsShift(today, -7*off)), [nmon, nsun] = [wsShift(mon, 7), wsShift(sun, 7)];
@@ -1194,7 +1246,7 @@ function wsTodayCount(){   // 오늘 할 일 [남은 일, 완료] — 남은 일
 function wsSelfCheck(){   // 브라우저 콘솔에서 wsSelfCheck() 실행 — 2026-10-14(수)를 오늘로 놓고 본다
   const ok = (c,m)=>{ if(!c) throw new Error('wsSelfCheck 실패: '+m); }, T = '2026-10-14';
   const mk = (due, state='예정', doneAt='', more={})=>wsFill({ id:1, title:'t', due, state, doneAt, ...more });
-  const ins = (x, keys)=>Object.keys(WS_FILTERS).filter(k=>wsIn(x, k, T)).join()===keys;
+  const ins = (x, keys)=>Object.keys(WS_FILTERS).filter(k=>wsIn(x, k, T)).sort().join()===keys.split(',').sort().join();   // 단추 순서와 상관없이 비교
   ok(String(wsWeek(T))==='2026-10-12,2026-10-18' && String(wsWeek('2026-10-18'))==='2026-10-12,2026-10-18' && String(wsWeek('2026-10-19'))==='2026-10-19,2026-10-25', '한 주는 월요일~일요일');
   ok(ins(mk(T), 'today,week,all') && ins(mk('2026-10-12'), 'today,week,all,late'), '오늘 마감, 기한 초과는 오늘 목록에도');
   ok(ins(mk('2026-10-16'), 'week,all') && ins(mk('2026-10-20'), 'all') && ins(mk(''), 'all'), '뒷날 마감·마감 없음');
@@ -1218,6 +1270,8 @@ function wsSelfCheck(){   // 브라우저 콘솔에서 wsSelfCheck() 실행 — 
   ok(ps('내일 할 일 정리', '내일 할 일 정리|'+T+'|') && ps('내일', '내일|'+T+'|') && ps('  ', '|'+T+'|'), '끝에 적은 것만 읽는다');
   const rep = wsReportText([mk('2026-10-13','완료','2026-10-13',{ title:'가', memo:'메모\n둘째 줄' }), mk('2026-10-16','진행 중','',{ title:'나', subs:[{ t:'a', done:true }, { t:'b', done:false }] }), mk('2026-10-20','예정','',{ title:'다' }), mk('2026-10-06','완료','2026-10-06',{ title:'라' })], T, 0, '홍길동');
   ok(rep==='[주간 업무 보고] 10/12(월)~10/18(일) · 홍길동\n\n■ 완료 (1건)\n- 가 (10/13)\n  · 메모\n  · 둘째 줄\n\n■ 진행 중 (1건)\n- 나 (마감 10/16) 1/2\n\n■ 다음 주 예정 (1건)\n- 다 (10/20)', '주간 보고 초안');
+  ok(wsParse('회의 내일', T).dated && !wsParse('회의 3시', T).dated && !wsParse('회의', T).dated, '날짜를 읽었는지 따로 알려 준다 (달력 보기는 안 읽혔을 때 누른 날로 등록)');
+  ok(homeDots({ tasks:[mk(T)], evs:[{ color:'a' }, { color:'b' }, { color:'c' }] }).join()===HOME_TASK_DOT+',a,b' && !homeDots(undefined).length && !homeDots({ tasks:[mk(T, '완료', T)], evs:[] }).length, '달력 점: 끝나지 않은 업무 하나 + 일정, 셋까지');
   const [left, done] = wsTodayCount(); ok(left>=0 && done>=0 && homeRate().every(p=>p==null || (p>=0 && p<=100)), '오늘 할 일·달성률 범위');
   return 'wsSelfCheck 통과';
 }
@@ -1245,17 +1299,21 @@ function wsSetState(id, state){   // 완료로 바꾸면 끝낸 날을 적고, �
   wsSave();
 }
 function wsToggle(id, key){ wsSetState(id, wsTasks().find(v=>v.id===id).state==='완료' ? '예정' : '완료'); document.getElementById(key+id)?.focus(); }   // 다시 그린 뒤에도 누르던 칸에 머문다
-function wsAdd(e){   // 빠른 등록: 제목만 — 끝에 적은 날짜·시간을 읽고(wsParse), 없으면 마감일은 오늘. 중요도 보통, 상태 예정
+function wsAddBase(){ return wsView==='cal' && currentNav.id==='ws' ? (wsCalDay || kpiDay(0)) : kpiDay(0); }   // 빠른 등록에 날짜를 안 적었을 때의 마감일: 달력 보기에서는 누른 날, 그 밖에는 오늘
+function wsAdd(e){   // 빠른 등록: 제목만 — 끝에 적은 날짜·시간을 읽고(wsParse), 날짜가 없으면 wsAddBase. 중요도 보통, 상태 예정
   e.preventDefault();
-  const today = kpiDay(0), p = wsParse(new FormData(e.target).get('title'), today), list = wsTasks(); if(!p.title) return;
+  const today = kpiDay(0), { dated, ...p } = wsParse(new FormData(e.target).get('title'), today), list = wsTasks(); if(!p.title) return;
+  if(!dated) p.due = wsAddBase();
   const x = wsFill({ ...p, id:wsNewId(list) });
   if(currentNav.id==='home' && !wsIn(x, 'today', today)) wsKeep(`추가했습니다 — ${x.title} · ${wsWhen(x, today)[0]}`);   // 홈의 오늘 목록에는 안 보이는 날짜라서 알려 준다
   list.push(x);
   if(!wsIn(x, wsFilter, today)) wsFilter = 'all';   // 방금 적은 것이 보이는 목록으로
+  if(wsView==='cal'){ const d = celebParse(x.due), t = celebParse(today); wsCalDay = x.due; wsCalOff = (d.getFullYear()-t.getFullYear())*12 + d.getMonth() - t.getMonth(); }   // 달력은 그 날짜가 있는 달로
   wsSave(); document.getElementById('wsAddIn')?.focus();
 }
 function wsHint(inp){   // 적는 동안 마감이 어떻게 들어갈지 미리 보여 준다
   const today = kpiDay(0), p = wsParse(inp.value, today), el = document.getElementById('wsHint'); if(!el) return;
+  if(!p.dated) p.due = wsAddBase();
   el.innerHTML = p.title!==inp.value.trim() ? `마감 <b>${wsWhen(p, today)[0]}</b> · 제목 “${escapeHtml(p.title)}”` : WS_HINT;
 }
 function wsCarry(){   // 못 끝낸 일 내일로: 마감이 오늘이거나 지난 미완료 업무의 마감일을 내일로
@@ -1320,7 +1378,8 @@ const wsCls = state=>({ '완료':'success', '진행 중':'info' }[state] || 'neu
 const wsOpts = (list, v)=>list.map(o=>`<option${o===v?' selected':''}>${escapeHtml(o)}</option>`).join('');
 const wsTagCls = t=>'c' + [...t].reduce((a,c)=>a+c.codePointAt(0), 0) % 6;   // 같은 태그는 늘 같은 색
 function wsAddForm(){
-  return `<div class="ws-quick"><form class="field ws-add" onsubmit="wsAdd(event)"><input id="wsAddIn" name="title" required maxlength="80" placeholder="할 일을 적고 Enter" aria-label="새 업무 제목" autocomplete="off" oninput="wsHint(this)"><button class="btn primary">추가</button></form>
+  const base = wsAddBase(), d = celebParse(base), ph = (base===kpiDay(0) ? '' : `${d.getMonth()+1}/${d.getDate()} (${WS_DOW[d.getDay()]})에 등록 — `) + '할 일을 적고 Enter';
+  return `<div class="ws-quick"><form class="field ws-add" onsubmit="wsAdd(event)"><input id="wsAddIn" name="title" required maxlength="80" placeholder="${ph}" aria-label="새 업무 제목" autocomplete="off" oninput="wsHint(this)"><button class="btn primary">추가</button></form>
     <div class="ws-hint" id="wsHint">${WS_HINT}</div></div>`;
 }
 function wsMeta(x){   // 제목 옆 작은 표시: 태그 · 하위 할 일 진행 · 반복 · 메모
@@ -1345,15 +1404,47 @@ function wsBoard(list, today){   // 보드: 예정 · 진행 중 · 완료(이�
   const col = (state, items, n=items.length)=>`<div class="ws-col" ondragover="event.preventDefault()" ondrop="wsDrop(event,'${state}')"><div class="ws-col-h ${wsCls(state)}">${state}<b>${state==='완료' ? '이번 주 ' : ''}${n}</b></div>${items.map(card).join('') || '<div class="hm-empty">없음</div>'}${n>items.length ? `<div class="ws-more">외 ${n-items.length}건 — 목록의 ‘완료’에서 볼 수 있어요</div>` : ''}</div>`;
   return `<div class="ws-board">${col('예정', open.filter(x=>x.state!=='진행 중'))}${col('진행 중', open.filter(x=>x.state==='진행 중'))}${col('완료', done.slice(0, 8), done.length)}</div>`;
 }
-function wsBody(){   // 목록(날짜별 묶음) 또는 보드. 태그·검색은 둘 다에, 목록 종류(오늘·이번 주…)는 목록에만 적용된다
+function wsBody(){   // 목록(날짜별 묶음) · 보드 · 달력. 태그·검색은 셋 다에, 목록 종류(오늘·이번 주…)는 목록에만 적용된다
   const today = kpiDay(0), list = wsTasks().filter(wsMatch), q = wsQuery.trim().toLowerCase(), empty = '<div class="hm-empty">해당하는 업무가 없습니다</div>';
   if(wsView==='board') return wsBoard(list, today);
+  if(wsView==='cal') return wsCalendar(list, today);
   const rows = list.filter(x=>wsIn(x, wsFilter, today));
   if(wsFilter==='done') return `<div class="hm-list">${rows.sort((a,b)=>a.doneAt<b.doneAt ? 1 : a.doneAt>b.doneAt ? -1 : 0).map(x=>wsRow(x, today)).join('') || empty}</div>`;
   const portal = (wsFilter==='today' || wsFilter==='all') && !wsTag ? homePortalTasks().filter(p=>p.title.toLowerCase().includes(q)) : [];   // 인사포털이 만든 일(서명·승인·평가) — 누르면 그 화면으로
   const html = { portal:portal.map(p=>`<div class="hm-row ws-row" onclick="goTo('${p.nav}','${p.tab}')"><span class="hm-go">${icon('chevR')}</span><span class="t">${p.title}<span class="hm-tag">인사포털</span></span><small>${NAV.find(v=>v.id===p.nav).label}</small><span class="badge warning">${p.badge}</span></div>`) };
   wsSorted(rows).forEach(x=>{ (html[wsGroupOf(x, today)] ||= []).push(wsRow(x, today)); });
   return Object.keys(WS_GROUPS).filter(k=>html[k]?.length).map(k=>`<details class="ws-grp ${k}"${wsFold.has(k)?'':' open'} ontoggle="wsFold[this.open ? 'delete' : 'add']('${k}')"><summary>${k==='done' ? (wsFilter==='week' ? '이번 주 완료' : '오늘 완료') : WS_GROUPS[k]}<b>${html[k].length}</b></summary><div class="hm-list">${html[k].join('')}</div></details>`).join('') || empty;
+}
+function wsCalPick(ymd){   // 달력에서 날짜를 고른다 — 적던 글자는 남긴다
+  const typed = document.getElementById('wsAddIn')?.value || '';
+  wsCalDay = ymd; renderContent();
+  const inp = document.getElementById('wsAddIn'); if(inp && typed){ inp.value = typed; wsHint(inp); }
+  document.getElementById('wsD'+ymd)?.focus();
+}
+function wsDropDay(e, ymd){   // 달력에서 업무를 다른 날짜 칸으로 끌어 놓으면 마감일이 바뀐다 (반복 기준 rday는 그대로 — 다음 회차는 원래 요일·날짜로 돌아온다)
+  e.preventDefault();
+  const x = wsTasks().find(v=>v.id===+e.dataTransfer.getData('text/plain')), d = celebParse(ymd); if(!x || x.due===ymd) return;
+  wsKeep(`마감일을 옮겼습니다 — ${x.title} · ${d.getMonth()+1}/${d.getDate()} (${WS_DOW[d.getDay()]})`); x.due = ymd; wsSave();
+}
+function wsCalendar(list, today){   // 달력 보기: 마감일 칸에 업무 제목(둘까지, 넘으면 +n)과 그 달의 급여일·KPI·평가. 끝낸 일도 마감일 칸에 줄 그어진 채 남는다. 마감일 없는 업무는 나오지 않는다(건수만). 휴대폰은 칸이 좁아 점으로 보인다
+  const t = celebParse(today), first = new Date(t.getFullYear(), t.getMonth()+wsCalOff, 1), y = first.getFullYear(), m = first.getMonth(), last = new Date(y, m+1, 0).getDate(), sel = wsCalDay || today;
+  const map = homeDayMap(y, m, list), sd = celebParse(sel);
+  const chip = x=>`<span class="ws-chip ${x.state==='완료' ? 'success' : wsWhen(x, today)[1] ? 'late' : wsCls(x.state)}" draggable="true" ondragstart="event.dataTransfer.setData('text/plain','${x.id}')" onclick="event.stopPropagation(); wsEdit(${x.id})" title="${escapeHtml(x.title)}">${escapeHtml(x.title)}</span>`;
+  let cells = [...WS_DOW].map((d,i)=>`<div class="dow${i?'':' red'}">${d}</div>`).join('') + '<div class="ws-day blank"></div>'.repeat(first.getDay());
+  for(let d=1; d<=last; d++){
+    const ymd = ctYmd(new Date(y, m, d)), it = map[ymd], tasks = wsSorted(it?.tasks || []), evs = it?.evs || [];
+    const cls = [((first.getDay()+d-1)%7===0 || PAY_HOLIDAYS.has(ymd)) && 'red', ymd===today && 'today', ymd===sel && 'sel'].filter(Boolean).join(' ');
+    cells += `<div class="ws-day ${cls}" id="wsD${ymd}" aria-pressed="${ymd===sel}" aria-label="${m+1}월 ${d}일, 업무 ${tasks.length}건${evs.map(e=>', '+e.label).join('')}" onclick="wsCalPick('${ymd}')" ondragover="event.preventDefault()" ondrop="wsDropDay(event,'${ymd}')"><b>${d}</b>${tasks.slice(0, 2).map(chip).join('')}${tasks.length>2 ? `<small>+${tasks.length-2}</small>` : ''}${evs.map(e=>`<small class="ev" style="--dot:${e.color}">${e.label}</small>`).join('')}<i>${homeDots(it).map(c=>`<span style="background:${c}"></span>`).join('')}</i></div>`;
+  }
+  cells += '<div class="ws-day blank"></div>'.repeat((7 - (first.getDay()+last)%7)%7);
+  const mine = wsSorted(list.filter(x=>x.due===sel)), sevs = homeDates(sd.getFullYear(), sd.getMonth()).filter(e=>e.ymd===sel), none = list.filter(x=>!x.due && x.state!=='완료').length;
+  const nav = (off, name, label)=>`<button type="button" aria-label="${label}" onclick="wsCalOff+=${off}; renderContent()">${icon(name)}</button>`;
+  return `<div class="ws-calbar"><span><span class="hm-calnav">${nav(-1,'chevL','이전 달')}${y}년 ${m+1}월${nav(1,'chevR','다음 달')}</span><button type="button" class="btn sm" onclick="wsCalOff=0; wsCalDay=''; renderContent()">오늘</button></span>
+      <small>날짜 칸을 누르면 그 날짜로 등록됩니다<span class="pc"> · 업무를 다른 날짜로 끌면 마감일이 바뀝니다</span></small></div>
+    <div class="ws-cal">${cells}</div>
+    ${none ? `<div class="ws-more">마감 없는 업무 ${none}건은 달력에 나오지 않습니다 · <span class="more" onclick="wsView='list'; wsFilter='all'; renderContent()">목록에서 보기 ›</span></div>` : ''}
+    <div class="hm-sub ws-sub2"><span>${sd.getMonth()+1}/${sd.getDate()} (${WS_DOW[sd.getDay()]})</span><small>업무 ${mine.length}건</small></div>
+    <div class="hm-list">${[...mine.map(x=>wsRow(x, today)), ...sevs.map(e=>`<div class="hm-ev" style="--dot:${e.color}"><span>${e.label}</span></div>`)].join('') || '<div class="hm-empty">이 날 마감인 업무가 없습니다</div>'}</div>`;
 }
 function wsRenderBody(){ const el = document.getElementById('wsBody'); if(el) el.innerHTML = wsBody(); }
 function wsProgress(list, today){   // PC 오른쪽 칸: 이번 주 진척도(홈 달성률의 '나의 업무'와 같은 숫자) + 요일별 완료 건수
@@ -1384,7 +1475,7 @@ function wsContent(){
     </div>
     <div class="ws-cols">
       <div class="card">
-        <div class="ws-bar"><div class="ws-seg">${seg('list', 'list', '목록')}${seg('board', 'board', '보드')}</div>
+        <div class="ws-bar"><div class="ws-seg">${seg('list', 'list', '목록')}${seg('board', 'board', '보드')}${seg('cal', 'calendar', '달력')}</div>
           <span><button type="button" class="btn sm" onclick="wsCarry()"${carry?'':' disabled'}>못 끝낸 일 내일로${carry ? ` (${carry})` : ''}</button><button type="button" class="btn sm" onclick="wsReport()">${icon('file')}주간 보고 초안</button></span></div>
         ${wsAddForm()}
         <div class="ws-tools">
