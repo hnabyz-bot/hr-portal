@@ -123,13 +123,10 @@
   .card{ background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:18px 20px; }
   .card-title{ font-size:var(--fs-md); font-weight:700; margin:0 0 12px 0; display:flex; align-items:center; justify-content:space-between; gap:8px; }
   .card-title .more{ font-size:var(--fs-xs); font-weight:600; color:var(--accent); cursor:pointer; }
-  .kpi-rows{ display:grid; grid-template-columns:minmax(0,1fr) 44px 110px 44px; gap:6px 10px; align-items:center; font-size:var(--fs-sm); margin-top:16px; }   /* 홈 KPI: 이름 · 가중치 · 막대 · 진행률 */
   .more{ color:var(--accent); cursor:pointer; font-weight:600; }
   .stat-label{ font-size:var(--fs-xs); color:var(--text-secondary); margin-bottom:6px; }
   .stat-value{ font-size:var(--fs-2xl); font-weight:700; letter-spacing:-0.02em; }
   .stat-sub{ font-size:var(--fs-xs); color:var(--text-muted); margin-top:4px; }
-  .bar-track{ height:6px; background:var(--bg-warning); border-radius:4px; margin-top:10px; overflow:hidden; }
-  .bar-fill{ height:100%; background:var(--alert); border-radius:4px; transition:width .4s var(--ease); }
   table{ width:100%; border-collapse:collapse; font-size:var(--fs-sm); }
   th{ text-align:left; color:var(--text-muted); font-weight:600; font-size:var(--fs-xs); padding:8px 10px; border-bottom:1px solid var(--border); }
   td{ padding:10px 10px; border-bottom:1px solid var(--border); color:var(--text-primary); }
@@ -139,6 +136,7 @@
   .badge.warning{ background:var(--bg-warning); color:var(--warning); }
   .badge.danger{ background:var(--bg-danger); color:var(--danger); }
   .badge.neutral{ background:#EEF2F6; color:var(--text-secondary); }
+  .badge.info{ background:var(--accent-soft); color:var(--accent); }
   .btn{ display:inline-flex; align-items:center; gap:6px; padding:9px 16px; border-radius:var(--radius-sm); font-size:var(--fs-sm);
     font-weight:600; cursor:pointer; border:1px solid var(--border); background:var(--surface); color:var(--text-primary);
     text-decoration:none; transition:background .2s var(--ease), border-color .2s var(--ease), transform .1s var(--ease); }
@@ -147,30 +145,102 @@
   .btn svg{ width:15px; height:15px; flex-shrink:0; }
   .btn.primary{ background:var(--accent); color:#fff; border-color:var(--accent); }
   .btn.primary:hover{ background:var(--accent-hover); border-color:var(--accent-hover); }
-  .quick-grid{ display:grid; grid-template-columns:repeat(6,1fr); gap:10px; }
-  .quick-btn{ display:flex; flex-direction:column; align-items:center; gap:8px; padding:6px 0;
-    text-align:center; cursor:pointer; border-radius:var(--radius); }
-  .quick-btn .qicon{ width:64px; height:64px; border-radius:50%;
-    display:flex; align-items:center; justify-content:center; transition:transform .25s var(--ease); }
-  .quick-btn .qicon img{ width:40px; height:40px; }
-  .quick-btn:hover .qicon{ transform:translateY(-3px) scale(1.04); }
-  .quick-btn .qlabel{ font-size:var(--fs-sm); font-weight:600; color:var(--text-primary); }
-  .hero-banner{
-    background:var(--accent-light);
-    border-radius:var(--radius-lg); padding:28px 32px; margin-bottom:14px;
-    position:relative; overflow:hidden;
-  }
-  .hero-banner::before, .hero-banner::after{ content:""; position:absolute; border-radius:50%; }
-  .hero-banner::before{ width:220px; height:220px; right:-50px; top:-70px; background:var(--sky); }
-  .hero-banner::after{ width:130px; height:130px; right:110px; bottom:-70px; background:var(--bg-warning); }
-  .hero-title{ font-size:var(--fs-xl); font-weight:800; color:var(--text-primary); line-height:1.4; letter-spacing:-0.02em; margin:0 0 6px; position:relative; z-index:1; }
-  .hero-sub{ font-size:var(--fs-sm); color:#3A4A5E; position:relative; z-index:1; }
-  /* 홈 배너의 "휴대폰에 설치" 버튼과 그 안내창 */
-  .hero-install{ position:absolute; z-index:2; right:28px; top:50%; transform:translateY(-50%); display:inline-flex; align-items:center; gap:8px;
-    padding:11px 18px; border:0; border-radius:999px; background:#fff; color:var(--accent); font-family:inherit; font-size:var(--fs-md); font-weight:700;
-    cursor:pointer; box-shadow:0 6px 18px rgba(37,93,170,.22); }
-  .hero-install:hover{ background:var(--accent-soft); }
-  .hero-install svg{ width:18px; height:18px; }
+  /* ---------- 홈 (2026-10-11 개편) ----------
+     위에서부터: 인사 배너 · 빠른 서비스 · 요약 네 칸 · 세 칸(오늘의 업무 / 오늘의 루틴·이번 주 달성률 / 일정) · KPI 진행률 · 이번 주 소식.
+     배너 사진(img/home/hero.jpg)은 오른쪽에 붙고 왼쪽은 바탕색으로 풀린다 — 같은 이름으로 바꾸면 주소 끝 ?v= 번호를 올린다.
+     요약 칸의 옅은 색(파랑·초록·보라·회색)은 이 화면에서만 쓴다. */
+  .hm{ display:grid; gap:14px; }
+  .hm .card{ border-radius:var(--radius-lg); }
+  .hm-hero{ position:relative; min-height:184px; display:flex; align-items:center; border-radius:16px; overflow:hidden; color:#fff;
+    background:linear-gradient(96deg,#3E6CA3 0%,#5A8BC0 42%,#86AFD8 100%); }
+  .hm-hero > img{ position:absolute; right:0; top:0; height:100%; -webkit-mask-image:linear-gradient(90deg,transparent 0,#000 32%); mask-image:linear-gradient(90deg,transparent 0,#000 32%); }
+  .hm-hero::after{ content:""; position:absolute; inset:0; background:linear-gradient(90deg,rgba(22,48,92,.52) 0%,rgba(22,48,92,.2) 46%,rgba(22,48,92,0) 72%); }
+  .hm-hero-text{ position:relative; z-index:1; padding:24px 36px; }
+  .hm-hero h2{ margin:0; font-size:var(--fs-2xl); font-weight:700; letter-spacing:-.03em; }
+  .hm-hero p{ margin:8px 0 0; font-size:var(--fs-lg); }
+  .hm-meta{ display:flex; flex-wrap:wrap; row-gap:6px; margin:22px 0 0; padding:0; list-style:none; font-size:var(--fs-sm); }
+  .hm-meta li{ display:flex; align-items:center; gap:7px; padding:0 16px; border-left:1px solid rgba(255,255,255,.38); }
+  .hm-meta li:first-child{ padding-left:0; border-left:0; }
+  .hm-meta svg{ width:15px; height:15px; }
+  .hero-install{ position:absolute; z-index:2; right:18px; top:16px; display:inline-flex; align-items:center; gap:6px; padding:7px 13px; border-radius:999px;
+    border:1px solid rgba(255,255,255,.55); background:rgba(20,44,84,.28); color:#fff; font-family:inherit; font-size:var(--fs-xs); font-weight:600; cursor:pointer; backdrop-filter:blur(6px); }
+  .hero-install:hover{ background:rgba(20,44,84,.45); }
+  .hero-install svg{ width:14px; height:14px; }
+  .hm-quick{ display:grid; grid-template-columns:repeat(6,1fr); }
+  .hm-q{ display:flex; flex-direction:column; align-items:center; gap:9px; padding:4px 0; border-left:1px solid var(--border); font-weight:600; text-align:center; cursor:pointer; }
+  .hm-q:first-child{ border-left:0; }
+  .hm-q i{ width:48px; height:48px; border-radius:14px; display:grid; place-items:center; background:var(--accent-soft); color:var(--accent); transition:background .2s var(--ease); }
+  .hm-q i svg{ width:22px; height:22px; }
+  .hm-q:hover i{ background:var(--accent-light); }
+  .hm-tiles{ display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:14px; }
+  .hm-tile{ display:flex; flex-direction:column; gap:3px; min-width:0; padding:16px 20px; border:1px solid; border-radius:var(--radius-lg); cursor:pointer; }
+  .hm-tile span{ font-weight:600; }
+  .hm-tile b{ font-size:var(--fs-2xl); font-weight:700; letter-spacing:-.02em; line-height:1.25; }
+  .hm-tile b small{ margin-left:2px; font-size:var(--fs-md); font-weight:600; color:var(--text-secondary); }
+  .hm-tile em{ font-style:normal; font-size:var(--fs-xs); color:var(--text-muted); }
+  .hm-tile.blue{ background:#F1F6FD; border-color:#DCE8F8; }   .hm-tile.blue span{ color:var(--accent); }
+  .hm-tile.green{ background:#EFF8F4; border-color:#D8EDE4; }  .hm-tile.green span{ color:var(--success); }
+  .hm-tile.violet{ background:#F5F2FD; border-color:#E6DFF8; } .hm-tile.violet span{ color:#6A46B8; }
+  .hm-tile.slate{ background:#F4F6F9; border-color:#E1E6ED; }  .hm-tile.slate span{ color:var(--text-secondary); }
+  .hm-cols{ display:grid; grid-template-columns:1.15fr 1fr .95fr; gap:14px; }
+  .hm-cols > *{ min-width:0; }
+  .hm-cols .card{ display:flex; flex-direction:column; }
+  .hm-stack{ display:flex; flex-direction:column; gap:14px; }
+  .hm-stack .card:last-child{ flex:1; }
+  .hm-dim{ font-weight:500; color:var(--text-secondary); }
+  .hm-count{ font-size:var(--fs-xs); color:var(--success); }
+  .hm-chips{ display:flex; gap:6px; margin-bottom:8px; }
+  .hm-chip{ padding:5px 11px; border:0; border-radius:999px; background:#EEF2F6; color:var(--text-secondary); font:inherit; font-size:var(--fs-xs); font-weight:600; cursor:pointer; }
+  .hm-chip.on{ background:var(--accent); color:#fff; }
+  .hm-row{ display:flex; align-items:center; gap:10px; padding:11px 0; border-top:1px solid var(--border); font-size:var(--fs-md); font-weight:500; cursor:pointer; }
+  .hm-list > :first-child{ border-top:0; }
+  .hm-row .t{ flex:1; min-width:0; display:flex; align-items:center; flex-wrap:wrap; gap:4px 6px; }
+  .hm-row.done .t{ color:var(--text-muted); text-decoration:line-through; }
+  .hm-row small{ font-size:var(--fs-xs); font-weight:400; color:var(--text-muted); white-space:nowrap; }
+  .hm-check{ appearance:none; -webkit-appearance:none; flex:none; width:18px; height:18px; margin:0; border:1.5px solid #8593A5; border-radius:5px; background:#fff center/12px no-repeat; cursor:pointer; }
+  .hm-check:checked{ border-color:var(--accent); background-color:var(--accent); background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23fff' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E"); }
+  .hm-check.round{ width:20px; height:20px; border-radius:50%; }
+  .hm-check.round:checked{ border-color:var(--success); background-color:var(--success); }
+  .hm-go{ flex:none; width:18px; height:18px; border-radius:5px; display:grid; place-items:center; background:var(--accent-soft); color:var(--accent); }
+  .hm-go svg{ width:12px; height:12px; }
+  .hm-tag{ padding:1px 6px; border-radius:4px; background:var(--accent-soft); color:var(--accent); font-size:var(--fs-xs); font-weight:700; white-space:nowrap; text-decoration:none; }
+  .hm-tag.red{ background:var(--bg-danger); color:var(--danger); }
+  .hm-empty{ padding:22px 0; text-align:center; color:var(--text-muted); }
+  .hm-foot{ margin-top:14px; padding-top:12px; border-top:1px solid var(--border); font-size:var(--fs-xs); color:var(--text-muted); }
+  .hm-cols .card > .hm-foot{ margin-top:auto; }
+  .hm-rate{ flex:1; display:flex; align-items:center; gap:20px; }
+  .hm-rate ul, .hm-kpi{ margin:0; padding:0; list-style:none; }
+  .hm-rate ul{ flex:1; min-width:0; display:grid; gap:10px; }
+  .hm-donut{ position:relative; flex:none; width:84px; height:84px; }
+  .hm-donut svg{ width:100%; height:100%; transform:rotate(-90deg); }
+  .hm-donut b{ position:absolute; inset:0; display:grid; place-items:center; font-size:var(--fs-xl); letter-spacing:-.02em; }
+  .hm-pct{ display:grid; grid-template-columns:minmax(0,1fr) auto; gap:5px 8px; }
+  .hm-pct > span{ white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .hm-bar{ grid-column:1 / -1; height:5px; border-radius:3px; background:#E8EEF5; overflow:hidden; }
+  .hm-bar i{ display:block; height:100%; border-radius:3px; background:var(--accent); transition:width .4s var(--ease); }
+  .hm-bar.green i{ background:var(--success); }
+  .hm-calnav{ display:flex; align-items:center; gap:4px; font-size:var(--fs-sm); font-weight:600; color:var(--text-secondary); }
+  .hm-calnav button{ width:26px; height:26px; padding:0; border:0; border-radius:var(--radius-sm); background:none; color:var(--text-muted); cursor:pointer; display:grid; place-items:center; }
+  .hm-calnav button:hover{ background:var(--bg-page); color:var(--text-primary); }
+  .hm-calnav svg{ width:15px; height:15px; }
+  .hm-cal{ display:grid; grid-template-columns:repeat(7,1fr); row-gap:2px; text-align:center; }
+  .hm-cal span{ position:relative; z-index:0; height:30px; display:grid; place-items:center; }
+  .hm-cal .dow{ height:26px; font-size:var(--fs-xs); color:var(--text-muted); }
+  .hm-cal .red{ color:var(--coral-text); }
+  .hm-cal .today{ color:#fff; font-weight:700; }
+  .hm-cal .today::before{ content:""; position:absolute; z-index:-1; width:28px; height:28px; border-radius:50%; background:var(--accent); }
+  .hm-cal .dot::after{ content:""; position:absolute; bottom:0; width:4px; height:4px; border-radius:50%; background:var(--dot); }
+  .hm-sub{ margin:14px 0 2px; padding-top:14px; border-top:1px solid var(--border); font-weight:700; }
+  .hm-ev{ display:flex; align-items:center; gap:10px; padding:8px 0; }
+  .hm-ev::before{ content:""; flex:none; width:3px; height:16px; border-radius:2px; background:var(--dot); }
+  .hm-ev span{ flex:1; font-weight:500; }
+  .hm-ev time{ font-size:var(--fs-xs); color:var(--text-muted); }
+  .hm-ev b{ min-width:38px; text-align:right; font-size:var(--fs-xs); color:var(--accent); }
+  .hm-kpi{ display:grid; grid-template-columns:120px repeat(auto-fit,minmax(150px,1fr)); gap:14px 26px; align-items:center; }
+  .hm-kpi-total b{ display:block; font-size:var(--fs-2xl); letter-spacing:-.02em; line-height:1.2; }
+  .hm-kpi-total small{ font-size:var(--fs-xs); color:var(--text-muted); }
+  @media (max-width:1100px){ .hm-cols{ grid-template-columns:1fr 1fr; } .hm-cols > :last-child{ grid-column:1 / -1; } }
+  /* "휴대폰에 설치" 안내창 */
   .org-modal .card:has(.inst-qr){ max-width:560px; }
   .inst{ word-break:keep-all; }
   .inst-body{ display:flex; gap:22px; align-items:flex-start; }
@@ -273,7 +343,6 @@
   .x-btn svg{ width:18px; height:18px; }
 
   /* ---------- 경조사 배너 ---------- */
-  .celeb{ margin-bottom:14px; }
   .celeb-head{ display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:10px; }
   .celeb-head h3{ font-size:var(--fs-md); font-weight:700; margin:0; }
   .celeb-row{ display:flex; gap:12px; overflow-x:auto; padding:4px 2px 10px; scroll-snap-type:x mandatory; }
@@ -568,14 +637,18 @@
     .nav-item.pc-only .nav-badge{ display:none; }
     .topbar{ padding:0 14px; gap:8px; }
     .content{ padding:16px 14px 32px 14px; }
-    .hero-banner{ padding:20px; }
-    .hero-banner::before{ width:150px; height:150px; right:-60px; top:-60px; }
-    .hero-banner::after{ display:none; }
-    .hero-install{ position:relative; right:auto; top:auto; transform:none; margin-top:14px; min-height:44px; padding:9px 16px; font-size:var(--fs-sm); }
-    .quick-grid{ grid-template-columns:repeat(3,1fr); }
+    /* 홈: 한 줄로 쌓는다 (빠른 서비스 3칸×2줄, 요약 2칸×2줄) */
+    .hm-hero{ min-height:0; } .hm-hero > img{ opacity:.55; }
+    .hm-hero-text{ padding:62px 20px 22px; } .hm-hero h2{ font-size:var(--fs-xl); } .hm-hero p{ font-size:var(--fs-md); }
+    .hm-meta{ flex-direction:column; row-gap:7px; margin-top:16px; } .hm-meta li{ padding:0; border:0; }
+    .hero-install{ right:12px; top:10px; min-height:44px; }
+    .hm-quick{ grid-template-columns:repeat(3,1fr); row-gap:14px; } .hm-q:nth-child(3n+1){ border-left:0; }
+    .hm-tiles{ grid-template-columns:1fr 1fr; gap:10px; } .hm-tile{ padding:14px 16px; }
+    .hm-cols{ grid-template-columns:1fr; } .hm-cols > :last-child{ grid-column:auto; }
+    .hm-kpi{ grid-template-columns:1fr; }
+    .hm-row{ min-height:44px; } .hm-chip{ min-height:36px; } .hm-calnav button{ width:40px; height:40px; }
     .grid.g2, .grid.g3, .grid.g4{ grid-template-columns:1fr; }
     .field-row{ grid-template-columns:1fr; }
-    .card[style*="grid-column:span 2"]{ grid-column:auto !important; }   /* 카드에 직접 적힌 값을 이겨야 해서 !important */
     .card{ overflow-x:auto; }
     /* --- 휴대폰 정돈 (2026-10-08) --- */
     .card-title{ flex-wrap:wrap; row-gap:8px; }                /* 제목 옆 단추(연도·인쇄 등)가 비좁으면 다음 줄로 */
@@ -583,8 +656,6 @@
     .field input, .field select{ min-height:44px; }            /* 입력칸과 옆 단추 높이 맞춤 (손가락 크기) */
     .wh-step b{ white-space:nowrap; font-size:var(--fs-md); }  /* 금액은 한 줄 — 가린 상태의 ● 뒤 '원'이 혼자 내려가지 않게 */
     .org-list th:nth-child(5), .org-list td:nth-child(5){ display:none; }   /* 구성원 목록: 메일 칸 숨김 — 이름을 누르면 메일 단추가 나온다 */
-    .kpi-rows{ grid-template-columns:44px minmax(0,1fr) 44px; }             /* 홈 KPI: 이름을 한 줄 차지하게, 그 아래 가중치·막대·진행률 */
-    .kpi-rows > :nth-child(4n+1){ grid-column:1 / -1; margin-top:6px; }
     .org-grid{ --org-cols:2; }
     .celeb-bn{ flex-basis:58%; }
     /* 손가락으로 누르기 쉬운 크기 (44px) */
@@ -710,42 +781,196 @@ const ICONS = {
   monitor:'<rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/>',
   mobile:'<rect x="7" y="2" width="10" height="20" rx="2"/><path d="M11 18h2"/>',
   coffee:'<path d="M18 8h1a4 4 0 0 1 0 8h-1"/><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"/><line x1="6" y1="1" x2="6" y2="4"/><line x1="10" y1="1" x2="10" y2="4"/><line x1="14" y1="1" x2="14" y2="4"/>',
+  calendar:'<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>',
+  briefcase:'<rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/>',
+  game:'<rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 12h4M8 10v4"/><line x1="15" y1="13" x2="15.01" y2="13"/><line x1="18" y1="11" x2="18.01" y2="11"/>',
+  chevL:'<polyline points="15 18 9 12 15 6"/>',
+  chevR:'<polyline points="9 18 15 12 9 6"/>',
 };
 function icon(name, cls=''){ return `<svg class="${cls}" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICONS[name]}</svg>`; }
 
 /* ---------------- CONTENT RENDERERS ---------------- */
-function homeContent(){
-  // 아이콘 그림: Microsoft Fluent Emoji 3D (MIT 라이선스) — public/img/quick/
-  const services = [
-    ['pay','급여명세서','#E7F8EF','#BDEBD3','pay','p1'],
-    ['expense','경비 산출','#FFF4DE','#FFD9A0','trip','t2'],
-    ['rule','규정 검색','#E8F1FF','#BCD4FA','rule','r1'],
-    ['kpi','KPI','#FFECEC','#FBC2C2','perf','e1'],
-    ['people','구성원 검색','#F1EDFF','#D3C8FA','org','o2'],
-    ['zombie','X-ray 특공대','#F6FBDD','#D5EDA4','pantry','g1','xray/'],   // 일곱 번째 값이 있으면 메뉴 대신 그 주소로 바로 간다
-  ];
-  return `
-  <div class="hero-banner">
-    <h2 class="hero-title">함께 만드는 성장,<br>더 편리해지는 인사업무</h2>
-    <div class="hero-sub">H&abyz 인사포털에서 급여·출장·평가·규정을 한 곳에서 확인하세요</div>
+/* ---------------- 홈 (2026-10-11 개편) ----------------
+   위에서부터: 인사 배너 · 빠른 서비스 · 요약 네 칸 · 세 칸(오늘의 업무 / 오늘의 루틴·이번 주 달성률 / 일정) · KPI 진행률 · 이번 주 소식.
+   - 인사포털 일(서명·승인·평가)은 왼쪽 메뉴 숫자(TODO)와 같은 기준으로 나온다. 그 화면에서 처리하면 사라진다.
+   - 개인 업무·루틴은 예시다(브라우저 메모리, 새로고침하면 처음으로). 마이페이지에 "나의 업무"·"나의 일상"이 생기면 그 자료를 읽는다.
+   - KPI 진행률은 KPI가 있는 직원에게만 보인다. 현장직은 같은 자리에 "나의 평가" 카드. */
+const HOME_QUICK = [   // [아이콘, 이름, 메뉴, 탭] — 다섯 번째 값이 있으면 메뉴 대신 그 주소로 바로 간다
+  ['file','급여명세서','pay','p1'], ['calc','경비 산출','trip','t2'], ['search','규정 검색','rule','r1'],
+  ['target','KPI','perf','e1'], ['users','구성원 검색','org','o2'], ['game','X-ray 특공대','pantry','g1','xray/'],
+];
+const homeTasks = [   // day = 오늘부터 며칠 뒤가 마감인지
+  { id:1, title:'주간 업무 보고 작성', day:0, time:'10:00', state:'진행 중', urgent:true, done:false },
+  { id:2, title:'회의 자료 정리', day:0, time:'16:00', state:'예정', done:false },
+  { id:3, title:'교육 일정 확인', day:2, state:'예정', done:false },
+  { id:4, title:'출장 경비 정산 제출', day:0, time:'09:30', state:'예정', done:true },
+];
+const homeRoutines = [
+  { id:1, title:'오늘의 업무 우선순위 정리', done:true },
+  { id:2, title:'업무 중 스트레칭하기', done:true },
+  { id:3, title:'책 10분 읽기', done:true },
+  { id:4, title:'퇴근 전 내일 할 일 정리', done:false },
+];
+const HOME_WEEK = { task:[8,9], routine:[9,12] };   // 시연용: 이번 주 지난 요일의 [완료, 전체]. 오늘 것은 위 목록에서 센다
+let homeTaskTab = 'all', homeCalOff = 0;   // 업무 탭(all·mine·portal), 달력에서 넘긴 달 수
+
+/* ----- 규칙 (순수 로직, homeSelfCheck가 검증) ----- */
+function homeSince(hireDate, t){   // 입사 후 지난 [년, 개월, 일]. 입사일이 없거나 앞날이면 null
+  if(!hireDate) return null;
+  const h = celebParse(hireDate), day = new Date(t.getFullYear(), t.getMonth(), t.getDate());
+  const plus = n=>{ const last = new Date(h.getFullYear(), h.getMonth()+n+1, 0); return new Date(last.getFullYear(), last.getMonth(), Math.min(h.getDate(), last.getDate())); };   // n개월 뒤 같은 날 (31일 입사는 그 달 말일)
+  let n = (day.getFullYear()-h.getFullYear())*12 + day.getMonth()-h.getMonth();
+  if(plus(n) > day) n--;
+  return n<0 ? null : [Math.floor(n/12), n%12, Math.round((day - plus(n))/864e5)];
+}
+function homePortalTasks(){   // 인사포털이 만든 일. n의 합 = 왼쪽 메뉴 숫자의 합
+  const out = [], add = (n, title, nav, tab, badge)=>{ if(n) out.push({ n, title:n>1 ? `${title} ${n}건` : title, nav, tab, badge }); };
+  add(TODO.p2(), '연봉계약서 서명', 'pay', 'p2', '서명 대기');
+  add(kpiWaiting().length, '팀원 KPI 승인', 'perf', 'e1', '승인 대기');
+  add(kpiSheets[kpiRole]?.rejectNote ? 1 : 0, '반려된 KPI 다시 작성', 'perf', 'e1', '반려');
+  add(TODO.e2(), '평가 진행', 'perf', 'e2', '평가 중');
+  add(TODO.e3(), '이의 신청 답변', 'perf', 'e3', '답변 대기');
+  return out;
+}
+function homeDue(){   // 마감 임박 [오늘, 이번 주(7일 안)] — 끝내지 않은 개인 업무 + 열려 있는 KPI·평가 기간의 마지막 날
+  const days = homeTasks.filter(x=>!x.done).map(x=>x.day), left = to=>Math.round((celebParse(to) - celebParse(kpiDay(0)))/864e5);
+  if(kpiSheets[kpiRole] && kpiInPeriod(kpiPeriod.editFrom, kpiPeriod.editTo)) days.push(left(kpiPeriod.editTo));
+  if(evPeriodOpen() && TODO.e2()) days.push(left(kpiPeriod.evalTo));
+  return [days.filter(d=>d<=0).length, days.filter(d=>d>0 && d<=7).length];
+}
+function homeRate(){   // 이번 주 달성률 [종합, 업무, 루틴] % — 지난 요일(시연 값) + 오늘 체크한 것. 계산 규칙은 나의 업무·나의 일상을 만들 때 정한다
+  const pct = (base, list)=>Math.round((base[0] + list.filter(x=>x.done).length) / (base[1] + list.length) * 100);
+  const a = pct(HOME_WEEK.task, homeTasks), b = pct(HOME_WEEK.routine, homeRoutines);
+  return [Math.round((a+b)/2), a, b];
+}
+function homeDates(y, m){   // 그 달의 급여일 + KPI·평가 기간 날짜 (달력 점, 주요 일정)
+  return [ { ymd:ctYmd(payDayOf(y, m)), label:'급여일', color:'var(--accent)' },
+    { ymd:kpiPeriod.editTo, label:'KPI 작성·수정 마감', color:'#7A56C8' },
+    { ymd:kpiPeriod.evalFrom, label:'평가 기간 시작', color:'var(--success)' },
+    { ymd:kpiPeriod.evalTo, label:'평가 기간 마감', color:'var(--success)' } ].filter(e=>e.ymd);
+}
+function homeSelfCheck(){   // 브라우저 콘솔에서 homeSelfCheck() 실행
+  const ok = (c,m)=>{ if(!c) throw new Error('homeSelfCheck 실패: '+m); };
+  const since = (h, y, m, d)=>String(homeSince(h, new Date(y, m-1, d)));
+  ok(since('2023-07-31', 2026, 10, 11)==='3,2,11', '31일 입사: 3년 2개월 11일');
+  ok(since('2026-01-31', 2026, 3, 1)==='0,1,1', '1월 31일 입사 → 3월 1일은 1개월 1일');
+  ok(since('2024-02-29', 2025, 2, 28)==='1,0,0', '2월 29일 입사 → 이듬해 2월 28일이 1년');
+  ok(since('2026-10-11', 2026, 10, 11)==='0,0,0' && homeSince('2026-10-12', new Date(2026, 9, 11))===null && homeSince('', new Date())===null, '입사 당일은 0, 앞날·빈 값은 null');
+  const keep = kpiRole;
+  try {
+    Object.keys(KPI_USERS).forEach(r=>{ kpiRole = r; ok(homePortalTasks().reduce((a,p)=>a+p.n, 0)===Object.values(TODO).reduce((a,f)=>a+f(), 0), r+': 인사포털 일 합계 = 메뉴 숫자 합계'); });
+  } finally { kpiRole = keep; }
+  ok(homeRate().every(p=>p>=0 && p<=100), '달성률은 0~100');
+  ok(homeDates(2026, 9)[0].ymd==='2026-10-20' && homeDates(2026, 12)[0].ymd==='2027-01-20', '급여일이 맨 앞, 12월 다음은 이듬해 1월');
+  return 'homeSelfCheck 통과';
+}
+
+/* ----- 화면 ----- */
+function homeToggle(list, id, key){ const x = list.find(v=>v.id===id); x.done = !x.done; renderContent(); document.getElementById(key+id)?.focus(); }   // 다시 그린 뒤에도 누르던 칸에 머문다
+function homeJump(id){ document.getElementById(id)?.scrollIntoView({ behavior:'smooth', block:'start' }); }
+function homePct(name, pct, cls=''){ return `<li class="hm-pct"><span>${name}</span><b>${pct}%</b><div class="hm-bar ${cls}"><i style="width:${pct}%"></i></div></li>`; }
+function homeHero(t){
+  const me = KPI_USERS[kpiRole], om = orgMembers.find(m=>m.name===me.name), since = om && homeSince(om.hireDate, t);
+  const worked = since && [since[0] && since[0]+'년', since[1] && since[1]+'개월', since[2] && since[2]+'일'].filter(Boolean).join(' ');
+  const w = payWindow(t), left = Math.round((w.next - new Date(t.getFullYear(), t.getMonth(), t.getDate()))/864e5);
+  return `<section class="hm-hero">
+    <img src="img/home/hero.jpg?v=1" alt="">
     <button type="button" class="hero-install" onclick="installNotice()">${icon('mobile')}휴대폰에 설치</button>
-  </div>
-  <div class="card" style="margin-bottom:14px;">
-    <div class="card-title">빠른 서비스</div>
-    <div class="quick-grid">
-      ${services.map(s=>`
-      <div class="quick-btn" onclick="${s[6] ? `location.href='${s[6]}'` : `goTo('${s[4]}','${s[5]}')`}">
-        <div class="qicon" style="background:radial-gradient(circle at 30% 25%,${s[2]},${s[3]});"><img src="img/quick/${s[0]}.png" alt="" width="40" height="40"></div>
-        <div class="qlabel">${s[1]}</div>
-      </div>`).join('')}
+    <div class="hm-hero-text">
+      <h2>${escapeHtml(me.name)}님, 반가워요!</h2>
+      <p>오늘도 행복한 하루 되세요.</p>
+      <ul class="hm-meta">
+        <li>${icon('calendar')}${t.getFullYear()}. ${t.getMonth()+1}. ${t.getDate()} (${'일월화수목금토'[t.getDay()]})</li>
+        ${since ? `<li>${icon('briefcase')}${worked ? `입사하고 <b>${worked}</b>` : '<b>입사 첫날</b>'}</li>` : ''}
+        <li>${icon('wallet')}${w.isPayday ? '<b>오늘은 급여일</b>' : `급여일까지 <b>D-${left}</b>`}</li>
+      </ul>
     </div>
-  </div>
-  ${celebBanners()}
-  <div class="grid g3">
-    ${kpiHomeCard()}
-    <div style="display:flex; flex-direction:column; gap:14px;">
-      ${kpiScheduleCard()}
+  </section>`;
+}
+function homeTaskCard(t){
+  const mine = [...homeTasks].sort((a,b)=>a.done-b.done || a.day-b.day || (a.time||'').localeCompare(b.time||''));
+  const when = x=>{ if(!x.day) return '오늘 '+(x.time||''); const d = new Date(t); d.setDate(d.getDate()+x.day); return `${d.getMonth()+1}/${d.getDate()}까지`; };
+  const rows = [
+    ...(homeTaskTab==='mine' ? [] : homePortalTasks().map(p=>`<div class="hm-row" onclick="goTo('${p.nav}','${p.tab}')"><span class="hm-go">${icon('chevR')}</span><span class="t">${p.title}<span class="hm-tag">인사포털</span></span><small>${NAV.find(n=>n.id===p.nav).label}</small><span class="badge warning">${p.badge}</span></div>`)),
+    ...(homeTaskTab==='portal' ? [] : mine.map(x=>`<label class="hm-row${x.done?' done':''}"><input type="checkbox" class="hm-check" id="hmT${x.id}" ${x.done?'checked':''} onchange="homeToggle(homeTasks,${x.id},'hmT')"><span class="t">${escapeHtml(x.title)}${x.urgent && !x.done ? '<span class="hm-tag red">긴급</span>' : ''}</span><small>${when(x)}</small><span class="badge ${x.done?'success':x.state==='진행 중'?'info':'neutral'}">${x.done?'완료':x.state}</span></label>`)),
+  ];
+  const chip = (k, label)=>`<button type="button" class="hm-chip${homeTaskTab===k?' on':''}" aria-pressed="${homeTaskTab===k}" onclick="homeTaskTab='${k}'; renderContent()">${label}</button>`;
+  return `<div class="card" id="hmTasks">
+    <div class="card-title">오늘의 업무</div>
+    <div class="hm-chips">${chip('all','전체')}${chip('mine','개인')}${chip('portal','인사포털 연계')}</div>
+    <div class="hm-list">${rows.join('') || '<div class="hm-empty">해당하는 업무가 없습니다</div>'}</div>
+    <div class="hm-foot">개인 업무는 예시입니다. 마이페이지에 ‘나의 업무’가 열리면 직접 등록할 수 있어요.</div>
+  </div>`;
+}
+function homeRoutineCards(){
+  const done = homeRoutines.filter(x=>x.done).length, [all, a, b] = homeRate();
+  return `<div class="hm-stack">
+    <div class="card" id="hmRoutine">
+      <div class="card-title"><span>오늘의 루틴</span><span class="hm-count">${done}/${homeRoutines.length} 완료</span></div>
+      <div class="hm-list">${homeRoutines.map(x=>`<label class="hm-row"><input type="checkbox" class="hm-check round" id="hmR${x.id}" ${x.done?'checked':''} onchange="homeToggle(homeRoutines,${x.id},'hmR')"><span class="t">${escapeHtml(x.title)}</span><span class="badge ${x.done?'success':'neutral'}">${x.done?'완료':'미완료'}</span></label>`).join('')}</div>
+      <div class="hm-foot">예시 루틴입니다. 마이페이지에 ‘나의 일상’이 열리면 직접 정할 수 있어요.</div>
     </div>
+    <div class="card">
+      <div class="card-title">이번 주 달성률</div>
+      <div class="hm-rate">
+        <div class="hm-donut"><svg viewBox="0 0 120 120" aria-hidden="true" fill="none" stroke-width="11"><circle cx="60" cy="60" r="50" stroke="#E8EEF5"/><circle cx="60" cy="60" r="50" style="stroke:var(--accent)" stroke-linecap="round" stroke-dasharray="${(all*3.1416).toFixed(1)} 314.2"/></svg><b>${all}%</b></div>
+        <ul>${homePct('나의 업무', a)}${homePct('나의 루틴', b, 'green')}</ul>
+      </div>
+    </div>
+  </div>`;
+}
+function homeCalendar(t){
+  const first = new Date(t.getFullYear(), t.getMonth()+homeCalOff, 1), y = first.getFullYear(), m = first.getMonth(), today = ctYmd(t);
+  const marks = Object.fromEntries(homeDates(y, m).map(e=>[e.ymd, e])), dow = '일월화수목금토';
+  let cells = [...dow].map((d,i)=>`<span class="dow${i?'':' red'}">${d}</span>`).join('') + '<span></span>'.repeat(first.getDay());
+  for(let d=1, last=new Date(y, m+1, 0).getDate(); d<=last; d++){
+    const ymd = ctYmd(new Date(y, m, d)), mk = marks[ymd];
+    const cls = [((first.getDay()+d-1)%7===0 || PAY_HOLIDAYS.has(ymd)) && 'red', ymd===today && 'today', mk && 'dot'].filter(Boolean).join(' ');
+    cells += `<span class="${cls}"${mk ? ` style="--dot:${mk.color}" title="${mk.label}"` : ''}${ymd===today ? ' aria-current="date"' : ''}>${d}</span>`;
+  }
+  const pay = payWindow(t).next, soon = homeDates(pay.getFullYear(), pay.getMonth()).filter(e=>e.ymd>=today).sort((a,b)=>a.ymd.localeCompare(b.ymd)).slice(0,4);   // 급여일은 가장 가까운 하루만
+  const md = s=>{ const d = celebParse(s); return `${d.getMonth()+1}/${d.getDate()} (${dow[d.getDay()]})`; };
+  const dday = s=>{ const n = Math.round((celebParse(s) - celebParse(today))/864e5); return n ? 'D-'+n : '오늘'; };
+  const nav = (off, name, label)=>`<button type="button" aria-label="${label}" onclick="homeCalOff+=${off}; renderContent()">${icon(name)}</button>`;
+  return `<div class="card" id="hmCal">
+    <div class="card-title"><span>일정</span><span class="hm-calnav">${nav(-1,'chevL','이전 달')}${y}년 ${m+1}월${nav(1,'chevR','다음 달')}</span></div>
+    <div class="hm-cal">${cells}</div>
+    <div class="hm-sub">주요 일정</div>
+    ${soon.map(e=>`<div class="hm-ev" style="--dot:${e.color}"><span>${e.label}</span><time>${md(e.ymd)}</time><b>${dday(e.ymd)}</b></div>`).join('')}
+  </div>`;
+}
+function homeKpi(){   // KPI가 있는 직원에게만, 진행률만. 현장직은 같은 자리에 '나의 평가' 카드
+  const me = evMe(); if(me && evIsLine(me)) return evLineHomeCard(me);
+  const s = kpiSheets[kpiRole]; if(!s) return '';
+  const [label, cls] = kpiStatus(kpiRole);
+  return `<div class="card">
+    <div class="card-title"><span>나의 KPI 진행률 <span class="hm-dim">${KPI_YEAR}년</span> <span class="badge ${cls}">${label}</span></span><span class="more" onclick="goTo('perf','e1')">상세 보기 →</span></div>
+    ${s.confirmed ? `<ul class="hm-kpi"><li class="hm-kpi-total"><b>${kpiProgress(s.confirmed)}%</b><small>종합 달성률</small></li>${s.confirmed.flatMap(g=>g.items).map(i=>homePct(escapeHtml(i.action), i.progress||0)).join('')}</ul>
+    <div class="hm-foot">진행률은 본인이 입력한 값이며 평가 점수와는 별개입니다.</div>`
+    : '<div class="placeholder-note" style="margin:0;">아직 확정된 KPI가 없습니다. 목표를 작성해 제출해 주세요.</div>'}
+  </div>`;
+}
+function homeContent(){
+  const t = new Date(), mineDone = homeTasks.filter(x=>x.done).length, left = homeTasks.length - mineDone + homePortalTasks().length;
+  const rDone = homeRoutines.filter(x=>x.done).length, [dueToday, dueWeek] = homeDue();
+  const short = { welcome:'새 식구', birthday:'생일', anniversary:'입사 기념', joy:'경사', condol:'조사' };
+  const news = CELEB.map(c=>[short[c.key], celebList(c.key, orgMembers, celebEvents, t).length]).filter(x=>x[1]);
+  const tile = (cls, id, label, n, unit, sub)=>`<div class="hm-tile ${cls}" onclick="homeJump('${id}')"><span>${label}</span><b>${n}<small>${unit}</small></b><em>${sub}</em></div>`;
+  return `<div class="hm">
+    ${homeHero(t)}
+    <div class="card">
+      <div class="card-title">빠른 서비스</div>
+      <div class="hm-quick">${HOME_QUICK.map(q=>`<div class="hm-q" onclick="${q[4] ? `location.href='${q[4]}'` : `goTo('${q[2]}','${q[3]}')`}"><i>${icon(q[0])}</i>${q[1]}</div>`).join('')}</div>
+    </div>
+    <div class="hm-tiles">
+      ${tile('blue', 'hmTasks', '오늘 할 일', left+mineDone, '건', `남은 일 ${left} · 완료 ${mineDone}`)}
+      ${tile('green', 'hmRoutine', '오늘의 루틴', homeRoutines.length, '개', `완료 ${rDone} · 미완료 ${homeRoutines.length-rDone}`)}
+      ${tile('violet', 'hmCal', '마감 임박', dueToday+dueWeek, '건', `오늘 ${dueToday} · 이번 주 ${dueWeek}`)}
+      ${tile('slate', 'hmNews', '이번 주 소식', news.reduce((a,x)=>a+x[1], 0), '명', news.map(x=>x[0]+' '+x[1]).join(' · ') || '이번 주에는 소식이 없습니다')}
+    </div>
+    <div class="hm-cols">${homeTaskCard(t)}${homeRoutineCards()}${homeCalendar(t)}</div>
+    ${homeKpi()}
+    ${celebBanners()}
   </div>`;
 }
 
@@ -785,6 +1010,7 @@ function comingSoon(){
 }
 
 function expenseCalculator(){
+  // 자동차·나무 그림: Microsoft Fluent Emoji 3D (MIT 라이선스) — public/img/quick/
   const today = new Date(Date.now() - new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);   // 한국 날짜 (toISOString만 쓰면 오전 9시 전엔 어제)
   expDestinations = [''];
   expLastResult = null;
@@ -1830,44 +2056,6 @@ function kpiContent(){
     ${kpiRole==='hr' ? kpiHrPanel() : ''}${kpiInbox()}${kpiSheets[kpiRole] ? kpiMySheet() : kpiRole==='line' ? kpiNote(`현장직은 KPI를 작성하지 않습니다. 팀장이 <span class="more" onclick="goTo('perf','e2')">평가 진행 탭</span>에서 등급을 매깁니다.`) : ''}`;
 }
 
-function kpiScheduleCard(){
-  const fmt = d=>d ? `${+d.slice(5,7)}월 ${+d.slice(8,10)}일` : '미정';
-  const dday = to=>{ if(!to) return ''; const n = Math.round((new Date(to)-new Date(kpiDay(0)))/864e5); return n<0 ? '<span class="badge neutral">종료</span>' : `<span class="badge warning">D-${n}</span>`; };
-  const editOpen = kpiInPeriod(kpiPeriod.editFrom, kpiPeriod.editTo), evalOpen = kpiInPeriod(kpiPeriod.evalFrom, kpiPeriod.evalTo);
-  return `<div class="card"><div class="card-title">일정</div>
-    <div class="list-row"><div><div class="list-title">KPI 작성·수정 기간</div><div class="list-sub">${fmt(kpiPeriod.editFrom)} ~ ${fmt(kpiPeriod.editTo)}</div></div>${editOpen ? dday(kpiPeriod.editTo) : '<span class="badge neutral">기간 아님</span>'}</div>
-    <div class="list-row"><div><div class="list-title">평가 기간 (자기평가·증빙)</div><div class="list-sub">${fmt(kpiPeriod.evalFrom)} ~ ${fmt(kpiPeriod.evalTo)}</div></div>${evalOpen ? dday(kpiPeriod.evalTo) : '<span class="badge neutral">예정</span>'}</div>
-  </div>`;
-}
-function kpiHomeCard(){
-  const evP = evPeople.find(p=>p.key===kpiRole); if(evP && evIsLine(evP)) return evLineHomeCard(evP);   // 현장직: KPI 대신 평가 안내
-  const s = kpiSheets[kpiRole], me = KPI_USERS[kpiRole];
-  const waiting = kpiWaiting().length;
-  const inboxLine = waiting ? `<span style="color:var(--warning); font-weight:600; cursor:pointer;" onclick="goTo('perf','e1')">팀원 KPI 승인 대기 ${waiting}건 →</span>` : '';
-  let body;
-  if(!s || !s.confirmed){
-    body = `<div class="placeholder-note" style="margin:0;">${!s ? '담당자 계정은 KPI 대상이 아닙니다.' : '아직 확정된 KPI가 없습니다. 목표를 작성해 제출해 주세요.'}</div>`;
-  } else {
-    const items = s.confirmed.flatMap(g=>g.items), total = kpiProgress(s.confirmed), meEv = evPeople.find(p=>p.key===kpiRole), files = meEv ? evFileCount(meEv) : 0;
-    const bar = (pct,h)=>`<div class="bar-track" style="margin-top:0; height:${h}px;"><div class="bar-fill" style="width:${pct}%;"></div></div>`;
-    body = `<div style="display:flex; align-items:baseline; gap:8px; margin-bottom:6px;"><span class="stat-label" style="margin:0;">종합 달성률</span><span class="stat-value" style="color:var(--coral-text);">${total}%</span><span class="stat-sub" style="margin:0;">가중치 반영 · 본인 입력 기준</span></div>
-      ${bar(total,8)}
-      <div class="kpi-rows">
-        ${items.map(i=>`<span>${escapeHtml(i.action)}</span><span style="text-align:right; color:var(--text-muted); font-size:var(--fs-xs);">${i.weight}%</span>${bar(i.progress||0,6)}<span style="text-align:right;">${i.progress||0}%</span>`).join('')}
-      </div>
-      <div class="stat-sub">회색 숫자 = 가중치. 진행률은 본인 신고값이며 평가 점수와는 별개입니다.</div>
-      <div class="divider" style="margin:12px 0;"></div>
-      <div style="display:flex; justify-content:space-between; align-items:center; font-size:var(--fs-sm); flex-wrap:wrap; gap:8px;">
-        <span style="color:var(--text-secondary); cursor:pointer;" onclick="goTo('perf','e2')">${icon('clip','ico')} 평가 증빙자료 ${files}건</span>${inboxLine}<span class="more" onclick="goTo('perf','e1')">KPI 상세 보기 →</span>
-      </div>`;
-  }
-  const [label, cls] = s ? kpiStatus(kpiRole) : ['해당 없음','neutral'];
-  return `<div class="card" style="grid-column:span 2;">
-    <div class="card-title"><span>나의 KPI 현황 <span style="font-weight:500; color:var(--text-secondary);">${KPI_YEAR}년 · ${me.name} ${me.title}</span></span><span class="badge ${cls}">${label}</span></div>
-    ${body}${(!s || !s.confirmed) && inboxLine ? `<div style="margin-top:10px;">${inboxLine}</div>` : ''}
-  </div>`;
-}
-
 /* ---------------- 경조사 배너 (홈) ----------------
    입사 환영·생일·입사 N주년은 직원 정보(입사일·생일)로 자동, 경사·조사는 HR이 본인 동의를 받고 등록.
    규칙: 입사 환영 = 입사 후 30일 / 생일 = 이번 주(월~일), 본인이 숨기면 제외 / N주년 = 이번 달, 1·3·5·10년 이후 5년마다.
@@ -1964,7 +2152,7 @@ function celebBanners(){
   const t = new Date(), hr = orgIsHr();
   const items = CELEB.map(c=>({ c, n:celebList(c.key, orgMembers, celebEvents, t).length })).filter(x=>x.n);
   if(!items.length && !hr) return '';
-  return `<section class="celeb" aria-label="이번 주 소식">
+  return `<section class="celeb card" id="hmNews" aria-label="이번 주 소식">
     <div class="celeb-head"><h3>이번 주 소식</h3>${hr ? '<button class="btn sm" onclick="celebEdit()">＋ 경조사 등록</button>' : ''}</div>
     <div class="celeb-row">${items.map(({c,n})=>`<button type="button" class="celeb-bn" onclick="celebShow('${c.key}')" aria-label="${c.label} ${n}명 보기"><img src="img/banners/${c.img}.jpg?v=2" alt="">${c.fx}<span class="celeb-count">${n}명</span></button>`).join('')
       || '<div class="list-sub">이번 주에 보일 소식이 없습니다. 경사·조사는 위 버튼으로 등록하세요.</div>'}</div>
@@ -2999,7 +3187,7 @@ function evLineMyCard(me){
 }
 function evLineHomeCard(me){
   const res = evReleased(me) ? `<div class="evl-res" onclick="goTo('perf','e3')"><span class="evl-grade">${evFinalGrade(me)==='WAIT' ? '…' : me.grade}</span><span>${KPI_YEAR}년 평가 결과가 나왔습니다 →</span></div>` : '';
-  return `<div class="card" style="grid-column:span 2;">
+  return `<div class="card">
     <div class="card-title"><span>나의 평가 <span style="font-weight:500; color:var(--text-secondary);">${KPI_YEAR}년 · ${escapeHtml(me.name)} ${escapeHtml(me.title)}</span></span>${evStageBadge(me)}</div>
     <div class="list-sub" style="margin:0 0 10px;">팀장 평가로 진행돼요. 따로 작성할 것은 없어요.</div>
     <div class="evl-chips"><span>지각 ${me.late}회</span><span${evLeaveBlocked(me)?' class="warn"':''}>연차 초과 ${me.leaveOver}일</span></div>
