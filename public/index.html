@@ -251,6 +251,84 @@
   .hm-kpi{ display:grid; grid-template-columns:120px repeat(auto-fit,minmax(150px,1fr)); gap:14px 26px; align-items:center; }
   .hm-kpi-total b{ display:block; font-size:var(--fs-2xl); letter-spacing:-.02em; line-height:1.2; }
   .hm-kpi-total small{ font-size:var(--fs-xs); color:var(--text-muted); }
+  /* 워크스페이스 > 나의 업무 (2026-10-11) — 요약 칸·줄·체크는 홈(.hm-*)과 같은 모양을 쓴다 */
+  .hm-tile.red{ background:#FDF4F3; border-color:#F6DEDB; }    .hm-tile.red span{ color:var(--danger); }
+  .hm-row small.late, .ws small.late{ color:var(--danger); font-weight:600; }
+  .hm-row > .badge{ min-width:68px; text-align:center; }   /* 상태 글자 길이가 달라도 앞의 시간이 밀리지 않게 */
+  .ws{ display:flex; flex-direction:column; gap:14px; }
+  .ws .hm-tile{ cursor:default; }
+  .ws .hm-chip.on{ background:var(--coral-text); }   /* 고른 목록 단추는 빨강 — 화면이 온통 파랗다는 지적 (인사담당자 지시). 흰 글자와 밝기 차이 5.3:1 */
+  .ws-cols{ display:grid; grid-template-columns:minmax(0,1fr) 300px; gap:14px; align-items:start; }
+  .ws-bar{ display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:12px; }
+  .ws-bar > span{ display:flex; gap:6px; flex-wrap:wrap; }
+  .ws-seg{ display:inline-flex; border:1px solid var(--border); border-radius:var(--radius-sm); overflow:hidden; }
+  .ws-seg button{ display:flex; align-items:center; gap:5px; padding:6px 12px; border:0; background:var(--surface); color:var(--text-secondary); font:inherit; font-size:var(--fs-xs); font-weight:600; cursor:pointer; }
+  .ws-seg button.on{ background:var(--accent-soft); color:var(--accent); }
+  .ws-seg svg{ width:14px; height:14px; }
+  .ws-add{ display:flex; gap:8px; }
+  .ws-add input{ flex:1; min-width:0; }
+  .ws-hint{ margin-top:6px; font-size:var(--fs-xs); color:var(--text-muted); }
+  .ws-hint b{ color:var(--accent); }
+  .hm-cols .card > .ws-quick{ margin-top:auto; padding-top:12px; }
+  .ws-tools{ display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin:14px 0 2px; }
+  .ws-tools .hm-chips{ flex:1 1 300px; flex-wrap:wrap; margin:0; }   /* 자리가 모자라면 검색·태그 칸이 다음 줄로 내려간다 */
+  .ws-pick{ height:32px; padding:0 8px; border:1px solid var(--border); border-radius:var(--radius-sm); background:var(--surface); color:var(--text-primary); font:inherit; font-size:var(--fs-xs); }
+  input.ws-pick{ width:130px; }
+  .ws-pick:focus{ outline:none; border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-light); }
+  .ws-grp summary{ padding:12px 0 6px; font-size:var(--fs-xs); font-weight:700; color:var(--text-secondary); cursor:pointer; }
+  .ws-grp summary b{ margin-left:6px; font-weight:600; color:var(--text-muted); }
+  .ws-grp.late summary{ color:var(--danger); }
+  .ws-row{ display:grid; grid-template-columns:18px minmax(0,1fr) 116px 88px; cursor:default; }   /* 마감·상태 칸은 폭 고정 — 줄마다 같은 자리에 선다 */
+  .ws-row[onclick], .ws-row .t{ cursor:pointer; }
+  .ws-row .badge{ width:100%; }
+  .ws-state{ border:0; font-family:inherit; text-align-last:center; cursor:pointer; }
+  .ws-tag{ padding:1px 6px; border-radius:4px; font-size:var(--fs-xs); font-weight:600; white-space:nowrap; text-decoration:none; }
+  .ws-tag.c0{ background:var(--accent-soft); color:var(--accent); }  .ws-tag.c1{ background:var(--bg-success); color:var(--success); }
+  .ws-tag.c2{ background:#F5F2FD; color:#6A46B8; }                   .ws-tag.c3{ background:#FFF4DE; color:#8A5A00; }
+  .ws-tag.c4{ background:var(--bg-warning); color:var(--warning); }  .ws-tag.c5{ background:#EEF2F6; color:var(--text-secondary); }
+  .ws-meta{ display:inline-flex; align-items:center; gap:3px; font-size:var(--fs-xs); font-weight:400; color:var(--text-muted); white-space:nowrap; text-decoration:none; }
+  .ws-meta svg{ width:13px; height:13px; }
+  .ws-board{ display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; margin-top:14px; align-items:start; }
+  .ws-col{ min-height:140px; padding:10px; border-radius:var(--radius); background:var(--bg-page); }
+  .ws-col-h{ display:flex; align-items:center; gap:6px; font-size:var(--fs-xs); font-weight:700; color:var(--text-secondary); }
+  .ws-col-h.info{ color:var(--accent); }  .ws-col-h.success{ color:var(--success); }
+  .ws-col-h b{ font-weight:600; color:var(--text-muted); }
+  .ws-kcard{ display:flex; flex-direction:column; gap:6px; margin-top:8px; padding:10px 12px; border:1px solid var(--border); border-radius:var(--radius-sm); background:var(--surface); font-weight:500; cursor:grab; }
+  .ws-kcard .t{ display:flex; flex-wrap:wrap; align-items:center; gap:4px 6px; }
+  .ws-kcard.done .t{ color:var(--text-muted); text-decoration:line-through; }
+  .ws-kmeta{ display:flex; flex-wrap:wrap; align-items:center; gap:4px 8px; }
+  .ws-kmeta small{ font-size:var(--fs-xs); color:var(--text-muted); }
+  .ws-kcard .ws-state{ display:none; }   /* 끌어 옮길 수 없는 휴대폰에서만 보인다 */
+  .ws-more{ margin-top:8px; font-size:var(--fs-xs); color:var(--text-muted); }
+  .ws-toast{ position:fixed; left:50%; bottom:24px; transform:translateX(-50%); z-index:70; display:flex; align-items:center; gap:14px; max-width:calc(100vw - 32px); padding:10px 14px 10px 16px; border-radius:var(--radius); background:var(--text-primary); color:#fff; font-size:var(--fs-sm); box-shadow:0 8px 24px rgba(27,36,51,.25); }
+  .ws-toast button{ padding:4px 2px; border:0; background:none; color:var(--sky); font:inherit; font-weight:700; white-space:nowrap; cursor:pointer; }
+  .ws-lbl{ display:block; margin-bottom:6px; font-size:var(--fs-xs); font-weight:600; color:var(--text-secondary); }
+  .ws-sub{ display:flex; align-items:center; gap:8px; padding:5px 0; font-size:var(--fs-sm); cursor:pointer; }
+  .ws-sub span{ flex:1; min-width:0; }
+  .ws-sub.done span{ color:var(--text-muted); text-decoration:line-through; }
+  .ws-sub button{ width:26px; height:26px; padding:0; border:0; border-radius:var(--radius-sm); background:none; color:var(--text-muted); display:grid; place-items:center; cursor:pointer; }
+  .ws-sub button:hover{ background:var(--bg-page); color:var(--danger); }
+  .ws-sub button svg{ width:13px; height:13px; }
+  .ws-report{ width:100%; padding:12px; border:1px solid var(--border); border-radius:var(--radius-sm); color:var(--text-primary); font:inherit; font-size:var(--fs-sm); line-height:1.7; resize:vertical; }
+  .org-modal .card:has(.ws-report){ max-width:560px; }
+  .ws-side{ --donut:var(--coral-text); }   /* 진척도 동그라미·막대는 빨강 (인사담당자 지시 — 화면이 온통 파랗다). 홈의 달성률 동그라미는 파랑 그대로 */
+  .ws-side .hm-donut{ width:120px; height:120px; margin:4px auto 10px; }
+  .ws-side .hm-donut b{ font-size:26px; }
+  .ws-cap{ margin:0; text-align:center; font-size:var(--fs-sm); color:var(--text-secondary); line-height:1.7; }
+  .ws-cap b{ color:var(--text-primary); }
+  .ws-sub2{ display:flex; justify-content:space-between; align-items:baseline; }
+  .ws-sub2 small{ font-size:var(--fs-xs); font-weight:400; color:var(--text-secondary); }
+  .ws-bars, .ws-days{ display:grid; grid-template-columns:repeat(7,1fr); gap:8px; }
+  .ws-bars{ height:84px; margin-top:10px; border-bottom:1px solid var(--border); }
+  .ws-bars span{ display:flex; align-items:flex-end; }
+  .ws-bars i{ width:100%; border-radius:4px 4px 0 0; background:var(--donut); }
+  .ws-days{ margin-top:6px; text-align:center; font-size:var(--fs-xs); color:var(--text-muted); }
+  .ws-days .on{ color:var(--text-primary); font-weight:700; }
+  .ws-btns{ display:flex; justify-content:space-between; align-items:center; gap:8px; margin-top:16px; }
+  .ws-btns span:last-child{ display:flex; gap:8px; flex:none; }
+  .ws-del{ color:var(--danger); }
+  @media (max-width:1100px){ .ws-cols{ grid-template-columns:1fr; } }
+  @media (min-width:1101px){ .ws .hm-tiles{ grid-template-columns:repeat(3,minmax(0,1fr)) 300px; } }   /* 넷째 칸(이번 주 완료)을 아래 진척도 칸과 같은 폭·같은 자리에 (인사담당자 지시) */
   @media (max-width:1100px){ .hm-cols{ grid-template-columns:1fr 1fr; } .hm-cols > :last-child{ grid-column:1 / -1; } }
   @media (max-width:1239px){ .hm-meta{ flex-direction:column; row-gap:7px; margin-top:16px; } .hm-meta li{ padding:0; border:0; } }   /* 배너: 날짜·입사·급여일을 세 줄로 — 간판과 겹치지 않게 */
   @media (max-width:1023px){   /* 배너: 높이를 글자에 맞춰 줄이고, 인사말 한 줄·건물 작게 */
@@ -666,6 +744,14 @@
     .hm-cols{ grid-template-columns:1fr; } .hm-cols > :last-child{ grid-column:auto; }
     .hm-kpi{ grid-template-columns:1fr; }
     .hm-row{ min-height:44px; } .hm-chip{ min-height:36px; } .hm-calnav button{ width:40px; height:40px; }
+    /* 나의 업무: 진척도는 PC에서만(인사담당자 지시). 업무 한 건은 두 줄 — 제목 / 마감·상태. 보드는 세 칸을 위아래로 쌓고 끌기 대신 상태를 고른다 */
+    .ws-side{ display:none; }
+    .ws-row{ grid-template-columns:18px minmax(0,1fr) 88px; row-gap:4px; } .ws-row .t{ grid-column:2 / -1; } .ws-row small{ grid-column:2; }
+    .ws-state{ min-height:32px; }
+    .ws-board{ grid-template-columns:1fr; } .ws-col{ min-height:0; }
+    .ws-kcard{ cursor:pointer; } .ws-kcard .ws-state{ display:block; align-self:flex-start; min-width:88px; }
+    .ws-pick, .ws-seg button{ min-height:40px; } .ws-tools input.ws-pick{ flex:1; }
+    .ws-toast{ bottom:16px; }
     .grid.g2, .grid.g3, .grid.g4{ grid-template-columns:1fr; }
     .field-row{ grid-template-columns:1fr; }
     .card{ overflow-x:auto; }
@@ -804,6 +890,10 @@ const ICONS = {
   game:'<rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 12h4M8 10v4"/><line x1="15" y1="13" x2="15.01" y2="13"/><line x1="18" y1="11" x2="18.01" y2="11"/>',
   chevL:'<polyline points="15 18 9 12 15 6"/>',
   chevR:'<polyline points="9 18 15 12 9 6"/>',
+  repeat:'<path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/>',
+  list:'<line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>',
+  board:'<rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/><line x1="15" y1="3" x2="15" y2="21"/>',
+  checks:'<path d="m3 7 2 2 4-4"/><path d="m3 17 2 2 4-4"/><line x1="13" y1="6" x2="21" y2="6"/><line x1="13" y1="18" x2="21" y2="18"/>',
 };
 function icon(name, cls=''){ return `<svg class="${cls}" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICONS[name]}</svg>`; }
 
@@ -811,17 +901,11 @@ function icon(name, cls=''){ return `<svg class="${cls}" aria-hidden="true" view
 /* ---------------- 홈 (2026-10-11 개편) ----------------
    위에서부터: 인사 배너 · 빠른 서비스 · 요약 네 칸 · 세 칸(오늘의 업무 / 오늘의 루틴·이번 주 달성률 / 일정) · KPI 진행률 · 이번 주 소식.
    - 인사포털 일(서명·승인·평가)은 왼쪽 메뉴 숫자(TODO)와 같은 기준으로 나온다. 그 화면에서 처리하면 사라진다.
-   - 개인 업무·루틴은 예시다(브라우저 메모리, 새로고침하면 처음으로). 마이페이지에 "나의 업무"·"나의 일상"이 생기면 그 자료를 읽는다.
+   - 개인 업무는 워크스페이스 > 나의 업무 자료다(wsTasks — 아래 "워크스페이스 > 나의 업무"). 루틴은 아직 예시다(새로고침하면 처음으로) — "나의 일상"이 생기면 그 자료를 읽는다.
    - KPI 진행률은 KPI가 있는 직원에게만 보인다. 현장직은 같은 자리에 "나의 평가" 카드. */
 const HOME_QUICK = [   // [아이콘, 이름, 메뉴, 탭] — 다섯 번째 값이 있으면 메뉴 대신 그 주소로 바로 간다
   ['file','급여명세서','pay','p1'], ['calc','경비 산출','trip','t2'], ['search','규정 검색','rule','r1'],
   ['target','KPI','perf','e1'], ['users','구성원 검색','org','o2'], ['game','X-ray 특공대','pantry','g1','xray/'],
-];
-const homeTasks = [   // day = 오늘부터 며칠 뒤가 마감인지
-  { id:1, title:'주간 업무 보고 작성', day:0, time:'10:00', state:'진행 중', urgent:true, done:false },
-  { id:2, title:'회의 자료 정리', day:0, time:'16:00', state:'예정', done:false },
-  { id:3, title:'교육 일정 확인', day:2, state:'예정', done:false },
-  { id:4, title:'출장 경비 정산 제출', day:0, time:'09:30', state:'예정', done:true },
 ];
 const homeRoutines = [
   { id:1, title:'오늘의 업무 우선순위 정리', done:true },
@@ -829,7 +913,7 @@ const homeRoutines = [
   { id:3, title:'책 10분 읽기', done:true },
   { id:4, title:'퇴근 전 내일 할 일 정리', done:false },
 ];
-const HOME_WEEK = { task:[8,9], routine:[9,12] };   // 시연용: 이번 주 지난 요일의 [완료, 전체]. 오늘 것은 위 목록에서 센다
+const HOME_WEEK = { routine:[9,12] };   // 시연용: 이번 주 지난 요일의 루틴 [완료, 전체]. 오늘 것은 위 목록에서 센다
 let homeTaskTab = 'all', homeCalOff = 0;   // 업무 탭(all·mine·portal), 달력에서 넘긴 달 수
 
 /* ----- 규칙 (순수 로직, homeSelfCheck가 검증) ----- */
@@ -851,15 +935,15 @@ function homePortalTasks(){   // 인사포털이 만든 일. n의 합 = 왼쪽 �
   return out;
 }
 function homeDue(){   // 마감 임박 [오늘, 이번 주(7일 안)] — 끝내지 않은 개인 업무 + 열려 있는 KPI·평가 기간의 마지막 날
-  const days = homeTasks.filter(x=>!x.done).map(x=>x.day), left = to=>Math.round((celebParse(to) - celebParse(kpiDay(0)))/864e5);
+  const left = to=>Math.round((celebParse(to) - celebParse(kpiDay(0)))/864e5), days = wsTasks().filter(x=>x.state!=='완료' && x.due).map(x=>left(x.due));
   if(kpiSheets[kpiRole] && kpiInPeriod(kpiPeriod.editFrom, kpiPeriod.editTo)) days.push(left(kpiPeriod.editTo));
   if(evPeriodOpen() && TODO.e2()) days.push(left(kpiPeriod.evalTo));
   return [days.filter(d=>d<=0).length, days.filter(d=>d>0 && d<=7).length];
 }
-function homeRate(){   // 이번 주 달성률 [종합, 업무, 루틴] % — 지난 요일(시연 값) + 오늘 체크한 것. 계산 규칙은 나의 업무·나의 일상을 만들 때 정한다
-  const pct = (base, list)=>Math.round((base[0] + list.filter(x=>x.done).length) / (base[1] + list.length) * 100);
-  const a = pct(HOME_WEEK.task, homeTasks), b = pct(HOME_WEEK.routine, homeRoutines);
-  return [Math.round((a+b)/2), a, b];
+function homeRate(){   // 이번 주 달성률 [종합, 업무, 루틴] %. 업무 = 이번 주 업무 중 완료한 비율(wsWeekStat) — 이번 주 업무가 없으면 null이고 종합은 루틴만. 루틴은 아직 시연 값 + 오늘 체크한 것
+  const [d, n] = wsWeekStat(wsTasks(), kpiDay(0)), a = n ? Math.round(d/n*100) : null;
+  const b = Math.round((HOME_WEEK.routine[0] + homeRoutines.filter(x=>x.done).length) / (HOME_WEEK.routine[1] + homeRoutines.length) * 100);
+  return [a==null ? b : Math.round((a+b)/2), a, b];
 }
 function homeDates(y, m){   // 그 달의 급여일 + KPI·평가 기간 날짜 (달력 점, 주요 일정)
   return [ { ymd:ctYmd(payDayOf(y, m)), label:'급여일', color:'var(--accent)' },
@@ -886,7 +970,8 @@ function homeSelfCheck(){   // 브라우저 콘솔에서 homeSelfCheck() 실행
 /* ----- 화면 ----- */
 function homeToggle(list, id, key){ const x = list.find(v=>v.id===id); x.done = !x.done; renderContent(); document.getElementById(key+id)?.focus(); }   // 다시 그린 뒤에도 누르던 칸에 머문다
 function homeJump(id){ document.getElementById(id)?.scrollIntoView({ behavior:'smooth', block:'start' }); }
-function homePct(name, pct, cls=''){ return `<li class="hm-pct"><span>${name}</span><b>${pct}%</b><div class="hm-bar ${cls}"><i style="width:${pct}%"></i></div></li>`; }
+function homePct(name, pct, cls=''){ return `<li class="hm-pct"><span>${name}</span><b>${pct==null ? '–' : pct+'%'}</b><div class="hm-bar ${cls}"><i style="width:${pct||0}%"></i></div></li>`; }   // 셀 것이 없으면(null) '–'
+function homeDonut(pct){ return `<div class="hm-donut"><svg viewBox="0 0 120 120" aria-hidden="true" fill="none" stroke-width="11"><circle cx="60" cy="60" r="50" stroke="#E8EEF5"/>${pct ? `<circle cx="60" cy="60" r="50" style="stroke:var(--donut, var(--accent))" stroke-linecap="round" stroke-dasharray="${(pct*3.1416).toFixed(1)} 314.2"/>` : ''}</svg><b>${pct==null ? '–' : pct+'%'}</b></div>`; }
 const HOME_HERO = 'img/home/hero.jpg?v=3';   // 배너의 하늘과 건물에 함께 쓴다. 사진을 바꾸면 번호를 올린다
 function homeHero(t){
   const me = KPI_USERS[kpiRole], om = orgMembers.find(m=>m.name===me.name), since = om && homeSince(om.hireDate, t);
@@ -908,19 +993,19 @@ function homeHero(t){
     <button type="button" class="hero-install" onclick="installNotice()" aria-label="휴대폰에 설치">${icon('mobile')}<span>휴대폰에 설치</span></button>
   </section>`;
 }
-function homeTaskCard(t){
-  const mine = [...homeTasks].sort((a,b)=>a.done-b.done || a.day-b.day || (a.time||'').localeCompare(b.time||''));
-  const when = x=>{ if(!x.day) return '오늘 '+(x.time||''); const d = new Date(t); d.setDate(d.getDate()+x.day); return `${d.getMonth()+1}/${d.getDate()}까지`; };
+function homeTaskCard(){   // 개인 업무는 나의 업무의 '오늘' 목록과 같다 (wsIn)
+  const today = kpiDay(0), mine = wsSorted(wsTasks().filter(x=>wsIn(x, 'today', today)));
   const rows = [
     ...(homeTaskTab==='mine' ? [] : homePortalTasks().map(p=>`<div class="hm-row" onclick="goTo('${p.nav}','${p.tab}')"><span class="hm-go">${icon('chevR')}</span><span class="t">${p.title}<span class="hm-tag">인사포털</span></span><small>${NAV.find(n=>n.id===p.nav).label}</small><span class="badge warning">${p.badge}</span></div>`)),
-    ...(homeTaskTab==='portal' ? [] : mine.map(x=>`<label class="hm-row${x.done?' done':''}"><input type="checkbox" class="hm-check" id="hmT${x.id}" ${x.done?'checked':''} onchange="homeToggle(homeTasks,${x.id},'hmT')"><span class="t">${escapeHtml(x.title)}${x.urgent && !x.done ? '<span class="hm-tag red">긴급</span>' : ''}</span><small>${when(x)}</small><span class="badge ${x.done?'success':x.state==='진행 중'?'info':'neutral'}">${x.done?'완료':x.state}</span></label>`)),
+    ...(homeTaskTab==='portal' ? [] : mine.map(x=>{ const done = x.state==='완료', [when, late] = wsWhen(x, today);
+      return `<label class="hm-row${done?' done':''}"><input type="checkbox" class="hm-check" id="hmT${x.id}" ${done?'checked':''} onchange="wsToggle(${x.id},'hmT')"><span class="t">${escapeHtml(x.title)}${x.pri==='긴급' && !done ? '<span class="hm-tag red">긴급</span>' : ''}</span><small${late?' class="late"':''}>${when}</small><span class="badge ${wsCls(x.state)}">${escapeHtml(x.state)}</span></label>`; })),
   ];
   const chip = (k, label)=>`<button type="button" class="hm-chip${homeTaskTab===k?' on':''}" aria-pressed="${homeTaskTab===k}" onclick="homeTaskTab='${k}'; renderContent()">${label}</button>`;
   return `<div class="card" id="hmTasks">
-    <div class="card-title">오늘의 업무</div>
+    <div class="card-title"><span>오늘의 업무</span><span class="more" onclick="goTo('ws','w1')">나의 업무 ›</span></div>
     <div class="hm-chips">${chip('all','전체')}${chip('mine','개인')}${chip('portal','인사포털 연계')}</div>
     <div class="hm-list">${rows.join('') || '<div class="hm-empty">해당하는 업무가 없습니다</div>'}</div>
-    <div class="hm-foot">개인 업무는 예시입니다. 마이페이지에 ‘나의 업무’가 열리면 직접 등록할 수 있어요.</div>
+    ${wsAddForm()}
   </div>`;
 }
 function homeRoutineCards(){
@@ -929,12 +1014,12 @@ function homeRoutineCards(){
     <div class="card" id="hmRoutine">
       <div class="card-title"><span>오늘의 루틴</span><span class="hm-count">${done}/${homeRoutines.length} 완료</span></div>
       <div class="hm-list">${homeRoutines.map(x=>`<label class="hm-row"><input type="checkbox" class="hm-check round" id="hmR${x.id}" ${x.done?'checked':''} onchange="homeToggle(homeRoutines,${x.id},'hmR')"><span class="t">${escapeHtml(x.title)}</span><span class="badge ${x.done?'success':'neutral'}">${x.done?'완료':'미완료'}</span></label>`).join('')}</div>
-      <div class="hm-foot">예시 루틴입니다. 마이페이지에 ‘나의 일상’이 열리면 직접 정할 수 있어요.</div>
+      <div class="hm-foot">예시 루틴입니다. 워크스페이스에 ‘나의 일상’이 열리면 직접 정할 수 있어요.</div>
     </div>
     <div class="card">
       <div class="card-title">이번 주 달성률</div>
       <div class="hm-rate">
-        <div class="hm-donut"><svg viewBox="0 0 120 120" aria-hidden="true" fill="none" stroke-width="11"><circle cx="60" cy="60" r="50" stroke="#E8EEF5"/><circle cx="60" cy="60" r="50" style="stroke:var(--accent)" stroke-linecap="round" stroke-dasharray="${(all*3.1416).toFixed(1)} 314.2"/></svg><b>${all}%</b></div>
+        ${homeDonut(all)}
         <ul>${homePct('나의 업무', a)}${homePct('나의 루틴', b, 'green')}</ul>
       </div>
     </div>
@@ -942,12 +1027,13 @@ function homeRoutineCards(){
 }
 function homeCalendar(t){
   const first = new Date(t.getFullYear(), t.getMonth()+homeCalOff, 1), y = first.getFullYear(), m = first.getMonth(), today = ctYmd(t);
-  const marks = Object.fromEntries(homeDates(y, m).map(e=>[e.ymd, e])), dow = '일월화수목금토';
+  const due = {}, dow = '일월화수목금토'; wsTasks().forEach(x=>{ if(x.state!=='완료' && x.due) (due[x.due] ||= []).push(x.title); });   // 끝나지 않은 개인 업무의 마감일에도 점
+  const marks = { ...Object.fromEntries(Object.entries(due).map(([ymd, v])=>[ymd, { label:v.length>1 ? `업무 ${v.length}건` : v[0], color:'#D98A1F' }])), ...Object.fromEntries(homeDates(y, m).map(e=>[e.ymd, e])) };   // 같은 날이면 급여일·평가 기간 점이 이긴다
   let cells = [...dow].map((d,i)=>`<span class="dow${i?'':' red'}">${d}</span>`).join('') + '<span></span>'.repeat(first.getDay());
   for(let d=1, last=new Date(y, m+1, 0).getDate(); d<=last; d++){
     const ymd = ctYmd(new Date(y, m, d)), mk = marks[ymd];
     const cls = [((first.getDay()+d-1)%7===0 || PAY_HOLIDAYS.has(ymd)) && 'red', ymd===today && 'today', mk && 'dot'].filter(Boolean).join(' ');
-    cells += `<span class="${cls}"${mk ? ` style="--dot:${mk.color}" title="${mk.label}"` : ''}${ymd===today ? ' aria-current="date"' : ''}>${d}</span>`;
+    cells += `<span class="${cls}"${mk ? ` style="--dot:${mk.color}" title="${escapeHtml(mk.label)}"` : ''}${ymd===today ? ' aria-current="date"' : ''}>${d}</span>`;
   }
   const pay = payWindow(t).next, soon = homeDates(pay.getFullYear(), pay.getMonth()).filter(e=>e.ymd>=today).sort((a,b)=>a.ymd.localeCompare(b.ymd)).slice(0,4);   // 급여일은 가장 가까운 하루만
   const md = s=>{ const d = celebParse(s); return `${d.getMonth()+1}/${d.getDate()} (${dow[d.getDay()]})`; };
@@ -972,7 +1058,7 @@ function homeKpi(){   // KPI가 있는 직원에게만, 진행률만. 현장직�
   </div>`;
 }
 function homeContent(){
-  const t = new Date(), mineDone = homeTasks.filter(x=>x.done).length, left = homeTasks.length - mineDone + homePortalTasks().length;
+  const t = new Date(), [left, mineDone] = wsTodayCount();
   const rDone = homeRoutines.filter(x=>x.done).length, [dueToday, dueWeek] = homeDue();
   const short = { welcome:'새 식구', birthday:'생일', anniversary:'입사 기념', joy:'경사', condol:'조사' };
   const news = CELEB.map(c=>[short[c.key], celebList(c.key, orgMembers, celebEvents, t).length]).filter(x=>x[1]);
@@ -989,9 +1075,328 @@ function homeContent(){
       ${tile('violet', 'hmCal', '마감 임박', dueToday+dueWeek, '건', `오늘 ${dueToday} · 이번 주 ${dueWeek}`)}
       ${tile('slate', 'hmNews', '이번 주 소식', news.reduce((a,x)=>a+x[1], 0), '명', news.map(x=>x[0]+' '+x[1]).join(' · ') || '이번 주에는 소식이 없습니다')}
     </div>
-    <div class="hm-cols">${homeTaskCard(t)}${homeRoutineCards()}${homeCalendar(t)}</div>
+    <div class="hm-cols">${homeTaskCard()}${homeRoutineCards()}${homeCalendar(t)}</div>
     ${homeKpi()}
     ${celebBanners()}
+  </div>`;
+}
+
+/* ---------------- 워크스페이스 > 나의 업무 (2026-10-11) ----------------
+   내가 할 일을 적고 마감·상태를 관리한다. 홈의 "오늘의 업무"·요약 칸·이번 주 달성률·달력 점이 같은 자료를 읽는다.
+   노션에서 가져온 것: 하위 할 일, 보드 보기, 반복 업무, 주간 보고 초안, 날짜별 묶어 보기, 태그·검색, 날짜 자동 인식, 내일로 넘기기·되돌리기.
+   - 저장: 로그인 전이라 각자 브라우저(localStorage)에, 시연 역할(가상 인물)마다 따로 둔다. 손대기 전에는 예시 업무가 보인다(처음 고칠 때 저장).
+   - 개인 업무는 평가와 잇지 않는다. 왼쪽 메뉴 숫자(TODO)에도 세지 않는다 — 그 숫자는 서명·승인처럼 인사포털이 만든 일만 센다.
+   - 글자를 적는 칸(빠른 등록·검색)은 적는 동안 다시 그리지 않는다 — 다시 그리면 한글 조합이 끊긴다. 목록만 다시 그린다(wsRenderBody).
+   업무 한 건: { id, title, due:'YYYY-MM-DD'|'', time:'HH:MM'|'', pri:긴급·보통·낮음, state:예정·진행 중·완료, memo, doneAt,
+                tags:[글자], subs:[{ t, done }], repeat:''·weekly·monthly, rday:반복 기준(매주 = 요일 0~6, 매월 = 날짜), from:이 회차를 만든 앞 회차 id } */
+const WS_STATES = ['예정','진행 중','완료'], WS_PRIS = ['긴급','보통','낮음'], WS_DOW = '일월화수목금토';
+const WS_FILTERS = { today:'오늘', week:'이번 주', all:'전체', late:'기한 초과', done:'완료' };
+const WS_GROUPS = { portal:'인사포털에서 온 일', late:'기한 초과', today:'오늘', tom:'내일', week:'이번 주', later:'나중에', none:'마감 없음', done:'완료' };
+const WS_REPEATS = { '':'반복 없음', weekly:'매주', monthly:'매월' };
+const wsStore = {}, wsFold = new Set();   // 역할 → 업무 목록, 접어 둔 묶음
+let wsFilter = 'today', wsView = 'list', wsQuery = '', wsTag = '', wsUndo = null;
+const wsFill = x=>({ due:'', time:'', pri:'보통', state:'예정', memo:'', doneAt:'', repeat:'', ...x,
+  tags:Array.isArray(x.tags) ? x.tags.map(String) : [], subs:Array.isArray(x.subs) ? x.subs.filter(s=>s && typeof s.t==='string') : [] });
+const wsNewId = list=>Math.max(0, ...list.map(x=>x.id)) + 1;
+function wsShift(ymd, n){ const d = celebParse(ymd); return ctYmd(new Date(d.getFullYear(), d.getMonth(), d.getDate()+n)); }   // n일 뒤
+function wsSeed(){
+  const d = kpiDay;
+  return [
+    { title:'주간 업무 보고 작성', due:d(0), time:'10:00', pri:'긴급', state:'진행 중', repeat:'weekly', rday:new Date().getDay(), tags:['보고'], subs:[{ t:'팀별 실적 취합', done:true }, { t:'지난주 대비 정리', done:false }, { t:'본부장 보고', done:false }] },
+    { title:'회의 자료 정리', due:d(0), time:'16:00' },
+    { title:'교육 일정 확인', due:d(2), tags:['교육'] },
+    { title:'출장 경비 정산 제출', due:d(0), time:'09:30', state:'완료', doneAt:d(0) },
+  ];
+}
+function wsTasks(){   // 지금 역할의 업무 목록. 저장된 것이 없으면 예시
+  if(!wsStore[kpiRole]){
+    let saved; try{ saved = JSON.parse(localStorage.getItem('wsTasks:'+kpiRole)); }catch(_){}
+    const list = Array.isArray(saved) ? saved.filter(x=>x && typeof x.title==='string') : wsSeed();
+    const ids = list.every(x=>Number.isInteger(x.id)) && new Set(list.map(x=>x.id)).size===list.length;   // 번호가 온전하면 그대로 (반복 회차가 앞 회차 번호를 가리킨다)
+    wsStore[kpiRole] = list.map((x,i)=>wsFill(ids ? x : { ...x, id:i+1, from:undefined }));
+  }
+  return wsStore[kpiRole];
+}
+function wsSave(role=kpiRole){ try{ localStorage.setItem('wsTasks:'+role, JSON.stringify(wsStore[role])); }catch(_){} renderContent(); }
+
+/* ----- 규칙 (순수 로직, wsSelfCheck가 검증) ----- */
+function wsWeek(today){   // 이번 주 [월요일, 일요일]
+  const mon = wsShift(today, -(celebParse(today).getDay()+6)%7);
+  return [mon, wsShift(mon, 6)];
+}
+function wsIn(x, key, today){   // 업무 x가 그 목록(WS_FILTERS)에 드는가. 끝낸 일은 끝낸 날 하루 동안 '오늘'·'전체'에 줄 그어진 채 남는다
+  const done = x.state==='완료', doing = x.state==='진행 중', [mon, sun] = wsWeek(today);
+  return { today: done ? x.doneAt===today : doing || (!!x.due && x.due<=today),   // 마감이 오늘이거나 지난 일 + 진행 중인 일
+           week:  done ? x.doneAt>=mon : doing || (!!x.due && x.due<=sun),
+           all:   !done || x.doneAt===today,
+           late:  !done && !!x.due && x.due<today,   // 날짜로만 본다 (시간은 표시만)
+           done }[key];
+}
+function wsGroupOf(x, today){   // 날짜별 묶음(WS_GROUPS)
+  if(x.state==='완료') return 'done';
+  if(!x.due) return 'none';
+  return x.due<today ? 'late' : x.due===today ? 'today' : x.due===wsShift(today, 1) ? 'tom' : x.due<=wsWeek(today)[1] ? 'week' : 'later';
+}
+function wsWeekStat(list, today){   // 이번 주 업무 [완료, 전체] — 달성률·진척도의 기준(인사담당자 확정): 이번 주(월~일) 마감 + 지난주에서 밀린 미완료 + 이번 주에 끝낸 일. 마감일 없는 미완료는 세지 않는다
+  const [mon, sun] = wsWeek(today);
+  const mine = list.filter(x=>(x.due>=mon && x.due<=sun) || (x.state==='완료' ? x.doneAt>=mon : !!x.due && x.due<mon));
+  return [mine.filter(x=>x.state==='완료').length, mine.length];
+}
+function wsSorted(list){   // 끝나지 않은 것 먼저 → 마감 빠른 순(없으면 뒤) → 시간 → 긴급 먼저
+  const k = x=>[x.state==='완료' ? 1 : 0, x.due || '9', x.time || '9', WS_PRIS.indexOf(x.pri)].join('|');
+  return [...list].sort((a,b)=>k(a)<k(b) ? -1 : k(a)>k(b) ? 1 : 0);
+}
+function wsWhen(x, today){   // 마감 칸 [글자, 기한 초과인가]
+  if(!x.due) return ['–', false];
+  const d = celebParse(x.due), n = Math.round((celebParse(today) - d)/864e5);
+  if(n>0 && x.state!=='완료') return [n+'일 지남', true];
+  return [((n===0 ? '오늘' : `${d.getMonth()+1}/${d.getDate()} (${WS_DOW[d.getDay()]})`)+' '+x.time).trim(), false];
+}
+function wsNextDue(x, today){   // 반복 업무의 다음 마감일: 마감일과 오늘 중 늦은 날보다 뒤에 오는 첫 반복일. 매주 = rday 요일, 매월 = rday 일(그 달에 없으면 말일). 주말·공휴일은 따지지 않는다
+  const base = x.due>today ? x.due : today, b = celebParse(base), due = celebParse(x.due);
+  const r = Number.isInteger(x.rday) ? x.rday : x.repeat==='weekly' ? due.getDay() : due.getDate();
+  if(x.repeat==='weekly') return wsShift(base, (r - b.getDay() + 6)%7 + 1);
+  for(let n=0; ; n++){
+    const c = ctYmd(new Date(b.getFullYear(), b.getMonth()+n, Math.min(r, new Date(b.getFullYear(), b.getMonth()+n+1, 0).getDate())));
+    if(c>base) return c;
+  }
+}
+function wsParse(text, today){   // 빠른 등록: 제목 "끝"에 적은 날짜·시간만 읽는다 → { title, due, time }. 못 읽으면 적은 그대로, 마감은 오늘. (앞·가운데는 읽지 않는다 — "내일 할 일 정리" 같은 제목이 잘리지 않게)
+  const raw = text.trim(), t = celebParse(today), hm = (h, m)=>h<24 && m<60 ? String(h).padStart(2,'0')+':'+String(m).padStart(2,'0') : '';
+  const TIME = [
+    [/(?:^|\s)(오전|오후)?\s?(\d{1,2})시(?:\s?(\d{1,2})분|\s?(반))?$/, m=>{ let h = +m[2]; if(m[1]==='오후' ? h<12 : !m[1] && h>=1 && h<=6) h += 12; if(m[1]==='오전' && h===12) h = 0; return hm(h, m[3] ? +m[3] : m[4] ? 30 : 0); }],   // 오전·오후가 없으면 1~6시는 오후
+    [/(?:^|\s)(\d{1,2}):(\d{2})$/, m=>hm(+m[1], +m[2])],
+  ];
+  const DATE = [
+    [/(?:^|\s)(오늘|내일|모레)$/, m=>wsShift(today, ['오늘','내일','모레'].indexOf(m[1]))],
+    [/(?:^|\s)(다음\s?주\s?)?([일월화수목금토])요일$/, m=>{ const to = WS_DOW.indexOf(m[2]); return wsShift(today, m[1] ? 7 - (t.getDay()+6)%7 + (to+6)%7 : (to - t.getDay() + 7)%7); }],   // 그냥 요일 = 오늘 포함 가장 가까운 날
+    [/(?:^|\s)(\d{1,2})(?:\/|월\s?)(\d{1,2})일?$/, m=>{ const mo = +m[1]-1, at = y=>new Date(y, mo, +m[2]), d = at(t.getFullYear()); if(d.getMonth()!==mo) return ''; return ctYmd(d)<today ? ctYmd(at(t.getFullYear()+1)) : ctYmd(d); }],   // 올해 그 날이 지났으면 내년
+  ];
+  let s = raw, due = '', time = '';
+  const take = rules=>{ for(const [re, f] of rules){ const m = s.match(re), v = m && f(m); if(v){ s = s.slice(0, m.index).trim(); return v; } } return ''; };
+  for(let i=0; i<2; i++){ time ||= take(TIME); due ||= take(DATE); }   // 날짜와 시간, 순서는 상관없다
+  return s && (due || time) ? { title:s, due:due || today, time } : { title:raw, due:today, time:'' };
+}
+function wsReportText(list, today, off, who){   // 주간 보고 초안 글. off = 몇 주 전(0 이번 주, 1 지난주)
+  const [mon, sun] = wsWeek(wsShift(today, -7*off)), [nmon, nsun] = [wsShift(mon, 7), wsShift(sun, 7)];
+  const md = s=>{ const d = celebParse(s); return `${d.getMonth()+1}/${d.getDate()}`; }, mdw = s=>`${md(s)}(${WS_DOW[celebParse(s).getDay()]})`;
+  const memo = x=>x.memo.split('\n').filter(l=>l.trim()).map(l=>'\n  · '+l.trim()).join('');
+  const sec = (name, items, line)=>`■ ${name} (${items.length}건)\n${items.map(x=>'- '+line(x)+memo(x)).join('\n') || '- 없음'}`;
+  return [`[주간 업무 보고] ${mdw(mon)}~${mdw(sun)} · ${who}`,
+    sec('완료', list.filter(x=>x.state==='완료' && x.doneAt>=mon && x.doneAt<=sun).sort((a,b)=>a.doneAt<b.doneAt ? -1 : a.doneAt>b.doneAt ? 1 : 0), x=>`${x.title} (${md(x.doneAt)})`),
+    sec('진행 중', wsSorted(list.filter(x=>x.state==='진행 중')), x=>x.title + (x.due ? ` (마감 ${md(x.due)})` : '') + (x.subs.length ? ` ${x.subs.filter(s=>s.done).length}/${x.subs.length}` : '')),
+    sec(off ? '이번 주 예정' : '다음 주 예정', wsSorted(list.filter(x=>x.state==='예정' && x.due>=nmon && x.due<=nsun)), x=>`${x.title} (${md(x.due)})`)].join('\n\n');
+}
+function wsTodayCount(){   // 오늘 할 일 [남은 일, 완료] — 남은 일에는 인사포털이 만든 일도 센다. 홈 요약 칸과 나의 업무 요약 칸이 같은 숫자를 쓴다
+  const mine = wsTasks().filter(x=>wsIn(x, 'today', kpiDay(0))), done = mine.filter(x=>x.state==='완료').length;
+  return [mine.length - done + homePortalTasks().length, done];
+}
+function wsSelfCheck(){   // 브라우저 콘솔에서 wsSelfCheck() 실행 — 2026-10-14(수)를 오늘로 놓고 본다
+  const ok = (c,m)=>{ if(!c) throw new Error('wsSelfCheck 실패: '+m); }, T = '2026-10-14';
+  const mk = (due, state='예정', doneAt='', more={})=>wsFill({ id:1, title:'t', due, state, doneAt, ...more });
+  const ins = (x, keys)=>Object.keys(WS_FILTERS).filter(k=>wsIn(x, k, T)).join()===keys;
+  ok(String(wsWeek(T))==='2026-10-12,2026-10-18' && String(wsWeek('2026-10-18'))==='2026-10-12,2026-10-18' && String(wsWeek('2026-10-19'))==='2026-10-19,2026-10-25', '한 주는 월요일~일요일');
+  ok(ins(mk(T), 'today,week,all') && ins(mk('2026-10-12'), 'today,week,all,late'), '오늘 마감, 기한 초과는 오늘 목록에도');
+  ok(ins(mk('2026-10-16'), 'week,all') && ins(mk('2026-10-20'), 'all') && ins(mk(''), 'all'), '뒷날 마감·마감 없음');
+  ok(ins(mk('2026-10-20', '진행 중'), 'today,week,all'), '진행 중이면 마감과 상관없이 오늘');
+  ok(ins(mk(T, '완료', T), 'today,week,all,done') && ins(mk(T, '완료', '2026-10-13'), 'week,done') && ins(mk('', '완료', '2026-10-09'), 'done'), '끝낸 일은 끝낸 날에만 오늘 목록에');
+  ok(String(wsWeekStat([mk('2026-10-13','완료','2026-10-13'), mk('2026-10-16'), mk('2026-10-07'), mk('','완료',T), mk(''), mk('2026-10-21'), mk('2026-10-08','완료','2026-10-08')], T))==='2,4', '이번 주 업무 = 이번 주 마감 + 밀린 일 + 이번 주에 끝낸 일');
+  ok(wsWeekStat([mk('')], T)[1]===0, '마감 없는 미완료만 있으면 0건');
+  ok(wsWhen(mk('2026-10-12'), T)[0]==='2일 지남' && wsWhen(mk(T), T)[0]==='오늘' && wsWhen(mk('2026-10-16', '예정', '', { time:'15:00' }), T)[0]==='10/16 (금) 15:00' && wsWhen(mk(''), T)[0]==='–' && !wsWhen(mk('2026-10-12','완료',T), T)[1], '마감 글자');
+  ok(wsSorted([mk(''), mk(T, '완료', T), mk('2026-10-16'), mk(T)]).map(x=>x.due+x.state).join()==='2026-10-14예정,2026-10-16예정,예정,2026-10-14완료', '정렬');
+  ok(['2026-10-13','2026-10-14','2026-10-15','2026-10-18','2026-10-19','', T].map((d,i)=>wsGroupOf(mk(d, i===6 ? '완료' : '예정'), T)).join()==='late,today,tom,week,later,none,done', '날짜별 묶음');
+  ok(wsGroupOf(mk('2026-10-19'), '2026-10-18')==='tom', '일요일의 내일(다음 주 월요일)은 내일 묶음');
+  const next = (due, repeat, rday, today=T)=>wsNextDue(mk(due, '예정', '', { repeat, rday }), today);
+  ok(next('2026-10-14','weekly',3)==='2026-10-21' && next('2026-10-16','weekly',5)==='2026-10-23' && next('2026-10-05','weekly',1)==='2026-10-19', '매주: 오늘 마감·미리 끝냄·밀린 뒤 끝냄');
+  ok(next('2026-10-13','weekly',1)==='2026-10-19', '매주: 내일로 넘겼어도 원래 요일로 돌아온다');
+  ok(next('2026-10-31','monthly',31,'2026-10-31')==='2026-11-30' && next('2026-11-30','monthly',31,'2026-11-30')==='2026-12-31' && next('2026-10-20','monthly',20)==='2026-11-20' && next('2026-09-20','monthly',20)==='2026-10-20', '매월: 31일은 말일, 다음 달에는 다시 31일');
+  const ps = (text, want)=>{ const p = wsParse(text, T); return [p.title, p.due, p.time].join('|')===want; };
+  ok(ps('채용 서류 검토 금요일 3시', '채용 서류 검토|2026-10-16|15:00') && ps('채용 서류 검토 3시 금요일', '채용 서류 검토|2026-10-16|15:00'), '요일 + 시간, 순서 무관');
+  ok(ps('회의 자료 내일', '회의 자료|2026-10-15|') && ps('점검 수요일', '점검|2026-10-14|') && ps('주간 회의 다음 주 월요일 오전 9시 30분', '주간 회의|2026-10-19|09:30') && ps('정리 다음주 일요일', '정리|2026-10-25|'), '내일·요일·다음 주');
+  ok(ps('보고서 10/15', '보고서|2026-10-15|') && ps('보고서 10월 15일', '보고서|2026-10-15|') && ps('보고서 10/9', '보고서|2027-10-09|') && ps('보고 2/30', '보고 2/30|'+T+'|'), '날짜: 지난 날은 내년, 없는 날은 읽지 않음');
+  ok(ps('통화 15:30', '통화|'+T+'|15:30') && ps('점심 12시', '점심|'+T+'|12:00') && ps('출근 9시', '출근|'+T+'|09:00') && ps('회의 오후 12시', '회의|'+T+'|12:00') && ps('회의 2시반', '회의|'+T+'|14:30') && ps('보고 25시', '보고 25시|'+T+'|'), '시간');
+  ok(ps('내일 할 일 정리', '내일 할 일 정리|'+T+'|') && ps('내일', '내일|'+T+'|') && ps('  ', '|'+T+'|'), '끝에 적은 것만 읽는다');
+  const rep = wsReportText([mk('2026-10-13','완료','2026-10-13',{ title:'가', memo:'메모\n둘째 줄' }), mk('2026-10-16','진행 중','',{ title:'나', subs:[{ t:'a', done:true }, { t:'b', done:false }] }), mk('2026-10-20','예정','',{ title:'다' }), mk('2026-10-06','완료','2026-10-06',{ title:'라' })], T, 0, '홍길동');
+  ok(rep==='[주간 업무 보고] 10/12(월)~10/18(일) · 홍길동\n\n■ 완료 (1건)\n- 가 (10/13)\n  · 메모\n  · 둘째 줄\n\n■ 진행 중 (1건)\n- 나 (마감 10/16) 1/2\n\n■ 다음 주 예정 (1건)\n- 다 (10/20)', '주간 보고 초안');
+  const [left, done] = wsTodayCount(); ok(left>=0 && done>=0 && homeRate().every(p=>p==null || (p>=0 && p<=100)), '오늘 할 일·달성률 범위');
+  return 'wsSelfCheck 통과';
+}
+
+/* ----- 동작 ----- */
+function wsKeep(msg){   // 되돌릴 수 있게 지금 목록을 떠 두고 알림을 띄운다 — 목록을 바꾸기 "전에" 부른다. 되돌리기는 마지막 한 번, 6초 동안
+  clearTimeout(wsUndo?.timer); document.getElementById('wsToast')?.remove();
+  wsUndo = { role:kpiRole, snap:JSON.stringify(wsTasks()), timer:setTimeout(()=>{ wsUndo = null; document.getElementById('wsToast')?.remove(); }, 6000) };
+  const d = document.createElement('div'); d.id = 'wsToast'; d.className = 'ws-toast'; d.setAttribute('role', 'status');
+  d.innerHTML = `<span>${escapeHtml(msg)}</span><button type="button" onclick="wsUndoNow()">되돌리기</button>`;
+  document.body.appendChild(d);
+}
+function wsUndoNow(){
+  if(!wsUndo) return;
+  clearTimeout(wsUndo.timer); document.getElementById('wsToast')?.remove();
+  const { role, snap } = wsUndo; wsUndo = null; wsStore[role] = JSON.parse(snap); wsSave(role);
+}
+function wsSetState(id, state){   // 완료로 바꾸면 끝낸 날을 적고, 반복 업무면 다음 회차를 만든다(하위 할 일은 체크를 풀고 메모는 비운다). 완료를 풀면 아직 끝내지 않은 그 다음 회차를 지운다
+  const list = wsTasks(), x = list.find(v=>v.id===id), was = x.state==='완료', now = state==='완료';
+  if(now && !was) wsKeep('완료했습니다 — '+x.title);
+  x.state = state; x.doneAt = now ? (x.doneAt || kpiDay(0)) : '';
+  if(now && !was && x.repeat && x.due && !list.some(v=>v.from===id))
+    list.push({ ...x, id:wsNewId(list), from:id, due:wsNextDue(x, kpiDay(0)), state:'예정', doneAt:'', memo:'', tags:[...x.tags], subs:x.subs.map(s=>({ t:s.t, done:false })) });
+  if(was && !now) wsStore[kpiRole] = list.filter(v=>!(v.from===id && v.state!=='완료'));
+  wsSave();
+}
+function wsToggle(id, key){ wsSetState(id, wsTasks().find(v=>v.id===id).state==='완료' ? '예정' : '완료'); document.getElementById(key+id)?.focus(); }   // 다시 그린 뒤에도 누르던 칸에 머문다
+function wsAdd(e){   // 빠른 등록: 제목만 — 끝에 적은 날짜·시간을 읽고(wsParse), 없으면 마감일은 오늘. 중요도 보통, 상태 예정
+  e.preventDefault();
+  const today = kpiDay(0), p = wsParse(new FormData(e.target).get('title'), today), list = wsTasks(); if(!p.title) return;
+  const x = wsFill({ ...p, id:wsNewId(list) });
+  if(currentNav.id==='home' && !wsIn(x, 'today', today)) wsKeep(`추가했습니다 — ${x.title} · ${wsWhen(x, today)[0]}`);   // 홈의 오늘 목록에는 안 보이는 날짜라서 알려 준다
+  list.push(x);
+  if(!wsIn(x, wsFilter, today)) wsFilter = 'all';   // 방금 적은 것이 보이는 목록으로
+  wsSave(); document.getElementById('wsAddIn')?.focus();
+}
+function wsHint(inp){   // 적는 동안 마감이 어떻게 들어갈지 미리 보여 준다
+  const today = kpiDay(0), p = wsParse(inp.value, today), el = document.getElementById('wsHint'); if(!el) return;
+  el.innerHTML = p.title!==inp.value.trim() ? `마감 <b>${wsWhen(p, today)[0]}</b> · 제목 “${escapeHtml(p.title)}”` : WS_HINT;
+}
+function wsCarry(){   // 못 끝낸 일 내일로: 마감이 오늘이거나 지난 미완료 업무의 마감일을 내일로
+  const today = kpiDay(0), late = wsTasks().filter(x=>x.state!=='완료' && x.due && x.due<=today); if(!late.length) return;
+  wsKeep(`${late.length}건을 내일로 옮겼습니다`); late.forEach(x=>{ x.due = wsShift(today, 1); }); wsSave();
+}
+function wsDrop(e, state){ e.preventDefault(); const id = +e.dataTransfer.getData('text/plain'); if(wsTasks().some(x=>x.id===id && x.state!==state)) wsSetState(id, state); }
+function wsEdit(id){
+  const x = wsTasks().find(v=>v.id===id);
+  orgModal(`<form id="wsSubForm" onsubmit="wsSubAdd(event, ${id})"></form>
+  <form id="wsForm" onsubmit="wsSubmit(event, ${id})">
+    <div class="card-title">업무 수정</div>
+    <div class="field" style="margin-bottom:14px;"><label>제목</label><input name="title" required maxlength="80" value="${escapeHtml(x.title)}"></div>
+    <div class="field-row"><div class="field"><label>마감일</label><input type="date" name="due" value="${escapeHtml(x.due)}" onchange="wsRepLabel(${id})"></div><div class="field"><label>시간 (선택)</label><input type="time" name="time" value="${escapeHtml(x.time)}"></div></div>
+    <div class="field-row"><div class="field"><label>중요도</label><select name="pri">${wsOpts(WS_PRIS, x.pri)}</select></div><div class="field"><label>상태</label><select name="state">${wsOpts(WS_STATES, x.state)}</select></div></div>
+    <div class="field-row"><div class="field"><label>반복</label><select name="repeat">${Object.keys(WS_REPEATS).map(k=>`<option value="${k}"${k===x.repeat?' selected':''}></option>`).join('')}</select></div><div class="field"><label>태그 (쉼표로 구분)</label><input name="tags" maxlength="60" placeholder="급여, 채용" value="${escapeHtml(x.tags.join(', '))}"></div></div>
+    <div style="margin-bottom:14px;"><span class="ws-lbl">하위 할 일</span><div id="wsSubs">${wsSubsHtml(x)}</div>
+      <div class="field" style="margin-top:6px;"><input form="wsSubForm" name="sub" maxlength="60" placeholder="하위 할 일을 적고 Enter" aria-label="새 하위 할 일" autocomplete="off"></div></div>
+    <div class="field"><label>메모</label><textarea name="memo" rows="3" maxlength="1000">${escapeHtml(x.memo)}</textarea></div>
+    <div class="ws-btns"><button type="button" class="btn ws-del" onclick="wsDelete(${id})">삭제</button><span><button type="button" class="btn" onclick="orgCloseModal()">취소</button><button class="btn primary">저장</button></span></div>
+  </form>`);
+  wsRepLabel(id);
+}
+function wsRepLabel(id){   // 반복 칸 글자: 마감일에 맞춰 "매주 금요일"·"매월 16일". 마감일을 안 바꿨으면 원래 반복 기준(rday)을 보여 준다
+  const f = document.getElementById('wsForm'), x = wsTasks().find(v=>v.id===id), due = f.elements.due.value, d = due && celebParse(due);
+  const r = k=>x.repeat===k && due===x.due && Number.isInteger(x.rday) ? x.rday : k==='weekly' ? d.getDay() : d.getDate();
+  [...f.elements.repeat.options].forEach(o=>{ o.text = WS_REPEATS[o.value] + (!d || !o.value ? '' : o.value==='weekly' ? ` ${WS_DOW[r('weekly')]}요일` : ` ${r('monthly')}일`); });
+}
+function wsSubsHtml(x){ return x.subs.map((s,i)=>`<label class="ws-sub${s.done?' done':''}"><input type="checkbox" class="hm-check" ${s.done?'checked':''} onchange="wsSub(${x.id}, ${i})"><span>${escapeHtml(s.t)}</span><button type="button" aria-label="${escapeHtml(s.t)} 지우기" onclick="wsSub(${x.id}, ${i}, true)">${icon('x')}</button></label>`).join(''); }
+function wsSub(id, i, del){   // 하위 할 일은 누르는 즉시 저장된다 (수정 창의 저장·취소와 상관없이). 전부 체크해도 업무는 자동으로 완료되지 않는다
+  const x = wsTasks().find(v=>v.id===id);
+  if(del) x.subs.splice(i, 1); else x.subs[i].done = !x.subs[i].done;
+  wsSave(); document.getElementById('wsSubs').innerHTML = wsSubsHtml(x);
+}
+function wsSubAdd(e, id){
+  e.preventDefault();
+  const inp = e.target.elements.sub, t = inp.value.trim(), x = wsTasks().find(v=>v.id===id); if(!t || x.subs.length>=20) return;
+  x.subs.push({ t, done:false }); inp.value = ''; wsSave(); document.getElementById('wsSubs').innerHTML = wsSubsHtml(x); inp.focus();
+}
+function wsSubmit(e, id){
+  e.preventDefault();
+  const f = Object.fromEntries(new FormData(e.target)), title = f.title.trim(), x = wsTasks().find(v=>v.id===id); if(!title) return;
+  const due = f.due || (f.repeat ? kpiDay(0) : '');   // 반복하려면 마감일이 있어야 한다 — 비어 있으면 오늘
+  if(f.repeat && (f.repeat!==x.repeat || due!==x.due)) x.rday = f.repeat==='weekly' ? celebParse(due).getDay() : celebParse(due).getDate();
+  Object.assign(x, { title, due, time:f.time, pri:f.pri, repeat:f.repeat, memo:f.memo.trim(), tags:[...new Set(f.tags.split(',').map(s=>s.trim()).filter(Boolean))].slice(0, 5) });
+  orgCloseModal(); wsSetState(id, f.state);
+}
+function wsDelete(id){   // 확인 창 대신 되돌리기
+  wsKeep('삭제했습니다 — '+wsTasks().find(v=>v.id===id).title);
+  wsStore[kpiRole] = wsTasks().filter(v=>v.id!==id); orgCloseModal(); wsSave();
+}
+function wsReport(off=0){
+  const me = KPI_USERS[kpiRole];
+  orgModal(`<div class="card-title"><span>주간 보고 초안</span><select class="ws-pick" aria-label="기간" onchange="wsReport(+this.value)"><option value="0">이번 주</option><option value="1"${off?' selected':''}>지난주</option></select></div>
+    <textarea id="wsReportTa" class="ws-report" rows="16" aria-label="주간 보고 초안">${escapeHtml(wsReportText(wsTasks(), kpiDay(0), off, me.name+' '+me.title))}</textarea>
+    <div class="ws-btns"><span class="list-sub">고쳐서 쓰는 초안입니다. 여기서 고친 글은 저장되지 않습니다.</span><span><button type="button" class="btn" onclick="orgCloseModal()">닫기</button><button type="button" class="btn primary" onclick="const t = document.getElementById('wsReportTa'); t.select(); orgCopy(t.value, this)">복사</button></span></div>`);
+}
+
+/* ----- 화면 ----- */
+const WS_HINT = '끝에 ‘내일’, ‘금요일’, ‘10/15’, ‘3시’를 적으면 마감이 들어갑니다';
+const wsCls = state=>({ '완료':'success', '진행 중':'info' }[state] || 'neutral');
+const wsOpts = (list, v)=>list.map(o=>`<option${o===v?' selected':''}>${escapeHtml(o)}</option>`).join('');
+const wsTagCls = t=>'c' + [...t].reduce((a,c)=>a+c.codePointAt(0), 0) % 6;   // 같은 태그는 늘 같은 색
+function wsAddForm(){
+  return `<div class="ws-quick"><form class="field ws-add" onsubmit="wsAdd(event)"><input id="wsAddIn" name="title" required maxlength="80" placeholder="할 일을 적고 Enter" aria-label="새 업무 제목" autocomplete="off" oninput="wsHint(this)"><button class="btn primary">추가</button></form>
+    <div class="ws-hint" id="wsHint">${WS_HINT}</div></div>`;
+}
+function wsMeta(x){   // 제목 옆 작은 표시: 태그 · 하위 할 일 진행 · 반복 · 메모
+  return x.tags.map(t=>`<span class="ws-tag ${wsTagCls(t)}">${escapeHtml(t)}</span>`).join('')
+    + (x.subs.length ? `<span class="ws-meta" title="하위 할 일">${icon('checks')}${x.subs.filter(s=>s.done).length}/${x.subs.length}</span>` : '')
+    + (WS_REPEATS[x.repeat] && x.repeat ? `<span class="ws-meta">${icon('repeat')}${WS_REPEATS[x.repeat]}</span>` : '')
+    + (x.memo ? `<span class="ws-meta" title="메모 있음">${icon('message')}</span>` : '');
+}
+function wsMatch(x){   // 태그·검색에 맞는가 (검색은 제목·메모·태그·하위 할 일)
+  const q = wsQuery.trim().toLowerCase();
+  return (!wsTag || x.tags.includes(wsTag)) && (!q || [x.title, x.memo, ...x.tags, ...x.subs.map(s=>s.t)].join('\n').toLowerCase().includes(q));
+}
+function wsRow(x, today){
+  const fin = x.state==='완료', [when, late] = wsWhen(x, today), urgent = x.pri==='긴급' && !fin ? '<span class="hm-tag red">긴급</span>' : '';
+  return `<div class="hm-row ws-row${fin?' done':''}"><input type="checkbox" class="hm-check" id="wsT${x.id}" aria-label="${escapeHtml(x.title)} 완료" ${fin?'checked':''} onchange="wsToggle(${x.id},'wsT')"><span class="t" onclick="wsEdit(${x.id})">${escapeHtml(x.title)}${urgent}${wsMeta(x)}</span><small${late?' class="late"':''}>${when}</small><select class="badge ${wsCls(x.state)} ws-state" aria-label="상태" onchange="wsSetState(${x.id}, this.value)">${wsOpts(WS_STATES, x.state)}</select></div>`;
+}
+function wsBoard(list, today){   // 보드: 예정 · 진행 중 · 완료(이번 주에 끝낸 것만). 카드를 끌어 옮기면 상태가 바뀐다 — 휴대폰은 카드의 상태 칸으로
+  const mon = wsWeek(today)[0], open = wsSorted(list.filter(x=>x.state!=='완료'));
+  const done = list.filter(x=>x.state==='완료' && x.doneAt>=mon).sort((a,b)=>a.doneAt<b.doneAt ? 1 : a.doneAt>b.doneAt ? -1 : 0);
+  const card = x=>{ const fin = x.state==='완료', [when, late] = wsWhen(x, today);
+    return `<div class="ws-kcard${fin?' done':''}" draggable="true" ondragstart="event.dataTransfer.setData('text/plain','${x.id}')" onclick="wsEdit(${x.id})"><div class="t">${escapeHtml(x.title)}${x.pri==='긴급' && !fin ? '<span class="hm-tag red">긴급</span>' : ''}</div><div class="ws-kmeta">${x.due ? `<small${late?' class="late"':''}>${when}</small>` : ''}${wsMeta(x)}</div><select class="badge ${wsCls(x.state)} ws-state" aria-label="상태" onclick="event.stopPropagation()" onchange="wsSetState(${x.id}, this.value)">${wsOpts(WS_STATES, x.state)}</select></div>`; };
+  const col = (state, items, n=items.length)=>`<div class="ws-col" ondragover="event.preventDefault()" ondrop="wsDrop(event,'${state}')"><div class="ws-col-h ${wsCls(state)}">${state}<b>${state==='완료' ? '이번 주 ' : ''}${n}</b></div>${items.map(card).join('') || '<div class="hm-empty">없음</div>'}${n>items.length ? `<div class="ws-more">외 ${n-items.length}건 — 목록의 ‘완료’에서 볼 수 있어요</div>` : ''}</div>`;
+  return `<div class="ws-board">${col('예정', open.filter(x=>x.state!=='진행 중'))}${col('진행 중', open.filter(x=>x.state==='진행 중'))}${col('완료', done.slice(0, 8), done.length)}</div>`;
+}
+function wsBody(){   // 목록(날짜별 묶음) 또는 보드. 태그·검색은 둘 다에, 목록 종류(오늘·이번 주…)는 목록에만 적용된다
+  const today = kpiDay(0), list = wsTasks().filter(wsMatch), q = wsQuery.trim().toLowerCase(), empty = '<div class="hm-empty">해당하는 업무가 없습니다</div>';
+  if(wsView==='board') return wsBoard(list, today);
+  const rows = list.filter(x=>wsIn(x, wsFilter, today));
+  if(wsFilter==='done') return `<div class="hm-list">${rows.sort((a,b)=>a.doneAt<b.doneAt ? 1 : a.doneAt>b.doneAt ? -1 : 0).map(x=>wsRow(x, today)).join('') || empty}</div>`;
+  const portal = (wsFilter==='today' || wsFilter==='all') && !wsTag ? homePortalTasks().filter(p=>p.title.toLowerCase().includes(q)) : [];   // 인사포털이 만든 일(서명·승인·평가) — 누르면 그 화면으로
+  const html = { portal:portal.map(p=>`<div class="hm-row ws-row" onclick="goTo('${p.nav}','${p.tab}')"><span class="hm-go">${icon('chevR')}</span><span class="t">${p.title}<span class="hm-tag">인사포털</span></span><small>${NAV.find(v=>v.id===p.nav).label}</small><span class="badge warning">${p.badge}</span></div>`) };
+  wsSorted(rows).forEach(x=>{ (html[wsGroupOf(x, today)] ||= []).push(wsRow(x, today)); });
+  return Object.keys(WS_GROUPS).filter(k=>html[k]?.length).map(k=>`<details class="ws-grp ${k}"${wsFold.has(k)?'':' open'} ontoggle="wsFold[this.open ? 'delete' : 'add']('${k}')"><summary>${k==='done' ? (wsFilter==='week' ? '이번 주 완료' : '오늘 완료') : WS_GROUPS[k]}<b>${html[k].length}</b></summary><div class="hm-list">${html[k].join('')}</div></details>`).join('') || empty;
+}
+function wsRenderBody(){ const el = document.getElementById('wsBody'); if(el) el.innerHTML = wsBody(); }
+function wsProgress(list, today){   // PC 오른쪽 칸: 이번 주 진척도(홈 달성률의 '나의 업무'와 같은 숫자) + 요일별 완료 건수
+  const [done, all] = wsWeekStat(list, today), mon = wsWeek(today)[0];
+  const days = [...'월화수목금토일'].map((d,i)=>{ const ymd = wsShift(mon, i); return { d, ymd, n:list.filter(x=>x.state==='완료' && x.doneAt===ymd).length }; });
+  const max = Math.max(1, ...days.map(x=>x.n));
+  return `<div class="card ws-side">
+    <div class="card-title">이번 주 진척도</div>
+    ${homeDonut(all ? Math.round(done/all*100) : null)}
+    <p class="ws-cap">${all ? `이번 주 업무 ${all}건 중 <b>${done}건</b> 완료<br>남은 일 <b>${all-done}건</b>` : '이번 주에 마감인 업무가 없습니다'}</p>
+    <div class="hm-sub ws-sub2"><span>요일별 완료</span><small>오늘 <b>${days.find(x=>x.ymd===today).n}건</b></small></div>
+    <div class="ws-bars" role="img" aria-label="요일별 완료 건수: ${days.map(x=>`${x.d} ${x.n}건`).join(', ')}">${days.map(x=>`<span title="${x.d}요일 ${x.n}건">${x.n ? `<i style="height:${Math.round(x.n/max*100)}%"></i>` : ''}</span>`).join('')}</div>
+    <div class="ws-days">${days.map(x=>`<span${x.ymd===today?' class="on"':''}>${x.d}</span>`).join('')}</div>
+  </div>`;
+}
+function wsContent(){
+  const today = kpiDay(0), list = wsTasks(), [left, done] = wsTodayCount(), mon = wsWeek(today)[0];
+  const tags = [...new Set(list.flatMap(x=>x.tags))].sort(); if(!tags.includes(wsTag)) wsTag = '';
+  const carry = list.filter(x=>x.state!=='완료' && x.due && x.due<=today).length;
+  const tile = (cls, label, v, sub)=>`<div class="hm-tile ${cls}"><span>${label}</span><b>${v}<small>건</small></b><em>${sub}</em></div>`;
+  const seg = (k, name, label)=>`<button type="button" class="${wsView===k?'on':''}" aria-pressed="${wsView===k}" onclick="wsView='${k}'; renderContent()">${icon(name)}${label}</button>`;
+  return `<div class="ws">
+    <div class="hm-tiles">
+      ${tile('blue', '오늘 할 일', left+done, `남은 일 ${left} · 완료 ${done}`)}
+      ${tile('violet', '진행 중', list.filter(x=>x.state==='진행 중').length, '지금 하고 있는 일')}
+      ${tile('red', '기한 초과', list.filter(x=>wsIn(x, 'late', today)).length, '마감이 지난 일')}
+      ${tile('green', '이번 주 완료', list.filter(x=>x.state==='완료' && x.doneAt>=mon).length, '월요일부터 오늘까지')}
+    </div>
+    <div class="ws-cols">
+      <div class="card">
+        <div class="ws-bar"><div class="ws-seg">${seg('list', 'list', '목록')}${seg('board', 'board', '보드')}</div>
+          <span><button type="button" class="btn sm" onclick="wsCarry()"${carry?'':' disabled'}>못 끝낸 일 내일로${carry ? ` (${carry})` : ''}</button><button type="button" class="btn sm" onclick="wsReport()">${icon('file')}주간 보고 초안</button></span></div>
+        ${wsAddForm()}
+        <div class="ws-tools">
+          <div class="hm-chips">${wsView==='list' ? Object.entries(WS_FILTERS).map(([k, label])=>`<button type="button" class="hm-chip${wsFilter===k?' on':''}" aria-pressed="${wsFilter===k}" onclick="wsFilter='${k}'; renderContent()">${label}</button>`).join('') : ''}</div>
+          <input type="search" class="ws-pick" placeholder="검색" aria-label="업무 검색" value="${escapeHtml(wsQuery)}" oninput="wsQuery=this.value; wsRenderBody()">
+          ${tags.length ? `<select class="ws-pick" aria-label="태그로 골라 보기" onchange="wsTag=this.value; wsRenderBody()"><option value="">태그 전체</option>${wsOpts(tags, wsTag)}</select>` : ''}
+        </div>
+        <div id="wsBody">${wsBody()}</div>
+        <div class="hm-foot">이 브라우저에만 저장되어 다른 기기에서는 보이지 않습니다. 개인 업무는 평가에 반영되지 않습니다.</div>
+      </div>
+      ${wsProgress(list, today)}
+    </div>
   </div>`;
 }
 
@@ -3511,6 +3916,10 @@ function pantryGame(){
 /* ---------------- NAV DATA ---------------- */
 const NAV = [
   { id:'home', label:'홈', icon:'home', tabs:[ {id:'dash', label:'대시보드', render:homeContent} ] },
+  { id:'ws', label:'워크스페이스', icon:'edit', tabs:[
+      {id:'w1', label:'나의 업무', render:wsContent},
+      {id:'w2', label:'나의 일상', render:comingSoon},
+  ]},
   { id:'pay', label:'급여·계약', icon:'wallet', tabs:[
       {id:'p1', label:'급여명세서', render:payContent},
       {id:'p2', label:'전자연봉계약서', render:ctContent},
@@ -3535,11 +3944,6 @@ const NAV = [
   ]},
   { id:'pantry', label:'탕비실', icon:'coffee', tabs:[
       {id:'g1', label:'X-ray 특공대', render:pantryGame},
-  ]},
-  { id:'mypage', label:'마이페이지', icon:'settings', tabs:[
-      {id:'m1', label:'개인정보', render:comingSoon},
-      {id:'m2', label:'알림 설정', render:comingSoon},
-      {id:'m3', label:'접근권한(관리자)', render:comingSoon},
   ]},
 ];
 
