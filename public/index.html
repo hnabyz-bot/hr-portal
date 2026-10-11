@@ -352,6 +352,80 @@
   .ws-day small{ font-size:var(--fs-xs); color:var(--text-muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .ws-day small.ev::before{ content:""; display:inline-block; width:5px; height:5px; margin-right:4px; border-radius:50%; background:var(--dot); vertical-align:middle; }
   .ws-day i{ display:none; }   /* 점은 칸이 좁은 휴대폰에서만 */
+  /* 나의 일상(루틴): 뼈대·요약 칸·오른쪽 그래프는 나의 업무 것을 그대로 쓴다. 체크·기록은 초록, 연속 일수·고른 단추·그래프는 빨강 — 화면을 파랑 한 색으로 채우지 않는다 (인사담당자 지시) */
+  .hm-tile.amber{ background:#FFF7E8; border-color:#F6E6C4; } .hm-tile.amber span{ color:#8A5A00; }
+  .rt .hm-tile em{ white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }   /* 루틴 이름이 길어도 요약 칸 높이는 같다 */
+  .hm-calnav button:disabled{ opacity:.35; background:none; cursor:default; }
+  .rt-date{ display:flex; align-items:baseline; gap:8px; margin:16px 0 2px; font-weight:700; }
+  .rt-date small{ font-size:var(--fs-xs); font-weight:400; color:var(--text-muted); }
+  .rt-grp{ padding:14px 0 4px; font-size:var(--fs-xs); font-weight:700; color:var(--text-secondary); }
+  .rt-grp b{ margin-left:6px; font-weight:600; color:var(--text-muted); }
+  .rt-row{ display:grid; grid-template-columns:24px minmax(0,1fr) 124px 64px; align-items:center; gap:12px; padding:10px 0; border-top:1px solid var(--border); font-size:var(--fs-md); font-weight:500; }   /* 반복·연속 칸은 폭 고정 — 줄마다 같은 자리에 선다 */
+  .rt-grp + .rt-row{ border-top:0; }
+  .rt-row .t, .rt-wrow .n{ display:flex; align-items:center; gap:6px; min-width:0; cursor:pointer; }
+  .rt-row .t > span:first-child, .rt-wrow .n > span:first-child, .rt-stat .n{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }   /* 루틴 이름은 한 줄 */
+  .rt-row.done .t > span:first-child{ color:var(--text-muted); }
+  .rt-row small{ font-size:var(--fs-xs); color:var(--text-muted); white-space:nowrap; }
+  .hm-check.rt-check{ width:24px; height:24px; background-size:14px; }
+  .rt-streak{ display:inline-flex; align-items:center; justify-content:flex-end; gap:3px; font-size:var(--fs-xs); font-weight:700; color:var(--coral-text); white-space:nowrap; }
+  .rt-streak svg{ width:13px; height:13px; }
+  .rt-streak.zero{ color:var(--text-muted); font-weight:400; }
+  .rt-wrow{ display:grid; grid-template-columns:minmax(0,1fr) repeat(7,44px) 52px; align-items:center; padding:7px 0; border-top:1px solid var(--border); }   /* 요일 칸 폭 고정 */
+  .rt-wrow.head{ border-top:0; padding-bottom:4px; font-size:var(--fs-xs); color:var(--text-muted); text-align:center; }
+  .rt-wrow.head span{ display:grid; justify-items:center; gap:2px; }
+  .rt-wrow.head b{ width:24px; height:24px; display:grid; place-items:center; border-radius:50%; font-weight:500; color:var(--text-primary); }
+  .rt-wrow.head .on b{ background:var(--coral-text); color:#fff; font-weight:700; }
+  .rt-wrow .n{ font-weight:500; }
+  .rt-wrow .sum{ text-align:right; font-size:var(--fs-xs); font-weight:700; color:var(--text-secondary); }
+  .rt-dot{ width:26px; height:26px; margin:auto; padding:0; border:1.5px solid #8593A5; border-radius:50%; background:#fff center/14px no-repeat; cursor:pointer; }   /* 안 한 날 */
+  .rt-dot.on{ border-color:var(--success); background-color:var(--success); background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23fff' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E"); }
+  .rt-dot.free{ border-color:#C3CEDA; }                                          /* 주 N회 루틴의 안 한 날 — 꼭 그날이 아니어도 된다 */
+  .rt-dot.later{ border-style:dashed; border-color:#C3CEDA; cursor:default; }   /* 아직 오지 않은 날 */
+  .rt-dot.off{ width:6px; height:6px; border:0; background:#D5DEE7; cursor:default; }   /* 예정 없는 날 */
+  .rt-legend{ display:flex; align-items:center; gap:6px 14px; flex-wrap:wrap; margin-top:12px; font-size:var(--fs-xs); color:var(--text-muted); }
+  .rt-legend span{ display:inline-flex; align-items:center; gap:5px; }
+  .rt-legend .rt-dot{ width:14px; height:14px; margin:0; background-size:8px; cursor:default; }
+  .rt-legend .rt-dot.off{ width:6px; height:6px; }
+  .rt-legend .sw{ width:14px; height:14px; border-radius:4px; }
+  .rt-log{ display:grid; grid-template-columns:minmax(0,1fr) 250px; gap:22px; align-items:start; }
+  .rt-heat{ display:grid; grid-template-columns:repeat(7,1fr); gap:6px; }
+  .rt-heat .dow{ padding-bottom:2px; text-align:center; font-size:var(--fs-xs); color:var(--text-muted); }
+  .rt-heat .dow.red{ color:var(--coral-text); }
+  .rt-cell{ height:44px; padding:0; display:grid; place-items:center; border:0; border-radius:8px; background:none; color:var(--text-muted); font:inherit; font-size:var(--fs-sm); }   /* 숫자 높이는 칸마다 같다. 빈칸 = 예정 없는 날·앞날 */
+  button.rt-cell{ color:var(--text-secondary); cursor:pointer; }
+  .rt-cell.l0, .sw.l0{ background:#EEF2F6; }
+  .rt-cell.l1, .sw.l1{ background:#D3EEDF; } .rt-cell.l1{ color:#0D5A3C; }
+  .rt-cell.l2, .sw.l2{ background:#86CDA9; } .rt-cell.l2{ color:#0B4A32; }
+  .rt-cell.l3, .sw.l3{ background:var(--success); } .rt-cell.l3{ color:#fff; font-weight:700; }
+  .rt-cell.sel{ box-shadow:0 0 0 2px var(--surface), 0 0 0 4px var(--text-primary); }
+  .rt-cell.today{ box-shadow:0 0 0 2px var(--surface), 0 0 0 4px var(--coral-text); }   /* 오늘은 골랐을 때도 빨간 테 */
+  .rt-dayp{ padding:14px 16px; border-radius:var(--radius); background:var(--bg-page); }
+  .rt-dayp h4{ margin:0 0 2px; font-size:var(--fs-md); }
+  .rt-dayp p{ margin:0 0 6px; font-size:var(--fs-xs); color:var(--text-muted); }
+  .rt-dayp label{ display:flex; align-items:center; gap:8px; padding:6px 0; font-size:var(--fs-sm); cursor:pointer; }
+  .rt-dayp label span{ min-width:0; }
+  .rt-stat{ display:grid; grid-template-columns:minmax(0,1fr) 150px 44px 70px 70px; gap:12px; align-items:center; padding:9px 0; border-top:1px solid var(--border); font-size:var(--fs-sm); }
+  .rt-stat.head{ border-top:0; padding-bottom:2px; font-size:var(--fs-xs); color:var(--text-muted); }
+  .rt-stat > :nth-child(n+3){ text-align:right; white-space:nowrap; }
+  .rt-stat .n{ font-weight:500; cursor:pointer; }
+  .rt-meter{ height:6px; border-radius:3px; background:#EEF2F6; overflow:hidden; }
+  .rt-meter i{ display:block; height:100%; border-radius:3px; background:var(--success); }
+  .rt-form .field{ margin-bottom:14px; }
+  .rt-form .hm-chips{ flex-wrap:wrap; margin-bottom:14px; }
+  .rt-form .hm-chip, .rt-dows label{ position:relative; display:inline-flex; align-items:center; justify-content:center; cursor:pointer; }
+  .rt-form .hm-chip input, .rt-dows input{ position:absolute; inset:0; width:100%; height:100%; margin:0; opacity:0; cursor:pointer; }   /* 고르는 칸은 글자 뒤에 숨겨 둔다 — 키보드로는 그대로 고를 수 있다 */
+  .rt-form .hm-chip:has(:checked){ background:var(--coral-text); color:#fff; }
+  .rt-form label:has(:focus-visible){ outline:2px solid var(--accent); outline-offset:2px; }
+  .rt-dows{ display:none; gap:6px; margin:-4px 0 14px; }
+  .rt-dows label{ width:34px; height:34px; border:1px solid var(--border); border-radius:50%; color:var(--text-secondary); font-size:var(--fs-xs); font-weight:600; }
+  .rt-dows label:has(:checked){ border-color:var(--success); background:var(--success); color:#fff; }
+  .rt-n{ display:none; align-items:center; gap:6px; margin:-4px 0 14px; font-size:var(--fs-sm); }
+  .rt-warn{ display:none; margin:-8px 0 14px; font-size:var(--fs-xs); color:var(--danger); }
+  .rt-form:has([name=rep][value=days]:checked) .rt-dows, .rt-form:has([name=rep][value=weekly]:checked) .rt-n{ display:flex; }   /* 요일·횟수 칸은 그 반복을 골랐을 때만 */
+  .rt-form:has([name=rep][value=days]:checked):not(:has([name=days]:checked)) .rt-warn{ display:block; }
+  .rt-rec{ padding:10px 12px; border-radius:var(--radius-sm); background:var(--bg-page); font-size:var(--fs-xs); color:var(--text-secondary); line-height:1.7; }
+  .rt-rec b{ color:var(--coral-text); }
+  .rt-arow{ cursor:default; }
   @media (max-width:1100px){ .ws-cols{ grid-template-columns:1fr; } }
   @media (min-width:1101px){ .ws .hm-tiles{ grid-template-columns:repeat(3,minmax(0,1fr)) 300px; } }   /* 넷째 칸(이번 주 완료)을 아래 진척도 칸과 같은 폭·같은 자리에 (인사담당자 지시) */
   @media (max-width:1100px){ .hm-cols{ grid-template-columns:1fr 1fr; } .hm-cols > :last-child{ grid-column:1 / -1; } }
@@ -782,6 +856,15 @@
     .ws-day{ align-items:center; min-height:46px; padding:5px 0; } .ws-day > b{ align-self:center; }
     .ws-day .ws-chip, .ws-day small{ display:none; } .ws-day i{ display:flex; }
     .ws-calbar .pc{ display:none; }
+    /* 나의 일상: 체크는 손가락 크기로, 한 줄은 이름 / 반복·연속 두 줄. 주간 표는 이름 아래 동그라미 일곱 개. 기록은 달력 아래에 그날 기록 */
+    .rt-row{ grid-template-columns:30px minmax(0,1fr) auto; gap:2px 12px; padding:12px 0; }
+    .hm-check.rt-check{ width:30px; height:30px; grid-row:1 / span 2; background-size:16px; }
+    .rt-row .t{ grid-column:2 / -1; } .rt-row small{ grid-column:2; } .rt-streak{ grid-column:3; }
+    .rt-wrow{ grid-template-columns:repeat(7,1fr) 40px; row-gap:6px; padding:10px 0; } .rt-wrow .n{ grid-column:1 / -1; } .rt-wrow.head .n{ display:none; }
+    .rt-dot{ width:30px; height:30px; } .rt-dot.off{ width:6px; height:6px; } .rt-legend .rt-dot{ width:14px; height:14px; } .rt-legend .rt-dot.off{ width:6px; height:6px; }
+    .rt-log{ grid-template-columns:1fr; } .rt-cell{ height:40px; }
+    .rt-stat{ grid-template-columns:minmax(0,1fr) 44px 64px; } .rt-stat > :nth-child(2), .rt-stat > :nth-child(5){ display:none; }
+    .rt-dows label{ width:40px; height:40px; }
     .grid.g2, .grid.g3, .grid.g4{ grid-template-columns:1fr; }
     .field-row{ grid-template-columns:1fr; }
     .card{ overflow-x:auto; }
@@ -924,6 +1007,7 @@ const ICONS = {
   list:'<line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>',
   board:'<rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/><line x1="15" y1="3" x2="15" y2="21"/>',
   checks:'<path d="m3 7 2 2 4-4"/><path d="m3 17 2 2 4-4"/><line x1="13" y1="6" x2="21" y2="6"/><line x1="13" y1="18" x2="21" y2="18"/>',
+  flame:'<path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/>',
 };
 function icon(name, cls=''){ return `<svg class="${cls}" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICONS[name]}</svg>`; }
 
@@ -931,19 +1015,12 @@ function icon(name, cls=''){ return `<svg class="${cls}" aria-hidden="true" view
 /* ---------------- 홈 (2026-10-11 개편) ----------------
    위에서부터: 인사 배너 · 빠른 서비스 · 요약 네 칸 · 세 칸(오늘의 업무 / 오늘의 루틴·이번 주 달성률 / 일정) · KPI 진행률 · 이번 주 소식.
    - 인사포털 일(서명·승인·평가)은 왼쪽 메뉴 숫자(TODO)와 같은 기준으로 나온다. 그 화면에서 처리하면 사라진다.
-   - 개인 업무는 워크스페이스 > 나의 업무 자료다(wsTasks — 아래 "워크스페이스 > 나의 업무"). 루틴은 아직 예시다(새로고침하면 처음으로) — "나의 일상"이 생기면 그 자료를 읽는다.
+   - 개인 업무는 워크스페이스 > 나의 업무 자료다(wsTasks — 아래 "워크스페이스 > 나의 업무"). 루틴은 워크스페이스 > 나의 일상 자료다(rtData — 아래 "워크스페이스 > 나의 일상").
    - KPI 진행률은 KPI가 있는 직원에게만 보인다. 현장직은 같은 자리에 "나의 평가" 카드. */
 const HOME_QUICK = [   // [아이콘, 이름, 메뉴, 탭] — 다섯 번째 값이 있으면 메뉴 대신 그 주소로 바로 간다
   ['file','급여명세서','pay','p1'], ['calc','경비 산출','trip','t2'], ['search','규정 검색','rule','r1'],
   ['target','KPI','perf','e1'], ['users','구성원 검색','org','o2'], ['game','X-ray 특공대','pantry','g1','xray/'],
 ];
-const homeRoutines = [
-  { id:1, title:'오늘의 업무 우선순위 정리', done:true },
-  { id:2, title:'업무 중 스트레칭하기', done:true },
-  { id:3, title:'책 10분 읽기', done:true },
-  { id:4, title:'퇴근 전 내일 할 일 정리', done:false },
-];
-const HOME_WEEK = { routine:[9,12] };   // 시연용: 이번 주 지난 요일의 루틴 [완료, 전체]. 오늘 것은 위 목록에서 센다
 let homeTaskTab = 'all', homeCalOff = 0, homeCalDay = '';   // 업무 탭(all·mine·portal), 달력에서 넘긴 달 수, 달력에서 누른 날('' = 안 누름)
 
 /* ----- 규칙 (순수 로직, homeSelfCheck가 검증) ----- */
@@ -970,10 +1047,9 @@ function homeDue(){   // 마감 임박 [오늘, 이번 주(7일 안)] — 끝내
   if(evPeriodOpen() && TODO.e2()) days.push(left(kpiPeriod.evalTo));
   return [days.filter(d=>d<=0).length, days.filter(d=>d>0 && d<=7).length];
 }
-function homeRate(){   // 이번 주 달성률 [종합, 업무, 루틴] %. 업무 = 이번 주 업무 중 완료한 비율(wsWeekStat) — 이번 주 업무가 없으면 null이고 종합은 루틴만. 루틴은 아직 시연 값 + 오늘 체크한 것
-  const [d, n] = wsWeekStat(wsTasks(), kpiDay(0)), a = n ? Math.round(d/n*100) : null;
-  const b = Math.round((HOME_WEEK.routine[0] + homeRoutines.filter(x=>x.done).length) / (HOME_WEEK.routine[1] + homeRoutines.length) * 100);
-  return [a==null ? b : Math.round((a+b)/2), a, b];
+function homeRate(){   // 이번 주 달성률 [종합, 업무, 루틴] %. 업무 = 이번 주 업무 중 완료한 비율(wsWeekStat), 루틴 = 오늘까지 예정된 것 중 실천한 비율(rtStat). 셀 것이 없는 쪽은 null이고 종합은 있는 쪽만으로 낸다
+  const today = kpiDay(0), a = rtPct(wsWeekStat(wsTasks(), today)), b = rtPct(rtSum(rtList(), ...wsWeek(today), today));
+  return [a==null ? b : b==null ? a : Math.round((a+b)/2), a, b];
 }
 function homeDates(y, m){   // 그 달의 급여일 + KPI·평가 기간 날짜 (달력 점, 주요 일정)
   return [ { ymd:ctYmd(payDayOf(y, m)), label:'급여일', color:'var(--accent)' },
@@ -998,7 +1074,6 @@ function homeSelfCheck(){   // 브라우저 콘솔에서 homeSelfCheck() 실행
 }
 
 /* ----- 화면 ----- */
-function homeToggle(list, id, key){ const x = list.find(v=>v.id===id); x.done = !x.done; renderContent(); document.getElementById(key+id)?.focus(); }   // 다시 그린 뒤에도 누르던 칸에 머문다
 function homeJump(id){ document.getElementById(id)?.scrollIntoView({ behavior:'smooth', block:'start' }); }
 function homePct(name, pct, cls=''){ return `<li class="hm-pct"><span>${name}</span><b>${pct==null ? '–' : pct+'%'}</b><div class="hm-bar ${cls}"><i style="width:${pct||0}%"></i></div></li>`; }   // 셀 것이 없으면(null) '–'
 function homeDonut(pct){ return `<div class="hm-donut"><svg viewBox="0 0 120 120" aria-hidden="true" fill="none" stroke-width="11"><circle cx="60" cy="60" r="50" stroke="#E8EEF5"/>${pct ? `<circle cx="60" cy="60" r="50" style="stroke:var(--donut, var(--accent))" stroke-linecap="round" stroke-dasharray="${(pct*3.1416).toFixed(1)} 314.2"/>` : ''}</svg><b>${pct==null ? '–' : pct+'%'}</b></div>`; }
@@ -1038,13 +1113,12 @@ function homeTaskCard(){   // 개인 업무는 나의 업무의 '오늘' 목록�
     ${wsAddForm()}
   </div>`;
 }
-function homeRoutineCards(){
-  const done = homeRoutines.filter(x=>x.done).length, [all, a, b] = homeRate();
+function homeRoutineCards(){   // 오늘의 루틴 = 나의 일상의 '오늘' 목록 (rtDayRows). 여기서 체크해도 같은 기록에 남는다
+  const today = kpiDay(0), rows = rtDayRows(rtList(), today, today), [all, a, b] = homeRate();
   return `<div class="hm-stack">
     <div class="card" id="hmRoutine">
-      <div class="card-title"><span>오늘의 루틴</span><span class="hm-count">${done}/${homeRoutines.length} 완료</span></div>
-      <div class="hm-list">${homeRoutines.map(x=>`<label class="hm-row"><input type="checkbox" class="hm-check round" id="hmR${x.id}" ${x.done?'checked':''} onchange="homeToggle(homeRoutines,${x.id},'hmR')"><span class="t">${escapeHtml(x.title)}</span><span class="badge ${x.done?'success':'neutral'}">${x.done?'완료':'미완료'}</span></label>`).join('')}</div>
-      <div class="hm-foot">예시 루틴입니다. 워크스페이스에 ‘나의 일상’이 열리면 직접 정할 수 있어요.</div>
+      <div class="card-title"><span>오늘의 루틴 <span class="hm-count">${rows.filter(x=>x.log[today]).length}/${rows.length} 완료</span></span><span class="more" onclick="goTo('ws','w2')">나의 일상 ›</span></div>
+      <div class="hm-list">${rows.map(x=>`<label class="hm-row"><input type="checkbox" class="hm-check round" id="hmR${x.id}" ${x.log[today]?'checked':''} onchange="rtToggle(${x.id},'${today}','hmR${x.id}')"><span class="t">${escapeHtml(x.title)}</span><span class="badge ${x.log[today]?'success':'neutral'}">${x.log[today]?'완료':'미완료'}</span></label>`).join('') || '<div class="hm-empty">오늘 예정된 루틴이 없습니다</div>'}</div>
     </div>
     <div class="card">
       <div class="card-title">이번 주 달성률</div>
@@ -1111,7 +1185,7 @@ function homeKpi(){   // KPI가 있는 직원에게만, 진행률만. 현장직�
 }
 function homeContent(){
   const t = new Date(), [left, mineDone] = wsTodayCount();
-  const rDone = homeRoutines.filter(x=>x.done).length, [dueToday, dueWeek] = homeDue();
+  const [rDone, rAll] = rtDay(rtList(), kpiDay(0), kpiDay(0)), [dueToday, dueWeek] = homeDue();
   const short = { welcome:'새 식구', birthday:'생일', anniversary:'입사 기념', joy:'경사', condol:'조사' };
   const news = CELEB.map(c=>[short[c.key], celebList(c.key, orgMembers, celebEvents, t).length]).filter(x=>x[1]);
   const tile = (cls, id, label, n, unit, sub)=>`<div class="hm-tile ${cls}" onclick="homeJump('${id}')"><span>${label}</span><b>${n}<small>${unit}</small></b><em>${sub}</em></div>`;
@@ -1123,7 +1197,7 @@ function homeContent(){
     </div>
     <div class="hm-tiles">
       ${tile('blue', 'hmTasks', '오늘 할 일', left+mineDone, '건', `남은 일 ${left} · 완료 ${mineDone}`)}
-      ${tile('green', 'hmRoutine', '오늘의 루틴', homeRoutines.length, '개', `완료 ${rDone} · 미완료 ${homeRoutines.length-rDone}`)}
+      ${tile('green', 'hmRoutine', '오늘의 루틴', rAll, '개', `완료 ${rDone} · 미완료 ${rAll-rDone}`)}
       ${tile('violet', 'hmCal', '마감 임박', dueToday+dueWeek, '건', `오늘 ${dueToday} · 이번 주 ${dueWeek}`)}
       ${tile('slate', 'hmNews', '이번 주 소식', news.reduce((a,x)=>a+x[1], 0), '명', news.map(x=>x[0]+' '+x[1]).join(' · ') || '이번 주에는 소식이 없습니다')}
     </div>
@@ -1277,9 +1351,10 @@ function wsSelfCheck(){   // 브라우저 콘솔에서 wsSelfCheck() 실행 — 
 }
 
 /* ----- 동작 ----- */
-function wsKeep(msg){   // 되돌릴 수 있게 지금 목록을 떠 두고 알림을 띄운다 — 목록을 바꾸기 "전에" 부른다. 되돌리기는 마지막 한 번, 6초 동안
+const wsPut = (role, v)=>{ wsStore[role] = v; wsSave(role); };
+function wsKeep(msg, get=wsTasks, put=wsPut){   // 되돌릴 수 있게 지금 목록을 떠 두고 알림을 띄운다 — 목록을 바꾸기 "전에" 부른다. 되돌리기는 마지막 한 번, 6초 동안. 나의 일상도 같이 쓴다(get·put = 그 목록을 읽고 되돌려 놓는 함수)
   clearTimeout(wsUndo?.timer); document.getElementById('wsToast')?.remove();
-  wsUndo = { role:kpiRole, snap:JSON.stringify(wsTasks()), timer:setTimeout(()=>{ wsUndo = null; document.getElementById('wsToast')?.remove(); }, 6000) };
+  wsUndo = { role:kpiRole, put, snap:JSON.stringify(get()), timer:setTimeout(()=>{ wsUndo = null; document.getElementById('wsToast')?.remove(); }, 6000) };
   const d = document.createElement('div'); d.id = 'wsToast'; d.className = 'ws-toast'; d.setAttribute('role', 'status');
   d.innerHTML = `<span>${escapeHtml(msg)}</span><button type="button" onclick="wsUndoNow()">되돌리기</button>`;
   document.body.appendChild(d);
@@ -1287,7 +1362,7 @@ function wsKeep(msg){   // 되돌릴 수 있게 지금 목록을 떠 두고 알�
 function wsUndoNow(){
   if(!wsUndo) return;
   clearTimeout(wsUndo.timer); document.getElementById('wsToast')?.remove();
-  const { role, snap } = wsUndo; wsUndo = null; wsStore[role] = JSON.parse(snap); wsSave(role);
+  const { role, put, snap } = wsUndo; wsUndo = null; put(role, JSON.parse(snap));
 }
 function wsSetState(id, state){   // 완료로 바꾸면 끝낸 날을 적고, 반복 업무면 다음 회차를 만든다(하위 할 일은 체크를 풀고 메모는 비운다). 완료를 풀면 아직 끝내지 않은 그 다음 회차를 지운다
   const list = wsTasks(), x = list.find(v=>v.id===id), was = x.state==='완료', now = state==='완료';
@@ -1487,6 +1562,257 @@ function wsContent(){
         <div class="hm-foot">이 브라우저에만 저장되어 다른 기기에서는 보이지 않습니다. 개인 업무는 평가에 반영되지 않습니다.</div>
       </div>
       ${wsProgress(list, today)}
+    </div>
+  </div>`;
+}
+
+/* ---------------- 워크스페이스 > 나의 일상 (2026-10-11) ----------------
+   반복해서 실천할 행동(루틴)을 날마다 체크한다. 그 기록이 주간 표·기록 달력·연속 실천·달성률이 되고, 홈의 "오늘의 루틴"·이번 주 달성률이 같은 자료를 읽는다.
+   - 저장: 나의 업무와 같이 각자 브라우저(localStorage)에, 시연 역할(가상 인물)마다 따로. 손대기 전에는 예시 루틴이 보인다(처음 고칠 때 저장).
+   - 루틴 기록은 본인만 보고 평가와 잇지 않는다. 알림·공유는 없다(로그인 이후의 일).
+   - 지난 날은 언제든 고칠 수 있고 앞날은 못 누른다 (인사담당자 확정).
+   루틴 한 건: { id, title, cat:분류, when:시간대, archived:보관한 날|'', log:{ 'YYYY-MM-DD':1 },
+                 sch:[{ from:'YYYY-MM-DD', rep:daily·weekdays·days·weekly·off, days:[요일 0~6], n:주 몇 번 }] }
+   sch = 반복을 바꾼 이력(from 순, 맨 뒤가 지금 것). 바꾼 날부터 적용하고 지난 날은 그때의 반복으로 센다. off = 보관해 둔 동안(다시 쓸 때 끼워 넣는다) */
+const RT_CATS = { 업무:'c0', 건강:'c1', 성장:'c2', 생활:'c3', 기타:'c5' }, RT_WHENS = ['아침','근무 중','퇴근 전','저녁','언제든'];   // 분류 → 색(.ws-tag), 시간대는 목록에 나오는 순서
+const RT_REPS = { daily:'매일', weekdays:'평일', days:'요일 선택', weekly:'주 N회' }, RT_WEEK = [1,2,3,4,5,6,0];   // 요일은 월요일부터
+const rtStore = {};   // 역할 → 루틴 목록
+let rtView = 'today', rtCat = '', rtWeekOff = 0, rtMonOff = 0, rtDaySel = '', rtPick = 0;   // 보기(today·week·log), 고른 분류, 몇 주·몇 달 전, 기록에서 누른 날, 기록에서 고른 루틴(0 = 전부)
+const rtFill = x=>({ ...x, cat:x.cat in RT_CATS ? x.cat : '기타', when:RT_WHENS.includes(x.when) ? x.when : '언제든', archived:typeof x.archived==='string' ? x.archived : '',
+  log:x.log && typeof x.log==='object' ? x.log : {}, sch:x.sch.map(s=>({ rep:'daily', n:3, ...s, days:Array.isArray(s.days) ? s.days : [] })) });
+const rtNow = x=>x.sch[x.sch.length-1];   // 지금의 반복
+function rtSeed(){   // 예시: 5주 전부터 해 온 것처럼 — 가끔 빠뜨렸고, 오늘은 앞의 둘만 해 둔 모습
+  const from = kpiDay(-35);
+  return [['오늘의 업무 우선순위 정리','업무','아침','weekdays'], ['업무 중 스트레칭하기','건강','근무 중','weekdays'], ['점심 산책 15분','건강','근무 중','days',[1,3,5]],
+    ['퇴근 전 내일 할 일 정리','업무','퇴근 전','weekdays'], ['책 10분 읽기','성장','저녁','daily'], ['영어 회화','성장','저녁','weekly']].map(([title, cat, when, rep, days=[]], i)=>{
+    const x = rtFill({ id:i+1, title, cat, when, sch:[{ from, rep, days, n:3 }] });
+    for(let o=35; o>=0; o--){ const d = kpiDay(-o); if((rep==='weekly' ? [1,3,6].includes(celebParse(d).getDay()) : rtDue(x, d)) && (o ? (o*3 + i*5)%(7+i)!==2 : i<2)) x.log[d] = 1; }
+    return x;
+  });
+}
+function rtData(){   // 지금 역할의 루틴 전부(보관한 것 포함). 저장된 것이 없으면 예시
+  if(!rtStore[kpiRole]){
+    let saved; try{ saved = JSON.parse(localStorage.getItem('wsRoutines:'+kpiRole)); }catch(_){}
+    rtStore[kpiRole] = Array.isArray(saved) ? saved.filter(x=>x && typeof x.title==='string' && Array.isArray(x.sch) && x.sch.length && x.sch.every(s=>s && typeof s.from==='string')).map((x,i)=>rtFill({ ...x, id:i+1 })) : rtSeed();
+  }
+  return rtStore[kpiRole];
+}
+const rtList = ()=>rtData().filter(x=>!x.archived).sort((a,b)=>RT_WHENS.indexOf(a.when) - RT_WHENS.indexOf(b.when) || a.id - b.id);   // 쓰고 있는 루틴, 시간대 순
+function rtSave(role=kpiRole){ try{ localStorage.setItem('wsRoutines:'+role, JSON.stringify(rtStore[role])); }catch(_){} renderContent(); }
+
+/* ----- 규칙 (순수 로직, rtSelfCheck가 검증) ----- */
+function rtDays(from, to){ const out = []; for(let d=from; d<=to; d=wsShift(d, 1)) out.push(d); return out; }   // from~to의 날짜들
+function rtSch(x, ymd){ let s = null; for(const e of x.sch) if(e.from<=ymd) s = e; return s; }   // 그날의 반복. 시작하기 전이면 null
+function rtDue(x, ymd){   // 그날 하기로 한 루틴인가. 평일 = 월~금 중 공휴일이 아닌 날. 주 N회·보관 중은 정해진 날이 없다
+  const s = rtSch(x, ymd), w = celebParse(ymd).getDay();
+  return !!s && (s.rep==='daily' || (s.rep==='weekdays' && w>0 && w<6 && !PAY_HOLIDAYS.has(ymd)) || (s.rep==='days' && s.days.includes(w)));
+}
+const rtFree = (x, ymd)=>rtSch(x, ymd)?.rep==='weekly';   // 주 N회: 아무 날이나 하면 된다
+const rtOn = (x, ymd)=>rtDue(x, ymd) || rtFree(x, ymd);   // 그날 체크할 수 있는가
+const rtPct = ([d, n])=>n ? Math.round(d/n*100) : null;   // 셀 것이 없으면 null (화면에는 '–')
+function rtWeekly(x, mon, today){   // 주 N회 루틴의 그 주 [한 횟수, 목표, 지금까지 채웠어야 할 횟수]. 남은 날에 다 채울 수 있는 동안은 모자란 것으로 세지 않는다. 그 주에 주 N회가 아니었으면 [0,0,0]
+  const days = rtDays(mon, wsShift(mon, 6)).filter(d=>rtFree(x, d)), past = days.filter(d=>d<=today);
+  if(!past.length) return [0, 0, 0];
+  const n = Math.min(rtSch(x, past[past.length-1]).n, days.length), c = past.filter(d=>x.log[d]).length;
+  return [c, n, Math.max(Math.min(c, n), n - (days.length - past.length))];
+}
+function rtStat(x, from, to, today){   // 루틴 x의 from~to [실천, 예정] — 오늘까지만 센다(인사담당자 확정). 주 N회는 월요일이 그 기간에 드는 주를 주 단위로 센다(rtWeekly)
+  let done = 0, all = 0;
+  for(const d of rtDays(from, to<today ? to : today)){
+    if(rtDue(x, d)){ all++; if(x.log[d]) done++; }
+    if(celebParse(d).getDay()===1){ const [c, n, need] = rtWeekly(x, d, today); done += Math.min(c, n); all += need; }
+  }
+  return [done, all];
+}
+const rtSum = (list, from, to, today)=>list.reduce((a,x)=>{ const [d, n] = rtStat(x, from, to, today); return [a[0]+d, a[1]+n]; }, [0, 0]);
+function rtDayRows(list, ymd, today){   // 그날의 루틴: 하기로 한 것 + 주 N회 중 그날 한 것. 오늘은 이번 주 목표를 아직 못 채운 주 N회도 나온다(채웠으면 빠진다)
+  return list.filter(x=>rtDue(x, ymd) || (rtFree(x, ymd) && (!!x.log[ymd] || (ymd===today && (([c, n])=>c<n)(rtWeekly(x, wsWeek(ymd)[0], today))))));
+}
+const rtDay = (list, ymd, today)=>{ const rows = rtDayRows(list, ymd, today); return [rows.filter(x=>x.log[ymd]).length, rows.length]; };   // 그날 [실천, 예정]
+function rtStreak(x, today){   // [지금 연속, 최고 기록, 단위]. 예정 없는 날과 아직 하지 않은 오늘(주 N회는 이번 주)로는 끊기지 않는다. 주 N회는 목표를 채운 '주' 단위
+  let run = 0, best = 0; const hit = v=>{ run = v ? run+1 : 0; best = Math.max(best, run); };
+  const weekly = rtNow(x).rep==='weekly', mon = wsWeek(today)[0];
+  if(weekly) for(let m = wsWeek(x.sch[0].from)[0]; m<=mon; m = wsShift(m, 7)){ const [c, n] = rtWeekly(x, m, today); if(n && (c>=n || m<mon)) hit(c>=n); }
+  else for(const d of rtDays(x.sch[0].from, today)) if(rtDue(x, d) && (x.log[d] || d<today)) hit(x.log[d]);
+  return [run, best, weekly ? '주' : '일'];
+}
+function rtRepLabel(x, today){   // 반복 칸 글자: 매일 · 평일 · 월·수·금 · 주 3회 · 이번 주 1/3
+  const s = rtNow(x);
+  if(s.rep==='weekly') return `주 ${s.n}회` + (x.archived ? '' : ` · 이번 주 ${rtWeekly(x, wsWeek(today)[0], today)[0]}/${s.n}`);
+  return s.rep==='days' ? RT_WEEK.filter(w=>s.days.includes(w)).map(w=>WS_DOW[w]).join('·') : RT_REPS[s.rep];
+}
+function rtSelfCheck(){   // 브라우저 콘솔에서 rtSelfCheck() 실행 — 2026-10-14(수)를 오늘로 놓고 본다
+  const ok = (c,m)=>{ if(!c) throw new Error('rtSelfCheck 실패: '+m); }, T = '2026-10-14', W = ['2026-10-12', '2026-10-18'];
+  const mk = (rep, log=[], from='2026-09-01', more={})=>rtFill({ id:1, title:'t', sch:[{ from, rep, days:[1,3,5], n:3 }], log:Object.fromEntries(log.map(d=>[d.length>2 ? d : '2026-10-'+d, 1])), ...more });
+  ok(rtDue(mk('daily'), '2026-10-11') && !rtDue(mk('daily'), '2026-08-31'), '매일: 시작한 날부터');
+  ok(rtDue(mk('weekdays'), T) && !rtDue(mk('weekdays'), '2026-10-10') && !rtDue(mk('weekdays'), '2026-10-09'), '평일: 주말·공휴일(한글날)은 예정 없음');
+  ok(rtDue(mk('days'), T) && !rtDue(mk('days'), '2026-10-13') && !rtDue(mk('weekly'), T) && rtOn(mk('weekly'), T) && !rtOn(mk('days'), '2026-10-13'), '요일 선택은 고른 요일만, 주 N회는 아무 날이나');
+  ok(String(rtStat(mk('daily', ['12','14']), ...W, T))==='2,3' && String(rtStat(mk('days', ['12']), ...W, T))==='1,2', '이번 주 달성률은 오늘까지 예정된 것만 센다');
+  const wk = (log, today, from)=>String(rtStat(mk('weekly', log, from), ...W, today));
+  ok(wk(['12'], T)==='1,1' && wk([], T)==='0,0' && wk(['12'], '2026-10-17')==='1,2' && wk(['12'], '2026-10-18')==='1,3' && wk(['12','13','14','15'], '2026-10-18')==='3,3', '주 3회: 남은 날에 채울 수 있는 동안은 깎지 않는다');
+  ok(wk([], '2026-10-18', '2026-10-17')==='0,2', '주 중에 시작한 주 N회는 남은 날 수까지만 목표로 본다');
+  ok(String(rtSum([mk('daily', ['12','13','14']), mk('weekly', ['12'])], ...W, T))==='4,4' && rtPct([0, 0])===null && rtPct([1, 3])===33, '합계·비율');
+  ok(String(rtStreak(mk('daily', ['10','11','12','13'], '2026-10-08'), T))==='4,4,일', '아직 하지 않은 오늘로는 끊기지 않는다');
+  ok(String(rtStreak(mk('daily', ['08','09','11','12','13','14'], '2026-10-08'), T))==='4,4,일' && String(rtStreak(mk('daily', ['08','09','10','12'], '2026-10-08'), T))==='0,3,일', '빠뜨린 날에서 끊기고 최고 기록은 남는다');
+  ok(String(rtStreak(mk('days', ['05','07','09','12'], '2026-10-05'), T))==='4,4,일' && String(rtStreak(mk('weekdays', ['07','08','12','13'], '2026-10-07'), T))==='4,4,일', '예정 없는 날(다른 요일·주말·공휴일)로는 끊기지 않는다');
+  ok(String(rtStreak(mk('weekly', ['2026-09-28','2026-09-30','02','05','06','07','12'], '2026-09-28'), T))==='2,2,주' && String(rtStreak(mk('weekly', ['2026-09-28','2026-09-30','02','05','06','12'], '2026-09-28'), T))==='0,1,주', '주 N회의 연속은 목표를 채운 주 단위, 이번 주는 아직 끊지 않는다');
+  const ch = mk('daily', ['12']); ch.sch.push({ from:'2026-10-13', rep:'days', days:[5], n:3 });
+  ok(rtDue(ch, '2026-10-12') && !rtDue(ch, T) && String(rtStat(ch, ...W, T))==='1,1', '반복을 바꾸면 바꾼 날부터 — 지난 날은 그때의 반복으로 센다');
+  const off = mk('daily', ['12']); off.sch.push({ from:'2026-10-13', rep:'off', days:[], n:3 }, { from:T, rep:'daily', days:[], n:3 });
+  ok(String(rtStat(off, ...W, T))==='1,2' && !rtOn(off, '2026-10-13') && String(rtStreak(off, T).slice(0, 2))==='1,1', '보관해 둔 동안은 세지 않는다');
+  const a = mk('daily', ['14']), b = mk('weekly', ['12']), c = mk('weekly', ['12','13','14']);
+  ok(rtDayRows([a, b], T, T).length===2 && rtDayRows([a, b], '2026-10-13', T).length===1 && String(rtDay([a, b], T, T))==='1,2', '오늘은 목표를 못 채운 주 N회도 나오고, 지난 날은 한 것만');
+  ok(rtDayRows([c], '2026-10-15', '2026-10-15').length===0 && rtDayRows([c], T, T).length===1, '이번 주 목표를 채운 주 N회는 오늘 목록에서 빠진다');
+  ok(rtRepLabel(mk('days'), T)==='월·수·금' && rtRepLabel(mk('weekdays'), T)==='평일' && rtRepLabel(b, T)==='주 3회 · 이번 주 1/3', '반복 글자');
+  ok(rtFill({ title:'t', cat:'없는 분류', when:'', sch:[{ from:T }] }).cat==='기타' && rtSeed().every(x=>rtNow(x).from<=kpiDay(0)) && homeRate().every(p=>p==null || (p>=0 && p<=100)), '저장된 값 보정·예시·홈 달성률 범위');
+  return 'rtSelfCheck 통과';
+}
+
+/* ----- 동작 ----- */
+const rtPut = (role, v)=>{ rtStore[role] = v; rtSave(role); if(document.getElementById('rtArch')) rtArchived(); };   // 되돌리기(wsKeep)가 부른다
+function rtToggle(id, ymd, key){   // 체크·해제. 지난 날도 고칠 수 있고 앞날은 못 누른다. key = 다시 그린 뒤 머물 칸
+  const x = rtData().find(v=>v.id===id); if(!x || ymd>kpiDay(0) || !rtOn(x, ymd)) return;
+  if(x.log[ymd]) delete x.log[ymd]; else x.log[ymd] = 1;
+  rtSave(); document.getElementById(key)?.focus();
+}
+function rtAdd(e){   // 빠른 등록: 이름만 — 매일 · 기타 · 언제든으로 만들고 바로 수정 창을 연다
+  e.preventDefault();
+  const title = new FormData(e.target).get('title').trim(), list = rtData(); if(!title) return;
+  const x = rtFill({ id:wsNewId(list), title, sch:[{ from:kpiDay(0), rep:'daily', days:[], n:3 }] });
+  list.push(x); rtView = 'today'; rtCat = ''; rtSave(); rtEdit(x.id);
+}
+function rtEdit(id){
+  const today = kpiDay(0), x = rtData().find(v=>v.id===id), s = rtNow(x), [run, best, unit] = rtStreak(x, today), d = celebParse(x.sch[0].from);
+  const chips = (name, label, opts, v)=>`<span class="ws-lbl">${label}</span><div class="hm-chips" role="radiogroup" aria-label="${label}">${opts.map(([k, t])=>`<label class="hm-chip"><input type="radio" name="${name}" value="${k}"${k===v?' checked':''}>${t}</label>`).join('')}</div>`;
+  orgModal(`<form class="rt-form" onsubmit="rtSubmit(event, ${id})">
+    <div class="card-title">루틴 수정</div>
+    <div class="field"><label>이름</label><input name="title" required maxlength="40" value="${escapeHtml(x.title)}"></div>
+    ${chips('cat', '분류', Object.keys(RT_CATS).map(c=>[c, c]), x.cat)}
+    ${chips('when', '시간대', RT_WHENS.map(c=>[c, c]), x.when)}
+    ${chips('rep', '반복', Object.entries(RT_REPS), s.rep)}
+    <div class="rt-dows" role="group" aria-label="요일">${RT_WEEK.map(w=>`<label><input type="checkbox" name="days" value="${w}"${s.days.includes(w)?' checked':''} aria-label="${WS_DOW[w]}요일">${WS_DOW[w]}</label>`).join('')}</div>
+    <div class="rt-warn">요일을 하나 이상 골라 주세요</div>
+    <div class="rt-n">일주일에 <select name="n" class="ws-pick" aria-label="일주일에 몇 번">${[1,2,3,4,5,6].map(n=>`<option${n===s.n?' selected':''}>${n}</option>`).join('')}</select> 번</div>
+    <div class="rt-rec">${d.getFullYear()}. ${d.getMonth()+1}. ${d.getDate()}부터 실천 · 지금 <b>연속 ${run}${unit}</b> · 최고 기록 ${best}${unit}<br>반복을 바꾸면 오늘부터 적용되고 지난 기록은 그대로 남습니다</div>
+    <div class="ws-btns"><button type="button" class="btn" onclick="rtArchive(${id})">보관</button><span><button type="button" class="btn" onclick="orgCloseModal()">취소</button><button class="btn primary">저장</button></span></div>
+  </form>`);
+}
+function rtSubmit(e, id){   // 반복을 바꾸면 오늘부터 적용한다 — 지난 날은 그때의 반복으로 센다(sch에 이력을 남긴다. 같은 날 다시 바꾸면 그날 것을 덮어쓴다)
+  e.preventDefault();
+  const f = new FormData(e.target), title = f.get('title').trim(), x = rtData().find(v=>v.id===id), s = rtNow(x), today = kpiDay(0);
+  const next = { from:today, rep:f.get('rep'), days:f.getAll('days').map(Number), n:+f.get('n') };
+  if(!title || (next.rep==='days' && !next.days.length)) return;
+  Object.assign(x, { title, cat:f.get('cat'), when:f.get('when') });
+  if(next.rep!==s.rep || next.n!==s.n || String(next.days)!==String(s.days)){ if(s.from===today) x.sch[x.sch.length-1] = next; else x.sch.push(next); }
+  orgCloseModal(); rtSave();
+}
+function rtArchive(id){   // 보관: 목록·달성률에서 빠지고 기록은 남는다
+  const x = rtData().find(v=>v.id===id);
+  wsKeep('보관했습니다 — '+x.title, rtData, rtPut); x.archived = kpiDay(0); orgCloseModal(); rtSave();
+}
+function rtRestore(id){   // 다시 쓰기: 보관해 둔 동안은 예정이 없던 것으로 친다 (연속 실천·달성률이 깎이지 않게)
+  const x = rtData().find(v=>v.id===id), today = kpiDay(0), s = rtNow(x);
+  if(x.archived<today) x.sch.push({ ...s, from:x.archived, rep:'off' }, { ...s, from:today });
+  x.archived = ''; rtSave(); rtArchived();
+}
+function rtDelete(id){   // 삭제하면 기록도 지워진다 — 확인 창 대신 되돌리기
+  wsKeep('삭제했습니다 — '+rtData().find(v=>v.id===id).title, rtData, rtPut);
+  rtStore[kpiRole] = rtData().filter(v=>v.id!==id); rtSave(); rtArchived();
+}
+function rtArchived(){   // 보관한 루틴 창 — 하나도 없으면 닫는다
+  const list = rtData().filter(x=>x.archived); if(!list.length) return orgCloseModal();
+  orgModal(`<div class="card-title" id="rtArch">보관한 루틴</div>
+    <div class="hm-list">${list.map(x=>`<div class="hm-row rt-arow"><span class="t">${escapeHtml(x.title)}${rtTag(x)}<small>${rtRepLabel(x, kpiDay(0))}</small></span><button type="button" class="btn sm" onclick="rtRestore(${x.id})">다시 쓰기</button><button type="button" class="btn sm ws-del" onclick="rtDelete(${x.id})">삭제</button></div>`).join('')}</div>
+    <div class="ws-btns"><span class="list-sub">삭제하면 그 루틴의 기록도 함께 지워집니다.</span><span><button type="button" class="btn" onclick="orgCloseModal()">닫기</button></span></div>`);
+}
+
+/* ----- 화면 ----- */
+const rtTag = x=>`<span class="ws-tag ${RT_CATS[x.cat]}">${x.cat}</span>`;
+const rtStreakHtml = ([run, , unit])=>run ? `<span class="rt-streak" title="연속 실천">${icon('flame')}${run}${unit}</span>` : '<span class="rt-streak zero">–</span>';
+function rtTodayView(list, today, st){   // 오늘: 시간대별로 묶은 체크 목록
+  const all = rtDayRows(list, today, today), rows = all.filter(x=>!rtCat || x.cat===rtCat), t = celebParse(today);
+  const row = x=>{ const on = !!x.log[today];
+    return `<div class="rt-row${on?' done':''}"><input type="checkbox" class="hm-check round rt-check" id="rtC${x.id}" aria-label="${escapeHtml(x.title)} 실천" ${on?'checked':''} onchange="rtToggle(${x.id},'${today}','rtC${x.id}')"><span class="t" onclick="rtEdit(${x.id})"><span>${escapeHtml(x.title)}</span>${rtTag(x)}</span><small>${rtRepLabel(x, today)}</small>${rtStreakHtml(st.get(x.id))}</div>`; };
+  return `<div class="ws-tools"><div class="hm-chips">${['', ...Object.keys(RT_CATS)].map(c=>`<button type="button" class="hm-chip${rtCat===c?' on':''}" aria-pressed="${rtCat===c}" onclick="rtCat='${c}'; renderContent()">${c || '전체'}</button>`).join('')}</div></div>
+    <div class="rt-date">${t.getMonth()+1}월 ${t.getDate()}일 ${WS_DOW[t.getDay()]}요일${all.length ? `<small>${all.length}개 중 ${all.filter(x=>x.log[today]).length}개 완료</small>` : ''}</div>
+    ${RT_WHENS.map(g=>{ const v = rows.filter(x=>x.when===g); return v.length ? `<div class="rt-grp">${g}<b>${v.filter(x=>x.log[today]).length}/${v.length}</b></div>${v.map(row).join('')}` : ''; }).join('')
+      || `<div class="hm-empty">${!list.length ? '아직 루틴이 없습니다. 위 칸에 적어 첫 루틴을 만들어 보세요' : all.length ? '해당하는 루틴이 없습니다' : '오늘 예정된 루틴이 없습니다'}</div>`}`;
+}
+function rtWeekView(list, today){   // 주간 표: 루틴 × 월~일. 지난 날은 눌러서 고친다. 그 주에 하기로 한 날이 하나도 없는 루틴은 나오지 않는다
+  const mon = wsShift(wsWeek(today)[0], -7*rtWeekOff), days = rtDays(mon, wsShift(mon, 6)), a = celebParse(mon), b = celebParse(days[6]);
+  const cell = (x, d)=>{ const on = !!x.log[d], k = `rtW${x.id}_${d}`;
+    return !rtOn(x, d) ? '<span class="rt-dot off"></span>' : d>today ? '<span class="rt-dot later"></span>'
+      : `<button type="button" class="rt-dot${on ? ' on' : rtFree(x, d) ? ' free' : ''}" id="${k}" aria-pressed="${on}" aria-label="${escapeHtml(x.title)} ${+d.slice(5, 7)}월 ${+d.slice(8)}일" onclick="rtToggle(${x.id},'${d}','${k}')"></button>`; };
+  const sum = x=>{ const [c, n] = rtWeekly(x, mon, today), [dn, all] = n ? [c, n] : rtStat(x, mon, days[6], today); return all ? `${dn}/${all}` : '–'; };   // 주 N회는 목표 대비 횟수
+  const nav = (off, name, label)=>`<button type="button" aria-label="${label}"${rtWeekOff+off<0 ? ' disabled' : ''} onclick="rtWeekOff+=${off}; renderContent()">${icon(name)}</button>`;
+  return `<div class="ws-calbar"><span><span class="hm-calnav">${nav(1,'chevL','지난주')}${a.getMonth()+1}월 ${a.getDate()}일 ~ ${b.getMonth()===a.getMonth() ? '' : (b.getMonth()+1)+'월 '}${b.getDate()}일${nav(-1,'chevR','다음 주')}</span><button type="button" class="btn sm"${rtWeekOff ? '' : ' disabled'} onclick="rtWeekOff=0; renderContent()">이번 주</button></span>
+      <small>지난 날의 동그라미를 누르면 기록을 고칠 수 있어요</small></div>
+    <div class="rt-wrow head"><span class="n"></span>${days.map((d,i)=>`<span${d===today?' class="on"':''}>${WS_DOW[RT_WEEK[i]]}<b>${+d.slice(8)}</b></span>`).join('')}<span></span></div>
+    ${list.filter(x=>days.some(d=>rtOn(x, d))).map(x=>`<div class="rt-wrow"><span class="n" onclick="rtEdit(${x.id})"><span>${escapeHtml(x.title)}</span>${rtTag(x)}</span>${days.map(d=>cell(x, d)).join('')}<span class="sum">${sum(x)}</span></div>`).join('') || '<div class="hm-empty">이 주에 예정된 루틴이 없습니다</div>'}
+    <div class="rt-legend"><span><i class="rt-dot on"></i>실천</span><span><i class="rt-dot"></i>안 함</span><span><i class="rt-dot later"></i>아직 오지 않은 날</span><span><i class="rt-dot off"></i>예정 없는 날</span></div>`;
+}
+function rtLogView(list, today, st){   // 기록: 한 달 달력(실천할수록 진한 초록) + 누른 날의 기록 고치기 + 루틴별 그 달 달성률·연속·최고 기록
+  const t = celebParse(today), first = new Date(t.getFullYear(), t.getMonth()-rtMonOff, 1), y = first.getFullYear(), m = first.getMonth(), last = new Date(y, m+1, 0).getDate();
+  const from = ctYmd(first), to = ctYmd(new Date(y, m, last)), one = list.find(x=>x.id===rtPick), sel = rtDaySel>=from && rtDaySel<=to ? rtDaySel : rtMonOff ? '' : today;
+  const level = ymd=>{   // 칸 색: 예정이 없으면 빈칸, 0%는 회색, 절반 미만·절반 이상·전부. 루틴 하나만 고르면 한 날과 안 한 날
+    if(one) return !rtOn(one, ymd) ? '' : one.log[ymd] ? ' l3' : ' l0';
+    const [d, n] = rtDay(list, ymd, today); return !n ? '' : d===n ? ' l3' : d*2>=n ? ' l2' : d ? ' l1' : ' l0'; };
+  let cells = [...WS_DOW].map((d,i)=>`<span class="dow${i?'':' red'}">${d}</span>`).join('') + '<span></span>'.repeat(first.getDay());
+  for(let d=1; d<=last; d++){
+    const ymd = ctYmd(new Date(y, m, d));
+    cells += ymd>today ? `<span class="rt-cell">${d}</span>` : `<button type="button" class="rt-cell${level(ymd)}${ymd===today?' today':''}${ymd===sel?' sel':''}" id="rtD${ymd}" aria-pressed="${ymd===sel}" aria-label="${m+1}월 ${d}일" onclick="rtDaySel='${ymd}'; renderContent(); document.getElementById('rtD${ymd}')?.focus()">${d}</button>`;
+  }
+  const sd = sel && celebParse(sel), [dn, dall] = sel ? rtDay(list, sel, today) : [0, 0];
+  const panel = !sel ? '<p>날짜를 누르면 그날의 기록을 보고 고칠 수 있어요</p>'
+    : `<h4>${sd.getMonth()+1}월 ${sd.getDate()}일 ${WS_DOW[sd.getDay()]}요일</h4><p>${dall ? `예정 ${dall}개 중 ${dn}개 실천` : '예정된 루틴이 없습니다'}</p>${list.filter(x=>rtOn(x, sel)).map(x=>`<label><input type="checkbox" class="hm-check round" id="rtP${x.id}" ${x.log[sel]?'checked':''} onchange="rtToggle(${x.id},'${sel}','rtP${x.id}')"><span>${escapeHtml(x.title)}</span></label>`).join('')}`;
+  const stat = x=>{ const p = rtPct(rtStat(x, from, to, today)), [, best, unit] = st.get(x.id);
+    return `<div class="rt-stat"><span class="n" onclick="rtEdit(${x.id})">${escapeHtml(x.title)}</span><span class="rt-meter"><i style="width:${p||0}%"></i></span><b>${p==null ? '–' : p+'%'}</b>${rtStreakHtml(st.get(x.id))}<span>${best ? best+unit : '–'}</span></div>`; };
+  const nav = (off, name, label)=>`<button type="button" aria-label="${label}"${rtMonOff+off<0 ? ' disabled' : ''} onclick="rtMonOff+=${off}; rtDaySel=''; renderContent()">${icon(name)}</button>`;
+  return `<div class="ws-calbar"><span><span class="hm-calnav">${nav(1,'chevL','지난달')}${y}년 ${m+1}월${nav(-1,'chevR','다음 달')}</span><button type="button" class="btn sm"${rtMonOff ? '' : ' disabled'} onclick="rtMonOff=0; rtDaySel=''; renderContent()">이번 달</button></span>
+      <select class="ws-pick" aria-label="루틴 골라 보기" onchange="rtPick=+this.value; renderContent()"><option value="0">모든 루틴</option>${list.map(x=>`<option value="${x.id}"${x.id===rtPick?' selected':''}>${escapeHtml(x.title)}</option>`).join('')}</select></div>
+    <div class="rt-log"><div>
+      <div class="rt-heat">${cells}</div>
+      <div class="rt-legend"><span>적게 <i class="sw l0"></i><i class="sw l1"></i><i class="sw l2"></i><i class="sw l3"></i> 전부 실천</span><span>날짜를 누르면 그날 기록을 고칠 수 있어요</span></div>
+    </div><div class="rt-dayp">${panel}</div></div>
+    <div class="hm-sub">루틴별 기록</div>
+    <div class="rt-stat head"><span>루틴</span><span>${m+1}월 달성률</span><span></span><span>연속</span><span>최고 기록</span></div>
+    ${list.map(stat).join('') || '<div class="hm-empty">아직 루틴이 없습니다</div>'}`;
+}
+function rtSide(list, today, week, left){   // PC 오른쪽 칸: 이번 주 달성률(홈의 '나의 루틴'과 같은 숫자) + 요일별 실천율
+  const mon = wsWeek(today)[0], days = rtDays(mon, wsShift(mon, 6)).map((d,i)=>({ d, w:WS_DOW[RT_WEEK[i]], p:d>today ? null : rtPct(rtDay(list, d, today)) })), now = days.find(x=>x.d===today).p;
+  return `<div class="card ws-side">
+    <div class="card-title">이번 주 실천</div>
+    ${homeDonut(rtPct(week))}
+    <p class="ws-cap">${week[1] ? `오늘까지 예정 ${week[1]}번 중 <b>${week[0]}번</b> 실천<br>오늘 남은 루틴 <b>${left}개</b>` : '이번 주에 예정된 루틴이 없습니다'}</p>
+    <div class="hm-sub ws-sub2"><span>요일별 실천율</span><small>오늘 <b>${now==null ? '–' : now+'%'}</b></small></div>
+    <div class="ws-bars" role="img" aria-label="요일별 실천율: ${days.map(x=>`${x.w} ${x.p==null ? '없음' : x.p+'%'}`).join(', ')}">${days.map(x=>`<span title="${x.w}요일 ${x.p==null ? '–' : x.p+'%'}">${x.p ? `<i style="height:${x.p}%"></i>` : ''}</span>`).join('')}</div>
+    <div class="ws-days">${days.map(x=>`<span${x.d===today?' class="on"':''}>${x.w}</span>`).join('')}</div>
+  </div>`;
+}
+function rtContent(){
+  const today = kpiDay(0), list = rtList(), t = celebParse(today), [mon, sun] = wsWeek(today), kept = rtData().length - list.length;
+  if(!list.some(x=>x.id===rtPick)) rtPick = 0;
+  const [dn, dall] = rtDay(list, today, today), week = rtSum(list, mon, sun, today), month = rtPct(rtSum(list, ctYmd(new Date(t.getFullYear(), t.getMonth(), 1)), today, today));
+  const st = new Map(list.map(x=>[x.id, rtStreak(x, today)]));
+  const top = list.map(x=>[x, ...st.get(x.id)]).filter(v=>v[1]).sort((a,b)=>a[3]===b[3] ? b[1]-a[1] : a[3]==='일' ? -1 : 1)[0];   // 가장 긴 연속 실천 — 날 단위 루틴을 먼저 본다
+  const tile = (cls, label, v, unit, sub)=>`<div class="hm-tile ${cls}"><span>${label}</span><b>${v==null ? '–' : `${v}<small>${unit}</small>`}</b><em>${sub}</em></div>`;
+  const seg = (k, name, label)=>`<button type="button" class="${rtView===k?'on':''}" aria-pressed="${rtView===k}" onclick="rtView='${k}'; renderContent()">${icon(name)}${label}</button>`;
+  return `<div class="ws rt">
+    <div class="hm-tiles">
+      ${tile('green', '오늘의 루틴', dall, '개', `완료 ${dn} · 남은 것 ${dall-dn}`)}
+      ${tile('blue', '이번 주 달성률', rtPct(week), '%', week[1] ? `오늘까지 ${week[1]}번 중 ${week[0]}번 실천` : '이번 주에 예정된 루틴이 없습니다')}
+      ${tile('amber', '가장 긴 연속 실천', top ? top[1] : 0, top ? top[3] : '일', top ? `최고 ${top[2]}${top[3]} · ${escapeHtml(top[0].title)}` : '오늘부터 쌓아 보세요')}
+      ${tile('violet', '이번 달 달성률', month, '%', `${t.getMonth()+1}월 1일부터 오늘까지`)}
+    </div>
+    <div class="ws-cols">
+      <div class="card">
+        <div class="ws-bar"><div class="ws-seg">${seg('today', 'checks', '오늘')}${seg('week', 'board', '주간')}${seg('log', 'calendar', '기록')}</div>
+          ${kept ? `<span><button type="button" class="btn sm" onclick="rtArchived()">보관한 루틴 (${kept})</button></span>` : ''}</div>
+        <form class="field ws-add" onsubmit="rtAdd(event)"><input name="title" required maxlength="40" placeholder="새 루틴을 적고 Enter — 예: 점심 먹고 10분 걷기" aria-label="새 루틴 이름" autocomplete="off"><button class="btn primary">추가</button></form>
+        ${rtView==='week' ? rtWeekView(list, today) : rtView==='log' ? rtLogView(list, today, st) : rtTodayView(list, today, st)}
+        <div class="hm-foot">이 브라우저에만 저장되어 다른 기기에서는 보이지 않습니다. 루틴 기록은 본인만 보고, 평가에 반영되지 않습니다.</div>
+      </div>
+      ${rtSide(list, today, week, dall-dn)}
     </div>
   </div>`;
 }
@@ -4009,7 +4335,7 @@ const NAV = [
   { id:'home', label:'홈', icon:'home', tabs:[ {id:'dash', label:'대시보드', render:homeContent} ] },
   { id:'ws', label:'워크스페이스', icon:'edit', tabs:[
       {id:'w1', label:'나의 업무', render:wsContent},
-      {id:'w2', label:'나의 일상', render:comingSoon},
+      {id:'w2', label:'나의 일상', render:rtContent},
   ]},
   { id:'pay', label:'급여·계약', icon:'wallet', tabs:[
       {id:'p1', label:'급여명세서', render:payContent},
