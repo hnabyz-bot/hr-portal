@@ -2331,7 +2331,8 @@ function ctContent(){
 /* ---------------- 급여명세서 ----------------
    시연용: 명세서 금액·사원정보는 전부 가상 값(브라우저 메모리). 실제 명세서는 위하고 산출물을 서버에 올리는 방식으로 나중에 연결.
    화면 규칙 (인사담당자 2026-10-01 결정)
-   - 위쪽: 지난 급여일에 0원 → 다음 급여일에 세전 금액(지급액 계) 전액. 화면을 보고 있으면 1초마다 늘어남
+   - 위쪽: 지난 급여일에 0원 → 다음 급여일에 세전 금액(지급액 계) 전액. 화면을 보고 있으면 계속 늘어남
+     (2026-10-08: 소수 둘째 자리까지 보이고 0.05초마다 바뀐다 — 원 단위는 그대로 1초에 1~2원, 소수점이 빠르게 돌아 속도감을 준다)
    - 급여일 = 매월 20일, 주말·공휴일이면 바로 앞 평일
    - 금액은 처음에 가리고, 눈 버튼을 누르면 보임
    - 아래쪽: 달별 명세서가 쌓이고, 달을 누르면 그 아래에 명세서가 열림. 열람은 본인과 HR */
@@ -2392,6 +2393,7 @@ function paySelfCheck(){   // 브라우저 콘솔에서 paySelfCheck() 실행
   ok(s.gross===Object.values(s.pay).reduce((a,b)=>a+b,0) && s.net===s.gross-s.deduct && s.payday==='2026-09-18', '명세서 합계·지급일');
   ok(payTarget([s], payWindow(new Date(2026, 8, 1))).estimate===false && payTarget([s], w).estimate===true, '명세서 없으면 예상 금액');
   ok(payCanView('emp','emp') && !payCanView('lead','emp') && payCanView('hr','head'), '본인과 HR만 열람');
+  ok(payWon2(1234567.899)==='1,234,567.89원' && payWon2(5)==='5.00원', '쌓이는 금액은 소수 둘째 자리까지(버림)');
   return 'paySelfCheck 통과';
 }
 
@@ -2409,14 +2411,19 @@ function paySlipsFor(key){
 /* ----- 화면 ----- */
 const PAY_MASK = '●,●●●,●●●원';
 function payWon(n){ return Math.round(n).toLocaleString('ko-KR')+'원'; }
+function payWon2(n){ return (Math.floor(n*100)/100).toLocaleString('ko-KR', {minimumFractionDigits:2, maximumFractionDigits:2})+'원'; }   // 쌓이는 금액용: 소수 둘째 자리까지(버림)
+const PAY_TICK_MS = matchMedia('(prefers-reduced-motion:reduce)').matches ? 1000 : 50;   // 움직임 줄이기를 켠 기기는 예전처럼 1초마다
 function payMd(d){ return `${d.getMonth()+1}월 ${d.getDate()}일`; }
 function payTick(){
   const el = document.getElementById('payAmt');
   if(!el){ clearInterval(payTimer); payTimer = null; return; }
   const key = payViewKey, slips = paySlipsFor(key), now = new Date(), w = payWindow(now), t = payTarget(slips, w), p = payPreview ? 1 : payProgress(now, w);
-  el.textContent = payShow ? payWon(t.amount*p) : PAY_MASK;
-  const pct = (p*100).toFixed(3)+'%';
-  document.getElementById('payFill').style.width = pct;
+  const txt = !payShow ? PAY_MASK : p===1 ? payWon(t.amount) : payWon2(t.amount*p);   // 급여일(전액)에는 소수점 없이
+  // 글자만 바꾼다(nodeValue). textContent로 바꾸면 화면 감시(a11yEnhance)가 1초에 20번 화면 전체를 다시 훑는다
+  if(!el.firstChild) el.textContent = txt; else if(el.firstChild.nodeValue!==txt) el.firstChild.nodeValue = txt;
+  const pct = (p*100).toFixed(3)+'%', fill = document.getElementById('payFill');
+  if(fill.style.width===pct) return;   // 막대·캐릭터는 눈에 보일 만큼 달라졌을 때만 옮긴다
+  fill.style.width = pct;
   const wk = document.getElementById('payWalker'); if(wk) wk.style.left = `calc((100% - 170px) * ${p})`;
 }
 function payHero(key){
@@ -2508,7 +2515,7 @@ function payContent(){
     return sl ? `<button type="button" class="pay-mbtn${sl.label===payOpen?' on':''}" aria-expanded="${sl.label===payOpen}" onclick="payOpen=${sl.label===payOpen?'null':`'${sl.label}'`}; renderContent(); setTimeout(()=>{ const e=document.getElementById('paySlip'); if(e) e.scrollIntoView({behavior:'smooth', block:'start'}); }, 30)"><b>${m+1}월</b><small>지급 ${sl.payday.slice(5).replace('-','/')}</small></button>`
       : `<button type="button" class="pay-mbtn" disabled><b>${m+1}월</b><small>명세서 없음</small></button>`; }).join('');
   const open = slips.find(s=>s.label===payOpen);
-  if(!payTimer) payTimer = setInterval(payTick, 1000);
+  if(!payTimer) payTimer = setInterval(payTick, PAY_TICK_MS);
   setTimeout(payTick, 0);
   return `${roleSwitcher()}${picker}${payHero(key)}
     <div class="card" style="margin-bottom:14px;">
