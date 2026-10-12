@@ -512,6 +512,82 @@
   .kpi-in{ width:100%; border:1px solid var(--border); border-radius:var(--radius-sm); padding:6px 8px; font:inherit; font-size:var(--fs-xs); resize:vertical; background:var(--surface); color:var(--text-primary); }
   .kpi-file{ font-size:var(--fs-xs); color:var(--text-secondary); margin-bottom:4px; display:flex; align-items:center; gap:4px; }
   .kpi-file span{ color:var(--danger); cursor:pointer; font-weight:700; }
+  /* ---------- 구성원 설정 (조직도 > 구성원 설정, 2026-10-12) ----------
+     HR이 사람마다 포털 사용·직책·HR 권한·KPI 작성·평가 대상·연봉계약서를 정하는 표. 팀별로 묶어 한 사람이 한 줄.
+     줄 높이·칸 폭은 고정이다(이름이 길어도, 꼬리표가 있든 없든 같은 높이). 바꾼 칸은 붉게 표시하고 저장 줄이 아래에 붙는다.
+     휴대폰에서는 표만 옆으로 넘긴다. */
+  .ms{ display:grid; grid-template-columns:minmax(0,1fr); gap:14px; }
+  .ms .hm-tile b{ white-space:nowrap; }
+  .ms .hm-tile em{ white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .ms .hm-tile.on{ box-shadow:0 0 0 2px var(--text-primary) inset; }
+  .hm-tile.coral{ background:#FDF2F0; border-color:#F6DAD5; }  .hm-tile.coral span{ color:var(--coral-text); }
+  .ms-bar{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:12px; }
+  .ms-chip{ font:inherit; font-size:var(--fs-xs); font-weight:600; height:32px; padding:0 12px; border-radius:999px; border:1px solid var(--border); background:var(--surface); color:var(--text-secondary); cursor:pointer; white-space:nowrap; }
+  .ms-chip.on{ background:var(--coral-text); border-color:var(--coral-text); color:#fff; }
+  .ms-bar select, .ms-bar input{ font:inherit; font-size:var(--fs-sm); height:32px; padding:0 10px; border:1px solid var(--border); border-radius:var(--radius-sm); background:var(--surface); color:var(--text-primary); }
+  .ms-bar input{ width:170px; }
+  .ms-bar .sp{ flex:1; }
+  .ms-tbl{ table-layout:fixed; min-width:918px; }   /* 칸 폭 합 728 + 이름 칸 190 */
+  .ms-tbl th{ vertical-align:bottom; padding:8px 10px 9px; line-height:1.35; }
+  .ms-tbl th b{ display:block; font-size:var(--fs-sm); color:var(--text-primary); font-weight:700; }
+  .ms-tbl th small{ display:block; font-size:11px; font-weight:500; color:var(--text-muted); white-space:nowrap; }
+  .ms-tbl td{ height:48px; padding:0 10px; vertical-align:middle; }
+  .ms-tbl th.c, .ms-tbl td.c{ text-align:center; }
+  .ms-tbl tr.grp td{ height:34px; background:var(--bg-page); font-size:var(--fs-xs); font-weight:700; color:var(--text-secondary); border-bottom:1px solid var(--border); }
+  .ms-tbl tr.grp td span{ font-weight:500; color:var(--text-muted); margin-left:6px; }
+  .ms-tbl tr.chg td:first-child{ box-shadow:inset 3px 0 0 var(--coral-text); }
+  .ms-tbl tr.off .ms-name button{ color:var(--text-muted); }
+  .ms-name{ display:flex; align-items:center; gap:8px; white-space:nowrap; min-width:0; }
+  .ms-name button{ font:inherit; font-weight:600; color:inherit; border:0; background:none; padding:0; cursor:pointer; }
+  .ms-name button:hover{ color:var(--accent); text-decoration:underline; }
+  .ms-name i{ font-style:normal; font-size:var(--fs-xs); color:var(--text-muted); }
+  .ms-tag{ display:inline-block; padding:2px 7px; border-radius:var(--radius-sm); font-size:11px; font-weight:700; white-space:nowrap; background:var(--bg-warning); color:var(--warning); }
+  .ms-tag.gray{ background:#EEF2F6; color:var(--text-secondary); }
+  .ms-cell{ display:inline-flex; align-items:center; justify-content:center; width:34px; height:34px; border-radius:8px; }
+  .ms-cell.chg{ background:#FDECE9; }
+  .ms-ck{ width:18px; height:18px; accent-color:var(--accent); cursor:pointer; margin:0; }
+  .ms-ck:disabled{ cursor:not-allowed; }
+  .ms-sel{ font:inherit; font-size:var(--fs-sm); width:104px; height:32px; padding:0 8px; border:1px solid var(--border); border-radius:var(--radius-sm); background:var(--surface); color:var(--text-primary); }
+  .ms-sel.set{ font-weight:700; color:var(--accent); border-color:var(--sky); background:var(--accent-soft); }
+  .ms-sel.chg{ border-color:var(--coral-text); box-shadow:0 0 0 2px #FDECE9; }
+  .ms-sw{ position:relative; display:inline-block; width:40px; height:22px; vertical-align:middle; }
+  .ms-sw input{ position:absolute; inset:0; width:100%; height:100%; opacity:0; margin:0; cursor:pointer; z-index:1; }
+  .ms-sw input:disabled{ cursor:not-allowed; }
+  .ms-sw span{ position:absolute; inset:0; border-radius:999px; background:#C9D3DE; transition:background .15s; }
+  .ms-sw span::after{ content:''; position:absolute; top:3px; left:3px; width:16px; height:16px; border-radius:50%; background:#fff; transition:transform .15s; }
+  .ms-sw input:checked + span{ background:var(--success); }
+  .ms-sw input:checked + span::after{ transform:translateX(18px); }
+  .ms-sw input:focus-visible + span{ outline:2px solid var(--accent); outline-offset:2px; }
+  .ms-sw input:disabled + span{ opacity:.5; }
+  .ms-sw.chg{ outline:2px solid #F3B9B0; outline-offset:3px; border-radius:999px; }
+  .ms-dash{ color:var(--text-muted); }
+  .ms-bulk{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding:10px 14px; margin-bottom:12px; border-radius:var(--radius); background:#1B2433; color:#fff; font-size:var(--fs-xs); }
+  .ms-bulk b{ font-size:var(--fs-sm); margin-right:4px; }
+  .ms-bulk .g{ display:inline-flex; align-items:center; gap:4px; padding-left:10px; border-left:1px solid #47546A; }
+  .ms-bulk button{ font:inherit; font-weight:600; height:28px; padding:0 10px; border-radius:6px; border:1px solid #47546A; background:transparent; color:#fff; cursor:pointer; }
+  .ms-bulk button:hover{ background:#2C3A50; }
+  .ms-bulk .x{ margin-left:auto; border:none; color:#9FB0C5; }
+  .ms-save{ position:sticky; bottom:-48px; margin:0 -28px -48px; padding:12px 28px; display:flex; align-items:center; gap:10px; flex-wrap:wrap; background:var(--surface); border-top:1px solid var(--border); box-shadow:0 -8px 20px -14px rgba(27,36,51,.35); }   /* 화면 아래에 붙는다 — 바깥 여백(.content)만큼 당긴다 */
+  .ms-save b{ color:var(--coral-text); }
+  .ms-save i{ font-style:normal; }
+  .ms-save .sp{ flex:1; }
+  .btn.coral{ background:var(--coral-text); border-color:var(--coral-text); color:#fff; }
+  .btn.coral:hover{ background:var(--danger); border-color:var(--danger); }
+  .ms-rules{ margin:0; padding-left:18px; color:var(--text-secondary); font-size:var(--fs-xs); line-height:1.9; }
+  .ms-rules b{ color:var(--text-primary); }
+  .org-modal .card:has(.ms-diff), .org-modal .card:has(.ms-pills){ max-width:520px; }
+  .ms-diff{ display:grid; grid-template-columns:auto 1fr; gap:6px 14px; align-items:center; margin:0 0 14px; font-size:var(--fs-sm); }
+  .ms-diff div:nth-child(odd){ font-weight:600; white-space:nowrap; }
+  .ms-diff s{ color:var(--text-muted); text-decoration:none; }
+  .ms-diff em{ font-style:normal; font-weight:700; color:var(--coral-text); }
+  .ms-see{ list-style:none; margin:0 0 14px; padding:0; }
+  .ms-see li{ display:flex; gap:10px; padding:9px 0; border-bottom:1px solid var(--border); font-size:var(--fs-sm); }
+  .ms-see li:last-child{ border-bottom:none; }
+  .ms-see li b{ flex:0 0 108px; }
+  .ms-see li span{ color:var(--text-secondary); }
+  .ms-see li.no span{ color:var(--text-muted); }
+  .ms-pills{ display:flex; flex-wrap:wrap; gap:6px; margin:0 0 14px; }
+  @media (max-width:768px){ .ms-save{ bottom:-32px; margin:0 -14px -32px; padding:10px 14px; flex-wrap:nowrap; } .ms-save i{ display:none; } .ms-bar .sp{ display:none; } .ms-bar input{ flex:1; min-width:120px; } .ms-bulk .x{ margin-left:0; } }
   /* ---------- KPI 현황 (평가·성과 > KPI 현황, 2026-10-12) ----------
      왼쪽 명단을 누르면 오른쪽에 그 사람·부서의 KPI가 나온다. 막대 위 세로선 = 오늘 기준 기대 진행률.
      막대·숫자 칸은 폭 고정이고, 이름 줄은 표시(종·시계·말풍선)가 있든 없든 같은 높이다(줄 높이가 들쭉날쭉하지 않게).
@@ -2688,22 +2764,36 @@ let orgSeq = 0;
 function orgMember(name, title, division, team, lead='', hideMobile=false){   // team '' = 본부 직속
   const n = ++orgSeq;
   return { id:n, name, title, division, team, lead, hideMobile, hireDate:'', birthday:'', hideBirthday:false,
+    use:true, hr:false, kpi:true, ev:true, ct:true, isNew:false,   // 구성원 설정(HR이 사람마다 정하는 칸) — 아래 "구성원 설정"
     mobile:'010-0000-'+String(n).padStart(4,'0'), ext:String(1000+n), email:`user${String(n).padStart(2,'0')}@example.com` };
 }
+const orgSet = (m, o)=>Object.assign(m, o);
+const orgFresh = (...a)=>orgSet(orgMember(...a), { use:false, isNew:true });   // 명단에 새로 들어와 아직 포털 사용이 꺼져 있는 사람
 const orgMembers = [
-  orgMember('박인사','HR 담당','대표이사 직속부서','지원팀'),
-  orgMember('최지원','팀장','대표이사 직속부서','지원팀','TEAM'),
+  orgSet(orgMember('천대표','대표이사','대표이사 직속부서','','CEO'), { kpi:false, ev:false, ct:false }),
+  orgSet(orgMember('박인사','HR 담당','대표이사 직속부서','지원팀'), { hr:true }),
+  orgSet(orgMember('최지원','팀장','대표이사 직속부서','지원팀','TEAM'), { hr:true }),
   orgMember('강총무','팀장','대표이사 직속부서','총무팀','TEAM'),
+  orgSet(orgMember('서비품','사원','대표이사 직속부서','총무팀'), { use:false }),
   orgMember('윤개발','본부장','DR사업본부','','DIVISION'),
   orgMember('오디바','팀장','DR사업본부','Device 개발팀','TEAM'),
+  orgFresh('신입사','사원','DR사업본부','Device 개발팀'),
   orgMember('서솔루','팀장','DR사업본부','솔루션 개발팀','TEAM'),
   orgMember('한품질','본부장','품질경영제조본부','','DIVISION'),
   orgMember('정씨에','팀장','품질경영제조본부','CsI팀','TEAM'),
   orgMember('임제조','팀장','품질경영제조본부','DR제조팀','TEAM', true),
+  orgFresh('주야간','사원','품질경영제조본부','DR제조팀'),
+  orgSet(orgMember('계측정','대리','품질경영제조본부','품질경영팀'), { ev:false }),
   orgMember('이철수','본부장','전략마케팅본부','','DIVISION'),
   orgMember('김영희','팀장','전략마케팅본부','국내영업팀','TEAM'),
   orgMember('홍길동','대리','전략마케팅본부','국내영업팀'),
+  orgMember('박영업','사원','전략마케팅본부','국내영업팀'),
+  orgMember('윤라인','주임','전략마케팅본부','국내영업팀'),   // 현장직 — KPI 작성 여부는 평가 명단(evPeople)에서 읽어 온다 (msLinkEv)
+  orgMember('최현장','사원','전략마케팅본부','국내영업팀'),
   orgMember('문해외','팀장','전략마케팅본부','해외영업1팀','TEAM'),
+  orgMember('정해외','대리','전략마케팅본부','해외영업1팀'),
+  orgSet(orgMember('도통역','사원','전략마케팅본부','해외영업1팀'), { ct:false }),
+  orgFresh('방신규','사원','전략마케팅본부','해외영업2팀'),
   orgMember('배연구','본부장','연구개발본부','','DIVISION'),
   orgMember('신에스','사원','연구개발본부','SCM팀'),
 ];
@@ -2724,6 +2814,7 @@ function orgValidate(m, members){
   const others = members.filter(o=>o.id!==m.id);
   if(m.lead==='TEAM' && others.some(o=>o.lead==='TEAM' && o.division===m.division && o.team===m.team)) errs.push('이 팀에는 이미 팀장이 있습니다.');
   if(m.lead==='DIVISION' && others.some(o=>o.lead==='DIVISION' && o.division===m.division)) errs.push('이 본부에는 이미 본부장이 있습니다.');
+  if(m.lead==='CEO' && others.some(o=>o.lead==='CEO')) errs.push('대표이사는 이미 있습니다.');
   if(m.email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(m.email)) errs.push('메일 형식이 올바르지 않습니다.');
   if(m.birthday && !celebValidMd(m.birthday)) errs.push('생일은 월-일 형식으로 입력해 주세요. (예: 03-15)');
   return errs;
@@ -2733,11 +2824,13 @@ function orgUpsert(members, m, isHr){
   const errs = orgValidate(m, members);
   if(errs.length) return errs;
   const i = members.findIndex(o=>o.id===m.id);
+  msFix(m);
   if(i<0){ m.id = ++orgSeq; members.push(m); } else members[i] = m;
   return [];
 }
 function orgRemove(members, id, isHr){
   if(!isHr) return ['조직도 수정은 HR 관리자만 할 수 있습니다.'];
+  if(msLastHr(members, id)) return [MS_LAST_HR];
   const i = members.findIndex(o=>o.id===id);
   if(i>=0) members.splice(i,1);
   return [];
@@ -2763,7 +2856,7 @@ function orgSelfCheck(){   // 브라우저 콘솔에서 orgSelfCheck() 실행
 }
 
 /* ----- 화면 ----- */
-function orgLeadBadge(m){ return m.lead==='DIVISION' ? '<span class="badge success">본부장</span>' : m.lead==='TEAM' ? '<span class="badge warning">팀장</span>' : ''; }
+function orgLeadBadge(m){ return m.lead==='CEO' ? '<span class="badge info">대표이사</span>' : m.lead==='DIVISION' ? '<span class="badge success">본부장</span>' : m.lead==='TEAM' ? '<span class="badge warning">팀장</span>' : ''; }
 function orgMemberRow(m){
   const hr = orgIsHr() ? `<span style="margin-left:auto; display:flex; gap:6px;"><button class="btn sm" onclick="orgEdit(${m.id})">수정</button><button class="btn sm" onclick="orgDelete(${m.id})">삭제</button></span>` : '';
   return `<div class="org-member"><span class="org-name" onclick="orgShow(${m.id})">${escapeHtml(m.name)}</span><span style="color:var(--text-secondary);">${escapeHtml(m.title)}</span>${orgLeadBadge(m)}${hr}</div>`;
@@ -2843,7 +2936,7 @@ function orgEdit(id){
     <div class="field-row">${f('이름','name')}${f('직급','title')}</div>
     <div class="field-row"><div class="field"><label>본부</label><select id="orgF_division" onchange="document.getElementById('orgF_team').innerHTML=orgTeamOptions(this.value,'')">${ORG_TREE.map(d=>`<option ${d.division===m.division?'selected':''}>${escapeHtml(d.division)}</option>`).join('')}</select></div>
       <div class="field"><label>팀</label><select id="orgF_team">${orgTeamOptions(m.division, m.team)}</select></div></div>
-    <div class="field-row">${sel('직책','lead',[['','없음'],['TEAM','팀장'],['DIVISION','본부장']])}${sel('휴대폰 공개','hideMobile',[['','공개'],['true','비공개 (본인 요청)']])}</div>
+    <div class="field-row">${sel('직책','lead',Object.entries(MS_LEAD))}${sel('휴대폰 공개','hideMobile',[['','공개'],['true','비공개 (본인 요청)']])}</div>
     <div class="field-row">${f('회사 휴대폰','mobile','tel')}${f('내선','ext')}</div>
     ${f('회사 메일','email','email')}
     <div class="field-row" style="margin-top:14px;">${f('입사일','hireDate','date')}<div class="field"><label>생일 (월-일, 연도 제외)</label><input id="orgF_birthday" value="${escapeHtml(m.birthday||'')}" placeholder="03-15" maxlength="5"></div></div>
@@ -2852,7 +2945,7 @@ function orgEdit(id){
 }
 function orgSave(id){
   const v = k=>document.getElementById('orgF_'+k).value;
-  const m = { id, name:v('name'), title:v('title'), division:v('division'), team:v('team'), lead:v('lead'), hideMobile:v('hideMobile')==='true', mobile:v('mobile').trim(), ext:v('ext').trim(), email:v('email').trim(), hireDate:v('hireDate'), birthday:v('birthday').trim(), hideBirthday:v('hideBirthday')==='true' };
+  const m = { ...MS_NEW, ...(id ? orgFind(id) : {}), id, name:v('name'), title:v('title'), division:v('division'), team:v('team'), lead:v('lead'), hideMobile:v('hideMobile')==='true', mobile:v('mobile').trim(), ext:v('ext').trim(), email:v('email').trim(), hireDate:v('hireDate'), birthday:v('birthday').trim(), hideBirthday:v('hideBirthday')==='true' };
   const errs = orgUpsert(orgMembers, m, orgIsHr());
   if(errs.length){ document.getElementById('orgFormErr').innerHTML = kpiNote(errs.map(escapeHtml).join('<br>'), 'danger'); return; }
   orgCloseModal(); kpiFlash(`${escapeHtml(m.name)} 님을 ${id?'수정':'등록'}했습니다.`);
@@ -4375,6 +4468,7 @@ const evPeople = [   // key = 시연 역할(KPI는 목표설정 탭의 확정본
 ].map(p=>({ comment:'', headComment:'', bonus:0, bonusReason:'', grade:null, kpi:true, late:0, leaveOver:0, line:'', ...p,
   ev:(p.entries||[]).map(([note, selfGrade, files, grade])=>({ note, selfGrade, grade:grade||null, files:files.map(name=>({ name, demo:true })) })) }));
 function evFind(pid){ return evPeople.find(p=>p.pid===pid); }
+msLinkEv(orgMembers, evPeople);   // 조직도 명단의 KPI 작성 칸을 평가 명단과 맞춘다 (구성원 설정)
 function evMe(){ return evPeople.find(p=>p.key===kpiRole); }
 function evEvaluatorOf(p){ return p.evaluator==='hr' ? 'hr' : evFind(p.evaluator).key; }
 function evIsEvaluator(p, role=kpiRole){ const e = evEvaluatorOf(p); return e===role || (e==='hr' && kpiIsHr(role)); }   // HR이 평가자인 사람은 HR 담당자·HR 팀장 누구나
@@ -4570,8 +4664,9 @@ function evContent(){
 const EV_LEAVE_LIMIT = 5;
 function evIsLine(p){ return p.kpi===false; }
 function evLeaveBlocked(p){ return evIsLine(p) && p.leaveOver >= EV_LEAVE_LIMIT; }
-function evSetKpi(p, on){   // KPI 작성 여부는 평가 시작 전(자기평가 중 / 팀장 평가 대기)에만 바꾼다
-  if(!(p.stage==='SELF' || (evIsLine(p) && p.stage==='SCORE'))) return '평가가 이미 진행 중이라 평가 방식을 바꿀 수 없습니다.';
+function evKpiLocked(p){ return !(p.stage==='SELF' || (evIsLine(p) && p.stage==='SCORE')); }
+function evSetKpi(p, on){   // KPI 작성 여부는 평가 시작 전(자기평가 중 / 팀장 평가 대기)에만 바꾼다. 바꾸는 곳은 조직도 > 구성원 설정(msSave)
+  if(evKpiLocked(p)) return '평가가 이미 진행 중이라 평가 방식을 바꿀 수 없습니다.';
   p.kpi = on; p.stage = on ? 'SELF' : 'SCORE'; if(!on) p.grade = null; return null;
 }
 function evSetAttendance(p, late, over){
@@ -4643,15 +4738,15 @@ function evLineHomeCard(me){
   </div>`;
 }
 function evRosterCard(){   // HR: 평가 방식(KPI 작성 여부) + 근태 명단
-  const rows = evPeople.map(p=>{ const line = evIsLine(p), lock = !(p.stage==='SELF' || (line && p.stage==='SCORE'));
+  const rows = evPeople.map(p=>{ const line = evIsLine(p);
     const num = (f, v)=>`<input type="number" min="0" step="${f==='late'?1:0.5}" value="${v}" style="width:64px;" aria-label="${escapeHtml(p.name)} ${f==='late'?'지각 횟수':'연차 초과일수'}" onchange="evAttSet(${p.pid},'${f}',this.value)">`;
     return `<tr><td>${escapeHtml(p.name)} ${escapeHtml(p.title)}<div class="list-sub">${escapeHtml(p.team||'본부 직속')}${p.line?' · '+escapeHtml(p.line):''}</div></td>
-      <td><input type="checkbox" ${line?'':'checked'} ${lock?'disabled title="평가가 이미 진행 중입니다"':''} aria-label="${escapeHtml(p.name)} KPI 작성" onchange="evKpiToggle(${p.pid}, this.checked)"> <span class="badge ${line?'success':'neutral'}">${line?'현장직':'KPI'}</span></td>
+      <td><span class="badge ${line?'success':'neutral'}">${line?'현장직':'KPI'}</span></td>
       <td>${line ? num('late', p.late) : '—'}</td><td>${line ? num('leaveOver', p.leaveOver)+(evLeaveBlocked(p)?' <b class="evl-warn">S·A·B 불가</b>':'') : '—'}</td>
       <td>${evStageBadge(p)}</td><td class="num">${line ? '—' : evTotal(p).toFixed(1)}</td><td>${p.grade||'—'}</td></tr>`; }).join('');
   return `<div class="card" style="margin-bottom:14px;"><div class="card-title"><span>평가 대상 명단 · 근태 (HR) <span class="more">KPI ${evPeople.filter(p=>!evIsLine(p)).length}명 · 현장직 ${evPeople.filter(evIsLine).length}명</span></span></div>
-    <div class="list-sub" style="margin-bottom:8px;">"KPI 작성"을 해제하면 현장직(팀장 평가)이 됩니다. 평가가 시작되기 전에만 바꿀 수 있습니다. 지각·연차 초과는 현장직만 입력합니다.</div>
-    <div class="ct-tbl"><table class="ev-table"><thead><tr><th>이름</th><th>KPI 작성</th><th>지각(회)</th><th>연차 초과(일)</th><th>단계</th><th class="num">총점</th><th>등급</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <div class="list-sub" style="margin-bottom:8px;">평가 방식(KPI 작성 여부)은 <span class="more" onclick="goTo('org','o3')">조직도 › 구성원 설정</span>에서 바꿉니다. "KPI 작성"을 끄면 현장직(팀장 평가)이 되고, 평가가 시작되기 전에만 바꿀 수 있습니다. 지각·연차 초과는 현장직만 입력합니다.</div>
+    <div class="ct-tbl"><table class="ev-table"><thead><tr><th>이름</th><th>평가 방식</th><th>지각(회)</th><th>연차 초과(일)</th><th>단계</th><th class="num">총점</th><th>등급</th></tr></thead><tbody>${rows}</tbody></table></div>
     <details style="margin-top:10px;"><summary class="list-sub" style="cursor:pointer; margin:0;">엑셀에서 붙여넣기 (이름 · 지각 · 연차초과 세 칸)</summary>
       <textarea id="evPaste" rows="4" style="margin-top:8px;" placeholder="최현장&#9;3&#9;1"></textarea>
       <div style="text-align:right; margin-top:6px;"><button class="btn sm" onclick="evPasteApply()">반영</button></div></details>
@@ -4666,7 +4761,6 @@ function evSubmitLine(pid){
   if(evLeaveBlocked(p) && 'SAB'.includes(p.grade)) return kpiFlash('연차 초과 5일 이상이라 S·A·B를 줄 수 없습니다.', 'danger');
   p.stage = 'GRADE'; evOpen = null; kpiFlash(`${escapeHtml(p.name)} 님 등급(${p.grade})을 제출했습니다. 본부장 등급 배정으로 넘어갑니다.`);
 }
-function evKpiToggle(pid, on){ const err = evSetKpi(evFind(pid), on); kpiFlash(err ? escapeHtml(err) : `${escapeHtml(evFind(pid).name)} 님을 ${on?'KPI 작성 대상':'현장직(팀장 평가)'}으로 바꿨습니다.`, err ? 'danger' : 'success'); }
 function evAttSet(pid, f, v){ const p = evFind(pid); evSetAttendance(p, f==='late'?v:p.late, f==='late'?p.leaveOver:v); kpiFlash(null); }
 function evPasteApply(){
   const r = evParseAttendance(document.getElementById('evPaste').value);
@@ -4934,6 +5028,204 @@ function pantryGame(){
   </div>`;
 }
 
+/* ---------------- 구성원 설정 (조직도 > 구성원 설정) ----------------
+   2026-10-12 인사담당자 지시. 하이웍스 명단에는 직책이 없다 → HR이 사람마다 정한다.
+   한 사람이 한 줄: 포털 사용(출입) · 직책(없음·팀장·본부장·대표이사 중 하나) · HR 권한 · KPI 작성 · 평가 대상 · 연봉계약서.
+   역할을 하나로 고르지 않고 칸을 나눈 이유: 직책은 한 사람에 하나지만 HR 권한은 직책과 따로다(HR 팀장 = 팀장 + HR 권한).
+   화면에서 바꾼 것은 초안(msDraft)에만 담기고, 저장을 눌러야 명단(orgMembers)에 반영된다. 숫자·걸러 보기는 저장된 값 기준이다.
+   시연 모드에서 실제로 이어지는 것: 직책 → 조직도, KPI 작성 → 평가 명단(evPeople).
+   포털 사용·HR 권한·평가 대상·연봉계약서는 값만 담아 둔다 — 로그인(#51)이 붙으면 이 값대로 화면이 달라진다. */
+const MS_FIELDS = [['use','포털 사용','켜야 들어올 수 있음'],['lead','직책','관리 화면의 범위'],['hr','HR 권한','전 직원 관리'],['kpi','KPI 작성','끄면 팀장 평가(현장직)'],['ev','평가 대상','끄면 올해 평가 제외'],['ct','연봉계약서','끄면 계약서 안 만듦']];
+const MS_LEAD = { '':'없음', TEAM:'팀장', DIVISION:'본부장', CEO:'대표이사' };
+const MS_NEW = { use:false, hr:false, kpi:true, ev:true, ct:true, isNew:true };   // 명단에 새로 들어온 사람: 포털 사용만 꺼 두고 나머지는 일반 직원 기준
+const MS_LAST_HR = 'HR 권한이 있는 사람이 한 명뿐입니다. 다른 HR을 먼저 지정해 주세요.';
+const msDraft = {}, msSel = new Set();
+let msFilter = 'all', msDiv = '', msQuery = '';
+
+/* ----- 규칙 (순수 로직, msSelfCheck가 검증) ----- */
+function msFix(m){ if(m.lead==='CEO') m.kpi = false; return m; }   // 대표이사는 KPI를 작성하지 않는다(경영계획 목표만)
+function msApply(members, draft){ return members.map(m=>draft[m.id] ? { ...m, ...draft[m.id] } : m); }   // 초안을 얹은 명단
+function msLastHr(members, id){ const hrs = members.filter(m=>m.hr && m.use); return hrs.length===1 && hrs[0].id===id; }   // HR이 0명이 되면 아무도 설정을 못 한다
+function msEvOf(m, evp){ return evp.find(p=>p.name===m.name); }   // ponytail: 평가 명단과 이름으로 잇는다. 로그인·DB 이후에는 한 명단(같은 사람 번호)으로 합친다
+function msLinkEv(members, evp){ evp.forEach(p=>{ const m = members.find(o=>o.name===p.name); if(m) m.kpi = p.kpi; }); }   // 처음 한 번: 평가 명단의 KPI 작성 여부를 읽어 온다
+function msLockWhy(m, k, members, evp){   // 이 칸을 바꿀 수 없는 이유 ('' = 바꿀 수 있다). m·members = 초안을 얹은 값
+  if(k==='kpi'){
+    if(m.lead==='CEO') return '대표이사는 KPI를 작성하지 않습니다(경영계획 목표만).';
+    const p = msEvOf(m, evp);
+    if(p && evKpiLocked(p)) return '평가가 이미 진행 중이라 KPI 작성 여부를 바꿀 수 없습니다.';
+  }
+  if((k==='hr' || k==='use') && msLastHr(members, m.id)) return MS_LAST_HR;
+  return '';
+}
+function msSet(members, draft, id, k, v, evp){   // 초안에 담는다. 바꿀 수 없으면 이유를 돌려주고 아무것도 바꾸지 않는다
+  const eff = msApply(members, draft), m = eff.find(o=>o.id===id), base = members.find(o=>o.id===id);
+  if(m[k]===v) return '';
+  let why = msLockWhy(m, k, eff, evp);
+  if(!why && k==='lead') why = orgValidate({ ...m, lead:v }, eff)[0] || (v==='CEO' && m.kpi ? msLockWhy({ ...m, lead:'' }, 'kpi', eff, evp) : '');   // 팀장은 팀에 한 명, 본부장은 본부에 한 명, 대표이사는 한 명
+  if(why) return why;
+  const d = { ...draft[id], [k]:v };
+  if(k==='lead' && v==='CEO') d.kpi = false;
+  Object.keys(d).forEach(f=>{ if(d[f]===base[f]) delete d[f]; });   // 원래 값으로 되돌린 칸은 초안에서 뺀다
+  if(Object.keys(d).length) draft[id] = d; else delete draft[id];
+  return '';
+}
+function msDiffs(members, draft){   // 저장 전 확인에 보여 줄 바뀐 칸
+  const txt = (k, v)=>k==='lead' ? MS_LEAD[v] : (v ? '켜짐' : '꺼짐');
+  return members.flatMap(m=>MS_FIELDS.filter(([k])=>draft[m.id] && k in draft[m.id]).map(([k, label])=>({ m, label, from:txt(k, m[k]), to:txt(k, draft[m.id][k]) })));
+}
+function msClear(draft){ Object.keys(draft).forEach(id=>delete draft[id]); }
+function msSave(members, draft, evp){   // 초안을 명단에 반영한다. 돌려주는 값 = 바뀐 칸 수
+  const n = msDiffs(members, draft).length;
+  members.forEach(m=>{
+    const d = draft[m.id]; if(!d) return;
+    if('kpi' in d){ const p = msEvOf(m, evp); if(p) evSetKpi(p, d.kpi); }   // 평가 명단의 평가 방식도 함께 바꾼다
+    Object.assign(m, d);
+    if(m.use) m.isNew = false;   // 포털 사용을 한 번 켜면 "설정 필요"에서 빠진다
+  });
+  msClear(draft);
+  return n;
+}
+function msSeeList(m){   // 이 설정으로 이 사람에게 보이는 화면 — [메뉴, 보이는 것] ('' = 보이지 않음)
+  const scope = m.hr ? '전 직원(본부별·부서별·개인별)' : m.lead==='CEO' ? '본부장·팀장 KPI(팀원은 인원·부진 수만)' : m.lead==='DIVISION' ? '우리 본부의 팀장·팀원 KPI' : m.lead==='TEAM' ? '우리 팀 팀원 KPI' : '';
+  const goal = m.lead==='CEO' ? '경영계획 목표(조회)' : m.kpi ? '목표설정(KPI) 작성' : '';
+  const self = !m.ev ? '' : m.kpi ? '자기평가 작성' : '팀장 평가 결과 보기(현장직)';
+  const mgr = m.lead==='TEAM' ? '팀원 점수 입력' : m.lead==='DIVISION' ? '본부 등급 배정' : '';
+  const evTxt = [self, mgr, m.hr && '평가 대상 명단·등급 확정'].filter(Boolean).join(' · ');
+  return [
+    ['홈 · 워크스페이스', '모두 같음' + (m.kpi ? ' · 홈 하단에 KPI 진행률' : '')],
+    ['급여·계약', ['급여명세서', '원천징수영수증', m.ct && '전자연봉계약서 서명', m.hr ? '계약서 발송·전 직원 조회' : m.lead==='DIVISION' && '우리 본부 계약서 조회'].filter(Boolean).join(' · ') + (m.lead==='CEO' ? ' (대표이사 화면은 아직 정하지 않음)' : '')],
+    ['평가·성과', [goal, scope && 'KPI 현황: '+scope, evTxt && '평가 진행: '+evTxt].filter(Boolean).join(' / ')],
+    ['규정 검색 · 출장·경비', '모두 같음'],
+    ['조직도', m.hr ? '조회 · 구성원 편집 · 구성원 설정' : '조회'],
+  ];
+}
+function msSelfCheck(){   // 브라우저 콘솔에서 msSelfCheck() 실행
+  const ok = (c,msg)=>{ if(!c) throw new Error('msSelfCheck 실패: '+msg); };
+  const mk = (id, o)=>({ id, name:'가'+id, title:'사원', division:'DR사업본부', team:'Device 개발팀', lead:'', email:'', ...MS_NEW, use:true, isNew:false, ...o });
+  const ms = [mk(1,{ hr:true }), mk(2,{ lead:'TEAM' }), mk(3), mk(4,{ use:false, isNew:true }), mk(5,{ division:'대표이사 직속부서', team:'', lead:'CEO', kpi:false })];
+  const evp = [{ name:'가3', kpi:true, stage:'SELF', grade:null }, { name:'가2', kpi:true, stage:'GRADE', grade:null }], d = {};
+  const set = (id, k, v)=>msSet(ms, d, id, k, v, evp);
+  ok(set(1,'hr',false)===MS_LAST_HR && set(1,'use',false)===MS_LAST_HR, '마지막 HR은 HR 권한·포털 사용을 끌 수 없다');
+  ok(set(3,'hr',true)==='' && set(1,'hr',false)==='', '다른 HR을 지정하면 끌 수 있다');
+  ok(set(3,'hr',false)===MS_LAST_HR, '초안에서도 HR이 0명이 되지 않는다');
+  ok(set(3,'lead','TEAM')!=='', '팀장은 팀에 한 명');
+  ok(set(2,'lead','')==='' && set(3,'lead','TEAM')==='', '먼저 비우면 한 번의 저장으로 팀장을 바꿀 수 있다');
+  ok(set(4,'lead','CEO')!=='', '대표이사는 한 명');
+  ok(set(5,'kpi',true)!=='', '대표이사는 KPI 작성을 켤 수 없다');
+  ok(set(2,'kpi',false)!=='' && set(2,'lead','CEO')!=='', '평가가 진행 중인 사람은 KPI 작성을 바꿀 수 없다(대표이사로 바꾸는 것 포함)');
+  ok(set(3,'kpi',false)==='' && set(4,'use',true)==='', '평가 시작 전 KPI 작성 끄기, 새로 들어온 사람 포털 사용 켜기');
+  ok(set(4,'ev',false)==='' && set(4,'ev',true)==='' && !('ev' in d[4]), '원래 값으로 되돌리면 초안에서 빠진다');
+  ok(!ms[3].use && ms[0].hr && ms[1].lead==='TEAM', '저장 전에는 명단이 그대로다');
+  const n = msDiffs(ms, d).length;
+  ok(n===6 && msSave(ms, d, evp)===n && !Object.keys(d).length, '저장하면 바뀐 칸 수를 돌려주고 초안을 비운다');
+  ok(!ms[0].hr && ms[2].hr && ms[2].lead==='TEAM' && ms[1].lead==='' && ms[3].use && !ms[3].isNew, '저장 결과');
+  ok(ms[2].kpi===false && evp[0].kpi===false && evp[0].stage==='SCORE', 'KPI 작성은 평가 명단에도 반영된다');
+  ok(set(5,'lead','')==='' && set(4,'lead','CEO')==='' && d[4].kpi===false, '대표이사로 바꾸면 KPI 작성이 꺼진다');
+  ok(orgRemove(ms, 3, true)[0]===MS_LAST_HR && ms.length===5, '마지막 HR은 조직도에서 삭제할 수 없다');
+  const see = (o, i)=>msSeeList(mk(9, o))[i][1];
+  ok(see({ lead:'TEAM', hr:true }, 2).includes('목표설정') && see({ lead:'TEAM', hr:true }, 2).includes('전 직원') && see({ lead:'TEAM', hr:true }, 2).includes('팀원 점수'), 'HR 팀장 = 본인 KPI + 전 직원 현황 + 팀원 평가');
+  ok(!see({ kpi:false }, 2).includes('목표설정') && see({ kpi:false }, 2).includes('현장직') && see({ kpi:false, ev:false }, 2)==='', '현장직은 KPI 없이 팀장 평가, 평가 대상도 아니면 평가·성과에 보이는 것이 없다');
+  ok(see({ ct:false }, 1).indexOf('전자연봉계약서')<0 && see({ lead:'TEAM' }, 1).indexOf('조회')<0 && see({ lead:'DIVISION' }, 1).includes('우리 본부 계약서'), '연봉계약서: 대상만 서명, 조회는 본부장·HR만');
+  return 'msSelfCheck 통과';
+}
+
+/* ----- 화면 ----- */
+function msOrder(m){ const di = ORG_TREE.findIndex(d=>d.division===m.division), d = ORG_TREE[di]; return di*100 + (d && m.team ? d.teams.indexOf(m.team)+1 : 0); }   // 조직도 순서: 본부 → 본부 직속 → 팀
+function msShown(){   // 걸러 보기는 저장된 값 기준 — 고치는 도중에 줄이 사라지지 않는다
+  const q = msQuery.trim().toLowerCase();
+  return orgMembers.filter(m=>({ all:true, todo:m.isNew, on:m.use, off:!m.use, hr:m.hr })[msFilter] && (!msDiv || m.division===msDiv) && (!q || [m.name, m.title, m.team].join(' ').toLowerCase().includes(q)))
+    .sort((a,b)=>msOrder(a)-msOrder(b) || (b.lead?1:0)-(a.lead?1:0));
+}
+function msCell(m, e, k, eff){   // m = 저장된 값, e = 초안을 얹은 값
+  const why = msLockWhy(e, k, eff, evPeople), dis = why ? `disabled title="${escapeHtml(why)}"` : '', c = e[k]!==m[k] ? ' chg' : '', label = `${escapeHtml(m.name)} ${MS_FIELDS.find(f=>f[0]===k)[1]}`;
+  if(k==='use') return `<label class="ms-sw${c}"><input type="checkbox" ${e.use?'checked':''} ${dis} aria-label="${label}" onchange="msChange(${m.id},'use',this.checked)"><span></span></label>`;
+  if(k==='lead') return `<select class="ms-sel${e.lead?' set':''}${c}" aria-label="${label}" onchange="msChange(${m.id},'lead',this.value)">${Object.entries(MS_LEAD).map(([v, l])=>`<option value="${v}" ${e.lead===v?'selected':''}>${l}</option>`).join('')}</select>`;
+  if(k==='kpi' && e.lead==='CEO') return `<span class="ms-dash" title="${escapeHtml(why)}">—</span>`;
+  return `<span class="ms-cell${c}"><input class="ms-ck" type="checkbox" ${e[k]?'checked':''} ${dis} aria-label="${label}" onchange="msChange(${m.id},'${k}',this.checked)"></span>`;
+}
+function msContent(){
+  if(!orgIsHr()) return `${roleSwitcher()}${kpiNote('구성원 설정은 HR만 볼 수 있습니다.')}`;
+  const eff = msApply(orgMembers, msDraft), cnt = f=>orgMembers.filter(f).length, me = KPI_USERS[kpiRole].name;
+  const tile = (key, color, label, n, sub)=>`<div class="hm-tile ${color} ${msFilter===key?'on':''}" onclick="msShow('${key}')"><span>${label}</span><b>${n}<small>명</small></b><em>${escapeHtml(sub)}</em></div>`;
+  const chips = [['all','전체',cnt(()=>true)],['todo','설정 필요',cnt(m=>m.isNew)],['on','포털 사용',cnt(m=>m.use)],['off','사용 안 함',cnt(m=>!m.use)],['hr','HR 권한',cnt(m=>m.hr)]];
+  const shown = msShown(), picked = shown.filter(m=>msSel.has(m.id));
+  let rows = '', last = null;
+  shown.forEach(m=>{
+    const g = m.division+'|'+m.team, e = eff.find(o=>o.id===m.id);
+    if(g!==last){
+      last = g; const ids = shown.filter(x=>x.division+'|'+x.team===g).map(x=>x.id);
+      rows += `<tr class="grp"><td class="c"><input class="ms-ck" type="checkbox" ${ids.every(id=>msSel.has(id))?'checked':''} aria-label="${escapeHtml(m.team||m.division)} 모두 선택" onchange="msPick([${ids}], this.checked)"></td><td colspan="7">${escapeHtml(m.division)} · ${escapeHtml(m.team||'본부 직속')}<span>${ids.length}명</span></td></tr>`;
+    }
+    rows += `<tr class="${msDraft[m.id]?'chg':''} ${e.use?'':'off'}"><td class="c"><input class="ms-ck" type="checkbox" ${msSel.has(m.id)?'checked':''} aria-label="${escapeHtml(m.name)} 선택" onchange="msPick([${m.id}], this.checked)"></td>
+      <td><div class="ms-name"><button type="button" onclick="msSee(${m.id})">${escapeHtml(m.name)}</button><i>${escapeHtml(m.title)}</i>${m.isNew?'<span class="ms-tag">새로 들어옴</span>':''}${m.name===me?'<span class="ms-tag gray">나</span>':''}</div></td>
+      ${MS_FIELDS.map(([k])=>`<td class="c">${msCell(m, e, k, eff)}</td>`).join('')}</tr>`;
+  });
+  const d = msDiffs(orgMembers, msDraft).length;
+  const bulk = (k, label)=>`<span class="g">${label}<button type="button" onclick="msBulk('${k}',true)">켜기</button><button type="button" onclick="msBulk('${k}',false)">끄기</button></span>`;
+  return `${roleSwitcher()}${kpiMsg ? kpiNote(kpiMsg.msg, kpiMsg.type) : ''}<div class="ms">
+    <div class="hm-tiles">
+      ${tile('all','blue','전체 구성원',cnt(()=>true),'조직도 명단 기준 · 가상 데이터')}
+      ${tile('on','green','포털 사용',cnt(m=>m.use),'지금 들어올 수 있는 사람')}
+      ${tile('todo','coral','설정 필요',cnt(m=>m.isNew),'새로 들어와 아직 꺼져 있는 사람')}
+      ${tile('hr','slate','HR 권한',cnt(m=>m.hr),orgMembers.filter(m=>m.hr).map(m=>m.name).join(' · ') || '없음')}
+    </div>
+    <div class="card">
+      <div class="ms-bar">${chips.map(([k, l, n])=>`<button type="button" class="ms-chip ${msFilter===k?'on':''}" aria-pressed="${msFilter===k}" onclick="msShow('${k}')">${l} ${n}</button>`).join('')}
+        <span class="sp"></span>
+        <select aria-label="본부" onchange="msDiv=this.value; msSel.clear(); renderContent()"><option value="">본부 전체</option>${ORG_TREE.map(t=>`<option ${msDiv===t.division?'selected':''}>${escapeHtml(t.division)}</option>`).join('')}</select>
+        <input id="msQ" aria-label="이름 검색" placeholder="이름 검색" value="${escapeHtml(msQuery)}" oninput="msQuery=this.value; msSel.clear(); renderContent(); const i=document.getElementById('msQ'); i.focus(); i.setSelectionRange(i.value.length,i.value.length);"></div>
+      ${picked.length ? `<div class="ms-bulk"><b>${picked.length}명 선택</b>${bulk('use','포털 사용')}${bulk('kpi','KPI 작성')}${bulk('ev','평가 대상')}${bulk('ct','연봉계약서')}<button type="button" class="x" onclick="msSel.clear(); renderContent()">선택 해제</button></div>` : ''}
+      <div class="ct-tbl"><table class="ms-tbl">
+        <colgroup><col style="width:44px"><col><col style="width:104px"><col style="width:124px"><col style="width:92px"><col style="width:132px"><col style="width:116px"><col style="width:116px"></colgroup>
+        <thead><tr><th class="c"><input class="ms-ck" type="checkbox" ${shown.length && picked.length===shown.length?'checked':''} aria-label="보이는 사람 모두 선택" onchange="msPick([${shown.map(m=>m.id)}], this.checked)"></th><th><b>이름</b><small>누르면 보이는 화면 확인</small></th>${MS_FIELDS.map(([k, l, sub])=>`<th class="c"><b>${l}</b><small>${sub}</small></th>`).join('')}</tr></thead>
+        <tbody>${rows || '<tr><td colspan="8" class="c" style="color:var(--text-muted);">해당하는 사람이 없습니다.</td></tr>'}</tbody></table></div>
+    </div>
+    <div class="card"><div class="card-title">이 화면의 규칙</div>
+      <ol class="ms-rules">
+        <li>명단에 새로 들어온 사람은 <b>포털 사용이 꺼진 채로</b> 들어옵니다. HR이 켜야 들어올 수 있습니다. 나머지 칸은 일반 직원 기준(직책 없음 · KPI 작성 · 평가 대상 · 연봉계약서 켜짐)으로 채워 둡니다.</li>
+        <li><b>직책은 한 사람에 하나</b>입니다. 팀장은 팀에 한 명, 본부장은 본부에 한 명, 대표이사는 한 명이고, 이미 있으면 알려 줍니다. HR 권한만 직책과 따로 켭니다(HR 팀장 = 팀장 + HR 권한).</li>
+        <li>대표이사는 KPI를 작성하지 않습니다(경영계획 목표만). 대표이사로 바꾸면 KPI 작성이 꺼집니다.</li>
+        <li><b>HR 권한이 있는 사람이 한 명뿐이면</b> 그 사람의 HR 권한과 포털 사용은 끌 수 없습니다.</li>
+        <li>KPI 작성 칸은 그 사람의 평가가 시작된 뒤에는 바꿀 수 없습니다.</li>
+        <li>이름 · 직급 · 소속은 조직도에서 고칩니다. 저장을 눌러야 적용됩니다.</li>
+      </ol>
+      <div class="placeholder-note">지금은 시연 모드입니다 — <b>직책</b>은 조직도에, <b>KPI 작성</b>은 평가 진행 탭의 평가 대상 명단에 바로 이어집니다. 포털 사용 · HR 권한 · 평가 대상 · 연봉계약서는 값만 담아 두고, 로그인이 붙으면 이 설정대로 화면이 달라집니다. 새로 고치면 처음 상태로 돌아갑니다.</div></div>
+    ${d ? `<div class="ms-save"><span>바꾼 내용 <b>${d}건</b><i> · 아직 저장되지 않았습니다</i></span><span class="sp"></span><button type="button" class="btn" onclick="msReset()">되돌리기</button><button type="button" class="btn coral" onclick="msAskSave()">저장</button></div>` : ''}
+  </div>`;
+}
+
+/* ----- 동작 ----- */
+function msShow(key){ msFilter = key; msSel.clear(); kpiFlash(null); }
+function msPick(ids, on){ ids.forEach(id=>on ? msSel.add(id) : msSel.delete(id)); renderContent(); }
+function msChange(id, k, v){
+  const label = document.activeElement && document.activeElement.getAttribute('aria-label'), why = msSet(orgMembers, msDraft, id, k, v, evPeople);
+  kpiFlash(why ? escapeHtml(why) : null, 'danger');
+  const el = label && [...document.querySelectorAll('.ms-tbl [aria-label]')].find(x=>x.getAttribute('aria-label')===label); if(el) el.focus();   // 다시 그려도 누르던 칸에 그대로 있게
+}
+function msBulk(k, v){
+  const skipped = orgMembers.filter(m=>msSel.has(m.id) && msSet(orgMembers, msDraft, m.id, k, v, evPeople));
+  kpiFlash(skipped.length ? `${skipped.map(m=>escapeHtml(m.name)).join(', ')} 님은 바꿀 수 없어 그대로 두었습니다.` : null, 'warning');
+}
+function msReset(){ msClear(msDraft); msSel.clear(); kpiFlash(null); }
+function msAskSave(){
+  const d = msDiffs(orgMembers, msDraft);
+  orgModal(`<div class="card-title">바꾼 내용 ${d.length}건을 저장할까요?</div>
+    <div class="ms-diff">${d.map(x=>`<div>${escapeHtml(x.m.name)} ${escapeHtml(x.m.title)}</div><div>${x.label}: <s>${x.from}</s> → <em>${x.to}</em></div>`).join('')}</div>
+    ${kpiNote('저장하면 바로 적용됩니다.')}
+    <div style="display:flex; gap:8px; justify-content:flex-end;"><button type="button" class="btn" onclick="orgCloseModal()">취소</button><button type="button" class="btn coral" onclick="msDoSave()">저장</button></div>`);
+}
+function msDoSave(){ const n = msSave(orgMembers, msDraft, evPeople); msSel.clear(); orgCloseModal(); kpiFlash(`${n}건을 저장했습니다.`); }
+function msSee(id){
+  const m = msApply(orgMembers, msDraft).find(o=>o.id===id);
+  const pills = [[m.use, '포털 사용 '+(m.use?'켜짐':'꺼짐')], [m.lead, '직책 '+MS_LEAD[m.lead]], [m.hr, 'HR 권한 '+(m.hr?'있음':'없음')], [m.kpi, 'KPI 작성 '+(m.kpi?'함':'안 함')], [m.ev, m.ev?'평가 대상':'평가 대상 아님'], [m.ct, m.ct?'연봉계약서 대상':'연봉계약서 대상 아님']];
+  orgModal(`<div class="card-title"><span>${escapeHtml(m.name)} ${escapeHtml(m.title)} <span style="font-weight:500; color:var(--text-secondary); font-size:var(--fs-xs); margin-left:4px;">${escapeHtml(m.team || m.division)}</span></span><button type="button" class="x-btn" onclick="orgCloseModal()" aria-label="닫기">${icon('x')}</button></div>
+    <div class="ms-pills">${pills.map(([on, t])=>`<span class="badge ${on?'info':'neutral'}">${t}</span>`).join('')}</div>
+    ${msDraft[id] ? kpiNote('아직 저장하지 않은 변경이 들어 있습니다.', 'warning') : ''}
+    <div class="list-sub" style="margin:0 0 6px;">이 설정으로 이 사람에게 보이는 화면</div>
+    ${m.use ? `<ul class="ms-see">${msSeeList(m).map(([a, b])=>`<li class="${b?'':'no'}"><b>${a}</b><span>${b || '보이는 것이 없음'}</span></li>`).join('')}</ul>`
+      : kpiNote('포털 사용이 꺼져 있어 <b>들어올 수 없습니다.</b> 하이웍스에서 메뉴를 누르면 "인사포털은 준비 중입니다" 화면이 나옵니다.')}`);
+}
+
 /* ---------------- NAV DATA ---------------- */
 const NAV = [
   { id:'home', label:'홈', icon:'home', tabs:[ {id:'dash', label:'대시보드', render:homeContent} ] },
@@ -4962,6 +5254,7 @@ const NAV = [
   { id:'org', label:'조직도', icon:'network', tabs:[
       {id:'o1', label:'부서별 조직도', render:orgChart},
       {id:'o2', label:'구성원 검색', render:memberSearch},
+      {id:'o3', label:'구성원 설정', render:msContent, show:()=>orgIsHr()},   // HR(담당자·팀장)에게만 보인다
   ]},
   { id:'pantry', label:'탕비실', icon:'coffee', tabs:[
       {id:'g1', label:'X-ray 특공대', render:pantryGame},
