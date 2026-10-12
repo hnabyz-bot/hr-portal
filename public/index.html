@@ -585,6 +585,45 @@
   .kv-plan li:last-child{ border-bottom:none; }
   .kv-plan li::before{ content:counter(pl); width:26px; height:26px; border-radius:50%; background:var(--accent-soft); color:var(--accent); font-weight:700; display:flex; align-items:center; justify-content:center; }
   .kv-plan b{ font-size:var(--fs-md); } .kv-plan span{ color:var(--text-secondary); }
+  /* ---------- 사이트 둘러보기 · 이 화면 사용법 (2026-10-12) ----------
+     화면의 한 부분만 밝게 비추고(.tr-hole — 둘레를 큰 그림자로 어둡게) 옆에 말풍선(.tr-pop)을 놓는다. .tr-mask는 안내 중에 뒤 화면을 누르지 못하게 막는다.
+     겹치는 순서: 창(60)·되돌리기 알림(70) 위, 환영 페이지(100) 아래. */
+  .tr-mask{ position:fixed; inset:0; z-index:80; }
+  .tr-mask.dim{ background:rgba(15,23,42,.58); }   /* 가리킬 곳이 없는 단계(시작 카드)는 화면 전체를 어둡게 */
+  .tr-hole{ position:fixed; z-index:81; border-radius:12px; pointer-events:none; box-shadow:0 0 0 9999px rgba(15,23,42,.58), 0 0 0 2px #fff inset;
+    transition:left .28s var(--ease), top .28s var(--ease), width .28s var(--ease), height .28s var(--ease); }
+  .tr-pop{ position:fixed; z-index:82; width:330px; max-width:calc(100vw - 24px); background:var(--surface); border-radius:var(--radius-lg); padding:18px 20px 16px;
+    box-shadow:0 14px 44px rgba(15,23,42,.30); transition:left .28s var(--ease), top .28s var(--ease); }
+  .tr-pop::before{ content:""; position:absolute; width:14px; height:14px; background:var(--surface); transform:rotate(45deg); }   /* 가리키는 꼬리 — 자리는 --ar */
+  .tr-pop.right::before{ left:-7px; top:var(--ar,28px); }
+  .tr-pop.left::before{ right:-7px; top:var(--ar,28px); }
+  .tr-pop.bottom::before{ top:-7px; left:var(--ar,28px); }
+  .tr-pop.top::before{ bottom:-7px; left:var(--ar,28px); }
+  .tr-pop.center{ left:50%; top:50%; transform:translate(-50%,-50%); width:430px; padding:30px 30px 22px; text-align:center; }
+  .tr-pop.center::before{ display:none; }
+  .tr-bar{ height:3px; border-radius:2px; background:#E8EEF5; margin-bottom:12px; overflow:hidden; }
+  .tr-bar i{ display:block; height:100%; background:var(--coral-text); border-radius:2px; transition:width .28s var(--ease); }
+  .tr-step{ font-size:var(--fs-xs); font-weight:700; color:var(--coral-text); }
+  .tr-pop h3{ margin:3px 0 7px; font-size:var(--fs-lg); line-height:1.35; }
+  .tr-pop.center h3{ font-size:var(--fs-xl); margin:14px 0 8px; }
+  .tr-pop p{ margin:0; font-size:var(--fs-sm); color:var(--text-secondary); line-height:1.7; }
+  .tr-pop p b{ color:var(--text-primary); }
+  .tr-nav{ display:flex; align-items:center; gap:8px; margin-top:16px; }
+  .tr-pop.center .tr-nav{ justify-content:center; margin-top:20px; }
+  .tr-skip{ margin-right:auto; padding:6px 0; border:0; background:none; color:var(--text-muted); font:inherit; font-size:var(--fs-xs); cursor:pointer; text-decoration:underline; text-underline-offset:3px; }
+  .tr-foot{ margin-top:14px; font-size:var(--fs-xs); color:var(--text-muted); }
+  .tr-logo{ width:46px; height:46px; }
+  .tr-facts{ display:flex; justify-content:center; gap:8px; margin-top:14px; }
+  .tr-facts span{ padding:5px 11px; border-radius:999px; background:var(--bg-page); color:var(--text-secondary); font-size:var(--fs-xs); font-weight:600; }
+  @media (prefers-reduced-motion:reduce){ .tr-hole, .tr-pop, .tr-bar i{ transition:none; } }
+  /* 다시 보는 곳: 왼쪽 메뉴 아래 "사이트 둘러보기" · 제목 줄 오른쪽 "이 화면 사용법" */
+  .tr-again{ display:flex; align-items:center; gap:8px; width:100%; margin-bottom:10px; padding:8px 10px; border:1px solid var(--border); border-radius:var(--radius-sm); background:var(--surface);
+    color:var(--text-secondary); font:inherit; font-size:var(--fs-xs); font-weight:600; cursor:pointer; }
+  .tr-help{ margin-left:auto; display:inline-flex; align-items:center; gap:6px; padding:7px 12px; border:1px solid var(--border); border-radius:999px; background:var(--surface);
+    color:var(--text-secondary); font:inherit; font-size:var(--fs-xs); font-weight:600; cursor:pointer; white-space:nowrap; }
+  .tr-help[hidden]{ display:none; }
+  .tr-again:hover, .tr-help:hover{ background:var(--accent-soft); color:var(--accent); border-color:var(--sky); }
+  .tr-again svg, .tr-help svg{ width:15px; height:15px; flex-shrink:0; }
   /* ---------- ORG ---------- */
   .org-chart{ text-align:center; font-size:var(--fs-sm); line-height:1; }
   .org-grid{ display:grid; grid-template-columns:repeat(var(--org-cols,6),minmax(0,1fr)); gap:8px; }
@@ -1137,7 +1176,7 @@ function wcEnter(skip){   // 들어간다: 서서히 사라지고 이 창(탭)�
   const el = document.getElementById('welcome'); if(el.classList.contains('out')) return;
   try{ sessionStorage.setItem('wcSeen', '1'); if(skip) localStorage.setItem('wcSkipUntil', wcDay(7)); }catch(_){}
   el.classList.add('out'); setTimeout(()=>{ document.documentElement.classList.remove('wc-on'); el.classList.remove('out'); }, matchMedia('(prefers-reduced-motion:reduce)').matches ? 0 : 500);
-  setTimeout(()=>{ if(typeof homeTodayPop==='function') homeTodayPop(); });   // 들어오면 바로 오늘 할 일을 보여 준다. 한 박자 늦추는 것은 Esc로 들어올 때 같은 키 입력에 창이 닫히지 않게
+  setTimeout(()=>{ if(typeof tourFirst==='function' && tourFirst()) return; if(typeof homeTodayPop==='function') homeTodayPop(); });   // 처음 온 브라우저에는 사이트 둘러보기를, 그 뒤로는 오늘 할 일을 보여 준다. 한 박자 늦추는 것은 Esc로 들어올 때 같은 키 입력에 창이 닫히지 않게
 }
 (function(){
   const el = document.getElementById('welcome'), skip = document.getElementById('wcSkip');
@@ -1156,7 +1195,7 @@ function wcEnter(skip){   // 들어간다: 서서히 사라지고 이 창(탭)�
     <div><div class="logo-word">H&abyz</div><div class="logo-sub">인사포털</div></div>
   </div>
   <nav class="sidebar-nav" id="sidebarNav" aria-label="주 메뉴"></nav>
-  <div class="sidebar-foot"><span id="sidebarWho">로그인: 홍길동 대리 · 국내영업팀</span><br>© 2026 H&abyz HR System</div>
+  <div class="sidebar-foot"><button type="button" class="tr-again" id="tourAgain" onclick="tourStart('menu')"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.6 9.2a2.5 2.5 0 0 1 4.8.8c0 1.7-2.4 2.1-2.4 3.7"/><line x1="12" y1="17" x2="12" y2="17.01"/></svg>사이트 둘러보기</button><span id="sidebarWho">로그인: 홍길동 대리 · 국내영업팀</span><br>© 2026 H&abyz HR System</div>
 </aside>
 <div class="sidebar-backdrop" id="sidebarBackdrop" onclick="closeSidebar()"></div>
 
@@ -1166,6 +1205,7 @@ function wcEnter(skip){   // 들어간다: 서서히 사라지고 이 창(탭)�
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
     </button>
     <h1 class="topbar-title" id="pageTitle">홈</h1>
+    <button type="button" class="tr-help" id="tourHelp" hidden onclick="tourStart(tourTabKey())"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.6 9.2a2.5 2.5 0 0 1 4.8.8c0 1.7-2.4 2.1-2.4 3.7"/><line x1="12" y1="17" x2="12" y2="17.01"/></svg>이 화면 사용법</button>
   </header>
   <div class="subtabs" id="subtabsRow" role="tablist"></div>
   <main class="content" id="contentArea"></main>
@@ -3104,7 +3144,7 @@ function kpiInbox(){
         <div style="display:flex; gap:8px; margin-top:10px;"><button class="btn primary" onclick="kpiReview('${k}',true)">승인</button><button class="btn" onclick="kpiReview('${k}',false)">반려</button></div>
       </div>`);
   }).join('');
-  return `<div class="card" style="margin-bottom:14px;"><div class="card-title">승인 대기함 <span class="more">${keys.length}건</span></div>
+  return `<div class="card" id="kpiInbox" style="margin-bottom:14px;"><div class="card-title">승인 대기함 <span class="more">${keys.length}건</span></div>
     ${list || '<div class="list-sub">대기 중인 건이 없습니다.</div>'}</div>`;
 }
 function kpiMySheet(){
@@ -3129,7 +3169,7 @@ function kpiMySheet(){
     if(s.pending) body += `<div class="list-sub" style="margin-top:12px;">승인 진행 중에는 수정할 수 없습니다.</div>`;
     else if(s.confirmed) body += `<div style="margin-top:14px;"><button class="btn primary" ${editOpen?'':'disabled title="수정 기간이 아닙니다"'} onclick="kpiEditing=true; kpiFlash(null)">수정 요청</button></div>`;
   }
-  return `<div class="card">
+  return `<div class="card" id="kpiMine" data-mode="${editing?'edit':'view'}">
     <div class="card-title"><span>${KPI_YEAR}년 KPI 계획서 <span style="font-weight:500; color:var(--text-secondary);">[${me.dept}_${me.name}_${me.title}]</span></span><span class="badge ${cls}">${label}</span></div>
     ${editOpen ? kpiNote(`KPI 작성·수정 기간입니다. (${kpiPeriod.editFrom} ~ ${kpiPeriod.editTo})`, 'success')
                : kpiNote(`지금은 KPI 작성·수정 기간이 아닙니다. 조회만 가능합니다. (설정된 기간: ${kpiPeriod.editFrom||'미정'} ~ ${kpiPeriod.editTo||'미정'})`)}
@@ -4388,7 +4428,7 @@ function evSelfCard(p){
       <td>${editable ? `<textarea class="kpi-in" rows="3" placeholder="측정식 기준으로 실제 결과를 적어 주세요" oninput="evEntry(evFind(${p.pid}),${i}).note=this.value">${escapeHtml(e.note)}</textarea>` : escapeHtml(e.note) || '—'}
         <div style="margin-top:6px;">${evGradeBtns(`evSetSelf.bind(null,${p.pid},${i})`, e.selfGrade, null, editable)}</div></td>
       <td>${evFiles(p, i, upload)}</td></tr>`; }).join('');
-  return `<div class="card" style="margin-bottom:14px;">
+  return `<div class="card" id="evSelf" style="margin-bottom:14px;">
     <div class="card-title"><span>나의 ${KPI_YEAR}년 자기평가</span>${evStageBadge(p)}</div>${evSteps(p)}
     ${!evPeriodOpen() ? kpiNote(`지금은 평가 기간이 아닙니다. (${kpiPeriod.evalFrom} ~ ${kpiPeriod.evalTo})`) : ''}
     <div class="list-sub" style="margin-bottom:8px;">증빙자료는 선택이며 <b>${kpiPeriod.evidDue}</b>까지 올리고 고칠 수 있습니다 (자기평가 제출 후에도 가능). 평가자·본부장·HR만 볼 수 있습니다.</div>
@@ -5002,7 +5042,7 @@ function renderContent(){   // 화면을 다시 그릴 때마다 메뉴·탭 숫
   if(currentTab.show && !currentTab.show()) currentTab = navTabs(currentNav)[0];   // 역할을 바꿔 지금 탭이 안 보이게 되면 첫 탭으로
   document.getElementById('pageTitle').textContent = currentNav.label;
   document.getElementById('contentArea').innerHTML = currentTab.render();
-  renderSidebar(); renderSubtabs();
+  renderSidebar(); renderSubtabs(); tourHelpSync();
 }
 function selectNav(id){
   if(pcOnlyBlocked(id)){ pcOnlyNotice(); return false; }
@@ -5010,10 +5050,12 @@ function selectNav(id){
   currentTab = currentNav.tabs[0];
   renderContent();
   closeSidebar();
+  tourAuto();
 }
 function selectTab(id){
   currentTab = currentNav.tabs.find(t=>t.id===id);
   renderContent();
+  tourAuto();
 }
 function goTo(navId, tabId){
   if(selectNav(navId) === false) return;   // 휴대폰에서 막힌 메뉴 — 안내창만 뜬다
@@ -5021,6 +5063,208 @@ function goTo(navId, tabId){
 }
 function toggleSidebar(){ document.querySelector('.sidebar').classList.toggle('open'); }
 function closeSidebar(){ document.querySelector('.sidebar').classList.remove('open'); }
+
+/* ---------------- 사이트 둘러보기 · 이 화면 사용법 ----------------
+   2026-10-12 인사담당자 지시. 화면의 한 부분만 밝게 비추고 말풍선으로 한 단계씩 안내한다.
+   - 사이트 둘러보기(menu): 처음 들어온 브라우저에서 한 번 자동(환영 페이지 다음). 왼쪽 메뉴 아래 "사이트 둘러보기"로 다시 본다.
+   - 이 화면 사용법: 그 화면에 처음 들어갔을 때 한 번 자동 + 제목 줄 오른쪽 단추. 탭 하나에 하나(TOURS의 tab).
+   - 지금 화면에 없는 칸의 단계는 건너뛴다(직책·상태에 따라 보이는 칸이 다르다). 안내할 칸이 하나도 없으면 단추도 없다.
+   - "이미 봤음"은 로그인 전이라 각자 브라우저에 기억한다(localStorage tourSeen). 로그인 이후에는 사람별로 바꾼다.
+   화면을 고치면 여기 문구·가리키는 곳도 함께 고친다. 메뉴를 더하면 TOUR_MENU에 설명을 더한다(tourSelfCheck가 본다). */
+const TOUR_MENU = {   // 메뉴 id → 둘러보기 설명
+  home:'<b>오늘 할 일</b>, 이번 주 달성률, 일정, 급여일까지 남은 날을 한눈에 봅니다. 포털에 들어오면 가장 먼저 보는 화면입니다.',
+  ws:'내가 <b>끝내야 할 일</b>(나의 업무)과 <b>꾸준히 할 일</b>(나의 일상)을 적고 체크합니다. 여기 적은 내용은 본인만 보고 평가와 상관없습니다.',
+  pay:'<b>급여명세서</b>, <b>전자연봉계약서</b>(서명), <b>원천징수영수증</b>을 봅니다. 금액은 눈 모양을 눌러야 보입니다.',
+  perf:'올해 <b>KPI를 작성</b>하고, 연말에 <b>자기평가</b>를 하고, <b>평가 결과</b>를 확인합니다. 정확한 작성을 위해 PC에서만 열립니다.',
+  rule:'인사·급여·보안 규정을 <b>낱말로 검색</b>합니다. 자주 묻는 질문과 서식도 여기 있습니다.',
+  trip:'출발지와 출장지를 넣으면 <b>출장 경비</b>를 계산해 주고, 신청서와 회계전표 줄까지 만들어 줍니다.',
+  org:'부서별 조직도를 보고, 이름을 눌러 <b>연락처</b>를 확인합니다.',
+  pantry:'쉬는 시간에 잠깐 즐기는 공간입니다.',
+};
+const trCol = (...n)=>n.flatMap(i=>[`#kpiMine[data-mode=edit] .kpi-table thead th:nth-child(${i})`, `#kpiMine[data-mode=edit] .kpi-table tbody tr:first-child td:nth-child(${i})`]).join(',');   // KPI 작성 표의 칸(제목 + 첫 줄)
+const TOURS = {   // 단계: el = 가리킬 곳(여러 개면 묶어서, 배열이면 앞에서부터 있는 것) / one = 첫 번째 것만 / menu = 휴대폰에서 메뉴를 열어 놓는다 / inline = 옆으로 넘기는 표에서 놓을 자리
+  menu:{ label:'사이트 둘러보기', open:()=>goTo('home'), steps:()=>[
+    { center:true, intro:true, title:'인사포털에 오신 것을 환영합니다', body:'메뉴가 어디에 있고 무엇을 하는 곳인지<br>차례로 안내해 드릴게요.' },
+    ...NAV.map((n,i)=>({ el:`#sidebarNav .nav-item:nth-child(${i+1})`, menu:true, title:n.label,
+      body:TOUR_MENU[n.id] + (n.id==='perf' && kvCanUse() ? ' 팀장·본부장·HR은 여기서 KPI를 승인하고 <b>KPI 현황</b>으로 진행률을 챙깁니다.' : '') })),
+    { el:'#hmTasks', title:'오늘의 업무', body:'제목만 적고 <b>Enter</b>를 누르면 오늘 할 일로 등록됩니다. 서명·승인처럼 인사포털이 만든 일도 여기에 함께 나옵니다.' },
+    { el:'#hmCal', title:'일정', body:'급여일, KPI·평가 일정, 내 업무 마감이 <b>색 점</b>으로 표시됩니다. 날짜를 누르면 그날 일정이 나옵니다.' },
+    { el:'#tourAgain', menu:true, title:'다시 보고 싶을 때', body:'<b>사이트 둘러보기</b>를 누르면 이 안내를 언제든 다시 볼 수 있습니다.<br>화면 위쪽의 <b>이 화면 사용법</b>은 그 화면의 작성 방법을 알려 줍니다.' },
+  ]},
+  ws:{ label:'나의 업무 사용법', tab:'w1', steps:()=>[
+    { el:'.ws .ws-add', title:'할 일 적기', body:'제목만 적고 <b>Enter</b>. 제목 끝에 <b>내일</b>, <b>금요일 3시</b>, <b>10/20</b>처럼 적으면 마감일과 시간이 함께 들어갑니다.' },
+    { el:'#wsBody .ws-row:not(.done)', one:true, title:'끝내기 · 고치기', body:'왼쪽 <b>네모</b>를 누르면 완료됩니다. 줄을 누르면 중요도·메모·하위 할 일·반복을 정할 수 있습니다.' },
+    { el:'.ws .ws-seg', title:'보기 바꾸기', body:'<b>목록 · 보드 · 달력</b>. 보드에서는 카드를 끌어 상태를 바꾸고, 달력에서는 끌어서 마감일을 옮깁니다.' },
+    { el:'.ws .ws-bar > span', title:'미루기 · 주간 보고', body:'못 끝낸 일은 한 번에 <b>내일로</b> 넘길 수 있고, 이번 주에 한 일로 <b>주간 보고 초안</b>을 만들어 줍니다.' },
+  ]},
+  rt:{ label:'나의 일상 사용법', tab:'w2', steps:()=>[
+    { el:'.rt .ws-add', title:'루틴 만들기', body:'꾸준히 할 일을 적고 <b>Enter</b>. 만든 뒤 이름을 누르면 분류·시간대와 반복(매일·평일·요일·주 몇 회)을 정합니다.' },
+    { el:'.rt .rt-row', one:true, title:'오늘 체크하기', body:'실천했으면 <b>동그라미</b>를 누릅니다. 홈 화면의 "오늘의 루틴"에서 눌러도 같은 기록에 남습니다.' },
+    { el:'.rt .ws-seg', title:'주간 표 · 기록 달력', body:'<b>주간</b>은 이번 주를 표로, <b>기록</b>은 한 달 달력으로 보여 줍니다. 지난 날은 눌러서 고칠 수 있습니다.' },
+    { el:'.rt .hm-tiles', title:'달성률 · 연속 실천', body:'오늘·이번 주·이번 달 달성률과 <b>가장 길게 이어 온 기록</b>입니다. 예정된 것 중 실천한 비율로 셉니다.' },
+  ]},
+  kpi:{ label:'목표설정 사용법', tab:'e1', steps:()=>[
+    { el:'#kpiInbox .list-row', one:true, title:'승인 대기함', body:'<b>검토</b>를 누르면 제출한 KPI가 펼쳐집니다. 수정 요청은 바뀐 줄이 노란색으로 표시됩니다. 내용을 확인하고 <b>승인</b>하거나, 사유를 적어 <b>반려</b>합니다.' },
+    { el:trCol(1,2), inline:'start', title:'팀목표 · 개인목표', body:'팀 목표와 <b>직접 이어지는</b> 내 목표를 적습니다. 팀장과 면담한 뒤 정하세요.' },
+    { el:trCol(3,4), inline:'center', title:'실행목표 · 측정식', body:'"월 1회 제안서 작성"처럼 <b>구체적으로</b>, 숫자로 잴 수 있게 적습니다. 실행목표는 <b>3개 이상</b> 필요합니다.' },
+    { el:trCol(5)+',#kpiTotal', inline:'center', title:'가중치', body:'중요한 만큼 나눠 적되 <b>합계가 정확히 100</b>이어야 합니다. 맞으면 아래 합계가 초록색으로 바뀝니다.' },
+    { el:trCol(7,8,9,10,11), inline:'center', title:'S~D 달성 기준', body:'어디까지 하면 S(110%)이고 A(100%)인지 <b>미리</b> 적어 둡니다. 연말 평가 때 이 기준으로 등급을 매깁니다.' },
+    { el:'#kpiSubmitBtn', inline:'start', title:'제출', body:'실행목표 3개 이상 · 가중치 합 100이면 단추가 켜집니다. 제출하면 결재선에 따라 승인을 받고, 확정되면 잠깁니다. 그 뒤에는 수정 기간에 "수정 요청"으로만 바꿉니다.' },
+    { el:'#kpiMine input[oninput^="kpiSetProgress"]', inline:'center', title:'진행률 적기', body:'확정된 뒤에는 실행목표마다 <b>진행률(0~100)</b>을 직접 적습니다. 언제든 고칠 수 있고, 홈 화면과 팀장·HR의 KPI 현황에 반영됩니다. 평가 점수와는 별개입니다.' },
+    { el:'#kpiMine textarea[oninput^="kpiSetWhy"]', inline:'center', title:'늦어지는 이유 (선택)', body:'진행이 늦어지는 항목은 이유를 한 줄 적어 두세요. 팀장·본부장·HR이 함께 봅니다.' },
+    { el:'#kpiMine button[onclick^="kpiEditing=true"]', inline:'start', title:'수정 요청', body:'확정된 목표는 <b>수정 기간</b>에만 바꿀 수 있습니다. 사유를 적어 요청하면 승인 뒤에 반영되고, 그 전까지는 지금 KPI가 유효합니다.' },
+  ]},
+  kv:{ label:'KPI 현황 사용법', tab:'e4', steps:()=>{ const me = kvMe(), writer = !kpiIsHr() && !!me && me.kind!=='member'; return [
+    { el:'#kvList', title:'명단에서 누르기', body:'이름이나 부서를 누르면 오른쪽에 <b>KPI 항목과 진행률</b>이 나옵니다. 막대 위 세로선은 오늘 기준 기대 진행률입니다.' },
+    { el:'.kv-legend', title:'알람 표시 읽기', body:'<b>빨간 종</b>은 진행이 기대보다 많이 늦은 사람, <b>시계</b>는 오랫동안 진행률을 고치지 않은 사람, <b>말풍선</b>은 확인 메모가 있는 사람입니다.' },
+    { el:['.kv-memo-in', '.kv-cols > .card:last-child'], title:writer ? '확인 메모 남기기' : '확인 메모 보기',
+      body:writer ? '사람을 고르면 이 칸에 KPI가 나오고, 아래에 <b>확인 메모</b>를 남길 수 있습니다. 팀원에게는 팀장이, 팀장에게는 본부장이 씁니다. 본인에게는 보이지 않습니다.'
+        : '사람을 고르면 이 칸에 KPI가 나오고, 팀장·본부장이 남긴 <b>확인 메모</b>를 함께 볼 수 있습니다.' },
+    { el:'.kv-tools', title:'보기 바꾸기 · 부진만 보기', body:'<b>본부별 · 부서별 · 개인별</b>로 바꿔 보고, 이름으로 찾거나 <b>부진만</b> 골라 볼 수 있습니다.' },
+    { el:'[onclick="kvExport()"]', title:'엑셀 내려받기', body:'전 직원의 진행률 표를 파일로 받습니다. 보고 자료를 만들 때 씁니다.' },
+  ]; }},
+  ev:{ label:'자기평가 방법', tab:'e2', steps:()=>[
+    { el:'#evSelf .ev-steps', title:'평가 순서', body:'자기평가부터 확정까지의 순서입니다. 지금 어느 단계인지 색으로 표시됩니다.' },
+    { el:'#evSelf .ev-table thead th:nth-child(1), #evSelf .ev-table tbody tr:first-child td:nth-child(1)', title:'확정 KPI · 달성 기준', body:'목표설정에서 확정한 KPI와 <b>S~D 기준</b>이 그대로 나옵니다. 이 기준에 비춰 평가합니다.' },
+    { el:['#evSelf .ev-table tbody tr:first-child td:nth-child(2) textarea', '#evSelf .ev-table tbody tr:first-child td:nth-child(2)'], title:'실적 적기', body:'측정식 기준으로 <b>실제 결과</b>를 숫자와 함께 적습니다. 예: "월평균 21회".' },
+    { el:'#evSelf .ev-table tbody tr:first-child .ev-grades', title:'스스로 등급 매기기', body:'달성 기준에 비춰 <b>S~D</b> 중 하나를 고릅니다. 평가자가 참고하는 값이고, 최종 등급은 평가자와 본부장이 정합니다.' },
+    { el:'#evSelf .ev-table thead th:nth-child(3), #evSelf .ev-table tbody tr:first-child td:nth-child(3)', title:'증빙자료 (선택)', body:'실적을 뒷받침하는 파일을 올립니다. 평가자·본부장·HR만 볼 수 있습니다.' },
+    { el:'#evSelf button[onclick^="evSubmitSelf"]', title:'제출', body:'제출하면 평가자에게 넘어가고 실적과 등급은 고칠 수 없습니다. 증빙자료는 마감일까지 더 올릴 수 있습니다.' },
+  ]},
+  exp:{ label:'경비 산출기 사용법', tab:'t2', steps:()=>[
+    { el:'#expAddressPanel', title:'출발지 · 출장지 넣기', body:'주소를 적거나 <b>검색</b>으로 장소 이름을 찾습니다. 사무실은 단추 하나로 들어가고, 출장지가 여러 곳이면 <b>+ 출장지 추가</b>. 위쪽의 출장일자·차량·유종도 확인해 주세요.' },
+    { el:'[onclick="expCalculate()"]', title:'경비 계산', body:'누르면 거리를 재고 <b>유류비와 활동비</b>를 계산합니다. 결과는 바로 아래에 나옵니다.' },
+    { el:'#expResult .exp-total, #expResult .grid', title:'결과 보기', body:'<b>최종 지급금액</b>과 계산 근거(거리·단가·활동비)를 확인합니다.' },
+    { el:'#expRegion, [onclick="expVoucherAdd()"]', title:'전표에 담기', body:'출장지역을 확인하고 누르면 아래 <b>회계전표 입력용 목록</b>에 쌓입니다. 여러 건을 담아 한 번에 처리할 수 있습니다.' },
+    { el:'[onclick^="expDownload("]', title:'결과 내려받기', body:'<b>Excel · PDF · 출장신청서 PDF</b>로 받을 수 있습니다. 출장신청서에는 위에 적은 신청자 이름이 들어갑니다.' },
+    { el:['[onclick="expVoucherCopy()"]', '#expVoucherWrap .card'], title:'표 복사 (엑셀 없이 바로 붙여넣기)', body:'경비를 계산해 <b>전표에 담기</b>를 누르면 여기에 쌓입니다. <b>표 복사</b>를 누른 다음 ERP 전표 입력창 첫 줄의 <b>계정과목 칸</b>을 누르고 붙여넣기(Ctrl+V) 하세요. 계정과목·금액 줄이 자동으로 채워집니다.' },
+  ]},
+  pay:{ label:'급여명세서 보는 법', tab:'p1', steps:()=>[
+    { el:'select[onchange^="payViewKey"]', title:'볼 직원 고르기 (HR)', body:'HR은 직원을 골라 그 사람의 명세서를 볼 수 있습니다. 직원은 본인 것만 봅니다.' },
+    { el:'.pay-eye', title:'금액 보기', body:'금액은 가려져 있습니다. <b>눈 모양</b>을 누르면 보이고, 다시 누르면 가려집니다.' },
+    { el:'.pay-years, .pay-mgrid', title:'연도 · 월 고르기', body:'연도를 고르고 <b>월</b>을 누르면 아래에 그달 명세서가 열립니다. 열린 명세서는 <b>인쇄 / PDF 저장</b>으로 보관할 수 있습니다.' },
+    { el:'#paySlip .card-title', title:'인쇄 · PDF 저장', body:'오른쪽 단추로 이 명세서를 <b>인쇄하거나 PDF로 저장</b>합니다.' },
+  ]},
+  ct:{ label:'연봉계약서 서명 방법', tab:'p2', steps:()=>[
+    { el:'#ctScroll.gated', title:'내용 확인', body:'계약 내용을 <b>끝까지</b> 내려 읽어 주세요. 끝까지 읽어야 서명 칸이 열립니다.' },
+    { el:'#ctSignBox', title:'서명하기', body:'<b>동의에 체크</b>하고, <b>성명</b>을 적고, 서명 칸에 마우스나 손가락으로 서명한 뒤 서명 완료를 누릅니다. 서명하면 계약서가 잠겨 고칠 수 없습니다.' },
+    { el:'.ct-print .card-title [onclick^="ctPrint("]', title:'보관', body:'이 단추로 계약서를 <b>인쇄하거나 PDF로 저장</b>해 1부를 보관합니다.' },
+  ]},
+};
+const tour = { key:null, steps:null, i:0, from:null };
+let tourTimer = 0;
+
+/* ----- 규칙 (순수 로직, tourSelfCheck가 검증) ----- */
+function tourShould(key, seen, busy){ return !busy && !seen.includes(key); }   // 자동으로 띄울까: 처음이고, 다른 안내·창이 떠 있지 않을 때
+function tourSelfCheck(){   // 브라우저 콘솔에서 tourSelfCheck() 실행
+  const ok = (c,m)=>{ if(!c) throw new Error('tourSelfCheck 실패: '+m); }, list = Object.values(TOURS), tabs = list.map(t=>t.tab).filter(Boolean);
+  ok(tourShould('ws', [], false) && !tourShould('ws', ['ws'], false) && !tourShould('ws', [], true) && tourShould('ws', ['menu'], false), '처음 한 번만, 다른 안내·창이 떠 있으면 미룬다');
+  ok(NAV.every(n=>TOUR_MENU[n.id]) && Object.keys(TOUR_MENU).length===NAV.length, '모든 메뉴에 둘러보기 설명이 있다');
+  ok(tabs.every(id=>NAV.some(n=>n.tabs.some(t=>t.id===id))) && new Set(tabs).size===tabs.length, '사용법은 실제로 있는 탭에, 탭 하나에 하나');
+  ok(list.every(t=>t.label && t.steps().every(s=>s.title && s.body && (s.center || s.el))), '모든 단계에 제목·설명·가리킬 곳');
+  ok(TOURS.menu.steps().filter(s=>!s.intro).length===NAV.length+3, '둘러보기 = 메뉴마다 한 단계 + 오늘의 업무 + 일정 + 다시 보는 곳');
+  return 'tourSelfCheck 통과';
+}
+
+/* ----- 기억 ----- */
+function tourSeen(){ try{ return (localStorage.getItem('tourSeen') || '').split(',').filter(Boolean); }catch(_){ return []; } }
+function tourMark(key){ try{ localStorage.setItem('tourSeen', [...new Set([...tourSeen(), key])].join(',')); }catch(_){} }
+function tourBusy(){ return !!tour.steps || !!document.getElementById('orgModal') || document.documentElement.classList.contains('wc-on'); }
+function tourTabKey(){ return Object.keys(TOURS).find(k=>TOURS[k].tab===currentTab.id); }
+
+/* ----- 화면 ----- */
+function tourEls(st){   // 그 단계가 가리키는 칸들(화면에 보이는 것만)
+  for(const sel of [].concat(st.el || [])){
+    const els = [...document.querySelectorAll(sel)].filter(e=>e.getClientRects().length);
+    if(els.length) return st.one ? els.slice(0, 1) : els;
+  }
+  return [];
+}
+function tourSteps(key){ return TOURS[key].steps().filter(s=>s.center || tourEls(s).length); }   // 지금 화면에서 안내할 수 있는 단계
+function tourHelpSync(){   // 제목 줄의 "이 화면 사용법": 안내할 칸이 있는 화면에서만 보인다
+  const key = tourTabKey(), b = document.getElementById('tourHelp');
+  b.hidden = !key || !tourSteps(key).length;
+}
+function tourStart(key){
+  const t = TOURS[key];
+  if(tour.steps) tourEnd();
+  if(document.getElementById('orgModal')) orgCloseModal();
+  if(t.open) t.open();
+  const steps = tourSteps(key);
+  if(!steps.length) return false;
+  tourMark(key);
+  Object.assign(tour, { key, steps, i:0, from:document.activeElement });
+  document.body.insertAdjacentHTML('beforeend', '<div class="tr-mask" id="trMask"></div><div class="tr-hole" id="trHole"></div><div class="tr-pop" id="trPop" role="dialog" aria-modal="true" aria-labelledby="trTitle"></div>');
+  addEventListener('resize', tourPlace); document.addEventListener('scroll', tourPlace, true); document.addEventListener('keydown', tourKey, true);
+  tourGo(0);
+  return true;
+}
+function tourEnd(){
+  if(!tour.steps) return;
+  ['trMask','trHole','trPop'].forEach(id=>document.getElementById(id)?.remove());
+  removeEventListener('resize', tourPlace); document.removeEventListener('scroll', tourPlace, true); document.removeEventListener('keydown', tourKey, true);
+  if(isPhone()) closeSidebar();
+  const from = tour.from; Object.assign(tour, { key:null, steps:null, i:0, from:null });
+  if(from && from.isConnected && from.focus) from.focus({ preventScroll:true });
+}
+function tourGo(i){
+  if(!tour.steps || i<0) return;
+  if(i>=tour.steps.length) return tourEnd();
+  tour.i = i;
+  if(isPhone()) document.querySelector('.sidebar').classList.toggle('open', !!tour.steps[i].menu);   // 휴대폰: 메뉴를 가리킬 때만 메뉴를 열어 놓는다
+  tourDraw(); tourPlace();
+  setTimeout(tourPlace, 350);   // 화면이 바뀐 직후(메뉴가 열리는 동안 등) 한 번 더 맞춘다
+}
+function tourKey(e){   // → 다음 · ← 이전 · Esc 건너뛰기. Tab은 말풍선 안에서만 돈다
+  if(!tour.steps) return;
+  if(e.key==='Escape'){ e.preventDefault(); e.stopPropagation(); tourEnd(); }
+  else if(e.key==='ArrowRight'){ e.stopPropagation(); tourGo(tour.i+1); }
+  else if(e.key==='ArrowLeft'){ e.stopPropagation(); if(tour.i>0 && !tour.steps[tour.i-1].intro) tourGo(tour.i-1); }
+  else if(e.key==='Tab'){
+    const b = [...document.querySelectorAll('#trPop button')], at = b.indexOf(document.activeElement);
+    e.preventDefault(); b[(at + (e.shiftKey ? b.length-1 : 1)) % b.length].focus();
+  }
+}
+function tourDraw(){   // 말풍선 내용 + 가리킬 곳이 보이게 화면을 옮긴다 (단계가 바뀔 때 한 번)
+  const st = tour.steps[tour.i], i = tour.i, t = TOURS[tour.key], pop = document.getElementById('trPop');
+  const count = tour.steps.filter(s=>!s.intro).length, no = i + 1 - (tour.steps[0].intro ? 1 : 0), last = i===tour.steps.length-1;
+  pop.innerHTML = st.intro
+    ? `<img class="tr-logo" src="img/logo-mark-clear.png" alt=""><h3 id="trTitle">${st.title}</h3><p>${st.body}</p>
+       <div class="tr-facts"><span>메뉴 ${NAV.length}개</span><span>${count}단계</span><span>약 1분</span></div>
+       <div class="tr-nav"><button type="button" class="btn" onclick="tourEnd()">나중에 볼게요</button><button type="button" class="btn primary" id="trNext" onclick="tourGo(${i+1})">둘러보기 시작</button></div>
+       <div class="tr-foot">왼쪽 메뉴 아래 "사이트 둘러보기"에서 언제든 다시 볼 수 있어요</div>`
+    : `<div class="tr-bar"><i style="width:${no/count*100}%"></i></div><div class="tr-step">${t.label} · ${no} / ${count}</div><h3 id="trTitle">${st.title}</h3><p>${st.body}</p>
+       <div class="tr-nav"><button type="button" class="tr-skip" onclick="tourEnd()">건너뛰기</button>${i>0 && !tour.steps[i-1].intro ? `<button type="button" class="btn sm" onclick="tourGo(${i-1})">이전</button>` : ''}<button type="button" class="btn primary sm" id="trNext" onclick="tourGo(${i+1})">${last ? '끝내기' : '다음'}</button></div>`;
+  const first = tourEls(st)[0];
+  if(first) first.scrollIntoView({ block:'center', inline:st.inline || 'nearest' });
+  document.getElementById('trNext').focus({ preventScroll:true });
+}
+function tourPlace(){   // 밝은 칸과 말풍선의 자리 (스크롤·창 크기가 바뀔 때마다)
+  if(!tour.steps) return;
+  const st = tour.steps[tour.i], hole = document.getElementById('trHole'), pop = document.getElementById('trPop'), mask = document.getElementById('trMask');
+  const els = tourEls(st);
+  if(!els.length){ hole.style.display = 'none'; mask.classList.add('dim'); pop.className = 'tr-pop center'; pop.style.left = pop.style.top = ''; return; }   // 가리킬 곳이 없는 단계(시작 카드)는 한가운데
+  const rs = els.map(e=>e.getBoundingClientRect()), pad = 6, vw = innerWidth, vh = innerHeight;
+  const x1 = Math.max(4, Math.min(...rs.map(r=>r.left)) - pad), y1 = Math.max(4, Math.min(...rs.map(r=>r.top)) - pad);
+  const x2 = Math.min(vw-4, Math.max(...rs.map(r=>r.right)) + pad), y2 = Math.min(vh-4, Math.max(...rs.map(r=>r.bottom)) + pad);
+  mask.classList.remove('dim'); hole.style.display = '';
+  Object.assign(hole.style, { left:x1+'px', top:y1+'px', width:Math.max(0, x2-x1)+'px', height:Math.max(0, y2-y1)+'px' });
+  pop.className = 'tr-pop';
+  const pw = pop.offsetWidth, ph = pop.offsetHeight, gap = 16, fit = { right:vw-x2 >= pw+gap+8, bottom:vh-y2 >= ph+gap+8, top:y1 >= ph+gap+8, left:x1 >= pw+gap+8 };
+  const side = ['right','bottom','top','left'].find(s=>fit[s]) || 'bottom';
+  let left, top;
+  if(side==='right' || side==='left'){ left = side==='right' ? x2+gap : x1-gap-pw; top = Math.min(Math.max(8, y1), vh-ph-8); pop.style.setProperty('--ar', Math.min(ph-28, Math.max(14, (y1+y2)/2 - top - 7))+'px'); }
+  else { top = Math.min(Math.max(8, side==='bottom' ? y2+gap : y1-gap-ph), vh-ph-8); left = Math.min(Math.max(8, x1), vw-pw-8);   // 자리가 모자라면(휴대폰의 큰 칸) 화면 안쪽에 겹쳐 놓는다
+    pop.style.setProperty('--ar', Math.min(pw-28, Math.max(14, (x1+x2)/2 - left - 7))+'px'); }
+  pop.classList.add(side); pop.style.left = left+'px'; pop.style.top = top+'px';
+}
+
+/* ----- 자동으로 띄우기 ----- */
+function tourFirst(){ return tourShould('menu', tourSeen(), !!tour.steps) && tourStart('menu'); }   // 처음 들어온 브라우저: 사이트 둘러보기 (환영 페이지에서 들어온 직후, 또는 환영 페이지가 없는 날에는 바로)
+function tourAuto(){   // 화면을 옮긴 뒤: 그 화면에 처음이면 사용법을 한 번 띄운다. 화면이 마저 그려지도록 한 박자 늦춘다
+  clearTimeout(tourTimer);
+  tourTimer = setTimeout(()=>{ const key = tourTabKey(); if(key && tourShould(key, tourSeen(), tourBusy())) tourStart(key); }, 250);
+}
 
 /* ---------------- 키보드·화면 읽기 보조 ----------------
    onclick이 달린 div/span을 Tab으로 갈 수 있는 버튼처럼 만들고, .field 안 이름표를 입력칸에 연결한다.
@@ -5050,6 +5294,7 @@ document.addEventListener('keydown', e=>{
 renderContent();
 a11yEnhance(document.body);
 wcOpen(orgMembers.find(m=>m.name===KPI_USERS[kpiRole].name)?.hireDate || '');   // 환영 페이지: 신규 입사자(입사 후 7일)에게도 — 맨 위 script에서는 입사일을 몰라 여기서 한 번 더 본다
+if(!document.documentElement.classList.contains('wc-on')) tourFirst();   // 환영 페이지가 뜨지 않는 날에 처음 온 브라우저: 바로 사이트 둘러보기
 </script>
 </body>
 </html>
