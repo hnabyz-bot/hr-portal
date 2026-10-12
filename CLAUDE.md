@@ -224,7 +224,7 @@ CI(`.github/workflows/ci.yml`)가 자동 검사하는 것: 한글 인코딩, HTM
 | 오피스 토큰 발급, 서버 `.env` 저장 (`HIWORKS_OFFICE_TOKEN`, `HIWORKS_DOMAIN`) | 완료 |
 | SSO 연동 URL 등록 (`/api/auth/hiworks`) | 완료 |
 | 조직 조회 실측 | 완료 — 조회 가능, 직급·사번 없음. 요청에 `Content-Type: application/json` 필수 |
-| 인트라넷 메뉴 등록 | **보류** — 등록 즉시 전 직원에게 보임. 포털 로그인·시범 사용자 명단 준비 후 |
+| 오피스 홈 메뉴 "인사포털" | **2026-10-12 등록, 꺼 둠** — [기본 정보 > 메뉴 설정 > 바로 가기 메뉴 설정], SSO `hr-portal` 연동. 켜 보니 token이 `/api/auth/hiworks?token=`(64자리)로 새 탭에 왔다. 포털 로그인 준비 후 켠다 |
 | 포털 로그인 구현 | PR #51 설계 수정·재검토 대기 |
 
 ## 모듈 구현 순서
