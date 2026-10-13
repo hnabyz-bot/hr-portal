@@ -4631,7 +4631,7 @@ function whContent(){
    - '평가 대상'을 끈 사람(수습·휴직 등)은 평가 명단과 묶음 인원에서 뺀다 — 조직도 명단과 평가 명단이 하나로 합쳐지는 로그인·DB 이후에 적용한다. 그 전에는 HR이 평가 명단에서 "평가에서 제외"로 뺀다(evExclude)
    2026-10-13 로직 검토에서 더한 규칙
    - 단계별 마감일 (HR이 진행표 evBoard에서 정한다): 자기평가는 마감일이 지나면 낼 수 없고(HR이 "자기평가 없이 진행" 또는 "평가에서 제외"), 나머지 단계는 지나도 할 수 있되 '기한 지남'으로 표시한다
-   - 점수 기준 (evBands): 총점으로 받을 수 있는 가장 높은 등급이 정해진다 — S 100 초과 · A 91 · B 81 · C 71 · 그 아래 D. 그보다 높게는 줄 수 없고(올리려면 점수를 고친다), 비율 때문에 낮게는 줄 수 있다. 평가자가 채점하면 그 등급이 자동으로 나온다
+   - 점수 기준 (evBands): 총점으로 받을 수 있는 가장 높은 등급이 정해진다 — S 100 초과 · A 90 초과 · B 80 초과 · C 70 초과 · 70 이하 D (기준을 '넘어야' 그 등급이다 — 90.5점은 A, 딱 90점은 B). 그보다 높게는 줄 수 없고(올리려면 점수를 고친다), 비율 때문에 낮게는 줄 수 있다. 평가자가 채점하면 그 등급이 자동으로 나온다
    - 결과 공개 전에는 평가자에게 윗사람이 고친 내용과 최종 등급을 보이지 않는다 (evHidden) — 고쳤다는 사실만 알린다
    - 근태(연차 초과일·지각)는 그 사람의 등급이 다음 단계로 넘어가면 잠근다 (evAttLocked). HR은 결과 공개 전까지 묶음을 한 단계 되돌릴 수 있다 (evPoolUndo)
    - 자기평가는 제출하면 고칠 수 없다(제출 전에 안내 창). 증빙은 평가자가 점수를 내기 전까지만 올린다
@@ -4653,7 +4653,7 @@ const evPoolLog = { div:{}, lead:{}, direct:{} };   // 묶음마다 남기는 �
 const evPoolSel = { ceo:new Set(), hr:new Set() }, evPoolOpen = { ceo:null, hr:null };   // 목록에서 체크한 묶음 / 명단을 펼친 묶음
 let evOpen = null;   // 지금 펼친 평가 대상 pid
 const EV_RANK = 'SABCD';   // 앞이 높은 등급
-const evBands = { A:91, B:81, C:71 };   // 그 등급을 받을 수 있는 최소 총점 (HR이 진행표에서 바꾼다). S는 100점 초과, C 기준 아래는 D — 인사담당자 2026-10-13: A 100~91 · B 90~81 · C 80~71 · D 70 이하
+const evBands = { A:90, B:80, C:70 };   // 이 점수를 '넘어야' 그 등급을 받을 수 있다 (HR이 진행표에서 바꾼다). S는 100점 초과, C 기준 이하는 D — 인사담당자 2026-10-13: 합계에 소수점이 나올 수 있으니 90.5점은 윗등급(A)에 넣고 딱 90점부터 B
 let evAttDone = null;   // HR이 "근태 입력을 마쳤습니다"를 누른 날
 
 /* ----- 규칙 (순수 로직, evSelfCheck가 검증) ----- */
@@ -4696,9 +4696,9 @@ function evPool(p){ return p.title==='팀장' ? 'lead' : p.div===EV_DIRECT ? 'di
 function evPoolList(k){ return evActive().filter(p=>evPool(p)===k); }
 function evAt(p, stage){ return EV_ORDER.indexOf(p.stage) - EV_ORDER.indexOf(stage); }   // 0 = 그 단계, 음수 = 아직 앞 단계
 function evCeoActs(p, role=kpiRole){ return role==='ceo' || (evProxy && kpiIsHr(role) && (!p || p.key!==role)); }   // 대표이사의 일을 할 수 있나: 대표이사, 또는 대신 입력을 켠 HR (본인 것은 제외)
-function evBand(score){ return score>100 ? 'S' : score>=evBands.A ? 'A' : score>=evBands.B ? 'B' : score>=evBands.C ? 'C' : 'D'; }   // 그 총점으로 받을 수 있는 가장 높은 등급
+function evBand(score){ return score>100 ? 'S' : score>evBands.A ? 'A' : score>evBands.B ? 'B' : score>evBands.C ? 'C' : 'D'; }   // 그 총점으로 받을 수 있는 가장 높은 등급 (기준 초과)
 function evAbove(g, cap){ return EV_RANK.indexOf(g) < EV_RANK.indexOf(cap); }   // g가 cap보다 높은 등급인가
-function evBandText(g){ return g==='S' ? '100점 초과만' : `${g}는 ${evBands[g]}점 이상`; }
+function evBandText(g){ return g==='S' ? '100점 초과만' : `${g}는 ${evBands[g]}점 초과`; }
 function evCap(p){ const leave = evLeaveBlocked(p) ? 'C' : 'S', band = evIsLine(p) ? 'S' : evBand(evTotal(p)); return evAbove(band, leave) ? leave : band; }   // 이 사람에게 줄 수 있는 가장 높은 등급 = 점수 기준과 연차 규칙 중 낮은 쪽. 현장직은 점수가 없어 연차 규칙만
 function evStarted(today=kpiDay(0)){ return !!kpiPeriod.evalFrom && kpiPeriod.evalFrom<=today; }   // 평가가 시작됐나. 자기평가를 뺀 단계는 마감일이 지나도 할 수 있다('기한 지남'으로 표시)
 function evSelfOpen(today=kpiDay(0)){ return evStarted(today) && today<=kpiPeriod.selfTo; }   // 자기평가는 마감일이 지나면 낼 수 없다
@@ -4793,7 +4793,7 @@ function evSelfCheck(){   // 브라우저 콘솔에서 evSelfCheck() 실행
     evProxy = '2026-10-13'; ok(evCeoActs(P('강총무'),'hr') && evIsEvaluator(P('강총무'),'hrl') && !evCeoActs(P('박인사'),'hr') && !evCeoActs(P('최지원'),'hrl') && !evCeoActs(P('강총무'),'head'), '대신 입력: 켠 HR만, 본인 것은 못 넣는다');
   } finally { evProxy = px; }
   ok(evCanSeeEvidence(P('문해외'),'ceo') && evCanSeeEvidence(P('박인사'),'ceo') && evCanSeeEvidence(hong,'ceo') && !evCanSeeEvidence(P('강총무'),'head'), '증빙 열람: 대표이사는 전원(확인하는 사람), 본부장은 자기 본부');
-  ok(evBand(100.5)==='S' && evBand(100)==='A' && evBand(91)==='A' && evBand(90.5)==='B' && evBand(81)==='B' && evBand(80)==='C' && evBand(71)==='C' && evBand(70)==='D', '점수 기준: S 100 초과 · A 91 · B 81 · C 71 · 그 아래 D');
+  ok(evBand(100.5)==='S' && evBand(100)==='A' && evBand(90.5)==='A' && evBand(90)==='B' && evBand(80.5)==='B' && evBand(80)==='C' && evBand(70.5)==='C' && evBand(70)==='D', '점수 기준: 기준을 넘어야 그 등급 — 90.5점은 A, 딱 90점은 B');
   ok(evAbove('A','B') && !evAbove('B','B') && !evAbove('C','B') && evValidate([{ pid:1, name:'가', score:88 }], { 1:'A' }, evQuota(5), false).errors.length===1 && !evValidate([{ pid:1, name:'가', score:88 }], { 1:'C' }, evQuota(5), false).errors.length, '점수 기준보다 높은 등급은 줄 수 없고 낮은 등급은 줄 수 있다');
   const pk = { ...kpiPeriod };
   try { Object.assign(kpiPeriod, { evalFrom:'2026-12-01', selfTo:'2026-12-05', scoreTo:'2026-12-09' });
@@ -4977,7 +4977,7 @@ function evGradeTable(k, mode){   // 묶음 한 개의 명단 표. mode: 'head' 
   const note = mode==='hr' ? '대표이사가 확인한 등급입니다' : k==='lead' ? '전사 팀장을 한 묶음으로 비율을 맞춥니다 · 점선 = 평가자(본부장)가 넣은 등급 · 등급을 누르거나 "상세"에서 점수를 고칩니다'
     : mode==='head' ? '점선 = 팀장 의견 · "상세"에서 팀장이 매긴 점수를 보고 고칠 수 있습니다 · 팀장은 여기서 빼고 따로 평가합니다'
     : k==='direct' ? '점선 = 팀장 의견 · 대표이사가 등급을 정합니다' : '본부장이 배정한 등급입니다 · 바꿀 것이 있으면 목록의 "돌려보내기"로 본부장에게 보냅니다';
-  const html = `<div class="ev-quota">${qText} · <b>점수 기준: S 100 초과 · A ${evBands.A} · B ${evBands.B} · C ${evBands.C}점 이상</b>${k==='lead' ? '' : ' (현장직 제외)'} · <b>연차 초과 ${EV_LEAVE_LIMIT}일 이상은 S·A·B 불가</b> · ${note}</div>
+  const html = `<div class="ev-quota">${qText} · <b>점수 기준: S 100 · A ${evBands.A} · B ${evBands.B} · C ${evBands.C}점 초과</b>${k==='lead' ? '' : ' (현장직 제외)'} · <b>연차 초과 ${EV_LEAVE_LIMIT}일 이상은 S·A·B 불가</b> · ${note}</div>
     <div class="ct-tbl"><table class="ev-table"><thead><tr><th>이름</th><th>단계</th><th class="num">총점</th><th>등급</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
     ${v.errors.length ? kpiNote(v.errors.map(escapeHtml).join('<br>'), 'danger') : ''}${v.warnings.length ? kpiNote(v.warnings.map(escapeHtml).join('<br>')+'<br>정원보다 적은 건 경고만 하고 넘길 수 있습니다.', 'warning') : ''}`;
   return { html, v, waiting };
@@ -5072,8 +5072,8 @@ function evBoard(){   // HR: 인사평가 진행표 — 단계별 마감일을 �
     ${started && waitSelf.length ? `<div class="list-sub" style="margin-top:8px;">자기평가를 내지 않은 사람 ${waitSelf.length}명: ${waitSelf.map(p=>escapeHtml(p.name)).join(', ')} — 마감일이 지나면 본인은 낼 수 없습니다. 맨 아래 명단에서 "자기평가 없이 진행"이나 "평가에서 제외"로 처리합니다.</div>` : ''}
     <div class="field-row" style="margin-top:12px;">
       <div class="field"><label>증빙 마감일 — 평가자가 점수를 내기 전까지, 이 날까지 올릴 수 있음</label>${d('evidDue', '증빙 마감일')}</div>
-      <div class="field"><label>등급별 기준 점수 — 이 점수 이상이어야 그 등급을 받을 수 있음 (S는 100점 초과, C 기준 아래는 D)</label>
-        <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap;">${['A','B','C'].map(g=>`<span style="display:inline-flex; gap:5px; align-items:center;"><b>${g}</b><input type="number" min="1" max="100" value="${evBands[g]}" style="width:72px;" aria-label="${g} 기준 점수" onchange="evSetBand('${g}',this.value)">점 이상</span>`).join('')}</div></div>
+      <div class="field"><label>등급별 기준 점수 — 이 점수를 넘어야 그 등급을 받을 수 있음 (S는 100점 초과, C 기준 이하는 D · 90.5점은 A, 딱 90점은 B)</label>
+        <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap;">${['A','B','C'].map(g=>`<span style="display:inline-flex; gap:5px; align-items:center;"><b>${g}</b><input type="number" min="1" max="100" value="${evBands[g]}" style="width:72px;" aria-label="${g} 기준 점수" onchange="evSetBand('${g}',this.value)">점 초과</span>`).join('')}</div></div>
     </div>
   </div>`;
 }
