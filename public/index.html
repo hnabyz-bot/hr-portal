@@ -3051,7 +3051,7 @@ function kpiProgress(goals){ const items = goals.flatMap(g=>g.items); return Mat
 
 const kpiPeriod = { editFrom:kpiDay(-7), editTo:kpiDay(7), evalFrom:KPI_YEAR+'-12-01', evalTo:KPI_YEAR+'-12-15' };
 const kpiAlarm = { gap:20, stale:30 };   // KPI 현황 알람 기준 (HR이 바꾼다): 기대 진행률보다 gap(%p) 이상 낮으면 부진, stale일 넘게 진행률을 안 고치면 갱신 필요
-const kpiPlan = [   // 올해 경영계획 목표 [목표, 내용] (가상 값). HR이 등록·수정하고 대표이사와 HR만 본다
+const kpiPlan = [   // 올해 경영계획 목표 [목표, 내용] (가상 값). HR이 등록·수정하고 대표이사·본부장·HR이 본다 (kpiPlanCanSee)
   ['매출 성장','전사 매출 전년 대비 15% 성장'], ['해외 시장 확대','신규 진출 국가 3곳 확보'], ['차세대 제품','차세대 디텍터 연내 출시'], ['품질·인증','고객 불량 30% 감소, 해외 인증 유지'] ];
 const kpiSeed = [
   { team:'신규 고객 채널 확대', personal:'온라인 리드 확보 체계 구축', items:[
@@ -3319,11 +3319,12 @@ function kpiTieNote(){   // 팀장 KPI = 부서 KPI, 본부장 KPI = 본부 KPI
   const lead = me.kind==='lead', see = lead && kvDiv(me.div).head ? '본부장·대표이사·HR' : '대표이사·HR';
   return kpiNote(`${lead ? '팀장' : '본부장'}의 KPI는 곧 <b>${lead ? '부서' : '본부'} KPI</b>입니다. ${see}의 <span class="more" onclick="goTo('perf','e4')">KPI 현황</span>에 "${escapeHtml(lead ? me.team : me.div)} KPI"로 보입니다.`);
 }
-function kpiPlanCard(){   // 대표이사: KPI 대신 올해 경영계획 목표 (HR이 등록)
-  const rows = kpiPlan.filter(p=>p[0].trim() || p[1].trim());
-  return `<div class="card"><div class="card-title"><span>${KPI_YEAR}년 경영계획 목표</span><span class="badge info">대표이사는 KPI를 작성하지 않습니다</span></div>
+function kpiPlanCanSee(role){ return role==='ceo' || role==='head' || kpiIsHr(role); }   // 경영계획 목표를 보는 사람: 대표이사·본부장·HR (인사담당자 확정 2026-10-13. 팀장·직원은 보지 않는다)
+function kpiPlanCard(){   // 대표이사: KPI 대신 올해 경영계획 목표 / 본부장: 내 KPI 위에 참고로 (HR이 등록)
+  const rows = kpiPlan.filter(p=>p[0].trim() || p[1].trim()), ceo = kpiRole==='ceo';
+  return `<div class="card" id="kpiPlanView"${ceo ? '' : ' style="margin-bottom:14px;"'}><div class="card-title"><span>${KPI_YEAR}년 경영계획 목표</span><span class="badge info">${ceo ? '대표이사는 KPI를 작성하지 않습니다' : '대표이사 · 본부장 · HR만 봅니다'}</span></div>
     ${rows.length ? `<ol class="kv-plan">${rows.map(([t,d])=>`<li><b>${escapeHtml(t)}</b><span>${escapeHtml(d)}</span></li>`).join('')}</ol>` : '<div class="list-sub">아직 등록된 목표가 없습니다.</div>'}
-    <div class="placeholder-note">경영계획 목표는 HR이 등록·수정합니다. 본부장·팀장의 KPI와 진행률은 <span class="more" onclick="goTo('perf','e4')">KPI 현황 탭</span>에서 봅니다.</div></div>`;
+    <div class="placeholder-note">${ceo ? `경영계획 목표는 HR이 등록·수정합니다. 본부장·팀장의 KPI와 진행률은 <span class="more" onclick="goTo('perf','e4')">KPI 현황 탭</span>에서 봅니다.` : '경영계획 목표는 HR이 등록·수정합니다. 본부 KPI(= 본부장 KPI)를 이 목표와 이어지게 적어 주세요.'}</div></div>`;
 }
 function roleSwitcher(){
   const switcher = Object.keys(KPI_USERS).map(k=>`<button class="btn sm ${k===kpiRole?'primary':''}" onclick="kpiSetRole('${k}')">${KPI_USERS[k].switchLabel} (${KPI_USERS[k].name})</button>`).join('');
@@ -3335,7 +3336,7 @@ function roleSwitcher(){
 function kpiContent(){
   return `${roleSwitcher()}
     ${kpiMsg ? kpiNote(kpiMsg.msg, kpiMsg.type) : ''}
-    ${kpiIsHr() ? kpiHrPanel() : ''}${kpiInbox()}${kpiSheets[kpiRole] ? kpiMySheet() + kvMyMemoCard() : kpiRole==='ceo' ? kpiPlanCard() : kpiRole==='line' ? kpiNote(`현장직은 KPI를 작성하지 않습니다. 팀장이 <span class="more" onclick="goTo('perf','e2')">평가 진행 탭</span>에서 등급을 매깁니다.`) : ''}`;
+    ${kpiIsHr() ? kpiHrPanel() : ''}${kpiInbox()}${kpiRole==='head' && kpiPlanCanSee(kpiRole) ? kpiPlanCard() : ''}${kpiSheets[kpiRole] ? kpiMySheet() + kvMyMemoCard() : kpiRole==='ceo' ? kpiPlanCard() : kpiRole==='line' ? kpiNote(`현장직은 KPI를 작성하지 않습니다. 팀장이 <span class="more" onclick="goTo('perf','e2')">평가 진행 탭</span>에서 등급을 매깁니다.`) : ''}`;
 }
 
 /* ---------------- KPI 현황 (직책별) ----------------
@@ -3463,6 +3464,7 @@ function kvSelfCheck(){   // 브라우저 콘솔에서 kvSelfCheck() 실행
   const mk = kvMuteMake('month', 11, '', '2026-10-13'), str = (...a)=>typeof kvMuteMake(...a, '2026-10-13')==='string';
   ok(mk.until==='2026-11' && kvMuteWhy(mk)==='11월에 끝나는 일' && kvMuteUntil(mk)==='11월 말까지' && kvMuteMake('year', '', '', '2026-10-13').until==='2026-12' && kvMuteWhy(kvMuteMake('etc', 12, '감사 일정', '2026-10-13'))==='감사 일정', '알람 끄기: 고른 달의 말일까지');
   ok(str('', 11, '') && str('month', 9, '') && str('month', 13, '') && str('etc', 11, ' '), '알람 끄기: 이유와 달(이번 달~12월)이 있어야 하고, 직접 적기는 글이 있어야 한다');
+  ok(kpiPlanCanSee('ceo') && kpiPlanCanSee('head') && kpiPlanCanSee('hr') && kpiPlanCanSee('hrl') && !kpiPlanCanSee('lead') && !kpiPlanCanSee('emp') && !kpiPlanCanSee('line'), '경영계획 목표: 대표이사·본부장·HR만 본다');
   return 'kvSelfCheck 통과';
 }
 
@@ -5295,7 +5297,7 @@ function msSave(members, draft, evp){   // 초안을 명단에 반영한다. 돌
 }
 function msSeeList(m){   // 이 설정으로 이 사람에게 보이는 화면 — [메뉴, 보이는 것] ('' = 보이지 않음)
   const scope = m.hr ? '전 직원(본부별·부서별·개인별)' : m.lead==='CEO' ? '본부장·팀장 KPI(팀원은 인원·부진 수만)' : m.lead==='DIVISION' ? '우리 본부의 팀장·팀원 KPI' : m.lead==='TEAM' ? '우리 팀 팀원 KPI' : '';
-  const goal = m.lead==='CEO' ? '경영계획 목표(조회)' : m.kpi ? '목표설정(KPI) 작성' : '';
+  const goal = m.lead==='CEO' ? '경영계획 목표(조회)' : (m.kpi ? '목표설정(KPI) 작성' : '') + (m.lead==='DIVISION' ? ' · 경영계획 목표 조회' : '');
   const self = !m.ev ? '' : m.kpi ? '자기평가 작성' : '팀장 평가 결과 보기(현장직)';
   const mgr = m.lead==='TEAM' ? '팀원 점수 입력' : m.lead==='DIVISION' ? '본부 등급 배정' : '';
   const evTxt = [self, mgr, m.hr && '평가 대상 명단·등급 확정'].filter(Boolean).join(' · ');
