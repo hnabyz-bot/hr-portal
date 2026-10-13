@@ -1004,6 +1004,10 @@
   .ev-count b{ color:var(--text-primary); }
   .ev-pools td{ vertical-align:middle; }
   .ev-pools .c{ width:40px; text-align:center; }
+  .hr-seg{ display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin-bottom:14px; }
+  .hr-seg button{ font:inherit; font-weight:700; padding:9px 16px; border-radius:var(--radius); border:1px solid var(--border); background:var(--surface); color:var(--text-secondary); cursor:pointer; display:inline-flex; gap:6px; align-items:center; }
+  .hr-seg button.on{ background:var(--text-primary); border-color:var(--text-primary); color:#fff; }
+  .hr-seg .nav-badge{ margin-left:0; }
   .ev-board td{ vertical-align:middle; }
   .ev-board .c{ text-align:center; color:var(--text-secondary); font-weight:700; white-space:nowrap; }
   .ev-board tr.now td{ background:#FFFBEF; }
@@ -3104,6 +3108,7 @@ const kpiSheets = {   // confirmed=확정본, draft=작성 중, pending=승인 �
     ['조직 역량 강화','법정 교육','법정 의무 교육 이수','이수율(%)',30,85,'100%','98%','95%','90%','90% 미만']]), 3),
 };
 let kpiRole = 'emp', kpiEditing = false, kpiReviewKey = null, kpiReason = '', kpiMsg = null;
+let hrView = 'me';   // HR 담당자·HR 팀장의 평가·성과 화면은 둘로 나뉜다 (인사담당자 2026-10-13 — 한 화면에 다 나오면 복잡하다): 'me' 내 KPI · 평가 / 'admin' 직원 인사평가 관리
 let evProxy = false;   // 대표이사가 자기 일을 HR에 맡겼나 — 대표이사가 켜고 끈다(켠 날짜를 담는다). 켜져 있으면 HR이 대표이사의 일(직속부서 팀장 평가 · 등급 조정 · 확인 · KPI 승인 · 이의 신청 확인)을 대신 넣는다
 
 /* ----- 규칙 (화면과 분리된 순수 로직, kpiSelfCheck가 검증) ----- */
@@ -3273,9 +3278,9 @@ function kpiHrPanel(){
   <div style="margin-bottom:14px;">${simpleTableCard('전 직원 진행현황', ['이름','부서','상태','실행목표'], rows, r=>kpiStatus(Object.keys(kpiSheets)[rows.indexOf(r)])[1], 2)}</div>`;
 }
 function kpiWaiting(){ return Object.keys(kpiSheets).filter(k=>kpiIsApprover(k, kpiRole)); }   // 지금 역할이 승인할 차례인 사람들
-function kpiInbox(){
-  if(!Object.values(KPI_USERS).some(u=>u.approvers.includes(kpiRole)) && !(kpiIsHr() && evProxy)) return '';   // 승인할 사람이 없는 역할에는 대기함이 없다. HR은 대표이사가 맡겼을 때만
-  const keys = kpiWaiting();
+function kpiInbox(part){   // part: 'mine' 내가 승인자인 것만(HR의 내 화면) / 'proxy' 대표이사가 맡긴 것만(HR의 관리 화면) / 없으면 모두
+  if(part==='proxy' ? !evProxy : !Object.values(KPI_USERS).some(u=>u.approvers.includes(kpiRole))) return '';   // 승인할 사람이 없는 역할에는 대기함이 없다. 대표이사 대신 승인은 맡겨졌을 때만
+  const keys = kpiWaiting().filter(k=>part==='proxy' ? !kpiNative(k) : part==='mine' ? kpiNative(k) : true);
   const list = keys.map(k=>{
     const u = KPI_USERS[k], s = kpiSheets[k], open = kpiReviewKey===k;
     return `<div class="list-row"><div><div class="list-title">${u.name} ${u.title} · ${u.dept}${u.approvers[s.pending.step]!==kpiRole ? ' <span class="badge neutral">대표이사 대신</span>' : ''}</div>
@@ -3288,7 +3293,7 @@ function kpiInbox(){
         <div style="display:flex; gap:8px; margin-top:10px;"><button class="btn primary" onclick="kpiReview('${k}',true)">승인</button><button class="btn" onclick="kpiReview('${k}',false)">반려</button></div>
       </div>`);
   }).join('');
-  return `<div class="card" id="kpiInbox" style="margin-bottom:14px;"><div class="card-title">승인 대기함 <span class="more">${keys.length}건</span></div>
+  return `<div class="card" id="kpiInbox" style="margin-bottom:14px;"><div class="card-title">승인 대기함${part==='proxy' ? ' (대표이사가 맡김)' : ''} <span class="more">${keys.length}건</span></div>
     ${list || '<div class="list-sub">대기 중인 건이 없습니다.</div>'}</div>`;
 }
 function kpiMySheet(){
@@ -3354,10 +3359,24 @@ function roleSwitcher(){
       <div class="list-sub" style="margin-top:8px;">로그인 기능이 생기면 이 버튼은 사라집니다. 지금은 입력 내용이 저장되지 않고 새로고침하면 초기화됩니다.</div>
     </div>`;
 }
+function hrAdmin(){ return kpiIsHr() && hrView==='admin'; }   // HR이 "직원 인사평가 관리" 화면을 보고 있나
+function kpiNative(k){ return KPI_USERS[k].approvers[kpiSheets[k].pending.step]===kpiRole; }   // 내가 승인자인 KPI (대표이사가 맡겨 대신 승인하는 것이 아니다)
+function hrTodo(){   // [내 화면에서 처리할 일, 관리 화면에서 처리할 일] — 평가·성과의 세 탭을 합친 수
+  const wait = kpiWaiting(), mine = wait.filter(kpiNative).length, ap = evPeople.filter(p=>p.appeal);
+  return [mine + (kpiSheets[kpiRole]?.rejectNote ? 1 : 0) + kvMemoTodo(kvMe()) + evTodo('me'),
+    wait.length - mine + evTodo('admin') + ap.filter(p=>p.appeal.status==='OPEN').length + ap.filter(p=>p.appeal.status==='CEO' && evCeoActs(p)).length];
+}
+function hrSwitch(){   // HR에게만: 두 화면을 오가는 단추. 숫자 = 그 화면에서 처리할 일
+  if(!kpiIsHr()) return '';
+  const n = hrTodo(), btn = (v, label, i)=>`<button type="button" class="${hrView===v ? 'on' : ''}" onclick="hrView='${v}'; evOpen=null; kpiFlash(null)" aria-pressed="${hrView===v}">${label}${n[i] ? `<b class="nav-badge" aria-label="처리할 일 ${n[i]}건">${n[i]}</b>` : ''}</button>`;
+  return `<div class="hr-seg" id="hrSeg" role="group" aria-label="화면 고르기">${btn('me', '내 KPI · 평가', 0)}${btn('admin', '직원 인사평가 관리', 1)}
+    <span class="list-sub" style="margin:0 0 0 6px;">${hrView==='me' ? '내가 KPI를 쓰고 평가받는 화면입니다.' : 'HR로서 전 직원의 KPI와 평가를 관리하는 화면입니다.'}</span></div>`;
+}
 function kpiContent(){
-  return `${roleSwitcher()}
+  if(hrAdmin()) return `${roleSwitcher()}${hrSwitch()}${kpiMsg ? kpiNote(kpiMsg.msg, kpiMsg.type) : ''}${kpiHrPanel()}${kpiInbox('proxy')}`;   // HR 관리 화면: 기간 · 전 직원 진행 현황 · 대표이사가 맡긴 승인
+  return `${roleSwitcher()}${hrSwitch()}
     ${kpiMsg ? kpiNote(kpiMsg.msg, kpiMsg.type) : ''}
-    ${kpiIsHr() ? kpiHrPanel() : ''}${kpiInbox()}${kpiRole==='head' && kpiPlanCanSee(kpiRole) ? kpiPlanCard() : ''}${kpiSheets[kpiRole] ? kpiMySheet() + kvMyMemoCard() : kpiRole==='ceo' ? evProxyCard() + kpiPlanCard() : kpiRole==='line' ? kpiNote(`현장직은 KPI를 작성하지 않습니다. 팀장이 <span class="more" onclick="goTo('perf','e2')">평가 진행 탭</span>에서 등급을 매깁니다.`) : ''}`;
+    ${kpiInbox(kpiIsHr() ? 'mine' : '')}${kpiRole==='head' && kpiPlanCanSee(kpiRole) ? kpiPlanCard() : ''}${kpiSheets[kpiRole] ? kpiMySheet() + kvMyMemoCard() : kpiRole==='ceo' ? evProxyCard() + kpiPlanCard() : kpiRole==='line' ? kpiNote(`현장직은 KPI를 작성하지 않습니다. 팀장이 <span class="more" onclick="goTo('perf','e2')">평가 진행 탭</span>에서 등급을 매깁니다.`) : ''}`;
 }
 
 /* ---------------- KPI 현황 (직책별) ----------------
@@ -4924,10 +4943,10 @@ function evEditLine(p){   // 내가 평가한 사람을 윗사람이 고쳤을 �
   const up = evUpper(p), text = evHidden(p) ? `${up}${up==='본부장' ? '이' : '가'} 평가를 고쳤습니다. 바뀐 내용은 결과 공개 뒤에 보입니다.` : `${up} 수정 · ${ed}`;
   return `<div class="list-sub" style="color:var(--coral-text);"><b>${text}</b>${p.editSeen!==ed ? ` <button class="btn sm" style="margin-left:6px;" onclick="evEditSeen(${p.pid})">확인</button>` : ' · 확인함'}</div>`;
 }
-function evMyTargets(){
-  const mine = evActive().filter(p=>evIsEvaluator(p));
+function evMyTargets(part){   // part: 'mine' 내가 평가자인 사람만(HR의 내 화면) / 'proxy' 대표이사가 맡긴 사람만(HR의 관리 화면) / 없으면 모두
+  const mine = evActive().filter(p=>evIsEvaluator(p) && (part==='proxy' ? evEvaluatorOf(p)!==kpiRole : part==='mine' ? evEvaluatorOf(p)===kpiRole : true));
   if(!mine.length) return '';
-  return `<div class="card" style="margin-bottom:14px;"><div class="card-title"><span>내가 평가할 사람 <span class="more">${mine.length}명</span></span></div>
+  return `<div class="card" style="margin-bottom:14px;"><div class="card-title"><span>${part==='proxy' ? '대표이사 대신 평가할 사람' : '내가 평가할 사람'} <span class="more">${mine.length}명</span></span></div>
     ${mine.map(p=>{ const open = evOpen===p.pid, hid = evHidden(p);
       return `<div class="list-row"><div><div class="list-title">${escapeHtml(p.name)} ${escapeHtml(p.title)} ${evStageBadge(p)}${evEvaluatorOf(p)!==kpiRole ? ' <span class="badge neutral">대표이사 대신</span>' : ''}${p.stage==='SCORE' && evLate('scoreTo') ? ' <span class="badge danger">기한 지남</span>' : ''}</div>
         <div class="list-sub">${escapeHtml(p.team||EV_DIVISION)} · ${evIsLine(p) ? `현장직 · ${evAttendance(p)}` : hid ? `내가 낸 점수 ${p.subScore!=null ? p.subScore.toFixed(1) : '—'} · 등급 의견 ${p.proposed||'—'}` : `현재 총점 ${evTotal(p).toFixed(1)} · 증빙 ${evFileCount(p)}건${evLeaveNote(p)}`}</div>${evEditLine(p)}</div>
@@ -5175,10 +5194,9 @@ function evContent(){
   const me = evMe(), role = kpiRole, hr = kpiIsHr(role);
   const mine = me && me.out ? `<div class="card" style="margin-bottom:14px;"><div class="card-title">나의 ${KPI_YEAR}년 평가</div><div class="list-sub" style="margin:0;">이번 평가 대상이 아닙니다. (${escapeHtml(me.out.why)} · HR 처리 ${me.out.at})</div></div>` : me && evIsLine(me) ? evLineMyCard(me) : me ? (me.stage==='SELF' || evCanUpload(me, role, kpiDay(0)) ? evSelfCard(me) : `<div class="card" style="margin-bottom:14px;"><div class="card-title"><span>나의 ${KPI_YEAR}년 평가</span>${evStageBadge(me)}</div>${evSteps(me)}<div class="list-sub">${me.noSelf ? '자기평가 마감일이 지나 HR이 자기평가 없이 진행했습니다.' : '자기평가를 제출했습니다.'} 결과는 확정 후 평가 결과 탭에서 공개됩니다.</div></div>`)
     : role==='head' ? `<div class="card" style="margin-bottom:14px;"><div class="card-title">나의 ${KPI_YEAR}년 평가</div><div class="list-sub" style="margin:0;">본부장은 연말 평가 대상이 아닙니다. 본부 KPI는 목표설정 탭에서 그대로 관리하고, 여기서는 팀장을 평가하고 본부 팀원의 등급을 배정합니다.</div></div>` : '';
-  return `${roleSwitcher()}${kpiMsg ? kpiNote(kpiMsg.msg, kpiMsg.type) : ''}
-    ${hr ? evBoard() + evNewsStrip() : ''}${mine}${evMyTargets()}
-    ${role==='head' ? evHeadCard() : ''}${role==='ceo' ? evPoolCard('ceo') + evProxyCard() : ''}
-    ${hr ? evPoolCard('hr') + evProxyCard() + (evProxy ? evPoolCard('ceo') : '') + evRosterCard() : ''}
+  return `${roleSwitcher()}${hrSwitch()}${kpiMsg ? kpiNote(kpiMsg.msg, kpiMsg.type) : ''}
+    ${hrAdmin() ? evBoard() + evNewsStrip() + evPoolCard('hr') + evProxyCard() + (evProxy ? evMyTargets('proxy') + evPoolCard('ceo') : '') + evRosterCard()   // HR 관리 화면
+      : mine + evMyTargets(hr ? 'mine' : '') + (role==='head' ? evHeadCard() : '') + (role==='ceo' ? evPoolCard('ceo') + evProxyCard() : '')}
     <div class="list-sub">시연용 가상 인원 ${evPeople.length}명입니다 (${EV_DIVISION} 팀원 · 전사 팀장 · 직속부서). 본부장과 대표이사는 평가받지 않습니다. 다른 본부의 팀원은 시연 명단에 없습니다 — 실제로는 대표이사 확인·HR 확정 목록에 본부마다 한 줄씩 나옵니다. 홍길동은 목표설정 탭의 확정 KPI를 그대로 씁니다. 최현장·윤라인은 KPI 없는 현장직(팀장 평가)입니다.</div>`;
 }
 
@@ -5590,9 +5608,10 @@ function evAnswerSubmit(pid){
 }
 function evResultContent(){
   const me = evMe();
-  return `${roleSwitcher()}${kpiMsg ? kpiNote(kpiMsg.msg, kpiMsg.type) : ''}
-    ${kpiIsHr() ? evResHrPanel() : ''}${evCeoActs(null) ? evAppealCeoCard() : ''}${me ? evMyResult(me) : ''}${kpiIsHr() ? '' : evTeamResults(kpiRole)}
-    <div class="list-sub">시연용 가상 결과입니다. 결과를 보려면 HR로 바꿔 "시연: 확정 상태로 채우기" → "전 직원에게 결과 공개"를 누르세요. 지난 연도 결과도 가상 값입니다.</div>`;
+  return `${roleSwitcher()}${hrSwitch()}${kpiMsg ? kpiNote(kpiMsg.msg, kpiMsg.type) : ''}
+    ${hrAdmin() ? evResHrPanel() + (evProxy ? evAppealCeoCard() : '')   // HR 관리 화면: 결과 공개 · 이의 신청 · 전체 결과
+      : (kpiRole==='ceo' ? evAppealCeoCard() : '') + (me ? evMyResult(me) : '') + evTeamResults(kpiRole)}
+    <div class="list-sub">시연용 가상 결과입니다. 결과를 보려면 HR 담당자로 바꿔 "직원 인사평가 관리" 화면에서 "시연: 확정 상태로 채우기" → "전 직원에게 결과 공개"를 누르세요. 지난 연도 결과도 가상 값입니다.</div>`;
 }
 
 /* ---------------- 휴대폰에 설치 (홈 화면에 바로가기) ----------------
@@ -5934,18 +5953,21 @@ let currentNav = NAV[0], currentTab = NAV[0].tabs[0];
 /* ---------------- 메뉴 숫자 (내가 처리할 일) ----------------
    탭 id → 지금 역할이 처리할 일 건수. 끝내면 0이 되어 숫자가 사라진다. 왼쪽 메뉴에는 탭 합계를 보인다.
    새 소식(안 본 급여명세서 등)은 누가 봤는지 기억해야 해서 로그인 이후에 더한다. */
+function evTodo(part){   // 평가 진행에서 처리할 일 (평가가 시작된 뒤). 'me' = 내 일: 자기평가 · 내가 평가할 사람 · 윗사람이 고친 내 평가 확인 · 본부장 등급 배정 · 대표이사 확인 / 'admin' = HR 관리: 확정할 묶음 · 마감 알림 · 근태 입력 · 대표이사가 맡긴 일 / 없으면 합
+  if(!evStarted()) return 0;
+  const me = evMe(), n = (...st)=>EV_POOLS.filter(k=>st.includes(evPoolState(k))).length;
+  const mine = (me && !me.out && !evIsLine(me) && me.stage==='SELF' && evKpi(me).length && evSelfOpen() ? 1 : 0)
+    + evActive().filter(p=>p.stage==='SCORE' && evEvaluatorOf(p)===kpiRole).length + evEditNews().length
+    + (kpiRole==='head' && evPoolList('div').some(p=>p.stage==='GRADE') ? 1 : 0) + (kpiRole==='ceo' ? n('CEO','FIX') : 0);
+  const admin = !kpiIsHr() ? 0 : n('HR') + evNewsFor().length + (evAttDone ? 0 : 1)
+    + (evProxy ? n('CEO','FIX') + evActive().filter(p=>p.stage==='SCORE' && evEvaluatorOf(p)==='ceo' && evCeoActs(p)).length : 0);
+  return part==='me' ? mine : part==='admin' ? admin : mine + admin;
+}
 const TODO = {
   p2: ()=>{ const me = ctActor(kpiRole), c = me && ctActive(ctContracts, me.pid); return c && c.status==='SENT' ? 1 : 0; },   // 서명할 연봉계약서
   e1: ()=>kpiWaiting().length + (kpiSheets[kpiRole]?.rejectNote ? 1 : 0) + kvMemoTodo(kvMe()),   // 승인할 KPI + 반려되어 다시 쓸 내 KPI + 확인할 메모
   e4: ()=>kvCanUse() ? kvReplyTodo(kvMe()) : 0,   // 내가 쓴 메모에 새 답글이 온 사람 수
-  e2: ()=>{   // 평가가 시작된 뒤: 내 자기평가 + 내가 평가할 사람 + 윗사람이 고친 내 평가(확인 전) + 본부장 등급 배정 + 대표이사가 확인·조정할 묶음 + HR이 확정할 묶음·마감 알림·근태 입력. 대표이사의 일은 맡은 HR에게도 센다
-    if(!evStarted()) return 0;
-    const me = evMe(), n = (...st)=>EV_POOLS.filter(k=>st.includes(evPoolState(k))).length;
-    return (me && !me.out && !evIsLine(me) && me.stage==='SELF' && evKpi(me).length && evSelfOpen() ? 1 : 0)
-      + evActive().filter(p=>evIsEvaluator(p) && p.stage==='SCORE').length + evEditNews().length
-      + (kpiRole==='head' && evPoolList('div').some(p=>p.stage==='GRADE') ? 1 : 0)
-      + (evCeoActs(null) ? n('CEO','FIX') : 0) + (kpiIsHr() ? n('HR') + evNewsFor().length + (evAttDone ? 0 : 1) : 0);
-  },
+  e2: ()=>evTodo(),
   e3: ()=>(kpiIsHr() ? evPeople.filter(p=>p.appeal && p.appeal.status==='OPEN').length : 0) + evPeople.filter(p=>p.appeal && p.appeal.status==='CEO' && evCeoActs(p)).length,   // HR: 답변할 이의 신청 / 대표이사(또는 맡은 HR): 확인할 등급 변경
 };
 function todoCount(tab){ return TODO[tab.id] ? TODO[tab.id]() : 0; }
