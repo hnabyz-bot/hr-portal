@@ -323,6 +323,11 @@ def rules_list_route():
     return jsonify({"rules": rules_search.list_rules()})
 
 
+@app.get("/api/rules/faq")
+def rules_faq_route():
+    return jsonify({"answers": rules_search.faq_answers()})
+
+
 @app.get("/api/rules/<rule_id>")
 def rules_doc_route(rule_id: str):
     rule = rules_config.get_rule(rule_id)
