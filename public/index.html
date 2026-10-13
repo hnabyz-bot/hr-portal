@@ -544,6 +544,9 @@
   .ms-name i{ font-style:normal; font-size:var(--fs-xs); color:var(--text-muted); }
   .ms-tag{ display:inline-block; padding:2px 7px; border-radius:var(--radius-sm); font-size:11px; font-weight:700; white-space:nowrap; background:var(--bg-warning); color:var(--warning); }
   .ms-tag.gray{ background:#EEF2F6; color:var(--text-secondary); }
+  .ms-name button.ms-need{ padding:2px 7px; border:1px dashed var(--coral-text); border-radius:var(--radius-sm); font-size:11px; font-weight:700; color:var(--coral-text); white-space:nowrap; }   /* 직급·입사일이 없는 사람 — 누르면 구성원 수정 창 */
+  .ms-name button.ms-need:hover{ background:#FDF2F0; text-decoration:none; }
+  .ms-bar .btn svg{ width:14px; height:14px; }
   .ms-cell{ display:inline-flex; align-items:center; justify-content:center; width:34px; height:34px; border-radius:8px; }
   .ms-cell.chg{ background:#FDECE9; }
   .ms-ck{ width:18px; height:18px; accent-color:var(--accent); cursor:pointer; margin:0; }
@@ -2802,7 +2805,7 @@ function orgMember(name, title, division, team, lead='', hideMobile=false){   //
     mobile:'010-0000-'+String(n).padStart(4,'0'), ext:String(1000+n), email:`user${String(n).padStart(2,'0')}@example.com` };
 }
 const orgSet = (m, o)=>Object.assign(m, o);
-const orgFresh = (...a)=>orgSet(orgMember(...a), { use:false, isNew:true });   // 명단에 새로 들어와 아직 포털 사용이 꺼져 있는 사람
+const orgFresh = (name, ...a)=>orgSet(orgMember(name, '', ...a), { use:false, isNew:true });   // 명단에 새로 들어와 아직 포털 사용이 꺼져 있는 사람. 직급·입사일은 하이웍스에서 오지 않아 비어 있다
 const orgMembers = [
   orgSet(orgMember('천대표','대표이사','대표이사 직속부서','','CEO'), { kpi:false, ev:false, ct:false }),
   orgSet(orgMember('박인사','HR 담당','대표이사 직속부서','지원팀'), { hr:true }),
@@ -2811,12 +2814,12 @@ const orgMembers = [
   orgSet(orgMember('서비품','사원','대표이사 직속부서','총무팀'), { use:false }),
   orgMember('윤개발','본부장','DR사업본부','','DIVISION'),
   orgMember('오디바','팀장','DR사업본부','Device 개발팀','TEAM'),
-  orgFresh('신입사','사원','DR사업본부','Device 개발팀'),
+  orgFresh('신입사','DR사업본부','Device 개발팀'),
   orgMember('서솔루','팀장','DR사업본부','솔루션 개발팀','TEAM'),
   orgMember('한품질','본부장','품질경영제조본부','','DIVISION'),
   orgMember('정씨에','팀장','품질경영제조본부','CsI팀','TEAM'),
   orgMember('임제조','팀장','품질경영제조본부','DR제조팀','TEAM', true),
-  orgFresh('주야간','사원','품질경영제조본부','DR제조팀'),
+  orgFresh('주야간','품질경영제조본부','DR제조팀'),
   orgSet(orgMember('계측정','대리','품질경영제조본부','품질경영팀'), { ev:false }),
   orgMember('이철수','본부장','전략마케팅본부','','DIVISION'),
   orgMember('김영희','팀장','전략마케팅본부','국내영업팀','TEAM'),
@@ -2827,7 +2830,7 @@ const orgMembers = [
   orgMember('문해외','팀장','전략마케팅본부','해외영업1팀','TEAM'),
   orgMember('정해외','대리','전략마케팅본부','해외영업1팀'),
   orgSet(orgMember('도통역','사원','전략마케팅본부','해외영업1팀'), { ct:false }),
-  orgFresh('방신규','사원','전략마케팅본부','해외영업2팀'),
+  orgFresh('방신규','전략마케팅본부','해외영업2팀'),
   orgMember('배연구','본부장','연구개발본부','','DIVISION'),
   orgMember('신에스','사원','연구개발본부','SCM팀'),
 ];
@@ -2837,18 +2840,22 @@ function orgFind(id){ return orgMembers.find(m=>m.id===id); }
 function orgTeamsOf(div){ const d = ORG_TREE.find(x=>x.division===div); return d ? d.teams : []; }
 
 /* ----- 규칙 (순수 로직, orgSelfCheck가 검증) ----- */
+function orgLeadErrs(m, members){   // 직책 규칙만 — 구성원 설정(msSet)도 이것으로 따진다
+  const errs = [], div = ORG_TREE.find(d=>d.division===m.division), others = members.filter(o=>o.id!==m.id);
+  if(m.lead==='TEAM' && !m.team) errs.push('팀장은 팀 소속이어야 합니다.');
+  if(m.lead==='DIVISION' && div && div.noHead) errs.push('이 본부는 본부장을 두지 않습니다.');
+  if(m.lead==='TEAM' && others.some(o=>o.lead==='TEAM' && o.division===m.division && o.team===m.team)) errs.push('이 팀에는 이미 팀장이 있습니다.');
+  if(m.lead==='DIVISION' && others.some(o=>o.lead==='DIVISION' && o.division===m.division)) errs.push('이 본부에는 이미 본부장이 있습니다.');
+  if(m.lead==='CEO' && others.some(o=>o.lead==='CEO')) errs.push('대표이사는 이미 있습니다.');
+  return errs;
+}
 function orgValidate(m, members){
   const errs = [], div = ORG_TREE.find(d=>d.division===m.division);
   if(!m.name.trim()) errs.push('이름을 입력해 주세요.');
   if(!m.title.trim()) errs.push('직급을 입력해 주세요.');
   if(!div) errs.push('본부를 선택해 주세요.');
   if(m.team && !orgTeamsOf(m.division).includes(m.team)) errs.push('선택한 본부에 없는 팀입니다.');
-  if(m.lead==='TEAM' && !m.team) errs.push('팀장은 팀 소속이어야 합니다.');
-  if(m.lead==='DIVISION' && div && div.noHead) errs.push('이 본부는 본부장을 두지 않습니다.');
-  const others = members.filter(o=>o.id!==m.id);
-  if(m.lead==='TEAM' && others.some(o=>o.lead==='TEAM' && o.division===m.division && o.team===m.team)) errs.push('이 팀에는 이미 팀장이 있습니다.');
-  if(m.lead==='DIVISION' && others.some(o=>o.lead==='DIVISION' && o.division===m.division)) errs.push('이 본부에는 이미 본부장이 있습니다.');
-  if(m.lead==='CEO' && others.some(o=>o.lead==='CEO')) errs.push('대표이사는 이미 있습니다.');
+  errs.push(...orgLeadErrs(m, members));
   if(m.email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(m.email)) errs.push('메일 형식이 올바르지 않습니다.');
   if(m.birthday && !celebValidMd(m.birthday)) errs.push('생일은 월-일 형식으로 입력해 주세요. (예: 03-15)');
   return errs;
@@ -3827,7 +3834,7 @@ const CELEB = [
   const md = d=>ymd(d).slice(5), shift = (days, years=0)=>{ const d = new Date(t); d.setFullYear(d.getFullYear()-years); d.setDate(d.getDate()+days); return d; };
   const mon = celebMonday(t), sun = new Date(mon); sun.setDate(mon.getDate()+6);
   const other = new Date(t.getFullYear()-6, (t.getMonth()+4)%12, 12);   // 이번 달·이번 주와 겹치지 않는 날
-  orgMembers.forEach(m=>{ m.hireDate = ymd(other); m.birthday = md(new Date(2000, (t.getMonth()+6)%12, 20)); });
+  orgMembers.forEach(m=>{ if(!m.isNew) m.hireDate = ymd(other); m.birthday = md(new Date(2000, (t.getMonth()+6)%12, 20)); });   // 새로 들어온 사람의 입사일은 비워 둔다
   const set = (name, o)=>Object.assign(orgMembers.find(m=>m.name===name), o);
   set('신에스', { hireDate:ymd(shift(-10)) });
   set('문해외', { hireDate:ymd(shift(-21)) });
@@ -5269,7 +5276,7 @@ function msSet(members, draft, id, k, v, evp){   // 초안에 담는다. 바꿀 
   const eff = msApply(members, draft), m = eff.find(o=>o.id===id), base = members.find(o=>o.id===id);
   if(m[k]===v) return '';
   let why = msLockWhy(m, k, eff, evp);
-  if(!why && k==='lead') why = orgValidate({ ...m, lead:v }, eff)[0] || (v==='CEO' && m.kpi ? msLockWhy({ ...m, lead:'' }, 'kpi', eff, evp) : '');   // 팀장은 팀에 한 명, 본부장은 본부에 한 명, 대표이사는 한 명
+  if(!why && k==='lead') why = orgLeadErrs({ ...m, lead:v }, eff)[0] || (v==='CEO' && m.kpi ? msLockWhy({ ...m, lead:'' }, 'kpi', eff, evp) : '');   // 팀장은 팀에 한 명, 본부장은 본부에 한 명, 대표이사는 한 명
   if(why) return why;
   const d = { ...draft[id], [k]:v };
   if(k==='lead' && v==='CEO') d.kpi = false;
@@ -5293,6 +5300,27 @@ function msSave(members, draft, evp){   // 초안을 명단에 반영한다. 돌
   msClear(draft);
   return n;
 }
+function msDate(v){   // 엑셀에서 온 날짜 글자(2024-03-02 · 2024.3.2 · 2024/03/02 · 20240302 · 2024년 3월 2일)를 YYYY-MM-DD로. 읽지 못하면 ''
+  const x = String(v||'').trim().match(/^(\d{4})\s*[-./년]?\s*(\d{1,2})\s*[-./월]?\s*(\d{1,2})\s*[.일]?$/);
+  if(!x) return '';
+  const y = +x[1], mo = +x[2], d = +x[3], dt = new Date(Date.UTC(y, mo-1, d));
+  return dt.getUTCFullYear()===y && dt.getUTCMonth()===mo-1 && dt.getUTCDate()===d ? `${y}-${String(mo).padStart(2,'0')}-${String(d).padStart(2,'0')}` : '';
+}
+function msParsePaste(text, members){   // 엑셀에서 복사한 "이름 ⇥ 직급 ⇥ 입사일" 줄. 빈 칸은 그대로 둔다(직급만, 입사일만 넣을 수도 있다)
+  const out = { rows:[], miss:[], dup:[], bad:[] };
+  String(text||'').split(/\r?\n/).map(l=>l.trim()).filter(Boolean).forEach(l=>{
+    const [name='', title='', date=''] = l.split(/\t|,/).map(x=>x.trim());
+    if(!name || name==='이름') return;   // 제목 줄
+    const hit = members.filter(m=>m.name===name), hireDate = date ? msDate(date) : '';
+    if(!hit.length) return out.miss.push(name);
+    if(hit.length > 1) return out.dup.push(name);   // ponytail: 이름으로 맞춘다. 같은 이름이 여러 명이면 건너뛴다 — 로그인·DB 이후에는 메일이나 사번으로 맞춘다
+    if(date && !hireDate) return out.bad.push(name);
+    if(title || hireDate) out.rows.push({ id:hit[0].id, name, title, hireDate });
+  });
+  return out;
+}
+function msApplyPaste(members, rows){ rows.forEach(r=>{ const m = members.find(o=>o.id===r.id); if(r.title) m.title = r.title; if(r.hireDate) m.hireDate = r.hireDate; }); return rows.length; }
+function msNeed(m){ return !String(m.title||'').trim() && !m.hireDate ? '직급·입사일' : !m.hireDate ? '입사일' : !String(m.title||'').trim() ? '직급' : ''; }   // 아직 없는 정보
 function msSeeList(m){   // 이 설정으로 이 사람에게 보이는 화면 — [메뉴, 보이는 것] ('' = 보이지 않음)
   const scope = m.hr ? '전 직원(본부별·부서별·개인별)' : m.lead==='CEO' ? '본부장·팀장 KPI(팀원은 인원·부진 수만)' : m.lead==='DIVISION' ? '우리 본부의 팀장·팀원 KPI' : m.lead==='TEAM' ? '우리 팀 팀원 KPI' : '';
   const goal = m.lead==='CEO' ? '경영계획 목표(조회)' : m.kpi ? '목표설정(KPI) 작성' : '';
@@ -5330,6 +5358,12 @@ function msSelfCheck(){   // 브라우저 콘솔에서 msSelfCheck() 실행
   ok(ms[2].kpi===false && evp[0].kpi===false && evp[0].stage==='SCORE', 'KPI 작성은 평가 명단에도 반영된다');
   ok(set(5,'lead','')==='' && set(4,'lead','CEO')==='' && d[4].kpi===false, '대표이사로 바꾸면 KPI 작성이 꺼진다');
   ok(orgRemove(ms, 3, true)[0]===MS_LAST_HR && ms.length===5, '마지막 HR은 조직도에서 삭제할 수 없다');
+  ok(msDate('2024-03-02')==='2024-03-02' && msDate('2024.3.2')==='2024-03-02' && msDate('2024/03/02')==='2024-03-02' && msDate('20240302')==='2024-03-02' && msDate('2024년 3월 2일')==='2024-03-02' && msDate('2024. 3. 2.')==='2024-03-02' && msDate('2024-02-30')==='' && msDate('3월 2일')==='', '날짜 읽기');
+  const who = [mk(1), mk(2), { ...mk(3), name:'가2' }], pr = msParsePaste('이름\t직급\t입사일\n가1\t대리\t2024.3.2\n가2\t과장\t2020-01-01\n없음\t사원\t2021-01-01\n가1\t\t\n가1,차장,어제', who);
+  ok(pr.rows.length===1 && pr.rows[0].id===1 && pr.rows[0].hireDate==='2024-03-02' && pr.dup.join()==='가2' && pr.miss.join()==='없음' && pr.bad.join()==='가1', '붙여넣기: 제목 줄·빈 줄은 건너뛰고, 없는 이름·같은 이름·읽지 못한 날짜를 가려낸다');
+  ok(msApplyPaste(who, pr.rows)===1 && who[0].title==='대리' && who[0].hireDate==='2024-03-02' && msApplyPaste(who, msParsePaste('가1\t\t2025-01-02', who).rows)===1 && who[0].title==='대리' && who[0].hireDate==='2025-01-02', '붙여넣기: 빈 칸은 그대로 둔다');
+  ok(msNeed({ title:'', hireDate:'' })==='직급·입사일' && msNeed({ title:'대리', hireDate:'' })==='입사일' && msNeed({ title:' ', hireDate:'2024-01-01' })==='직급' && msNeed({ title:'대리', hireDate:'2024-01-01' })==='', '없는 정보 표시');
+  ok(msSet([mk(1,{ hr:true }), mk(2,{ title:'' })], {}, 2, 'lead', 'TEAM', [])==='', '직급이 비어 있어도 직책은 정할 수 있다');
   const see = (o, i)=>msSeeList(mk(9, o))[i][1];
   ok(see({ lead:'TEAM', hr:true }, 2).includes('목표설정') && see({ lead:'TEAM', hr:true }, 2).includes('전 직원') && see({ lead:'TEAM', hr:true }, 2).includes('팀원 점수'), 'HR 팀장 = 본인 KPI + 전 직원 현황 + 팀원 평가');
   ok(!see({ kpi:false }, 2).includes('목표설정') && see({ kpi:false }, 2).includes('현장직') && see({ kpi:false, ev:false }, 2)==='', '현장직은 KPI 없이 팀장 평가, 평가 대상도 아니면 평가·성과에 보이는 것이 없다');
@@ -5365,7 +5399,7 @@ function msContent(){
       rows += `<tr class="grp"><td class="c"><input class="ms-ck" type="checkbox" ${ids.every(id=>msSel.has(id))?'checked':''} aria-label="${escapeHtml(m.team||m.division)} 모두 선택" onchange="msPick([${ids}], this.checked)"></td><td colspan="7">${escapeHtml(m.division)} · ${escapeHtml(m.team||'본부 직속')}<span>${ids.length}명</span></td></tr>`;
     }
     rows += `<tr class="${msDraft[m.id]?'chg':''} ${e.use?'':'off'}"><td class="c"><input class="ms-ck" type="checkbox" ${msSel.has(m.id)?'checked':''} aria-label="${escapeHtml(m.name)} 선택" onchange="msPick([${m.id}], this.checked)"></td>
-      <td><div class="ms-name"><button type="button" onclick="msSee(${m.id})">${escapeHtml(m.name)}</button><i>${escapeHtml(m.title)}</i>${m.isNew?'<span class="ms-tag">새로 들어옴</span>':''}${m.name===me?'<span class="ms-tag gray">나</span>':''}</div></td>
+      <td><div class="ms-name"><button type="button" onclick="msSee(${m.id})">${escapeHtml(m.name)}</button><i>${escapeHtml(m.title)}</i>${m.isNew?'<span class="ms-tag">새로 들어옴</span>':''}${m.name===me?'<span class="ms-tag gray">나</span>':''}${msNeed(m) ? `<button type="button" class="ms-need" onclick="orgEdit(${m.id})" title="${msNeed(m)}이 없습니다 — 눌러서 입력">정보 입력</button>` : ''}</div></td>
       ${MS_FIELDS.map(([k])=>`<td class="c">${msCell(m, e, k, eff)}</td>`).join('')}</tr>`;
   });
   const d = msDiffs(orgMembers, msDraft).length;
@@ -5381,7 +5415,8 @@ function msContent(){
       <div class="ms-bar">${chips.map(([k, l, n])=>`<button type="button" class="ms-chip ${msFilter===k?'on':''}" aria-pressed="${msFilter===k}" onclick="msShow('${k}')">${l} ${n}</button>`).join('')}
         <span class="sp"></span>
         <select aria-label="본부" onchange="msDiv=this.value; msSel.clear(); renderContent()"><option value="">본부 전체</option>${ORG_TREE.map(t=>`<option ${msDiv===t.division?'selected':''}>${escapeHtml(t.division)}</option>`).join('')}</select>
-        <input id="msQ" aria-label="이름 검색" placeholder="이름 검색" value="${escapeHtml(msQuery)}" oninput="msQuery=this.value; msSel.clear(); renderContent(); const i=document.getElementById('msQ'); i.focus(); i.setSelectionRange(i.value.length,i.value.length);"></div>
+        <input id="msQ" aria-label="이름 검색" placeholder="이름 검색" value="${escapeHtml(msQuery)}" oninput="msQuery=this.value; msSel.clear(); renderContent(); const i=document.getElementById('msQ'); i.focus(); i.setSelectionRange(i.value.length,i.value.length);">
+        <button type="button" class="btn sm" style="height:32px;" onclick="msPasteAsk()">${icon('clip')}직급·입사일 붙여넣기</button></div>
       ${picked.length ? `<div class="ms-bulk"><b>${picked.length}명 선택</b>${bulk('use','포털 사용')}${bulk('kpi','KPI 작성')}${bulk('ev','평가 대상')}${bulk('ct','연봉계약서')}<button type="button" class="x" onclick="msSel.clear(); renderContent()">선택 해제</button></div>` : ''}
       <div class="ct-tbl"><table class="ms-tbl">
         <colgroup><col style="width:44px"><col><col style="width:104px"><col style="width:124px"><col style="width:92px"><col style="width:132px"><col style="width:116px"><col style="width:116px"></colgroup>
@@ -5395,7 +5430,8 @@ function msContent(){
         <li>대표이사는 KPI를 작성하지 않습니다(경영계획 목표만). 대표이사로 바꾸면 KPI 작성이 꺼집니다.</li>
         <li><b>HR 권한이 있는 사람이 한 명뿐이면</b> 그 사람의 HR 권한과 포털 사용은 끌 수 없습니다.</li>
         <li>KPI 작성 칸은 그 사람의 평가가 시작된 뒤에는 바꿀 수 없습니다.</li>
-        <li>이름 · 직급 · 소속은 조직도에서 고칩니다. 저장을 눌러야 적용됩니다.</li>
+        <li>위 여섯 칸은 저장을 눌러야 적용됩니다.</li>
+        <li><b>직급 · 입사일</b>은 하이웍스 명단에 없습니다. "직급·입사일 붙여넣기"로 엑셀에서 한꺼번에 넣거나, 이름 옆 "정보 입력"을 눌러 한 사람씩 적습니다(적는 즉시 반영). 이름 · 소속은 조직도에서 고칩니다.</li>
       </ol>
       <div class="placeholder-note">지금은 시연 모드입니다 — <b>직책</b>은 조직도에, <b>KPI 작성</b>은 평가 진행 탭의 평가 대상 명단에 바로 이어집니다. 포털 사용 · HR 권한 · 평가 대상 · 연봉계약서는 값만 담아 두고, 로그인이 붙으면 이 설정대로 화면이 달라집니다. 새로 고치면 처음 상태로 돌아갑니다.</div></div>
     ${d ? `<div class="ms-save"><span>바꾼 내용 <b>${d}건</b><i> · 아직 저장되지 않았습니다</i></span><span class="sp"></span><button type="button" class="btn" onclick="msReset()">되돌리기</button><button type="button" class="btn coral" onclick="msAskSave()">저장</button></div>` : ''}
@@ -5423,6 +5459,18 @@ function msAskSave(){
     <div style="display:flex; gap:8px; justify-content:flex-end;"><button type="button" class="btn" onclick="orgCloseModal()">취소</button><button type="button" class="btn coral" onclick="msDoSave()">저장</button></div>`);
 }
 function msDoSave(){ const n = msSave(orgMembers, msDraft, evPeople); msSel.clear(); orgCloseModal(); kpiFlash(`${n}건을 저장했습니다.`); }
+function msPasteAsk(){
+  orgModal(`<div class="card-title"><span>직급·입사일 붙여넣기</span><button type="button" class="x-btn" onclick="orgCloseModal()" aria-label="닫기">${icon('x')}</button></div>
+    <div class="list-sub" style="margin:0 0 10px; line-height:1.7;">엑셀에서 <b>이름 · 직급 · 입사일</b> 세 칸을 골라 복사한 뒤 아래에 붙여넣으세요. 제목 줄은 있어도 됩니다. 빈 칸은 지금 값을 그대로 둡니다.</div>
+    <textarea id="msPaste" rows="8" aria-label="이름, 직급, 입사일" placeholder="신입사&#9;사원&#9;2026-10-05&#10;주야간&#9;사원&#9;2026.10.12" style="width:100%; border:1px solid var(--border); border-radius:var(--radius-sm); padding:9px 11px; font:inherit; font-size:var(--fs-sm); resize:vertical;"></textarea>
+    <div class="list-sub" style="margin:6px 0 12px;">이름이 명단과 똑같아야 합니다. 같은 이름이 여러 명이면 건너뛰니 그분들은 "정보 입력"으로 한 사람씩 적어 주세요.</div>
+    <div style="display:flex; gap:8px; justify-content:flex-end;"><button type="button" class="btn" onclick="orgCloseModal()">취소</button><button type="button" class="btn coral" onclick="msPasteDo()">반영</button></div>`);
+}
+function msPasteDo(){
+  const r = msParsePaste(document.getElementById('msPaste').value, orgMembers), n = msApplyPaste(orgMembers, r.rows), list = a=>escapeHtml([...new Set(a)].join(', '));
+  const more = [r.miss.length && `명단에 없는 이름: ${list(r.miss)}`, r.dup.length && `같은 이름이 여러 명이라 건너뜀: ${list(r.dup)}`, r.bad.length && `날짜를 읽지 못함: ${list(r.bad)}`].filter(Boolean);
+  orgCloseModal(); kpiFlash(`${n}명의 직급·입사일을 반영했습니다.${more.length ? ' ' + more.join(' / ') : ''}`, more.length ? 'warning' : 'success');
+}
 function msSee(id){
   const m = msApply(orgMembers, msDraft).find(o=>o.id===id);
   const pills = [[m.use, '포털 사용 '+(m.use?'켜짐':'꺼짐')], [m.lead, '직책 '+MS_LEAD[m.lead]], [m.hr, 'HR 권한 '+(m.hr?'있음':'없음')], [m.kpi, 'KPI 작성 '+(m.kpi?'함':'안 함')], [m.ev, m.ev?'평가 대상':'평가 대상 아님'], [m.ct, m.ct?'연봉계약서 대상':'연봉계약서 대상 아님']];
@@ -5431,7 +5479,8 @@ function msSee(id){
     ${msDraft[id] ? kpiNote('아직 저장하지 않은 변경이 들어 있습니다.', 'warning') : ''}
     <div class="list-sub" style="margin:0 0 6px;">이 설정으로 이 사람에게 보이는 화면</div>
     ${m.use ? `<ul class="ms-see">${msSeeList(m).map(([a, b])=>`<li class="${b?'':'no'}"><b>${a}</b><span>${b || '보이는 것이 없음'}</span></li>`).join('')}</ul>`
-      : kpiNote('포털 사용이 꺼져 있어 <b>들어올 수 없습니다.</b> 하이웍스에서 메뉴를 누르면 "인사포털은 준비 중입니다" 화면이 나옵니다.')}`);
+      : kpiNote('포털 사용이 꺼져 있어 <b>들어올 수 없습니다.</b> 하이웍스에서 메뉴를 누르면 "인사포털은 준비 중입니다" 화면이 나옵니다.')}
+    <div style="display:flex; align-items:center; justify-content:space-between; gap:10px;"><span class="list-sub" style="margin:0;">직급 ${escapeHtml(m.title.trim() || '없음')} · 입사일 ${m.hireDate || '없음'}</span><button type="button" class="btn sm" onclick="orgEdit(${id})">직급·입사일 수정</button></div>`);
 }
 
 /* ---------------- NAV DATA ---------------- */
