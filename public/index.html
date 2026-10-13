@@ -5309,12 +5309,12 @@ function evPersonRows(list, hr){
       <td><button class="btn sm" onclick="evResView=${open?'null':p.pid}; kpiFlash(null)">${open?'닫기':'보기'}</button></td></tr>
       ${open ? `<tr><td colspan="5"><div class="ev-panel">${evResultCard(p, evResultNow(p), false)}${evAppealBox(p, false)}</div></td></tr>` : ''}`; }).join('');
 }
-function evTeamResults(role){   // 본부장 = 자기 본부, 대표이사 = 자신이 확정한 팀장·직속부서, 팀장 = 자기 팀원
-  const me = evMe(), list = role==='head' ? evPeople.filter(p=>p.div===EV_DIVISION) : role==='ceo' ? evPeople.filter(p=>evPool(p)!=='div') : me ? evPeople.filter(p=>p.evaluator===me.pid) : [];
+function evTeamResults(role){   // 본부장 = 자기 본부, 대표이사 = 전체(모든 묶음을 확인하는 사람), 팀장 = 자기 팀원
+  const me = evMe(), list = role==='head' ? evPeople.filter(p=>p.div===EV_DIVISION) : role==='ceo' ? evPeople : me ? evPeople.filter(p=>p.evaluator===me.pid) : [];
   if(!list.length) return '';
   const body = evRelease.at ? `<div class="ct-tbl"><table><thead><tr><th>이름</th><th>최종 등급</th><th class="num">총점</th><th>이의 신청</th><th></th></tr></thead><tbody>${evPersonRows(list, false)}</tbody></table></div>`
     : '<div class="placeholder-note" style="margin:0;">HR이 결과를 공개하면 볼 수 있습니다.</div>';
-  return `<div class="card" style="margin-bottom:14px;"><div class="card-title"><span>${role==='head' ? '본부' : role==='ceo' ? '팀장 · 직속부서' : '팀원'} 평가 결과 <span class="more">${list.length}명</span></span></div>${body}</div>`;
+  return `<div class="card" style="margin-bottom:14px;"><div class="card-title"><span>${role==='head' ? '본부' : role==='ceo' ? '전체' : '팀원'} 평가 결과 <span class="more">${list.length}명</span></span></div>${body}</div>`;
 }
 function evResHrPanel(){
   const done = evPeople.filter(p=>p.stage==='DONE').length, appeals = evPeople.filter(p=>p.appeal), open = appeals.filter(p=>p.appeal.status==='OPEN');
