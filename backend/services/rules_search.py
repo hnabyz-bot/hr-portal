@@ -16,6 +16,7 @@ PDF는 pdfplumber로 읽는다 — 표의 칸(합친 칸 포함)을 알아보고
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import re
@@ -437,6 +438,25 @@ def get_doc(rule: dict) -> dict | None:
     return doc
 
 
+def faq_answers(path: str | None = None) -> dict[str, str]:
+    """자주 묻는 질문의 쉬운 설명. 규정 내용(금액 등)이 들어 있어 원문처럼 서버 파일로만 둔다.
+
+    REGULATIONS_DIR/faq.json — {"규정id-조번호": "설명 글"}. 요청마다 읽으므로 파일을 바꾸면 바로 반영된다.
+    파일이 없거나 깨졌으면 빈 값 — 화면은 규정 원문만 보여 준다.
+    """
+    path = path or os.path.join(rules_config.REGULATIONS_DIR, "faq.json")
+    try:
+        with open(path, encoding="utf-8-sig") as f:
+            data = json.load(f)
+    except (OSError, ValueError) as exc:
+        if os.path.isfile(path):
+            logger.warning("faq.json 읽기 실패: %s", exc)
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    return {k: v for k, v in data.items() if isinstance(v, str) and v.strip()}
+
+
 def _pattern(term: str) -> str:
     """글자 사이 공백을 허용하는 정규식 조각 — '연차휴가'가 '연차 휴가'도 찾는다."""
     return r"\s*".join(re.escape(ch) for ch in term if not ch.isspace())
@@ -586,4 +606,15 @@ if __name__ == "__main__":
     rows = [[c1("구분"), c1("기준")], [c1("각종 시상"), c1("개인")], [dict(c1(""), cont=True), dict(c1("1점"), cont=True)]]
     _join_left(rows)
     assert rows[1][0]["rs"] == 2 and len(rows[2]) == 1, "다음 쪽 첫 줄의 빈칸은 한 줄짜리 위 칸에도 잇는다"
+
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        fp = os.path.join(tmp, "faq.json")
+        assert faq_answers(fp) == {}, "파일이 없으면 빈 값"
+        with open(fp, "w", encoding="utf-8") as f:
+            f.write('{"pay-5": "매달 20일이에요.", "x": 3, "y": " "}')
+        assert faq_answers(fp) == {"pay-5": "매달 20일이에요."}, "글이 아닌 값·빈 글은 버린다"
+        with open(fp, "w", encoding="utf-8") as f:
+            f.write("{깨진 파일")
+        assert faq_answers(fp) == {}, "깨진 파일이어도 서버는 죽지 않는다"
     print("rules_search 자체 점검 통과")
