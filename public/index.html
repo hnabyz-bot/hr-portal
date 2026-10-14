@@ -103,6 +103,10 @@
     display:flex; align-items:center; padding:0 24px;
   }
   .topbar-title{ font-size:var(--fs-lg); font-weight:700; margin:0; }
+  @media (min-width:769px){   /* PC: 맨 위 메뉴 이름 줄을 없앤다 — 왼쪽 메뉴와 겹친다(인사담당자 2026-10-14). 제목(h1)은 화면 읽기 프로그램용으로 남기고, "이 화면 사용법"은 탭 줄 오른쪽 끝으로 옮긴다(renderSubtabs). 휴대폰은 메뉴가 접혀 있어 이 줄(메뉴 단추 · 제목)이 그대로 필요하다 */
+    .topbar{ position:absolute; width:1px; height:1px; margin:-1px; padding:0; border:0; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; }
+    .main .subtabs{ height:60px; }   /* 탭 줄이 맨 위가 되므로 왼쪽 로고 칸(60px)과 아랫선을 맞춘다 */
+  }
   .subtabs{
     height:46px; flex-shrink:0; background:var(--surface); border-bottom:1px solid var(--border);
     display:flex; align-items:center; gap:4px; padding:0 24px; overflow-x:auto;
@@ -111,7 +115,7 @@
     padding:8px 14px; border-radius:var(--radius-sm); color:var(--text-secondary); font-size:var(--fs-md);
     cursor:pointer; white-space:nowrap; font-weight:500; transition:background .2s var(--ease), color .2s var(--ease);
   }
-  .subtabs:empty{ display:none; }   /* 탭이 하나뿐인 메뉴 */
+  .subtabs:empty, .subtabs.none{ display:none; }   /* 탭이 하나뿐인 메뉴 (PC에서는 "이 화면 사용법" 단추가 들어 있어도 탭이 없으면 숨긴다) */
   .subtab:hover{ background:var(--bg-page); color:var(--text-primary); }
   .subtab.active{ background:var(--accent-light); color:var(--accent); font-weight:700; }
   .content{ flex:1; overflow-y:auto; padding:24px 28px 48px 28px; }
@@ -725,7 +729,7 @@
   .tr-facts{ display:flex; justify-content:center; gap:8px; margin-top:14px; }
   .tr-facts span{ padding:5px 11px; border-radius:999px; background:var(--bg-page); color:var(--text-secondary); font-size:var(--fs-xs); font-weight:600; }
   @media (prefers-reduced-motion:reduce){ .tr-hole, .tr-pop, .tr-bar i{ transition:none; } }
-  /* 다시 보는 곳: 왼쪽 메뉴 아래 "사이트 둘러보기" · 제목 줄 오른쪽 "이 화면 사용법" */
+  /* 다시 보는 곳: 왼쪽 메뉴 아래 "사이트 둘러보기" · "이 화면 사용법"(PC는 탭 줄 오른쪽 끝, 휴대폰은 맨 위 줄 오른쪽) */
   .tr-again{ display:flex; align-items:center; gap:8px; width:100%; margin-bottom:10px; padding:8px 10px; border:1px solid var(--border); border-radius:var(--radius-sm); background:var(--surface);
     color:var(--text-secondary); font:inherit; font-size:var(--fs-xs); font-weight:600; cursor:pointer; }
   .tr-help{ margin-left:auto; display:inline-flex; align-items:center; gap:6px; padding:7px 12px; border:1px solid var(--border); border-radius:999px; background:var(--surface);
@@ -6492,10 +6496,14 @@ function pcOnlyNotice(){
   </div>`);
 }
 function navTabs(n){ return n.tabs.filter(t=>!t.show || t.show()); }   // 역할에 따라 안 보이는 탭(KPI 현황)을 뺀다
-function renderSubtabs(){   // 탭이 하나뿐이면 비워 둔다 (CSS가 빈 탭 줄을 숨긴다)
-  const tabs = navTabs(currentNav);
-  document.getElementById('subtabsRow').innerHTML = tabs.length<2 ? '' : tabs.map(t => `<div class="subtab ${t.id===currentTab.id?'active':''}" onclick="selectTab('${t.id}')" role="tab" aria-selected="${t.id===currentTab.id}">${typeof t.label==='function' ? t.label() : t.label}${navBadge(todoCount(t))}</div>`).join('');
+const TOP_PC = matchMedia('(min-width:769px)');   // PC에는 맨 위 메뉴 이름 줄이 없다(CSS) — "이 화면 사용법"을 탭 줄에 둔다
+function renderSubtabs(){   // 탭이 하나뿐이면 비워 둔다. 단 PC에서 "이 화면 사용법"이 있는 화면이면 그 탭 하나를 보여 주고 단추를 그 줄 오른쪽 끝에 둔다
+  const tabs = navTabs(currentNav), row = document.getElementById('subtabsRow'), help = document.getElementById('tourHelp'), show = tabs.length>1 || (TOP_PC.matches && tourHelpOn());   // help는 줄을 다시 그리기 전에 잡아 둔다 — PC에서는 이 줄 안에 있어서 다시 그리면 함께 지워진다
+  row.innerHTML = !show ? '' : tabs.map(t => `<div class="subtab ${t.id===currentTab.id?'active':''}" onclick="selectTab('${t.id}')" role="tab" aria-selected="${t.id===currentTab.id}">${typeof t.label==='function' ? t.label() : t.label}${navBadge(todoCount(t))}</div>`).join('');
+  row.classList.toggle('none', !show);
+  (TOP_PC.matches ? row : document.querySelector('.topbar')).appendChild(help);   // 휴대폰에서는 예전처럼 맨 위 줄 오른쪽
 }
+TOP_PC.addEventListener('change', ()=>{ renderSubtabs(); tourHelpSync(); });   // 창 폭이 PC ↔ 휴대폰으로 바뀌면 단추 자리도 옮긴다
 function renderContent(){   // 화면을 다시 그릴 때마다 메뉴·탭 숫자도 맞춘다 (승인·서명 직후 바로 줄어들게)
   if(currentTab.show && !currentTab.show()) currentTab = navTabs(currentNav)[0];   // 역할을 바꿔 지금 탭이 안 보이게 되면 첫 탭으로
   document.getElementById('pageTitle').textContent = currentNav.label;
@@ -6525,7 +6533,7 @@ function closeSidebar(){ document.querySelector('.sidebar').classList.remove('op
 /* ---------------- 사이트 둘러보기 · 이 화면 사용법 ----------------
    2026-10-12 인사담당자 지시. 화면의 한 부분만 밝게 비추고 말풍선으로 한 단계씩 안내한다.
    - 사이트 둘러보기(menu): 처음 들어온 브라우저에서 한 번 자동(환영 페이지 다음). 왼쪽 메뉴 아래 "사이트 둘러보기"로 다시 본다.
-   - 이 화면 사용법: 그 화면에 처음 들어갔을 때 한 번 자동 + 제목 줄 오른쪽 단추. 탭 하나에 하나(TOURS의 tab).
+   - 이 화면 사용법: 그 화면에 처음 들어갔을 때 한 번 자동 + 단추(PC는 탭 줄 오른쪽 끝, 휴대폰은 맨 위 줄 오른쪽). 탭 하나에 하나(TOURS의 tab).
    - 지금 화면에 없는 칸의 단계는 건너뛴다(직책·상태에 따라 보이는 칸이 다르다). 안내할 칸이 하나도 없으면 단추도 없다.
    - "이미 봤음"은 로그인 전이라 각자 브라우저에 기억한다(localStorage tourSeen). 로그인 이후에는 사람별로 바꾼다.
    화면을 고치면 여기 문구·가리키는 곳도 함께 고친다. 메뉴를 더하면 TOUR_MENU에 설명을 더한다(tourSelfCheck가 본다). */
@@ -6647,10 +6655,8 @@ function tourEls(st){   // 그 단계가 가리키는 칸들(화면에 보이는
   return [];
 }
 function tourSteps(key){ return TOURS[key].steps().filter(s=>s.center || tourEls(s).length); }   // 지금 화면에서 안내할 수 있는 단계
-function tourHelpSync(){   // 제목 줄의 "이 화면 사용법": 안내할 칸이 있는 화면에서만 보인다
-  const key = tourTabKey(), b = document.getElementById('tourHelp');
-  b.hidden = !key || !tourSteps(key).length;
-}
+function tourHelpOn(){ const key = tourTabKey(); return !!key && tourSteps(key).length>0; }   // "이 화면 사용법"을 보일까: 안내할 칸이 있는 화면에서만
+function tourHelpSync(){ document.getElementById('tourHelp').hidden = !tourHelpOn(); }   // PC는 탭 줄 오른쪽 끝, 휴대폰은 맨 위 줄 오른쪽 (renderSubtabs)
 function tourStart(key){
   const t = TOURS[key];
   if(tour.steps) tourEnd();
