@@ -4102,11 +4102,11 @@ function ctPeriod(t){ const y = t.getMonth()>=2 ? t.getFullYear()+1 : t.getFullY
 function ctNewHirePeriod(hireDate){ const [y,m] = hireDate.split('-').map(Number); const endY = m>=3 ? y+1 : y; return { start:hireDate, end:ctFebEnd(endY) }; }
 function ctRound100(x){ return Math.round(x/100)*100; }
 function ctRaise(before, pct){ return ctRound100(before*(1+pct/100)); }
-function ctCalc(c){   // 양식 계산식: 시급 = (기본급+능력급+직책수당+연구보조비+명절상여/12)/209, 시간외 = 시급×10×1.5. 연구보조비(받는 사람만)는 시급과 총 계약 연봉에 들어간다
-  const bonus = c.base, pos = c.pos||0, site = c.site||0, qual = c.qual||0, rnd = c.rnd||0;
-  const hourly = (c.base + c.ability + pos + rnd + bonus/12) / 209;
+function ctCalc(c){   // 양식 계산식: 시급 = (기본급+능력급+직책수당+명절상여/12)/209, 시간외 = 시급×10×1.5
+  const bonus = c.base, pos = c.pos||0, site = c.site||0, qual = c.qual||0;
+  const hourly = (c.base + c.ability + pos + bonus/12) / 209;
   const ot = hourly*10*1.5;
-  const monthly = c.base + ot + c.ability + pos + site + qual + rnd;
+  const monthly = c.base + ot + c.ability + pos + site + qual;
   const annual = (monthly - qual - pos)*12 + bonus;
   return { hourly:Math.round(hourly), ot:Math.round(ot), monthly:Math.round(monthly), annual:Math.round(annual), bonus };
 }
@@ -4449,6 +4449,7 @@ function rzReadPay(rows, at, map){   // 제목 줄 아래를 사람 한 줄씩. 
     const p = { id:people.length, no:String(get('no') ?? '').trim(), name, dept:String(get('dept') ?? '').trim(), title:String(get('title') ?? '').trim() };
     ['base','ability','pos','site','qual','rnd'].forEach(k=>{ const n = rzNum(get(k)); p[k] = n>0 ? Math.round(n) : 0; });
     if(!p.base) return bad.push(name);
+    p.base += p.rnd;   // 계약서의 기본급 = 급여대장의 기본급 + 연구보조비 (p.rnd는 확인 창·엑셀에 보여 주려고 남긴다)
     seen[name] = (seen[name]||0)+1; people.push(p);
   });
   return { people, skip, exec, bad, dup:Object.keys(seen).filter(n=>seen[n]>1) };
@@ -4534,7 +4535,7 @@ function rzSelfCheck(){   // 브라우저 콘솔에서 rzSelfCheck() 실행
   const real = [ ['사원코드','사원명','부서','직급','수당','','','','차인지급액'], ['','','','','기본급','능력급','업무수당','연구보조비',''], [7, '가나다','CSI','사원', 2000000, 500000, 100000, 209000, 1], [8, '라마바','임원','이사', 9000000, 0, 0, 0, 1], ['합계','','','', 11000000, 500000, 100000, 209000, 2] ];
   const rh = rzHead(real, RZ_PAY), rm = rzGuess(rh.head, RZ_PAY), rr = rzReadPay(real, rh.at, rm), q = rr.people[0];
   ok(rh.at===1 && rm.no===0 && rm.site===6 && rm.rnd===7 && rr.people.length===1 && rr.exec===1 && rr.skip===1 && q.site===100000 && q.rnd===209000, '급여 프로그램 파일: 업무수당 = 현장관리수당, 연구보조비, 임원은 뺀다');
-  ok(ctCalc(q).hourly-ctCalc({ ...q, rnd:0 }).hourly===1000 && ctCalc(q).annual-ctCalc({ ...q, rnd:0 }).annual===(209000+15000)*12, '연구보조비는 시급과 총 계약 연봉에 들어간다');
+  ok(q.base===2209000 && rzRow(q, R, '').base===ctRaise(2209000, R.base) && ctCalc(q).annual===ctCalc({ ...q, rnd:0 }).annual, '연구보조비는 기본급에 더한다(계약서의 기본급) — 계산식에는 따로 넣지 않는다');
   ok(rzDiv('CSI')==='품질경영제조본부' && rzDiv('Device개발')==='DR사업본부' && rzDiv('Solution개발')==='DR사업본부' && rzDiv('품질팀')==='품질경영제조본부' && rzDiv('해외영업')==='전략마케팅본부' && rzDiv('혁신')==='대표이사 직속부서' && rzDiv('CsI개발')==='품질경영제조본부' && rzDiv('임원')==='그 외', "부서 이름: 띄어쓰기·대소문자·'팀'은 무시, 다른 이름은 RZ_DEPT");
   return 'rzSelfCheck 통과 (13건)';
 }
@@ -4555,8 +4556,9 @@ function rzConfirm(){
   let boxes = '', notes = [], count = 0;
   if(!need.length && pay){
     const r = rzReadPay(k.rows, k.at, k.map), sum = f=>r.people.reduce((t, p)=>t+p[f], 0); count = r.people.length;
-    boxes = `<div><small>읽은 사람</small><b>${count}명</b></div><div><small>기본급 합계</small><b>${won(sum('base'))}</b></div><div><small>능력급 합계</small><b>${won(sum('ability'))}</b></div>`;
-    notes = [`건너뛴 줄 ${r.skip}개(합계 줄 등)`, r.exec && `<b>임원 ${r.exec}명 제외</b> — 부서가 "임원"인 사람은 포털 연봉계약서 대상이 아니라 계산에서 뺍니다`, r.bad.length && `<b>기본급이 없어 뺀 사람</b>: ${names(r.bad)}`, r.dup.length && `<b>같은 이름</b>: ${names(r.dup)} — 등급 파일에 사번 칸이 있어야 맞출 수 있습니다`];
+    boxes = `<div><small>읽은 사람</small><b>${count}명</b></div><div><small>기본급 합계</small><b>${won(sum('base')-sum('rnd'))}</b></div><div><small>능력급 합계</small><b>${won(sum('ability'))}</b></div>`;
+    const rnd = r.people.filter(p=>p.rnd).length;
+    notes = [`건너뛴 줄 ${r.skip}개(합계 줄 등)`, rnd && `<b>연구보조비 ${rnd}명 · 합계 ${won(sum('rnd'))}</b> — 계약서의 기본급에 더해 계산합니다(위 기본급 합계에는 넣지 않았습니다)`, r.exec && `<b>임원 ${r.exec}명 제외</b> — 부서가 "임원"인 사람은 포털 연봉계약서 대상이 아니라 계산에서 뺍니다`, r.bad.length && `<b>기본급이 없어 뺀 사람</b>: ${names(r.bad)}`, r.dup.length && `<b>같은 이름</b>: ${names(r.dup)} — 등급 파일에 사번 칸이 있어야 맞출 수 있습니다`];
   }else if(!need.length){
     const r = rzReadGrades(k.rows, k.at, k.map), gm = rz.pay ? rzGradeMap(rz.pay.people, r.list) : null; count = r.list.length;
     boxes = `<div><small>읽은 등급</small><b>${count}명</b></div><div><small>등급 없는 사람</small><b>${gm ? rz.pay.people.length-Object.keys(gm.g).length+'명' : '–'}</b></div><div><small>급여 자료에 없는 이름</small><b>${gm ? new Set(gm.miss).size+'명' : '–'}</b></div>`;
@@ -4629,7 +4631,7 @@ function rzRateLines(rows){ const z = ctRates.zones;
 function rzExport(kind){
   if(!kpiIsHr() || !rz.pay) return;
   const rows = rzRows(), y = ctPeriod(new Date()).year, pc = (a, b)=>b ? Math.round((a/b-1)*1000)/10 : 0;
-  if(kind==='list') return rzSave(`연봉인상내역_${y}년.csv`, [['사번','이름','부서','본부','직급','등급','페이존','지금 기본급','새 기본급','지금 능력급','능력급 인상률(%)','새 능력급','직책수당','현장관리수당','자격수당','연구보조비','인상 전 총 계약 연봉','인상 후 총 계약 연봉','인상액','인상률(%)','비고'],
+  if(kind==='list') return rzSave(`연봉인상내역_${y}년.csv`, [['사번','이름','부서','본부','직급','등급','페이존','지금 기본급','새 기본급','지금 능력급','능력급 인상률(%)','새 능력급','직책수당','현장관리수당','자격수당','지금 기본급에 든 연구보조비','인상 전 총 계약 연봉','인상 후 총 계약 연봉','인상액','인상률(%)','비고'],
     ...rows.map(r=>[r.p.no, r.p.name, r.p.dept, r.div, r.p.title, r.grade, `${r.zone+1}구간`, r.p.base, r.base, r.p.ability, r.adj ? '' : r.pct, r.ability, r.p.pos, r.p.site, r.p.qual, r.p.rnd||0, r.before, r.after, r.diff, pc(r.after, r.before), r.adj ? '조정: '+r.adj.reason : r.grade ? '' : '등급 없음'])]);
   const sum = (title, list)=>[[], [title,'인원','인상 전','인상 후','늘어나는 금액','인상률(%)'], ...list.map(x=>[x.n, x.c, x.b, x.a, x.a-x.b, pc(x.a, x.b)])];
   rzSave(`연봉인상요약_${y}년.csv`, [...rzRateLines(rows), ...sum('본부', rzGroup(rows, r=>r.div, [...ORG_TREE.map(d=>d.division), '그 외'])), ...sum('등급', rzGroup(rows, r=>r.grade||'없음', [...CT_GRADES, '없음'])),
@@ -4703,7 +4705,7 @@ function rzContent(){
       <div id="rzZoneWarn" ${rzZoneBad(ctRates)?'':'hidden'}>${kpiNote('구간의 상한은 앞 구간보다 커야 합니다. 지금은 위에서부터 먼저 맞는 구간으로 계산합니다.', 'danger').replace('margin:0 0 12px 0;', 'margin:10px 0 0;')}</div>
       <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; margin-top:10px;"><span class="list-sub" style="margin:0;">능력급 인상률은 페이존과 등급이 만나는 칸의 %입니다. 숫자를 바꾸면 아래 결과가 바로 다시 계산됩니다.</span><button class="btn sm" onclick="rzZoneAdd()">+ 구간 추가</button></div></div>
     <div id="rzOut">${rzOut(rows)}</div>
-    <div class="placeholder-note" style="margin:0;"><b>계산 규칙</b> · 페이존은 <b>작년 총 계약 연봉</b>으로 정합니다(급여 자료의 금액으로 계약서 계산식대로 구함) · 새 기본급 = 지금 기본급 × (1 + 기본급 인상률) · 새 능력급 = 지금 능력급 × (1 + 페이존·등급 인상률) · 인상 후 100원 단위 반올림 · 등급이 없는 사람은 능력급 0% · HR이 사유를 적고 조정한 사람은 인상률로 덮어쓰지 않습니다 · 연구보조비는 총 계약 연봉과 시급에 넣고 인상하지 않습니다 · 부서가 "임원"인 사람은 계산에서 뺍니다.<br>
+    <div class="placeholder-note" style="margin:0;"><b>계산 규칙</b> · 페이존은 <b>작년 총 계약 연봉</b>으로 정합니다(급여 자료의 금액으로 계약서 계산식대로 구함) · 새 기본급 = 지금 기본급 × (1 + 기본급 인상률) · 새 능력급 = 지금 능력급 × (1 + 페이존·등급 인상률) · 인상 후 100원 단위 반올림 · 등급이 없는 사람은 능력급 0% · HR이 사유를 적고 조정한 사람은 인상률로 덮어쓰지 않습니다 · 연구보조비는 기본급에 더해 계산합니다(계약서의 기본급 = 급여대장의 기본급 + 연구보조비) · 부서가 "임원"인 사람은 계산에서 뺍니다.<br>
       <b>보관</b> · 읽은 금액 · 인상률 · 계산 결과는 이 화면이 열려 있는 동안에만 있습니다. PC에 남기지 않고 서버로 보내지 않습니다 · 엑셀 저장을 누르면 <b>저장할 곳을 묻습니다</b>.</div>
   </div>`;
 }
