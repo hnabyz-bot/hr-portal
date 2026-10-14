@@ -6192,20 +6192,26 @@ function msDate(v){   // 엑셀에서 온 날짜 글자(2024-03-02 · 2024.3.2 �
   const y = +x[1], mo = +x[2], d = +x[3], dt = new Date(Date.UTC(y, mo-1, d));
   return dt.getUTCFullYear()===y && dt.getUTCMonth()===mo-1 && dt.getUTCDate()===d ? `${y}-${String(mo).padStart(2,'0')}-${String(d).padStart(2,'0')}` : '';
 }
-function msParsePaste(text, members){   // 엑셀에서 복사한 "이름 ⇥ 직급 ⇥ 입사일" 줄. 빈 칸은 그대로 둔다(직급만, 입사일만 넣을 수도 있다)
+function msBirthMd(v){   // 생년월일 글자에서 월-일만 남긴다 — 연도는 버린다(생일 축하에는 월·일만 쓴다). 1990-03-15 · 1990.3.15 · 19900315 · 900315 · 900315-1****** · 90.03.15 · 3월 15일 · 03-15. 읽지 못하면 ''
+  const t = String(v||'').trim(), full = msDate(t);   // 여섯 자리(주민번호 앞자리)를 먼저 본다 — msDate는 900315를 9003년 1월 5일로 읽는다
+  const x = t.match(/^\d{2}(\d{2})(\d{2})(?:-[\d*]+)?$/) || (full && full.match(/-(\d{2})-(\d{2})$/)) || t.match(/^\d{2}[-./](\d{1,2})[-./](\d{1,2})$/) || t.match(/^(\d{1,2})\s*[-./월]\s*(\d{1,2})\s*일?$/);
+  const md = x ? x[1].padStart(2,'0')+'-'+x[2].padStart(2,'0') : '';
+  return celebValidMd(md) ? md : '';
+}
+function msParsePaste(text, members, birth){   // 엑셀에서 복사한 "이름 ⇥ 직급 ⇥ 입사일" 줄, birth면 "이름 ⇥ 생년월일" 줄. 빈 칸은 그대로 둔다(직급만, 입사일만 넣을 수도 있다)
   const out = { rows:[], miss:[], dup:[], bad:[] };
   String(text||'').split(/\r?\n/).map(l=>l.trim()).filter(Boolean).forEach(l=>{
-    const [name='', title='', date=''] = l.split(/\t|,/).map(x=>x.trim());
-    if(!name || name==='이름') return;   // 제목 줄
-    const hit = members.filter(m=>m.name===name), hireDate = date ? msDate(date) : '';
+    const c = l.split(/\t|,/).map(x=>x.trim()), name = c[0] || '', title = birth ? '' : c[1] || '', date = (birth ? c[1] : c[2]) || '';
+    if(!name || name==='이름' || name==='성명') return;   // 제목 줄
+    const hit = members.filter(m=>m.name===name), val = !date ? '' : birth ? msBirthMd(date) : msDate(date);
     if(!hit.length) return out.miss.push(name);
     if(hit.length > 1) return out.dup.push(name);   // ponytail: 이름으로 맞춘다. 같은 이름이 여러 명이면 건너뛴다 — 로그인·DB 이후에는 메일이나 사번으로 맞춘다
-    if(date && !hireDate) return out.bad.push(name);
-    if(title || hireDate) out.rows.push({ id:hit[0].id, name, title, hireDate });
+    if(date && !val) return out.bad.push(name);
+    if(title || val) out.rows.push({ id:hit[0].id, name, title, [birth ? 'birthday' : 'hireDate']:val });
   });
   return out;
 }
-function msApplyPaste(members, rows){ rows.forEach(r=>{ const m = members.find(o=>o.id===r.id); if(r.title) m.title = r.title; if(r.hireDate) m.hireDate = r.hireDate; }); return rows.length; }
+function msApplyPaste(members, rows){ rows.forEach(r=>{ const m = members.find(o=>o.id===r.id); if(r.title) m.title = r.title; if(r.hireDate) m.hireDate = r.hireDate; if(r.birthday) m.birthday = r.birthday; }); return rows.length; }
 function msNeed(m){ return !String(m.title||'').trim() && !m.hireDate ? '직급·입사일' : !m.hireDate ? '입사일' : !String(m.title||'').trim() ? '직급' : ''; }   // 아직 없는 정보
 function msSeeList(m){   // 이 설정으로 이 사람에게 보이는 화면 — [메뉴, 보이는 것] ('' = 보이지 않음)
   const scope = m.hr ? '전 직원(본부별·부서별·개인별)' : m.lead==='CEO' ? '본부장·팀장 KPI(팀원은 인원·부진 수만)' : m.lead==='DIVISION' ? '우리 본부의 팀장·팀원 KPI' : m.lead==='TEAM' ? '우리 팀 팀원 KPI' : '';
@@ -6248,6 +6254,9 @@ function msSelfCheck(){   // 브라우저 콘솔에서 msSelfCheck() 실행
   const who = [mk(1), mk(2), { ...mk(3), name:'가2' }], pr = msParsePaste('이름\t직급\t입사일\n가1\t대리\t2024.3.2\n가2\t과장\t2020-01-01\n없음\t사원\t2021-01-01\n가1\t\t\n가1,차장,어제', who);
   ok(pr.rows.length===1 && pr.rows[0].id===1 && pr.rows[0].hireDate==='2024-03-02' && pr.dup.join()==='가2' && pr.miss.join()==='없음' && pr.bad.join()==='가1', '붙여넣기: 제목 줄·빈 줄은 건너뛰고, 없는 이름·같은 이름·읽지 못한 날짜를 가려낸다');
   ok(msApplyPaste(who, pr.rows)===1 && who[0].title==='대리' && who[0].hireDate==='2024-03-02' && msApplyPaste(who, msParsePaste('가1\t\t2025-01-02', who).rows)===1 && who[0].title==='대리' && who[0].hireDate==='2025-01-02', '붙여넣기: 빈 칸은 그대로 둔다');
+  ok(msBirthMd('1990-03-15')==='03-15' && msBirthMd('900315')==='03-15' && msBirthMd('900315-1******')==='03-15' && msBirthMd('19900315')==='03-15' && msBirthMd('90.03.15')==='03-15' && msBirthMd('3월 5일')==='03-05' && msBirthMd('2/29')==='02-29' && msBirthMd('901332')==='' && msBirthMd('1990-02-30')==='' && msBirthMd('대리')==='', '생년월일에서 월-일만 읽는다(연도는 버린다)');
+  const pb = msParsePaste('성명\t생년월일\n가1\t900315-1******\n가2\t1990-01-01\n없음\t1990-01-01\n가1\t어제', who, true);
+  ok(pb.rows.length===1 && pb.rows[0].birthday==='03-15' && pb.dup.join()==='가2' && pb.miss.join()==='없음' && pb.bad.join()==='가1' && msApplyPaste(who, pb.rows)===1 && who[0].birthday==='03-15' && who[0].title==='대리' && who[0].hireDate==='2025-01-02', '생일 붙여넣기: 월-일만 반영하고 직급·입사일은 건드리지 않는다');
   ok(msNeed({ title:'', hireDate:'' })==='직급·입사일' && msNeed({ title:'대리', hireDate:'' })==='입사일' && msNeed({ title:' ', hireDate:'2024-01-01' })==='직급' && msNeed({ title:'대리', hireDate:'2024-01-01' })==='', '없는 정보 표시');
   ok(msSet([mk(1,{ hr:true }), mk(2,{ title:'' })], {}, 2, 'lead', 'TEAM', [])==='', '직급이 비어 있어도 직책은 정할 수 있다');
   const see = (o, i)=>msSeeList(mk(9, o))[i][1];
@@ -6305,7 +6314,7 @@ function msContent(){
         <span class="sp"></span>
         <select aria-label="본부" onchange="msDiv=this.value; msSel.clear(); renderContent()"><option value="">본부 전체</option>${ORG_TREE.map(t=>`<option ${msDiv===t.division?'selected':''}>${escapeHtml(t.division)}</option>`).join('')}</select>
         <input id="msQ" aria-label="이름 검색" placeholder="이름 검색" value="${escapeHtml(msQuery)}" oninput="msQuery=this.value; msSel.clear(); renderContent(); const i=document.getElementById('msQ'); i.focus(); i.setSelectionRange(i.value.length,i.value.length);">
-        <button type="button" class="btn sm" style="height:32px;" onclick="msPasteAsk()">${icon('clip')}직급·입사일 붙여넣기</button></div>
+        <button type="button" class="btn sm" style="height:32px;" onclick="msPasteAsk(false)">${icon('clip')}엑셀에서 붙여넣기</button></div>
       ${picked.length ? `<div class="ms-bulk"><b>${picked.length}명 선택</b>${bulk('use','포털 사용')}${bulk('kpi','KPI 작성')}${bulk('ev','평가 대상')}${bulk('ct','연봉계약서')}<button type="button" class="x" onclick="msSel.clear(); renderContent()">선택 해제</button></div>` : ''}
       <div class="ct-tbl"><table class="ms-tbl">
         <colgroup><col style="width:44px"><col><col style="width:104px"><col style="width:124px"><col style="width:92px"><col style="width:132px"><col style="width:116px"><col style="width:116px"></colgroup>
@@ -6320,7 +6329,7 @@ function msContent(){
         <li><b>HR 권한이 있는 사람이 한 명뿐이면</b> 그 사람의 HR 권한과 포털 사용은 끌 수 없습니다.</li>
         <li>KPI 작성 칸은 그 사람의 평가가 시작된 뒤에는 바꿀 수 없습니다.</li>
         <li>위 여섯 칸은 저장을 눌러야 적용됩니다.</li>
-        <li><b>직급 · 입사일</b>은 하이웍스 명단에 없습니다. "직급·입사일 붙여넣기"로 엑셀에서 한꺼번에 넣거나, 이름 옆 "정보 입력"을 눌러 한 사람씩 적습니다(적는 즉시 반영). 이름 · 소속은 조직도에서 고칩니다.</li>
+        <li><b>직급 · 입사일 · 생일</b>은 하이웍스 명단에 없습니다. "엑셀에서 붙여넣기"로 한꺼번에 넣거나, 이름 옆 "정보 입력"을 눌러 한 사람씩 적습니다(적는 즉시 반영). 생일은 생년월일을 붙여넣어도 <b>연도 없이 월·일만</b> 남깁니다. 이름 · 소속은 조직도에서 고칩니다.</li>
       </ol>
       <div class="placeholder-note">지금은 시연 모드입니다 — <b>직책</b>은 조직도에, <b>KPI 작성</b>은 평가 진행 탭의 평가 대상 명단에 바로 이어집니다. 포털 사용 · HR 권한 · 평가 대상 · 연봉계약서는 값만 담아 두고, 로그인이 붙으면 이 설정대로 화면이 달라집니다. 새로 고치면 처음 상태로 돌아갑니다.</div></div>
     ${d ? `<div class="ms-save"><span>바꾼 내용 <b>${d}건</b><i> · 아직 저장되지 않았습니다</i></span><span class="sp"></span><button type="button" class="btn" onclick="msReset()">되돌리기</button><button type="button" class="btn coral" onclick="msAskSave()">저장</button></div>` : ''}
@@ -6348,17 +6357,21 @@ function msAskSave(){
     <div style="display:flex; gap:8px; justify-content:flex-end;"><button type="button" class="btn" onclick="orgCloseModal()">취소</button><button type="button" class="btn coral" onclick="msDoSave()">저장</button></div>`);
 }
 function msDoSave(){ const n = msSave(orgMembers, msDraft, evPeople); msSel.clear(); orgCloseModal(); kpiFlash(`${n}건을 저장했습니다.`); }
-function msPasteAsk(){
-  orgModal(`<div class="card-title"><span>직급·입사일 붙여넣기</span><button type="button" class="x-btn" onclick="orgCloseModal()" aria-label="닫기">${icon('x')}</button></div>
-    <div class="list-sub" style="margin:0 0 10px; line-height:1.7;">엑셀에서 <b>이름 · 직급 · 입사일</b> 세 칸을 골라 복사한 뒤 아래에 붙여넣으세요. 제목 줄은 있어도 됩니다. 빈 칸은 지금 값을 그대로 둡니다.</div>
-    <textarea id="msPaste" rows="8" aria-label="이름, 직급, 입사일" placeholder="신입사&#9;사원&#9;2026-10-05&#10;주야간&#9;사원&#9;2026.10.12" style="width:100%; border:1px solid var(--border); border-radius:var(--radius-sm); padding:9px 11px; font:inherit; font-size:var(--fs-sm); resize:vertical;"></textarea>
+let msPasteBirth = false;   // 붙여넣기 창에서 고른 종류: false 직급·입사일 / true 생일
+function msPasteAsk(birth){   // 종류를 바꾸면 창을 다시 그린다(적던 글은 지워진다)
+  msPasteBirth = !!birth;
+  const kind = (b, l)=>`<button type="button" class="ms-chip ${msPasteBirth===b?'on':''}" aria-pressed="${msPasteBirth===b}" onclick="msPasteAsk(${b})">${l}</button>`;
+  orgModal(`<div class="card-title"><span>엑셀에서 붙여넣기</span><button type="button" class="x-btn" onclick="orgCloseModal()" aria-label="닫기">${icon('x')}</button></div>
+    <div class="ms-bar" style="margin-bottom:10px;">${kind(false, '직급 · 입사일')}${kind(true, '생일')}</div>
+    <div class="list-sub" style="margin:0 0 10px; line-height:1.7;">${birth ? '엑셀에서 <b>이름 · 생년월일</b> 두 칸을 골라 복사한 뒤 아래에 붙여넣으세요. 제목 줄은 있어도 됩니다. <b>연도는 저장하지 않고 월·일만</b> 남깁니다 — 홈 "이번 주 소식"의 생일 축하에 씁니다.' : '엑셀에서 <b>이름 · 직급 · 입사일</b> 세 칸을 골라 복사한 뒤 아래에 붙여넣으세요. 제목 줄은 있어도 됩니다. 빈 칸은 지금 값을 그대로 둡니다.'}</div>
+    <textarea id="msPaste" rows="8" aria-label="${birth ? '이름, 생년월일' : '이름, 직급, 입사일'}" placeholder="${birth ? '신입사&#9;1998-03-15&#10;주야간&#9;950702' : '신입사&#9;사원&#9;2026-10-05&#10;주야간&#9;사원&#9;2026.10.12'}" style="width:100%; border:1px solid var(--border); border-radius:var(--radius-sm); padding:9px 11px; font:inherit; font-size:var(--fs-sm); resize:vertical;"></textarea>
     <div class="list-sub" style="margin:6px 0 12px;">이름이 명단과 똑같아야 합니다. 같은 이름이 여러 명이면 건너뛰니 그분들은 "정보 입력"으로 한 사람씩 적어 주세요.</div>
     <div style="display:flex; gap:8px; justify-content:flex-end;"><button type="button" class="btn" onclick="orgCloseModal()">취소</button><button type="button" class="btn coral" onclick="msPasteDo()">반영</button></div>`);
 }
 function msPasteDo(){
-  const r = msParsePaste(document.getElementById('msPaste').value, orgMembers), n = msApplyPaste(orgMembers, r.rows), list = a=>escapeHtml([...new Set(a)].join(', '));
+  const r = msParsePaste(document.getElementById('msPaste').value, orgMembers, msPasteBirth), n = msApplyPaste(orgMembers, r.rows), list = a=>escapeHtml([...new Set(a)].join(', '));
   const more = [r.miss.length && `명단에 없는 이름: ${list(r.miss)}`, r.dup.length && `같은 이름이 여러 명이라 건너뜀: ${list(r.dup)}`, r.bad.length && `날짜를 읽지 못함: ${list(r.bad)}`].filter(Boolean);
-  orgCloseModal(); kpiFlash(`${n}명의 직급·입사일을 반영했습니다.${more.length ? ' ' + more.join(' / ') : ''}`, more.length ? 'warning' : 'success');
+  orgCloseModal(); kpiFlash(`${n}명의 ${msPasteBirth ? '생일' : '직급·입사일'}을 반영했습니다.${more.length ? ' ' + more.join(' / ') : ''}`, more.length ? 'warning' : 'success');
 }
 function msSee(id){
   const m = msApply(orgMembers, msDraft).find(o=>o.id===id);
