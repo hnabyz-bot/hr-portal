@@ -4418,7 +4418,9 @@ function ctContent(){
    - 등급이 없는 사람은 능력급 0%. HR이 사유를 적고 조정한 사람은 인상률로 덮어쓰지 않는다
    - 인상률 표(ctRates)는 전자연봉계약서 화면과 함께 쓴다. 저장소에 있는 숫자는 시연용이다 */
 const RZ_PAY = [ ['no','사번',['사번','사원번호','사원코드']], ['name','이름',['성명','이름','사원명']], ['dept','부서',['부서명','부서','소속']], ['title','직급',['직급','직위']],
-  ['base','기본급',['기본급']], ['ability','능력급',['능력급']], ['pos','직책수당',['직책수당']], ['site','현장관리수당',['현장관리수당']], ['qual','자격수당',['자격수당']] ];
+  ['base','기본급',['기본급']], ['ability','능력급',['능력급']], ['pos','직책수당',['직책수당']], ['site','현장관리수당',['현장관리수당','업무수당']], ['qual','자격수당',['자격수당']], ['rnd','연구보조비',['연구보조비']] ];   // 급여 프로그램에서는 현장관리수당이 "업무수당"으로 나온다
+const RZ_EXEC = ['임원'];   // 부서가 이 이름인 사람은 읽을 때 뺀다 — 본부장·대표이사는 포털 연봉계약서 대상이 아니다
+const RZ_DEPT = { '품질':'품질경영팀', 'solution개발':'솔루션 개발팀', '해외영업':'전략마케팅본부', '혁신':'총무팀', 'csi개발':'CsI팀' };   // 급여 프로그램의 부서 이름이 조직도와 다른 것(열쇠는 rzDeptKey를 거친 글자). 띄어쓰기·대소문자·끝의 '팀'만 다른 것은 적지 않아도 맞는다
 const RZ_GRADE = [ ['no','사번',['사번','사원번호','사원코드']], ['name','이름',['성명','이름','사원명']], ['grade','등급',['최종등급','확정등급','평가등급','등급']] ];
 const RZ_NEED = { pay:['name','base','ability'], grade:['name','grade'] };   // 이 칸을 못 찾으면 계산할 수 없다
 const rz = { pay:null, grade:null, adj:{}, edited:false, div:'', g:'', q:'', pick:null };   // pay = { file, people } · grade = { file, list } · adj = { 사람 id: { base, ability, reason } } · pick = 확인 창에 띄운 파일
@@ -4438,17 +4440,19 @@ function rzGuess(head, fields){   // 어느 칸인지 맞추기: 이름이 똑�
   fields.forEach(([k, , names])=>{ m[k] = names.map(n=>head.indexOf(n)).concat(names.map(n=>head.findIndex(h=>h.includes(n)))).find(i=>i>=0) ?? -1; });
   return m;
 }
-function rzReadPay(rows, at, map){   // 제목 줄 아래를 사람 한 줄씩. 합계 줄·빈 줄은 건너뛰고(skip), 기본급이 없는 사람은 계산에서 뺀다(bad)
-  const people = [], bad = [], seen = {}; let skip = 0;
+function rzReadPay(rows, at, map){   // 제목 줄 아래를 사람 한 줄씩. 합계 줄·빈 줄은 건너뛰고(skip), 임원(exec)과 기본급이 없는 사람(bad)은 계산에서 뺀다
+  const people = [], bad = [], seen = {}; let skip = 0, exec = 0;
   rows.slice(at+1).forEach(r=>{
     const get = k=>map[k]>=0 ? r[map[k]] : '', name = String(get('name') ?? '').trim();
     if(!name || /^(합계|총계|소계|계)$/.test(rzNorm(name))){ if(r.some(c=>rzNorm(c))) skip++; return; }
+    if(RZ_EXEC.includes(rzNorm(get('dept')))) return void exec++;
     const p = { id:people.length, no:String(get('no') ?? '').trim(), name, dept:String(get('dept') ?? '').trim(), title:String(get('title') ?? '').trim() };
-    ['base','ability','pos','site','qual'].forEach(k=>{ const n = rzNum(get(k)); p[k] = n>0 ? Math.round(n) : 0; });
+    ['base','ability','pos','site','qual','rnd'].forEach(k=>{ const n = rzNum(get(k)); p[k] = n>0 ? Math.round(n) : 0; });
     if(!p.base) return bad.push(name);
+    p.base += p.rnd;   // 계약서의 기본급 = 급여대장의 기본급 + 연구보조비 (p.rnd는 확인 창·엑셀에 보여 주려고 남긴다)
     seen[name] = (seen[name]||0)+1; people.push(p);
   });
-  return { people, skip, bad, dup:Object.keys(seen).filter(n=>seen[n]>1) };
+  return { people, skip, exec, bad, dup:Object.keys(seen).filter(n=>seen[n]>1) };
 }
 function rzReadGrades(rows, at, map){   // 이름·등급(S~D)만 읽는다. 다른 글자는 bad
   const list = [], bad = [];
@@ -4464,7 +4468,8 @@ function rzGradeMap(people, list){   // 등급 붙이기: 사번이 맞으면 �
     if(p) g[p.id] = x.grade; else (same.length ? dup : miss).push(x.name); });
   return { g, miss, dup };
 }
-function rzDiv(dept){ const d = ORG_TREE.find(d=>d.division===dept || d.teams.includes(dept)); return d ? d.division : '그 외'; }
+function rzDeptKey(s){ return rzNorm(s).toLowerCase().replace(/팀$/, ''); }   // 'Device개발' = 'Device 개발팀'
+function rzDiv(dept){ const k = rzDeptKey(RZ_DEPT[rzDeptKey(dept)] || dept), d = ORG_TREE.find(d=>rzDeptKey(d.division)===k || d.teams.some(t=>rzDeptKey(t)===k)); return d ? d.division : '그 외'; }
 function rzRow(p, rates, grade, adj){   // 한 사람의 계산. 페이존은 인상 전(작년) 총 계약 연봉으로 정한다
   const before = ctCalc(p).annual, zone = ctZoneOf(rates, before), pct = ctAbilityPct(rates, before, grade);
   const base = adj ? adj.base : ctRaise(p.base, rates.base), ability = adj ? adj.ability : ctRaise(p.ability, pct);
@@ -4527,7 +4532,12 @@ function rzSelfCheck(){   // 브라우저 콘솔에서 rzSelfCheck() 실행
   ok(rzAdjust(1, 0, 'x').length===0 && rzAdjust(0, 0, 'x').length===1 && rzAdjust(1, 1, ' ').length===1, '조정: 금액·사유');
   const g = rzGroup([a, n], r=>r.grade||'없음', [...CT_GRADES, '없음']);
   ok(g.length===2 && g[0].n==='A' && g[1].n==='없음' && g[0].b===a.before && g[1].a===n.after, '등급별 합계');
-  return 'rzSelfCheck 통과 (10건)';
+  const real = [ ['사원코드','사원명','부서','직급','수당','','','','차인지급액'], ['','','','','기본급','능력급','업무수당','연구보조비',''], [7, '가나다','CSI','사원', 2000000, 500000, 100000, 209000, 1], [8, '라마바','임원','이사', 9000000, 0, 0, 0, 1], ['합계','','','', 11000000, 500000, 100000, 209000, 2] ];
+  const rh = rzHead(real, RZ_PAY), rm = rzGuess(rh.head, RZ_PAY), rr = rzReadPay(real, rh.at, rm), q = rr.people[0];
+  ok(rh.at===1 && rm.no===0 && rm.site===6 && rm.rnd===7 && rr.people.length===1 && rr.exec===1 && rr.skip===1 && q.site===100000 && q.rnd===209000, '급여 프로그램 파일: 업무수당 = 현장관리수당, 연구보조비, 임원은 뺀다');
+  ok(q.base===2209000 && rzRow(q, R, '').base===ctRaise(2209000, R.base) && ctCalc(q).annual===ctCalc({ ...q, rnd:0 }).annual, '연구보조비는 기본급에 더한다(계약서의 기본급) — 계산식에는 따로 넣지 않는다');
+  ok(rzDiv('CSI')==='품질경영제조본부' && rzDiv('Device개발')==='DR사업본부' && rzDiv('Solution개발')==='DR사업본부' && rzDiv('품질팀')==='품질경영제조본부' && rzDiv('해외영업')==='전략마케팅본부' && rzDiv('혁신')==='대표이사 직속부서' && rzDiv('CsI개발')==='품질경영제조본부' && rzDiv('임원')==='그 외', "부서 이름: 띄어쓰기·대소문자·'팀'은 무시, 다른 이름은 RZ_DEPT");
+  return 'rzSelfCheck 통과 (13건)';
 }
 
 /* ----- 파일 고르기 → 읽은 내용 확인 ----- */
@@ -4546,8 +4556,9 @@ function rzConfirm(){
   let boxes = '', notes = [], count = 0;
   if(!need.length && pay){
     const r = rzReadPay(k.rows, k.at, k.map), sum = f=>r.people.reduce((t, p)=>t+p[f], 0); count = r.people.length;
-    boxes = `<div><small>읽은 사람</small><b>${count}명</b></div><div><small>기본급 합계</small><b>${won(sum('base'))}</b></div><div><small>능력급 합계</small><b>${won(sum('ability'))}</b></div>`;
-    notes = [`건너뛴 줄 ${r.skip}개(합계 줄 등)`, r.bad.length && `<b>기본급이 없어 뺀 사람</b>: ${names(r.bad)}`, r.dup.length && `<b>같은 이름</b>: ${names(r.dup)} — 등급 파일에 사번 칸이 있어야 맞출 수 있습니다`];
+    boxes = `<div><small>읽은 사람</small><b>${count}명</b></div><div><small>기본급 합계</small><b>${won(sum('base')-sum('rnd'))}</b></div><div><small>능력급 합계</small><b>${won(sum('ability'))}</b></div>`;
+    const rnd = r.people.filter(p=>p.rnd).length;
+    notes = [`건너뛴 줄 ${r.skip}개(합계 줄 등)`, rnd && `<b>연구보조비 ${rnd}명 · 합계 ${won(sum('rnd'))}</b> — 계약서의 기본급에 더해 계산합니다(위 기본급 합계에는 넣지 않았습니다)`, r.exec && `<b>임원 ${r.exec}명 제외</b> — 부서가 "임원"인 사람은 포털 연봉계약서 대상이 아니라 계산에서 뺍니다`, r.bad.length && `<b>기본급이 없어 뺀 사람</b>: ${names(r.bad)}`, r.dup.length && `<b>같은 이름</b>: ${names(r.dup)} — 등급 파일에 사번 칸이 있어야 맞출 수 있습니다`];
   }else if(!need.length){
     const r = rzReadGrades(k.rows, k.at, k.map), gm = rz.pay ? rzGradeMap(rz.pay.people, r.list) : null; count = r.list.length;
     boxes = `<div><small>읽은 등급</small><b>${count}명</b></div><div><small>등급 없는 사람</small><b>${gm ? rz.pay.people.length-Object.keys(gm.g).length+'명' : '–'}</b></div><div><small>급여 자료에 없는 이름</small><b>${gm ? new Set(gm.miss).size+'명' : '–'}</b></div>`;
@@ -4620,8 +4631,8 @@ function rzRateLines(rows){ const z = ctRates.zones;
 function rzExport(kind){
   if(!kpiIsHr() || !rz.pay) return;
   const rows = rzRows(), y = ctPeriod(new Date()).year, pc = (a, b)=>b ? Math.round((a/b-1)*1000)/10 : 0;
-  if(kind==='list') return rzSave(`연봉인상내역_${y}년.csv`, [['사번','이름','부서','본부','직급','등급','페이존','지금 기본급','새 기본급','지금 능력급','능력급 인상률(%)','새 능력급','직책수당','현장관리수당','자격수당','인상 전 총 계약 연봉','인상 후 총 계약 연봉','인상액','인상률(%)','비고'],
-    ...rows.map(r=>[r.p.no, r.p.name, r.p.dept, r.div, r.p.title, r.grade, `${r.zone+1}구간`, r.p.base, r.base, r.p.ability, r.adj ? '' : r.pct, r.ability, r.p.pos, r.p.site, r.p.qual, r.before, r.after, r.diff, pc(r.after, r.before), r.adj ? '조정: '+r.adj.reason : r.grade ? '' : '등급 없음'])]);
+  if(kind==='list') return rzSave(`연봉인상내역_${y}년.csv`, [['사번','이름','부서','본부','직급','등급','페이존','지금 기본급','새 기본급','지금 능력급','능력급 인상률(%)','새 능력급','직책수당','현장관리수당','자격수당','지금 기본급에 든 연구보조비','인상 전 총 계약 연봉','인상 후 총 계약 연봉','인상액','인상률(%)','비고'],
+    ...rows.map(r=>[r.p.no, r.p.name, r.p.dept, r.div, r.p.title, r.grade, `${r.zone+1}구간`, r.p.base, r.base, r.p.ability, r.adj ? '' : r.pct, r.ability, r.p.pos, r.p.site, r.p.qual, r.p.rnd||0, r.before, r.after, r.diff, pc(r.after, r.before), r.adj ? '조정: '+r.adj.reason : r.grade ? '' : '등급 없음'])]);
   const sum = (title, list)=>[[], [title,'인원','인상 전','인상 후','늘어나는 금액','인상률(%)'], ...list.map(x=>[x.n, x.c, x.b, x.a, x.a-x.b, pc(x.a, x.b)])];
   rzSave(`연봉인상요약_${y}년.csv`, [...rzRateLines(rows), ...sum('본부', rzGroup(rows, r=>r.div, [...ORG_TREE.map(d=>d.division), '그 외'])), ...sum('등급', rzGroup(rows, r=>r.grade||'없음', [...CT_GRADES, '없음'])),
     ...sum('합계', [{ n:'전체', c:rows.length, b:rows.reduce((t, r)=>t+r.before, 0), a:rows.reduce((t, r)=>t+r.after, 0) }])]);
@@ -4694,7 +4705,7 @@ function rzContent(){
       <div id="rzZoneWarn" ${rzZoneBad(ctRates)?'':'hidden'}>${kpiNote('구간의 상한은 앞 구간보다 커야 합니다. 지금은 위에서부터 먼저 맞는 구간으로 계산합니다.', 'danger').replace('margin:0 0 12px 0;', 'margin:10px 0 0;')}</div>
       <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; margin-top:10px;"><span class="list-sub" style="margin:0;">능력급 인상률은 페이존과 등급이 만나는 칸의 %입니다. 숫자를 바꾸면 아래 결과가 바로 다시 계산됩니다.</span><button class="btn sm" onclick="rzZoneAdd()">+ 구간 추가</button></div></div>
     <div id="rzOut">${rzOut(rows)}</div>
-    <div class="placeholder-note" style="margin:0;"><b>계산 규칙</b> · 페이존은 <b>작년 총 계약 연봉</b>으로 정합니다(급여 자료의 금액으로 계약서 계산식대로 구함) · 새 기본급 = 지금 기본급 × (1 + 기본급 인상률) · 새 능력급 = 지금 능력급 × (1 + 페이존·등급 인상률) · 인상 후 100원 단위 반올림 · 등급이 없는 사람은 능력급 0% · HR이 사유를 적고 조정한 사람은 인상률로 덮어쓰지 않습니다.<br>
+    <div class="placeholder-note" style="margin:0;"><b>계산 규칙</b> · 페이존은 <b>작년 총 계약 연봉</b>으로 정합니다(급여 자료의 금액으로 계약서 계산식대로 구함) · 새 기본급 = 지금 기본급 × (1 + 기본급 인상률) · 새 능력급 = 지금 능력급 × (1 + 페이존·등급 인상률) · 인상 후 100원 단위 반올림 · 등급이 없는 사람은 능력급 0% · HR이 사유를 적고 조정한 사람은 인상률로 덮어쓰지 않습니다 · 연구보조비는 기본급에 더해 계산합니다(계약서의 기본급 = 급여대장의 기본급 + 연구보조비) · 부서가 "임원"인 사람은 계산에서 뺍니다.<br>
       <b>보관</b> · 읽은 금액 · 인상률 · 계산 결과는 이 화면이 열려 있는 동안에만 있습니다. PC에 남기지 않고 서버로 보내지 않습니다 · 엑셀 저장을 누르면 <b>저장할 곳을 묻습니다</b>.</div>
   </div>`;
 }
