@@ -4085,6 +4085,7 @@ function celebDelete(id){
    - 재직자 계약기간 3/1 ~ 다음 해 2월 말일 고정, 신규 입사자는 HR이 입력
    - 본인만 서명(본문 끝까지 읽어야 서명 가능). 서명 즉시 잠금. 파기는 HR만(사유 필수), 재발송은 원본 보존 + 새 버전
    - 열람: 본인 · HR(담당자·팀장)만. 팀장·본부장·대표이사는 남의 계약서를 못 본다 (인사담당자 2026-10-15 — 처음에는 본부장이 자기 본부를 봤다)
+   - 본부장은 자기 본부의 "계약 현황"만 본다 — 이름·팀·상태·서명한 날. 금액·본문·등급은 없다 (ctCanSeeStatus, 같은 날 인사담당자)
    - 본부장 본인은 포털에서 계약서를 만들지 않는다 (인사담당자 2026-10-13 — 평가 등급이 없다) */
 const CT_COMPANY = { name:'㈜에이치앤아비즈', ceo:'○○○', kind:'제조업', addr:'경기도 용인시 처인구 처인성로 41-16' };
 const CT_PEOPLE = [   // key = 시연 역할(kpiRole). null이면 시연에서 로그인 불가
@@ -4129,6 +4130,15 @@ function ctCanView(role, c){
   const me = ctActor(role), p = ctPerson(c.pid);
   if(!me) return false;
   return me.pid===p.pid && c.status!=='DRAFT';   // 본인은 발송된 것부터. 남의 것은 HR만
+}
+function ctCanSeeStatus(role, c){   // 계약 현황(이름·상태·서명한 날, 금액 없이): HR, 그리고 자기 본부 직원의 본부장. 팀장·대표이사는 못 본다
+  if(kpiIsHr(role)) return true;
+  const me = ctActor(role), p = ctPerson(c.pid);
+  return !!me && me.title==='본부장' && me.pid!==p.pid && me.division===p.division;
+}
+function ctStatusOnly(c){   // 계약 현황 칸 — ctBadge와 달리 차수·"등급이 바뀜"(등급이 드러난다)을 넣지 않는다
+  const [l, cls] = c.status==='DRAFT' ? ['발송 전','neutral'] : CT_STATUS[c.status], d = c.status==='SIGNED' && c.signedAt ? c.signedAt.slice(5,10).split('-').map(Number).join('/') : '';
+  return `<span class="badge ${cls}">${l}</span>${d ? ` <span class="list-sub" style="display:inline;">${d}</span>` : ''}`;
 }
 function ctActive(list, pid){ return list.filter(c=>c.pid===pid && c.status!=='CANCELLED').sort((a,b)=>b.version-a.version)[0]; }
 function ctAdjust(c, isHr, base, ability, reason, period){
@@ -4186,6 +4196,8 @@ function ctSelfCheck(){   // 브라우저 콘솔에서 ctSelfCheck() 실행
   const adj = mk({ adjReason:'승진', base:1, ability:1 }); ctApplyRates(adj, R); ok(adj.base===1, 'HR 조정분은 인상률로 덮어쓰지 않음');
   ok(ctAdjust(mk({}), false, 1, 1, 'x').length===1 && ctAdjust(mk({}), true, 1, 1, ' ').length===1 && ctAdjust(mk({status:'SENT'}), true, 1, 1, 'x').length===1, '조정: HR·사유·발송 전만');
   ok(!ctCanView('lead', mk({pid:1, status:'SENT'})) && !ctCanView('head', mk({pid:1, status:'SENT'})) && !ctCanView('ceo', mk({pid:1, status:'SENT'})) && ctCanView('hr', mk({})) && ctCanView('hrl', mk({})) && !ctCanView('emp', mk({pid:1})), '열람 권한: 남의 계약서는 HR만');
+  ok(ctCanSeeStatus('head', mk({pid:1, status:'SENT'})) && !ctCanSeeStatus('head', mk({pid:4, status:'SENT'})) && !ctCanSeeStatus('lead', mk({pid:1})) && !ctCanSeeStatus('ceo', mk({pid:1})) && !ctCanSeeStatus('emp', mk({pid:1})) && ctCanSeeStatus('hrl', mk({pid:4})), '계약 현황: 자기 본부의 본부장과 HR만');
+  ok(!/원|등급|차/.test(ctStatusOnly(mk({status:'SIGNED', signedAt:'2027-02-20 10:00', version:2, stale:'A'}))) && ctStatusOnly(mk({status:'SIGNED', signedAt:'2027-02-20 10:00'})).includes('2/20') && ctStatusOnly(mk({status:'DRAFT'})).includes('발송 전'), '계약 현황 칸에는 금액·차수·등급이 없다');
   const c = mk({}); ok(ctSend(c, false, 'd') && !ctSend(c, true, '2026-10-01') && c.status==='SENT', '발송은 HR만');
   const sig = { consent:true, name:'홍길동', image:'x', read:true, at:'t' };
   ok(ctSign(c, 2, sig) && c.status==='SENT', '남의 계약서 서명 불가');
@@ -4401,7 +4413,12 @@ function ctContent(){
     if(kpiIsHr(role)) body = ctHrPanel();
     else {
       const mine = me && ctActive(ctContracts, me.pid);   // 계약 명단에 없는 역할(대표이사)은 받은 계약서 없음
-      body = mine && ctCanView(role, mine) ? ctViewer(mine) : `<div class="card" style="margin-bottom:14px;"><div class="card-title">연봉계약서</div><div class="placeholder-note" style="margin:0;">${me && me.title==='본부장' ? '본부장은 포털에서 연봉계약서를 만들지 않습니다.' : '아직 받은 계약서가 없습니다. HR이 발송하면 여기에 표시됩니다.'}</div></div>`;
+      body = mine && ctCanView(role, mine) ? ctViewer(mine) : `<div class="card" style="margin-bottom:14px;"><div class="card-title">연봉계약서</div><div class="placeholder-note" style="margin:0;">${me && me.title==='본부장' ? '본부장은 포털에서 연봉계약서를 만들지 않습니다. 아래에서 우리 본부 직원의 서명 진행 상황을 볼 수 있습니다.' : '아직 받은 계약서가 없습니다. HR이 발송하면 여기에 표시됩니다.'}</div></div>`;
+      if(me && me.title==='본부장'){
+        const rows = CT_PEOPLE.filter(p=>p.pid!==me.pid).map(p=>ctActive(ctContracts, p.pid)).filter(c=>c && ctCanSeeStatus(role, c)), n = st=>rows.filter(c=>c.status===st).length;
+        body += `<div class="card"><div class="card-title">우리 본부 계약 현황 <span class="more">${rows.length}명 · 서명 완료 ${n('SIGNED')} · 서명 대기 ${n('SENT')}</span></div>${rows.map(c=>{ const p = ctPerson(c.pid); return `<div class="list-row"><div><div class="list-title">${escapeHtml(p.name)} ${escapeHtml(p.title)}</div><div class="list-sub">${escapeHtml(p.team||p.division)}</div></div><div style="width:132px; flex:none; display:flex; align-items:center; gap:6px;">${ctStatusOnly(c)}</div></div>`; }).join('') || '<div class="list-sub">계약 대상자가 없습니다.</div>'}
+          <div class="list-sub" style="margin-top:8px;">연봉 금액과 계약서 본문은 HR만 볼 수 있습니다.</div></div>`;
+      }
     }
   }
   return `${roleSwitcher()}${kpiMsg ? kpiNote(kpiMsg.msg, kpiMsg.type) : ''}${body}`;
@@ -6219,7 +6236,7 @@ function msSeeList(m){   // 이 설정으로 이 사람에게 보이는 화면 �
   const evTxt = [self, mgr, m.hr && '평가 대상 명단 · 등급 확정 · 대표이사 대신 입력'].filter(Boolean).join(' · ');
   return [
     ['홈 · 워크스페이스', '모두 같음' + (m.kpi ? ' · 홈 하단에 KPI 진행률' : '')],
-    ['급여·계약', ['급여명세서', '원천징수영수증', m.ct && '전자연봉계약서 서명', m.hr && '계약서 발송·전 직원 조회 · 연봉 인상 계산'].filter(Boolean).join(' · ') + (m.lead==='CEO' ? ' (대표이사 화면은 아직 정하지 않음)' : '')],
+    ['급여·계약', ['급여명세서', '원천징수영수증', m.ct && '전자연봉계약서 서명', m.hr ? '계약서 발송·전 직원 조회 · 연봉 인상 계산' : m.lead==='DIVISION' && '우리 본부 계약 현황(금액 없이)'].filter(Boolean).join(' · ') + (m.lead==='CEO' ? ' (대표이사 화면은 아직 정하지 않음)' : '')],
     ['평가·성과', [goal, scope && 'KPI 현황: '+scope, evTxt && '평가 진행: '+evTxt].filter(Boolean).join(' / ')],
     ['규정 검색 · 출장·경비', '모두 같음'],
     ['조직도', m.hr ? '조회 · 구성원 편집 · 구성원 설정' : '조회'],
@@ -6260,7 +6277,7 @@ function msSelfCheck(){   // 브라우저 콘솔에서 msSelfCheck() 실행
   const see = (o, i)=>msSeeList(mk(9, o))[i][1];
   ok(see({ lead:'TEAM', hr:true }, 2).includes('목표설정') && see({ lead:'TEAM', hr:true }, 2).includes('전 직원') && see({ lead:'TEAM', hr:true }, 2).includes('팀원 평가'), 'HR 팀장 = 본인 KPI + 전 직원 현황 + 팀원 평가');
   ok(!see({ kpi:false }, 2).includes('목표설정') && see({ kpi:false }, 2).includes('현장직') && see({ kpi:false, ev:false }, 2)==='', '현장직은 KPI 없이 팀장 평가, 평가 대상도 아니면 평가·성과에 보이는 것이 없다');
-  ok(see({ ct:false }, 1).indexOf('전자연봉계약서')<0 && see({ lead:'TEAM' }, 1).indexOf('조회')<0 && see({ lead:'DIVISION' }, 1).indexOf('조회')<0 && see({ lead:'CEO' }, 1).indexOf('조회')<0 && see({ hr:true }, 1).includes('전 직원 조회'), '연봉계약서: 대상만 서명, 남의 계약서 조회는 HR만');
+  ok(see({ ct:false }, 1).indexOf('전자연봉계약서')<0 && see({ lead:'TEAM' }, 1).indexOf('조회')<0 && see({ lead:'DIVISION' }, 1).indexOf('조회')<0 && see({ lead:'DIVISION' }, 1).includes('계약 현황(금액 없이)') && see({ lead:'CEO' }, 1).indexOf('조회')<0 && see({ lead:'CEO' }, 1).indexOf('현황')<0 && see({ hr:true }, 1).includes('전 직원 조회'), '연봉계약서: 대상만 서명, 남의 계약서 조회는 HR만, 본부장은 계약 현황만');
   const hd = [mk(1,{ hr:true }), mk(2)], dd = {};
   ok(msSet(hd, dd, 2, 'lead', 'DIVISION', [])==='' && dd[2].ev===false && dd[2].ct===false && msSave(hd, dd, [])===3 && msSet(hd, {}, 2, 'ev', true, [])!=='' && msSet(hd, {}, 2, 'ct', true, [])!=='', '본부장으로 바꾸면 평가 대상·연봉계약서가 꺼지고 다시 켤 수 없다');
   ok(see({ lead:'DIVISION', ev:false, ct:false }, 2).includes('팀장 평가') && !see({ lead:'DIVISION', ev:false, ct:false }, 2).includes('자기평가') && see({ lead:'DIVISION', ev:false, ct:false }, 1).indexOf('서명')<0 && see({ lead:'CEO', kpi:false, ev:false }, 2).includes('등급 확인'), '본부장은 평가받지 않고 팀장을 평가한다 · 대표이사는 등급을 확인한다');
