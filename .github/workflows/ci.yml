@@ -85,6 +85,14 @@ jobs:
         working-directory: backend
         run: python -m hr_eval.roster_sync --check
 
+      - name: 로그인 검사에 필요한 패키지 설치 (Flask 등)
+        working-directory: backend
+        run: pip install -r requirements.txt
+
+      - name: 로그인 — 가짜 하이웍스 확인 서버로 처음부터 끝까지 (설계 9장 1·2·3·5·11·12)
+        working-directory: backend
+        run: python -m auth_check
+
       - name: 규정 조항 나누기·검색 자체 검증
         working-directory: backend
         run: python -m services.rules_search
