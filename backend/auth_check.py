@@ -308,6 +308,66 @@ def main() -> int:
     ok(s.get("/api/auth/logout", base_url=BASE).status_code == 405, "로그아웃은 POST 전용")
     ok(s.post("/api/auth/logout", base_url=BASE, headers=ORIGIN).status_code == 200, "포털 화면에서 온 요청은 통과")
 
+    print("5단계. 구성원 설정 저장 (HR)")
+    hr = app.test_client()
+    login(hr, new_token("hr"))
+    worker = app.test_client()
+    login(worker, new_token("emp"))
+    ok(worker.get("/api/me", base_url=BASE).json.get("writes_kpi") is True, "/api/me 에 KPI 작성 여부 (현장직 구분)")
+    ok(worker.get("/api/members", base_url=BASE).status_code == 403, "HR 이 아니면 명단을 못 봄")
+    lst = hr.get("/api/members", base_url=BASE)
+    rows = {m["id"]: m for m in lst.json["members"]}
+    ok(lst.status_code == 200 and rows[1]["hr"] and rows[1]["me"] and rows[2]["lead"] == "TEAM"
+       and rows[2]["division"] == "가상본부" and rows[2]["team"] == "가상팀", "HR 은 명단을 봄 (직책·HR 권한·본부·팀)")
+    ok(rows[4]["isNew"] and not rows[3]["isNew"] and not rows[5]["active"], "새로 들어온 사람 · 비활성 표시")
+
+    def save(client, changes, headers=ORIGIN):
+        return client.post("/api/members", base_url=BASE, headers=headers, json={"changes": changes})
+
+    ok(save(hr, {"4": {"use": True}}, headers={}).status_code == 403, "Origin 없는 저장은 거부")
+    r = save(hr, {"3": {"lead": "TEAM"}})
+    ok(r.status_code == 400 and any("팀장" in i for i in r.json["issues"]), "같은 팀에 팀장 둘 → 저장 안 됨, 이유를 알려 줌")
+    r = save(hr, {"1": {"hr": False}})
+    ok(r.status_code == 400 and any("HR" in i for i in r.json["issues"]), "마지막 HR 의 HR 권한을 끌 수 없음")
+    for bad in ({"999": {"use": True}}, {"3": {"foo": True}}, {"3": {"use": "yes"}}, {"3": {"lead": "BOSS"}}):
+        ok(save(hr, bad).status_code == 400, f"이상한 입력은 거부: {bad}")
+    ok(q("SELECT COUNT(*) FROM audit_logs WHERE action = 'MEMBER_UPDATED'") == [(0,)], "거부된 저장은 아무것도 남기지 않음")
+
+    r = save(hr, {"4": {"use": True}, "3": {"kpi": False}})
+    ok(r.status_code == 200 and r.json["saved"] == 2
+       and q("SELECT portal_enabled FROM users WHERE id = 4") == [(1,)] and q("SELECT writes_kpi FROM users WHERE id = 3") == [(0,)],
+       "저장하면 DB 에 남음 (새로 고쳐도 그대로)")
+    ok(q("SELECT before_data, after_data, actor_user_id FROM audit_logs WHERE action = 'MEMBER_UPDATED' AND entity_id = 4")
+       == [('{"portal_enabled": false}', '{"portal_enabled": true}', 1)], "누가 무엇을 바꿨는지 감사로그")
+    ok(save(hr, {"4": {"lead": "CEO"}}).status_code == 200
+       and q("SELECT writes_kpi, in_evaluation, has_contract FROM users WHERE id = 4") == [(0, 0, 0)]
+       and q("SELECT role, granted_by FROM user_roles WHERE user_id = 4") == [("CEO", 1)],
+       "대표이사로 바꾸면 KPI·평가·계약서가 함께 꺼짐 (지정한 HR 이 남음)")
+    ok(save(hr, {"4": {"lead": "", "kpi": True, "ev": True, "ct": True}}).status_code == 200
+       and q("SELECT COUNT(*) FROM user_roles WHERE user_id = 4") == [(0,)], "직책을 없음으로 되돌림")
+    ok(save(hr, {"2": {"hr": True}}).status_code == 200
+       and sorted(r[0] for r in q("SELECT role FROM user_roles WHERE user_id = 2")) == ["HR_ADMIN", "TEAM_LEADER"],
+       "팀장에게 HR 권한을 더하면 HR 팀장")
+    ok(save(hr, {"3": {"use": False}}).status_code == 200 and worker.get("/api/me", base_url=BASE).status_code == 401,
+       "포털 사용을 끄면 그 사람의 로그인이 바로 끊김")
+    save(hr, {"3": {"use": True}})
+
+    def active(uid, on):
+        return hr.post(f"/api/members/{uid}/active", base_url=BASE, headers=ORIGIN, json={"active": on})
+
+    ok(active(3, False).status_code == 200 and q("SELECT is_active, deactivated_at IS NOT NULL FROM users WHERE id = 3") == [(0, 1)],
+       "비활성화 (날짜가 남음)")
+    ok(active(3, True).status_code == 200 and q("SELECT is_active, deactivated_at FROM users WHERE id = 3") == [(1, None)],
+       "다시 켜기")
+    save(hr, {"2": {"hr": False}})
+    r = active(1, False)
+    ok(r.status_code == 400 and q("SELECT is_active FROM users WHERE id = 1") == [(1,)], "마지막 HR 은 비활성화할 수 없음")
+    leader = app.test_client()
+    login(leader, new_token("lead"))
+    ok(active(999, False).status_code == 404, "명단에 없는 사람은 404")
+    ok(leader.post("/api/members/3/active", base_url=BASE, headers=ORIGIN, json={"active": False}).status_code == 403
+       and save(leader, {"3": {"use": False}}).status_code == 403, "로그인한 팀장이라도 HR 이 아니면 비활성화·저장 못 함")
+
     acts = {r[0] for r in q("SELECT action FROM audit_logs")}
     ok({"LOGIN", "HR_BOOTSTRAP"} <= acts, "감사로그 LOGIN 이 남음")
     ok(q("SELECT actor_position, actor_is_hr FROM audit_logs WHERE action = 'LOGIN' AND actor_user_id = 2 LIMIT 1")
