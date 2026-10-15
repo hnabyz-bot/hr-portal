@@ -21,7 +21,10 @@ services:
       - NAVER_LOCAL_CLIENT_ID=${NAVER_LOCAL_CLIENT_ID:-}
       - NAVER_LOCAL_CLIENT_SECRET=${NAVER_LOCAL_CLIENT_SECRET:-}
       - OPINET_API_KEY=${OPINET_API_KEY:-}
+      - HR_DB_PATH=/app/data/hr-portal.db
     volumes:
       - ./regulations:/app/regulations:ro
+      # 직원·로그인 DB. 상자(이미지) 안에 두면 merge 때 재빌드하면서 사라진다 → 서버 폴더 data/ 에 보관
+      - ./data:/app/data
     expose:
       - "8000"

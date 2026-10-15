@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import os
+import sqlite3
 from datetime import date
 from urllib.parse import quote
 
@@ -32,6 +33,7 @@ from services.naver_api import NaverMapAPIError, calculate_route_segments, get_d
 from services import rules_search
 import rules_config
 from app_config import get_fuel_price_label, get_fuel_price_unit, get_fuel_type_label
+from hr_eval.sql.db import init_db
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -40,6 +42,14 @@ app = Flask(__name__)
 # 규정 11개를 장·조·표로 나누는 데 30초쯤 걸린다(요청 제한 30초). 서버가 요청을 받기 전에 한 번 읽어 둔다 —
 # gunicorn --preload라 이 결과를 작업 프로세스들이 함께 쓴다. 이후 규정 파일이 바뀌면 그 파일만 다시 읽는다(수 초).
 rules_search.list_rules()
+
+# 직원·로그인 DB (로그인 설계 §6). docker-compose.yml 이 HR_DB_PATH 를 서버 폴더 data/ 에 둔다 — 재빌드해도 남는다.
+# 값이 없으면(PC 개발) 만들지 않는다. 실패해도 경비 산출기·규정 검색은 그대로 돈다 — 아직 DB 를 쓰는 기능이 없다.
+if os.environ.get("HR_DB_PATH"):
+    try:
+        logger.info("DB 준비 완료 (판 %s)", init_db(os.environ["HR_DB_PATH"]))
+    except (sqlite3.Error, OSError):
+        logger.exception("DB 준비 실패")
 
 VEHICLE_TYPES = {"under_1800", "over_1800"}
 FUEL_TYPES = {"gasoline", "diesel", "lpg", "electric"}

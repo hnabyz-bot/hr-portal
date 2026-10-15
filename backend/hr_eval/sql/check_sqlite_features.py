@@ -11,6 +11,9 @@
   4. 트리거 RAISE(ABORT) 로 잠금이 걸린다 (§5)
   5. REAL 은 가중치 합 검증을 깨뜨리고, 100배 정수는 정확하다 (§5)
   6. BEGIN IMMEDIATE 가 SELECT ... FOR UPDATE 자리를 대신한다 (§5)
+  7. 두 연결이 같은 키를 넣으면 하나만 들어간다 — 확인표 재사용 막기
+     (로그인 설계 §3 ②, §5. 서버 프로그램 gunicorn 이 2개다)
+  8. UPSERT ... RETURNING 으로 두 연결이 번갈아 세도 숫자가 합쳐진다 — 요청 빈도 제한 (로그인 설계 §5)
 
 실패하면 종료코드 1 로 CI 를 깨뜨린다. 스키마 파일에는 의존하지 않는다
 (스키마 교체는 M2 의 몫). 여기서 확인하는 것은 SQLite 엔진의 능력뿐이다.
@@ -308,6 +311,52 @@ def check_begin_immediate() -> None:
         other.close()
 
 
+def _two_workers(tmp: str, ddl: str) -> tuple[sqlite3.Connection, sqlite3.Connection]:
+    """같은 DB 파일을 여는 두 연결 — 서버 프로그램 2개를 흉내 낸다."""
+    db = str(Path(tmp) / "workers.db")
+    a = _connect(db, isolation_level=None, timeout=5)
+    a.execute(ddl)
+    return a, _connect(db, isolation_level=None, timeout=5)
+
+
+def check_used_token_once() -> None:
+    """확인표는 하이웍스에 묻기 전에 먼저 기록한다. 같은 확인표가 두 프로그램에 와도 하나만 통과해야 한다."""
+    print("7. 두 연결이 같은 확인표를 기록")
+    with tempfile.TemporaryDirectory() as tmp:
+        a, b = _two_workers(tmp, "CREATE TABLE sso_used_tokens (token_hash TEXT PRIMARY KEY, used_at TEXT NOT NULL)")
+        a.execute("INSERT INTO sso_used_tokens VALUES ('t1', '2027-01-01T00:00:00Z')")
+        try:
+            b.execute("INSERT INTO sso_used_tokens VALUES ('t1', '2027-01-01T00:00:00Z')")
+            _report(False, "다른 연결의 같은 확인표 거부", "두 번 들어가 버렸다")
+        except sqlite3.IntegrityError:
+            _report(True, "다른 연결의 같은 확인표 거부")
+        a.close()
+        b.close()
+
+
+def check_upsert_returning() -> None:
+    """요청 횟수를 메모리에 세면 프로그램마다 숫자가 나뉜다. DB 에 한 문장으로 더하고 센다."""
+    print("8. UPSERT ... RETURNING")
+    actual = tuple(int(p) for p in sqlite3.sqlite_version.split("."))
+    if actual < (3, 35, 0):
+        _report(False, "RETURNING 지원", f"sqlite {sqlite3.sqlite_version} — 3.35.0 이상 필요")
+        return
+    with tempfile.TemporaryDirectory() as tmp:
+        a, b = _two_workers(
+            tmp,
+            "CREATE TABLE sso_rate_hits (ip TEXT NOT NULL, window_start TEXT NOT NULL,"
+            " hits INTEGER NOT NULL, PRIMARY KEY (ip, window_start))",
+        )
+        upsert = (
+            "INSERT INTO sso_rate_hits VALUES ('192.0.2.30', '2027-01-01T09:00', 1)"
+            " ON CONFLICT (ip, window_start) DO UPDATE SET hits = hits + 1 RETURNING hits"
+        )
+        seen = [conn.execute(upsert).fetchone()[0] for conn in (a, b, a, b)]
+        _report(seen == [1, 2, 3, 4], "두 연결이 번갈아 세도 1·2·3·4로 이어짐", f"실제 {seen}")
+        a.close()
+        b.close()
+
+
 def main() -> int:
     print("=" * 62)
     print("SQLite 기능 검증 — 설계 문서 §5 주장 재현")
@@ -320,6 +369,8 @@ def main() -> int:
         check_raise_abort_trigger,
         check_real_vs_integer,
         check_begin_immediate,
+        check_used_token_once,
+        check_upsert_returning,
     ):
         check()
     print("-" * 62)
