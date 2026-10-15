@@ -1143,12 +1143,20 @@ def 팀장_본부장은_자기가_장인_부서까지다():
     assert can(_본부장, Act.KPI_APPROVE, _T[22]) and can(_본부장, Act.KPI_APPROVE, _T[21])
     assert not can(_본부장, Act.KPI_APPROVE, _T[32])  # 다른 본부
     assert not can(Actor(22), Act.KPI_APPROVE, _T[24])  # 직책 없음
-    # 연봉계약서: 팀장은 팀원 것을 못 보고 본부장은 자기 본부를 본다 (8월 설계 §4)
-    assert not can(_팀장, Act.VIEW_CONTRACT, _T[22])
-    assert can(_본부장, Act.VIEW_CONTRACT, _T[22]) and can(Actor(22), Act.VIEW_CONTRACT, _T[22])
     assert can(_본부장, Act.ASSIGN, _묶음[Pool.DIVISION])
     assert not can(Actor(30, position=Role.DIVISION_HEAD, led_division_id=2), Act.ASSIGN, _묶음[Pool.DIVISION])
     assert not can(_본부장, Act.CONFIRM, _묶음[Pool.DIVISION])
+
+
+@check
+def 연봉계약서는_본인과_HR만_본다():
+    """인사담당자 2026-10-15: HR 담당자·HR 팀장만. 팀장·본부장·대표이사는 못 본다."""
+    for 못봄 in (_팀장, _본부장, _대표):
+        assert not can(못봄, Act.VIEW_CONTRACT, _T[22]), 못봄
+        assert not can(못봄, Act.VIEW_CONTRACT, _T[22], delegation=_맡김), 못봄
+    assert can(_HR, Act.VIEW_CONTRACT, _T[22]) and can(_HR팀장, Act.VIEW_CONTRACT, _T[22])
+    assert can(Actor(22), Act.VIEW_CONTRACT, _T[22])  # 본인 것은 본다 (서명해야 한다)
+    assert not can(Actor(24), Act.VIEW_CONTRACT, _T[22])
 
 
 @check

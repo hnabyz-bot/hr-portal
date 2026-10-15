@@ -144,8 +144,8 @@ def _own(a: Actor, act: Act, t: Target | PoolRef | None) -> bool:
             return _in_team(a, t) or (_in_division(a, t) and t.position is TL)
         if act in (Act.VIEW_RESULT, Act.VIEW_KPI):
             return mine or a.is_hr or _in_team(a, t) or _in_division(a, t)
-        if act is Act.VIEW_CONTRACT:  # 팀장은 팀원의 계약서를 못 본다 (8월 설계 §4)
-            return mine or a.is_hr or _in_division(a, t)
+        if act is Act.VIEW_CONTRACT:  # 본인과 HR 만. 팀장·본부장·대표이사는 못 본다 (인사담당자 2026-10-15)
+            return mine or a.is_hr
     if isinstance(t, PoolRef) and act is Act.ASSIGN:
         return (
             t.pool is Pool.DIVISION
