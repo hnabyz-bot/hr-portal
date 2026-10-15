@@ -81,6 +81,10 @@ jobs:
         working-directory: backend
         run: python -m hr_eval.selfcheck
 
+      - name: 직원 명단 동기화 — 가짜 하이웍스 응답으로 가져오기부터 저장까지
+        working-directory: backend
+        run: python -m hr_eval.roster_sync --check
+
       - name: 규정 조항 나누기·검색 자체 검증
         working-directory: backend
         run: python -m services.rules_search
