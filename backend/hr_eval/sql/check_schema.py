@@ -495,6 +495,22 @@ def check_login_tables(conn: sqlite3.Connection) -> None:
     ok, _ = _rejects(conn, audit, (None, 2))
     _report(ok, "HR 권한 칸에 0·1 외 값 거부")
 
+    # 002: HR 이 대표이사 대신 한 일 — 실제로 넣은 HR 과 대표이사를 함께 남긴다
+    ceo = "(SELECT id FROM users WHERE hiworks_user_no='HW-TEST-1')"
+    conn.execute(
+        f"INSERT INTO audit_logs (actor_user_id, actor_is_hr, on_behalf_of, action, entity_type)"
+        f" VALUES ({user}, 1, {ceo}, 'TEST', 'evaluation')"
+    )
+    row = conn.execute(
+        f"SELECT actor_user_id = {user}, on_behalf_of = {ceo} FROM audit_logs WHERE on_behalf_of IS NOT NULL"
+    ).fetchone()
+    _report(row == (1, 1), "대신 입력: 넣은 HR 과 대표이사를 함께 기록", f"실제 {row}")
+
+    ok, _ = _rejects(
+        conn, "INSERT INTO audit_logs (on_behalf_of, action, entity_type) VALUES (9999, 'TEST', 'evaluation')"
+    )
+    _report(ok, "없는 사람을 대표이사로 적으면 거부")
+
 
 def main() -> int:
     print("=" * 62)

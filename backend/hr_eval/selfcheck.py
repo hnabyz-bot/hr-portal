@@ -30,6 +30,7 @@ from hr_eval.domain.errors import (
 )
 from hr_eval.domain.models import (
     Actor,
+    AuditEntry,
     ContractStatus,
     EvaluationPeriod,
     Grade,
@@ -56,6 +57,15 @@ from hr_eval.domain.contract_rules import (
 )
 from hr_eval.domain.grading import Assignment, validate_and_assign_evaluation_grades
 from hr_eval.domain.kpi import KpiInput, validate_kpi_set
+from hr_eval.domain.access import Act, Delegation, Pool, PoolRef, Target, can
+from hr_eval.domain.members import (
+    MSG_DENIED,
+    Member,
+    SsoOutcome,
+    SsoToken,
+    resolve_sso_user,
+    validate_members,
+)
 from hr_eval.usecases import (
     cancel_salary_contract,
     finalize_salary_contract,
@@ -170,9 +180,9 @@ def enum_값이_DDL의_ENUM과_문자열로_일치한다():
     """DDL의 CREATE TYPE 값과 어긋나면 저장할 때 터진다."""
     assert [g.value for g in Grade] == ["S", "A", "B", "C", "D"]
     assert [r.value for r in Role] == [
-        "EMPLOYEE",
         "TEAM_LEADER",
         "DIVISION_HEAD",
+        "CEO",
         "HR_ADMIN",
     ]
     assert [s.value for s in ContractStatus] == ["DRAFT", "SENT", "SIGNED", "CANCELLED"]
@@ -682,7 +692,7 @@ def KPI제출은_본인이나_HR만_할_수_있다():
     uow = _가짜UoW()
     try:
         submit_kpi_goal(
-            actor=Actor(user_id=99, role=Role.TEAM_LEADER),
+            actor=Actor(user_id=99, position=Role.TEAM_LEADER),
             period_id=1,
             user_id=10,
             kpis=_KPI("40.00", "30.00", "30.00"),
@@ -702,7 +712,7 @@ def KPI제출은_수정기간이_닫혀_있으면_막힌다():
     )
     try:
         submit_kpi_goal(
-            actor=Actor(user_id=10, role=Role.EMPLOYEE),
+            actor=Actor(user_id=10),
             period_id=1,
             user_id=10,
             kpis=_KPI("40.00", "30.00", "30.00"),
@@ -724,7 +734,7 @@ def 확정된_KPI는_직접_수정할_수_없다():
     )
     try:
         submit_kpi_goal(
-            actor=Actor(user_id=10, role=Role.EMPLOYEE),
+            actor=Actor(user_id=10),
             period_id=1,
             user_id=10,
             kpis=_KPI("40.00", "30.00", "30.00"),
@@ -741,7 +751,7 @@ def 확정된_KPI는_직접_수정할_수_없다():
 def KPI제출이_성공하면_DRAFT로_저장되고_감사로그가_남는다():
     uow = _가짜UoW()
     sheet = submit_kpi_goal(
-        actor=Actor(user_id=10, role=Role.EMPLOYEE),
+        actor=Actor(user_id=10),
         period_id=1,
         user_id=10,
         kpis=_KPI("40.00", "30.00", "30.00"),
@@ -769,7 +779,7 @@ def KPI재제출은_이전_팀장승인_흔적을_지운다():
         )
     )
     sheet = submit_kpi_goal(
-        actor=Actor(user_id=10, role=Role.EMPLOYEE),
+        actor=Actor(user_id=10),
         period_id=1,
         user_id=10,
         kpis=_KPI("40.00", "30.00", "30.00"),
@@ -785,7 +795,7 @@ def 계약서는_본인만_서명할_수_있다():
     uow = _가짜UoW(contract=_가짜계약서(id=1, user_id=10))
     try:
         finalize_salary_contract(
-            actor=Actor(user_id=11, role=Role.HR_ADMIN),  # HR도 대리 서명 불가
+            actor=Actor(user_id=11, is_hr=True),  # HR도 대리 서명 불가
             contract_id=1,
             signature=_서명(),
             uow=uow,
@@ -808,7 +818,7 @@ def 동의_미체크나_서명이미지_누락은_거부한다():
         uow = _가짜UoW(contract=_가짜계약서(id=1, user_id=10))
         try:
             finalize_salary_contract(
-                actor=Actor(user_id=10, role=Role.EMPLOYEE),
+                actor=Actor(user_id=10),
                 contract_id=1,
                 signature=잘못된서명,
                 uow=uow,
@@ -824,7 +834,7 @@ def 동의_미체크나_서명이미지_누락은_거부한다():
 def 서명이_끝나면_잠기고_감사로그가_남는다():
     uow = _가짜UoW(contract=_가짜계약서(id=1, user_id=10))
     signed = finalize_salary_contract(
-        actor=Actor(user_id=10, role=Role.EMPLOYEE),
+        actor=Actor(user_id=10),
         contract_id=1,
         signature=_서명(),
         uow=uow,
@@ -847,7 +857,7 @@ def 이미_서명된_계약서는_다시_서명할_수_없다():
     uow = _가짜UoW(contract=서명됨)
     try:
         finalize_salary_contract(
-            actor=Actor(user_id=10, role=Role.EMPLOYEE),
+            actor=Actor(user_id=10),
             contract_id=1,
             signature=_서명(),
             uow=uow,
@@ -864,7 +874,7 @@ def 계약_파기는_HR만_사유를_적어야_가능하다():
     uow = _가짜UoW(contract=_가짜계약서(id=1, user_id=10, status=ContractStatus.SIGNED, is_locked=True))
     try:
         cancel_salary_contract(
-            actor=Actor(user_id=10, role=Role.EMPLOYEE), contract_id=1, reason="그냥", uow=uow
+            actor=Actor(user_id=10), contract_id=1, reason="그냥", uow=uow
         )
     except PermissionDeniedError:
         pass
@@ -874,7 +884,7 @@ def 계약_파기는_HR만_사유를_적어야_가능하다():
     uow = _가짜UoW(contract=_가짜계약서(id=1, user_id=10, status=ContractStatus.SIGNED, is_locked=True))
     try:
         cancel_salary_contract(
-            actor=Actor(user_id=1, role=Role.HR_ADMIN), contract_id=1, reason="   ", uow=uow
+            actor=Actor(user_id=1, is_hr=True), contract_id=1, reason="   ", uow=uow
         )
     except ValidationError:
         pass
@@ -884,7 +894,7 @@ def 계약_파기는_HR만_사유를_적어야_가능하다():
 
     uow = _가짜UoW(contract=_가짜계약서(id=1, user_id=10, status=ContractStatus.SIGNED, is_locked=True))
     파기됨 = cancel_salary_contract(
-        actor=Actor(user_id=1, role=Role.HR_ADMIN),
+        actor=Actor(user_id=1, is_hr=True),
         contract_id=1,
         reason="연봉 산정 오류로 재발송 예정",
         uow=uow,
@@ -901,7 +911,7 @@ def 재발송은_원본을_보존하고_새_버전을_만든다():
     원본 = _가짜계약서(id=1, user_id=10, status=ContractStatus.SIGNED, is_locked=True)
     uow = _가짜UoW(contract=원본)
     새계약 = resend_salary_contract(
-        actor=Actor(user_id=1, role=Role.HR_ADMIN),
+        actor=Actor(user_id=1, is_hr=True),
         contract_id=1,
         reason="등급 정정에 따른 재발송",
         uow=uow,
@@ -986,6 +996,283 @@ def 상한_상수가_DDL과_같은_값이다():
     assert (
         f"CHECK (grade <> 'S' OR kpi_score_x100 + bonus_score_x100 > {expected_s})" in ddl
     )
+
+
+# ------------------------------------------------------------------
+# 로그인 설계 9장 4·8·13·14번 (사람 연결 · 사람별 설정 · 첫 HR · 대표이사와 HR에 맡기기)
+# 사람·번호는 전부 가상 값이다.
+# ------------------------------------------------------------------
+
+
+def _명단(바꿈: dict | None = None) -> list[Member]:
+    """가상 구성원. 바꿈 = {id: {칸: 값}}. HR 은 42 한 명, 44 는 포털 사용 꺼짐, 24 는 하이웍스 미연결."""
+    base = [
+        Member(1, "가상대표", 900, "E001", "HW-1", portal_enabled=True, position=Role.CEO,
+               writes_kpi=False, in_evaluation=False, has_contract=False),
+        Member(20, "가상본부장", 1, "E020", "HW-20", portal_enabled=True, position=Role.DIVISION_HEAD,
+               in_evaluation=False, has_contract=False),
+        Member(21, "가상팀장", 11, "E021", "HW-21", portal_enabled=True, position=Role.TEAM_LEADER),
+        Member(22, "가상팀원", 11, "E022", "HW-22", portal_enabled=True),
+        Member(24, "가상미연결", 12, "E024", None, portal_enabled=True),
+        Member(32, "가상퇴사", 13, "E032", "HW-32", is_active=False, portal_enabled=True),
+        Member(41, "가상HR팀장", 91, "E041", "HW-41", portal_enabled=True, position=Role.TEAM_LEADER),
+        Member(42, "가상HR", 91, "E042", "HW-42", portal_enabled=True, is_hr=True),
+        Member(44, "가상준비중", 92, "E044", "HW-44"),
+    ]
+    바꿈 = 바꿈 or {}
+    return [replace(m, **바꿈.get(m.id, {})) for m in base]
+
+
+@check
+def 사람연결_하이웍스_번호로_찾는다():
+    r = resolve_sso_user(SsoToken("HW-22"), _명단())
+    assert (r.outcome, r.user_id, r.link, r.bootstrap_hr, r.audit) == (SsoOutcome.OK, 22, False, False, ())
+
+
+@check
+def 사람연결_미등록과_비활성은_같은_결과_같은_문구다():
+    """등록 여부를 구분해 알려 주지 않는다 (9장 4)."""
+    없음 = resolve_sso_user(SsoToken("HW-999"), _명단())
+    퇴사 = resolve_sso_user(SsoToken("HW-32"), _명단())
+    assert 없음.outcome is SsoOutcome.DENIED
+    assert (없음.outcome, 없음.user_id, 없음.message) == (퇴사.outcome, 퇴사.user_id, 퇴사.message)
+    assert 퇴사.message == MSG_DENIED and 퇴사.audit == ()
+
+
+@check
+def 사람연결_사번_대안은_켜야만_쓴다():
+    토큰 = SsoToken("HW-NEW", "id24", "가상미연결", "E024")
+    assert resolve_sso_user(토큰, _명단()).outcome is SsoOutcome.DENIED
+
+    r = resolve_sso_user(토큰, _명단(), link_by_employee_no=True)
+    assert (r.outcome, r.user_id, r.link) == (SsoOutcome.OK, 24, True)
+    assert [e.action for e in r.audit] == ["SSO_LINK"]
+    assert r.audit[0].entity_id == 24 and r.audit[0].after_data["hiworks_user_no"] == "HW-NEW"
+
+
+@check
+def 사람연결_사번_대안은_이름까지_같고_아직_연결_안된_사람만():
+    켬 = dict(link_by_employee_no=True)
+    # 이름이 다르면 연결하지 않는다
+    assert resolve_sso_user(SsoToken("HW-NEW", "", "다른이름", "E024"), _명단(), **켬).outcome is SsoOutcome.DENIED
+    # 이미 연결된 사람(22)을 사번·이름만 같다고 가로챌 수 없다
+    가로채기 = resolve_sso_user(SsoToken("HW-EVIL", "", "가상팀원", "E022"), _명단(), **켬)
+    assert 가로채기.outcome is SsoOutcome.DENIED and not 가로채기.link
+    # 하이웍스에 사번이 비어 있으면 연결하지 않는다
+    assert resolve_sso_user(SsoToken("HW-NEW", "", "가상미연결", ""), _명단(), **켬).outcome is SsoOutcome.DENIED
+    # 비활성인 사람은 연결도 하지 않는다
+    퇴사 = _명단({32: dict(hiworks_user_no=None)})
+    r = resolve_sso_user(SsoToken("HW-NEW", "", "가상퇴사", "E032"), 퇴사, **켬)
+    assert r.outcome is SsoOutcome.DENIED and not r.link and r.audit == ()
+
+
+@check
+def 하이웍스_응답값을_글자로_맞춘다():
+    t = SsoToken.from_api({"user-no": 12345, "user-id": " id1 ", "user-name": "가상", "employee-no": None})
+    assert t == SsoToken("12345", "id1", "가상", "")
+
+
+@check
+def 직책은_하나_HR_권한은_따로다():
+    """9장 8: 직책 두 줄은 거부, HR 권한은 직책과 함께."""
+    a = Actor.from_roles(41, [Role.HR_ADMIN, Role.TEAM_LEADER], led_team_id=91)
+    assert (a.position, a.is_hr, a.led_team_id) == (Role.TEAM_LEADER, True, 91)
+    assert Actor.from_roles(22, []) == Actor(22)
+    assert "POSITION_DUPLICATED" in _오류코드(lambda: Actor.from_roles(5, [Role.TEAM_LEADER, Role.DIVISION_HEAD]))
+    try:
+        Actor(5, position=Role.HR_ADMIN)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("HR 권한이 직책 칸에 들어갔다")
+    # 저장 모양: user_roles 줄
+    hrl = replace(_명단()[6], is_hr=True)
+    assert hrl.roles() == {Role.TEAM_LEADER, Role.HR_ADMIN}
+    assert _명단()[3].roles() == frozenset()
+
+
+_T = {
+    20: Target(20, None, 1, Role.DIVISION_HEAD),
+    21: Target(21, 11, 1, Role.TEAM_LEADER),
+    22: Target(22, 11, 1),
+    23: Target(23, 12, 1, Role.TEAM_LEADER),
+    24: Target(24, 12, 1),
+    32: Target(32, 13, 2),
+    41: Target(41, 91, 9, Role.TEAM_LEADER, direct=True),  # HR 팀장 = 직속부서 팀장
+    42: Target(42, 91, 9, direct=True),  # HR 담당자
+    43: Target(43, 92, 9, Role.TEAM_LEADER, direct=True),
+    44: Target(44, 92, 9, direct=True),
+}
+_대표 = Actor(1, position=Role.CEO)
+_본부장 = Actor(20, position=Role.DIVISION_HEAD, led_division_id=1)
+_팀장 = Actor(21, position=Role.TEAM_LEADER, led_team_id=11)
+_HR팀장 = Actor(41, position=Role.TEAM_LEADER, is_hr=True, led_team_id=91)
+_HR = Actor(42, is_hr=True)
+_묶음 = {
+    Pool.DIVISION: PoolRef(Pool.DIVISION, frozenset({22, 24}), division_id=1),
+    Pool.LEADERS: PoolRef(Pool.LEADERS, frozenset({21, 23, 41, 43})),
+    Pool.DIRECT: PoolRef(Pool.DIRECT, frozenset({42, 44})),
+}
+_맡김 = Delegation(ceo_user_id=1)
+
+
+@check
+def 묶음은_직책과_소속으로_정해진다():
+    assert _T[20].pool is None  # 본부장은 평가받지 않는다
+    assert _T[21].pool is Pool.LEADERS and _T[41].pool is Pool.LEADERS
+    assert _T[22].pool is Pool.DIVISION
+    assert _T[42].pool is Pool.DIRECT
+
+
+@check
+def HR팀장은_팀장_권한과_HR_권한을_모두_쓴다():
+    """9장 8."""
+    assert can(_HR팀장, Act.SCORE, _T[42]) and can(_HR팀장, Act.KPI_APPROVE, _T[42])
+    assert can(_HR팀장, Act.MANAGE) and can(_HR팀장, Act.FINALIZE)
+    # HR 권한만으로는 평가하지 않는다 (맡겨졌을 때 대표이사 몫만)
+    assert not can(_HR, Act.SCORE, _T[44])
+    assert can(_HR, Act.MANAGE) and not can(_팀장, Act.MANAGE)
+
+
+@check
+def 팀장_본부장은_자기가_장인_부서까지다():
+    assert can(_팀장, Act.SCORE, _T[22])
+    assert not can(_팀장, Act.SCORE, _T[24])  # 다른 팀
+    assert not can(_팀장, Act.SCORE, _T[21])  # 자기 자신
+    assert can(_본부장, Act.SCORE, _T[21]) and not can(_본부장, Act.SCORE, _T[22])  # 본부장은 팀장을 평가
+    assert can(_본부장, Act.KPI_APPROVE, _T[22]) and can(_본부장, Act.KPI_APPROVE, _T[21])
+    assert not can(_본부장, Act.KPI_APPROVE, _T[32])  # 다른 본부
+    assert not can(Actor(22), Act.KPI_APPROVE, _T[24])  # 직책 없음
+    # 연봉계약서: 팀장은 팀원 것을 못 보고 본부장은 자기 본부를 본다 (8월 설계 §4)
+    assert not can(_팀장, Act.VIEW_CONTRACT, _T[22])
+    assert can(_본부장, Act.VIEW_CONTRACT, _T[22]) and can(Actor(22), Act.VIEW_CONTRACT, _T[22])
+    assert can(_본부장, Act.ASSIGN, _묶음[Pool.DIVISION])
+    assert not can(Actor(30, position=Role.DIVISION_HEAD, led_division_id=2), Act.ASSIGN, _묶음[Pool.DIVISION])
+    assert not can(_본부장, Act.CONFIRM, _묶음[Pool.DIVISION])
+
+
+@check
+def 포털_사용이_꺼진_사람은_세션을_받지_못하고_준비중이다():
+    r = resolve_sso_user(SsoToken("HW-44"), _명단())
+    assert r.outcome is SsoOutcome.NOT_READY and r.user_id == 44 and "준비 중" in r.message
+
+
+@check
+def 구성원_설정_규칙을_모아서_알려준다():
+    validate_members(_명단())  # 기본 명단은 통과
+    두팀장 = _명단({22: dict(position=Role.TEAM_LEADER)})
+    assert "POSITION_TAKEN" in _오류코드(lambda: validate_members(두팀장))
+    # 비활성인 전 팀장은 세지 않는다
+    validate_members(_명단({22: dict(position=Role.TEAM_LEADER), 21: dict(is_active=False, position=None)}))
+    평가받는본부장 = _명단({20: dict(in_evaluation=True)})
+    assert "NOT_EVALUATED_POSITION" in _오류코드(lambda: validate_members(평가받는본부장))
+    assert "CEO_NO_KPI" in _오류코드(lambda: validate_members(_명단({1: dict(writes_kpi=True)})))
+    # 평가가 시작된 사람의 KPI 작성은 못 바꾼다
+    바꿈 = _명단({22: dict(writes_kpi=False)})
+    assert "KPI_LOCKED" in _오류코드(lambda: validate_members(바꿈, before=_명단(), kpi_locked={22}))
+    validate_members(바꿈, before=_명단(), kpi_locked={21})
+    # 문제가 여럿이면 전부 모은다
+    여럿 = _명단({22: dict(position=Role.TEAM_LEADER), 20: dict(has_contract=True)})
+    assert len(_오류코드(lambda: validate_members(여럿))) >= 2
+
+
+@check
+def 감사로그에_직책과_HR_권한이_두_칸으로_남는다():
+    e = AuditEntry.by(_HR팀장, action="X", entity_type="t", entity_id=1)
+    assert (e.actor_user_id, e.actor_position, e.actor_is_hr, e.on_behalf_of) == (41, Role.TEAM_LEADER, True, None)
+    uow = _가짜UoW(contract=_가짜계약서(id=1, user_id=10, status=ContractStatus.SIGNED, is_locked=True))
+    cancel_salary_contract(actor=_HR, contract_id=1, reason="가상 사유", uow=uow)
+    assert (uow.audit_entries[0].actor_position, uow.audit_entries[0].actor_is_hr) == (None, True)
+    # 도메인 값과 DDL 이 같은 글자를 말하는지
+    ddl = "".join(
+        f.read_text(encoding="utf-8") for f in sorted((pathlib.Path(__file__).with_name("sql")).glob("0*.sql"))
+    )
+    roles = ",".join(f"'{r.value}'" for r in Role)
+    positions = ",".join(f"'{r.value}'" for r in (Role.TEAM_LEADER, Role.DIVISION_HEAD, Role.CEO))
+    assert f"CHECK (role IN ({roles}))" in ddl
+    assert f"OR actor_position IN ({positions})" in ddl
+    assert "actor_is_hr" in ddl and "on_behalf_of" in ddl and "actor_role" not in ddl
+
+
+@check
+def 첫HR은_HR이_0명일때_하이웍스_번호로만_지정된다():
+    """9장 13."""
+    무HR = _명단({42: dict(is_hr=False)})
+    r = resolve_sso_user(SsoToken("HW-44"), 무HR, first_hr_user_no="HW-44")
+    assert (r.outcome, r.user_id, r.bootstrap_hr) == (SsoOutcome.OK, 44, True)  # 포털 사용이 꺼져 있어도 켜고 들어온다
+    assert [e.action for e in r.audit] == ["HR_BOOTSTRAP"] and r.audit[0].actor_user_id is None
+    for 설정 in ("", None, "HW-22", "E044"):  # 비었거나 · 다른 번호 · 사번으로는 안 된다
+        r = resolve_sso_user(SsoToken("HW-44", "id44", "가상준비중", "E044"), 무HR, first_hr_user_no=설정)
+        assert r.outcome is SsoOutcome.NOT_READY and not r.bootstrap_hr, 설정
+
+
+@check
+def 첫HR_HR이_한명이라도_있으면_설정값을_보지_않는다():
+    r = resolve_sso_user(SsoToken("HW-44"), _명단(), first_hr_user_no="HW-44")
+    assert r.outcome is SsoOutcome.NOT_READY and not r.bootstrap_hr and r.audit == ()
+    # 포털을 끈 HR · 비활성 HR 은 HR 로 세지 않는다
+    for 바꿈 in ({42: dict(portal_enabled=False)}, {42: dict(is_active=False)}):
+        assert resolve_sso_user(SsoToken("HW-44"), _명단(바꿈), first_hr_user_no="HW-44").bootstrap_hr
+
+
+@check
+def 마지막_HR은_빼거나_끄거나_비활성화할_수_없다():
+    for 바꿈 in (dict(is_hr=False), dict(portal_enabled=False), dict(is_active=False)):
+        assert "LAST_HR" in _오류코드(lambda: validate_members(_명단({42: 바꿈}))), 바꿈
+    # 다른 HR 을 먼저 지정하면 뺄 수 있다
+    validate_members(_명단({41: dict(is_hr=True), 42: dict(is_hr=False)}))
+
+
+@check
+def 대표이사의_일은_6장_표의_범위다():
+    """9장 14."""
+    c = _대표
+    assert can(c, Act.KPI_APPROVE, _T[20]) and can(c, Act.KPI_APPROVE, _T[41])  # 본부장 · 직속부서 팀장
+    assert not can(c, Act.KPI_APPROVE, _T[21]) and not can(c, Act.KPI_APPROVE, _T[22])
+    assert can(c, Act.SCORE, _T[41]) and not can(c, Act.SCORE, _T[21]) and not can(c, Act.SCORE, _T[42])
+    assert can(c, Act.ASSIGN, _묶음[Pool.DIRECT]) and not can(c, Act.ASSIGN, _묶음[Pool.DIVISION])
+    assert all(can(c, Act.CONFIRM, p) for p in _묶음.values())
+    assert can(c, Act.CONFIRM_EDIT, _묶음[Pool.LEADERS]) and not can(c, Act.CONFIRM_EDIT, _묶음[Pool.DIVISION])
+    assert can(c, Act.SEND_BACK, _묶음[Pool.DIVISION]) and not can(c, Act.SEND_BACK, _묶음[Pool.LEADERS])
+    assert not any(can(c, a) for a in (Act.FINALIZE, Act.MANAGE, Act.APPEAL_ANSWER))
+    assert can(c, Act.APPEAL_CONFIRM, _T[22]) and not can(c, Act.APPEAL_CONFIRM, _T[20])
+    assert can(c, Act.VIEW_KPI, _T[21]) and not can(c, Act.VIEW_KPI, _T[22])  # 팀원은 인원·평균만
+    assert can(c, Act.VIEW_RESULT, _T[22])
+
+
+@check
+def 맡기지_않으면_HR은_대표이사의_일을_못_한다():
+    for act, t in ((Act.KPI_APPROVE, _T[20]), (Act.SCORE, _T[43]), (Act.CONFIRM, _묶음[Pool.DIVISION]),
+                   (Act.CONFIRM_EDIT, _묶음[Pool.LEADERS]), (Act.APPEAL_CONFIRM, _T[22])):
+        assert not can(_HR, act, t), act
+        assert can(_HR, act, t, delegation=_맡김), act
+
+
+@check
+def 맡김은_대표이사만_켠다():
+    assert can(_대표, Act.DELEGATE)
+    assert not can(_HR, Act.DELEGATE) and not can(_HR, Act.DELEGATE, delegation=_맡김)
+
+
+@check
+def 맡기면_HR이_대신하고_넣은_사람과_대표이사가_함께_남는다():
+    허락 = can(_HR, Act.KPI_APPROVE, _T[20], delegation=_맡김)
+    assert 허락 and 허락.on_behalf_of == 1
+    e = AuditEntry.by(_HR, on_behalf_of=허락.on_behalf_of, action="KPI_APPROVED", entity_type="kpi_sheet", entity_id=7)
+    assert (e.actor_user_id, e.actor_is_hr, e.on_behalf_of) == (42, True, 1)
+    # 대표이사가 직접 하면 대신 표시가 없다
+    assert can(_대표, Act.KPI_APPROVE, _T[20]).on_behalf_of is None
+
+
+@check
+def HR은_본인의_것을_대신할_수_없다():
+    assert not can(_HR팀장, Act.SCORE, _T[41], delegation=_맡김)  # HR 팀장 본인의 평가
+    assert not can(_HR팀장, Act.KPI_APPROVE, _T[41], delegation=_맡김)  # 본인 KPI 승인
+    assert can(_HR, Act.SCORE, _T[41], delegation=_맡김)  # 다른 HR 은 된다
+    assert not can(_HR, Act.ASSIGN, _묶음[Pool.DIRECT], delegation=_맡김)  # HR 담당자 본인의 등급
+    assert can(_HR팀장, Act.ASSIGN, _묶음[Pool.DIRECT], delegation=_맡김)
+    assert not can(_HR팀장, Act.CONFIRM, _묶음[Pool.LEADERS], delegation=_맡김)  # 본인이 든 묶음
+    assert can(_HR, Act.CONFIRM, _묶음[Pool.LEADERS], delegation=_맡김)
 
 
 def main() -> int:
