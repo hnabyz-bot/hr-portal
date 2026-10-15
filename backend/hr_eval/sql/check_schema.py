@@ -18,7 +18,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-SCHEMA_PATH = Path(__file__).with_name("001_init.sql")
+from .db import SQL_DIR, connect, init_db
 
 _failures: list[str] = []
 _checks = 0
@@ -45,27 +45,25 @@ def _rejects(conn: sqlite3.Connection, sql: str, params: tuple = ()) -> tuple[bo
     return False, ""
 
 
-def connect(path: str) -> sqlite3.Connection:
-    """운영 코드가 써야 할 연결 방식.
-
-    PRAGMA 는 트랜잭션 안에서 조용히 무시되므로, 어떤 쿼리보다도 먼저 건다.
-    (근거 재현: check_sqlite_features.py)
-    """
-    conn = sqlite3.connect(path, isolation_level=None)
-    conn.execute("PRAGMA foreign_keys = ON")
-    conn.execute("PRAGMA journal_mode = WAL")
-    conn.execute("PRAGMA busy_timeout = 5000")
-    return conn
-
-
-def apply_schema(conn: sqlite3.Connection) -> bool:
+def apply_schema(path: str) -> sqlite3.Connection | None:
+    """서버와 같은 길(init_db)로 스키마를 넣고, 검사에 쓸 연결을 돌려준다."""
     print("1. 스키마 적용")
+    last = max(int(f.name[:3]) for f in SQL_DIR.glob("[0-9][0-9][0-9]_*.sql"))
     try:
-        conn.executescript(SCHEMA_PATH.read_text(encoding="utf-8"))
+        version = init_db(path)
     except sqlite3.Error as exc:
-        _report(False, "001_init.sql 적용", str(exc))
-        return False
-    _report(True, "001_init.sql 적용")
+        _report(False, "스키마 파일 적용 (init_db)", str(exc))
+        return None
+    _report(version == last, f"스키마 파일 적용 (init_db) — 판 {version}", f"마지막 파일 번호 {last}")
+
+    # 서버는 시작할 때마다 init_db 를 부른다. 두 번째부터는 아무것도 하지 않아야 한다.
+    try:
+        again = init_db(path)
+        _report(again == version, "init_db 를 다시 불러도 다시 넣지 않음", f"판 {again}")
+    except sqlite3.Error as exc:
+        _report(False, "init_db 를 다시 불러도 다시 넣지 않음", str(exc))
+
+    conn = connect(path)
 
     tables = {
         r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
@@ -82,6 +80,10 @@ def apply_schema(conn: sqlite3.Connection) -> bool:
         "salary_raise_rates",
         "salary_contracts",
         "audit_logs",
+        "user_roles",
+        "sessions",
+        "sso_used_tokens",
+        "sso_rate_hits",
     }
     missing = expected - tables
     _report(not missing, f"테이블 {len(expected)}개 생성", f"누락: {sorted(missing)}")
@@ -96,7 +98,7 @@ def apply_schema(conn: sqlite3.Connection) -> bool:
     # 외래키가 실제로 켜져 있는지 다시 확인한다.
     fk = conn.execute("PRAGMA foreign_keys").fetchone()[0]
     _report(fk == 1, "외래키가 켜진 상태로 유지됨", f"실제 {fk}")
-    return True
+    return conn
 
 
 def seed(conn: sqlite3.Connection) -> None:
@@ -106,8 +108,8 @@ def seed(conn: sqlite3.Connection) -> None:
         "INSERT INTO departments (code, name, level) VALUES ('DIV1', '가상본부', 'DIVISION')"
     )
     conn.execute(
-        "INSERT INTO users (employee_no, name, email, role, department_id, hire_date)"
-        " VALUES ('T001', '가상직원', 't001@example.invalid', 'EMPLOYEE',"
+        "INSERT INTO users (employee_no, name, email, department_id, hire_date)"
+        " VALUES ('T001', '가상직원', 't001@example.invalid',"
         " (SELECT id FROM departments WHERE code='DIV1'), '2020-01-01')"
     )
     conn.execute(
@@ -121,8 +123,8 @@ def check_foreign_keys(conn: sqlite3.Connection) -> None:
     print("3. 외래키 강제")
     ok, _ = _rejects(
         conn,
-        "INSERT INTO users (employee_no, name, email, role, department_id, hire_date)"
-        " VALUES ('T999', '유령', 't999@example.invalid', 'EMPLOYEE', 9999, '2020-01-01')",
+        "INSERT INTO users (employee_no, name, email, department_id, hire_date)"
+        " VALUES ('T999', '유령', 't999@example.invalid', 9999, '2020-01-01')",
     )
     _report(ok, "존재하지 않는 부서에 직원 배정 거부")
 
@@ -398,15 +400,111 @@ def check_updated_at(conn: sqlite3.Connection) -> None:
     _report(after != before, "수정 시 updated_at 이 자동 갱신됨", f"{before} -> {after}")
 
 
+def check_login_tables(conn: sqlite3.Connection) -> None:
+    """로그인 설계 §6 의 표. 값은 전부 가상이다 (하이웍스 번호·확인표도 가짜)."""
+    print("11. 직원 칸 · 사람별 설정")
+    div = "(SELECT id FROM departments WHERE code='DIV1')"
+    row = conn.execute(
+        "SELECT portal_enabled, writes_kpi, in_evaluation, has_contract FROM users WHERE employee_no='T001'"
+    ).fetchone()
+    _report(row == (0, 1, 1, 1), "새 직원 기본값: 포털 사용만 꺼짐 (KPI 작성·평가 대상·연봉계약서 켬)", f"실제 {row}")
+
+    # 명단 동기화로 들어온 사람은 사번·입사일이 없다. 그런 사람이 여럿이어도 된다
+    for n in (1, 2):
+        conn.execute(
+            "INSERT INTO users (name, email, department_id, hiworks_user_no)"
+            f" VALUES ('동기화직원{n}', 'sync{n}@example.invalid', {div}, 'HW-TEST-{n}')"
+        )
+    _report(True, "사번·입사일 없는 직원 둘 추가 허용 (명단 동기화)")
+
+    ok, _ = _rejects(
+        conn,
+        "INSERT INTO users (employee_no, name, email, department_id)"
+        f" VALUES ('T001', '사번겹침', 'dup@example.invalid', {div})",
+    )
+    _report(ok, "사번 중복 거부")
+
+    ok, _ = _rejects(
+        conn,
+        "INSERT INTO users (name, email, department_id, hiworks_user_no)"
+        f" VALUES ('번호겹침', 'dup2@example.invalid', {div}, 'HW-TEST-1')",
+    )
+    _report(ok, "하이웍스 사용자 번호 중복 거부")
+
+    ok, _ = _rejects(conn, "UPDATE users SET is_active = 0 WHERE employee_no='T001'")
+    _report(ok, "비활성 날짜 없이 비활성 거부")
+    conn.execute(
+        "UPDATE users SET is_active = 0, deactivated_at = '2027-03-01T09:00:00Z'"
+        " WHERE hiworks_user_no='HW-TEST-2'"
+    )
+    ok, _ = _rejects(conn, "UPDATE users SET is_active = 1 WHERE hiworks_user_no='HW-TEST-2'")
+    _report(ok, "다시 켤 때 비활성 날짜가 남아 있으면 거부")
+
+    print("12. 직책 · HR 권한 (user_roles)")
+    user = "(SELECT id FROM users WHERE employee_no='T001')"
+    ok, _ = _rejects(conn, f"INSERT INTO user_roles (user_id, role) VALUES ({user}, 'EMPLOYEE')")
+    _report(ok, "EMPLOYEE 역할 거부 (직책 줄이 없으면 직원)")
+
+    conn.execute(f"INSERT INTO user_roles (user_id, role) VALUES ({user}, 'TEAM_LEADER')")
+    conn.execute(f"INSERT INTO user_roles (user_id, role) VALUES ({user}, 'HR_ADMIN')")
+    n = conn.execute(f"SELECT COUNT(*) FROM user_roles WHERE user_id = {user}").fetchone()[0]
+    _report(n == 2, "직책과 HR 권한을 함께 가짐 (HR 팀장)", f"실제 {n}줄")
+
+    ok, _ = _rejects(conn, f"INSERT INTO user_roles (user_id, role) VALUES ({user}, 'HR_ADMIN')")
+    _report(ok, "같은 역할 두 줄 거부")
+
+    ok, _ = _rejects(conn, "INSERT INTO user_roles (user_id, role) VALUES (9999, 'CEO')")
+    _report(ok, "없는 직원에게 역할 거부")
+
+    # 역할 말고는 아무 기록도 없는 직원이어야 역할 때문에 막혔는지 알 수 있다
+    synced = "(SELECT id FROM users WHERE hiworks_user_no='HW-TEST-1')"
+    conn.execute(f"INSERT INTO user_roles (user_id, role) VALUES ({synced}, 'CEO')")
+    ok, msg = _rejects(conn, f"DELETE FROM users WHERE id = {synced}")
+    _report(ok and "FOREIGN KEY" in msg, "역할이 있는 직원 삭제 거부 (비활성으로 처리)", msg)
+
+    print("13. 로그인 기록")
+    session = (
+        "INSERT INTO sessions (token_hash, user_id, created_at, last_seen_at, expires_at)"
+        " VALUES (?, {u}, '2027-03-02T09:00:00Z', '2027-03-02T09:00:00Z', '2027-03-02T21:00:00Z')"
+    )
+    conn.execute(session.format(u=user), ("b" * 64,))
+    ok, _ = _rejects(conn, session.format(u=9999), ("c" * 64,))
+    _report(ok, "없는 직원의 세션 거부")
+
+    used = "INSERT INTO sso_used_tokens (token_hash, used_at) VALUES (?, ?)"
+    conn.execute(used, ("d" * 64, "2027-03-02T09:00:00Z"))
+    ok, _ = _rejects(conn, used, ("d" * 64, "2027-03-02T09:00:01Z"))
+    _report(ok, "한 번 쓴 확인표를 다시 기록하면 거부 (재사용 막기)")
+
+    upsert = (
+        "INSERT INTO sso_rate_hits (ip, window_start, hits) VALUES ('192.0.2.20', '2027-03-02T09:00', 1)"
+        " ON CONFLICT (ip, window_start) DO UPDATE SET hits = hits + 1 RETURNING hits"
+    )
+    counts = [conn.execute(upsert).fetchone()[0] for _ in range(3)]
+    _report(counts == [1, 2, 3], "요청 횟수를 한 문장으로 더하고 셈", f"실제 {counts}")
+
+    print("14. 감사로그의 직책 · HR 권한")
+    audit = "INSERT INTO audit_logs (actor_position, actor_is_hr, action, entity_type) VALUES (?, ?, 'TEST', 'evaluation')"
+    conn.execute(audit, ("CEO", 0))
+    conn.execute(audit, ("TEAM_LEADER", 1))
+    _report(True, "대표이사, 팀장 + HR 권한 기록 허용")
+
+    ok, _ = _rejects(conn, audit, ("EMPLOYEE", 0))
+    _report(ok, "직책 칸에 EMPLOYEE 거부")
+
+    ok, _ = _rejects(conn, audit, (None, 2))
+    _report(ok, "HR 권한 칸에 0·1 외 값 거부")
+
+
 def main() -> int:
     print("=" * 62)
     print("SQLite 스키마 적용 + 제약조건 동작 검사")
     print("=" * 62)
     with tempfile.TemporaryDirectory() as tmp:
-        conn = connect(str(Path(tmp) / "schema-check.db"))
+        conn = apply_schema(str(Path(tmp) / "schema-check.db"))
+        if conn is None:
+            return 1
         try:
-            if not apply_schema(conn):
-                return 1
             seed(conn)
             check_foreign_keys(conn)
             check_department_hierarchy(conn)
@@ -416,6 +514,7 @@ def main() -> int:
             check_contract_rules(conn)
             check_audit_log(conn)
             check_updated_at(conn)
+            check_login_tables(conn)
         finally:
             conn.close()
 

@@ -2,8 +2,9 @@
 --
 -- 설계 근거: docs/superpowers/specs/2026-08-24-hr-evaluation-contract-design.md
 --            docs/superpowers/specs/2026-08-24-sqlite-auth-design.md §5 (전환 규칙)
--- 적용:      python -m hr_eval.sql.check_schema   (CI 가 실행)
---            또는 sqlite3 <파일> < 001_init.sql
+--            docs/superpowers/specs/2026-09-29-hiworks-sso-login-design.md §6 (로그인 표, 사람별 설정)
+-- 적용:      서버는 시작할 때 hr_eval.sql.db.init_db 가 넣는다 (PRAGMA user_version 으로 한 번만)
+--            검사는 python -m hr_eval.sql.check_schema   (CI 가 실행)
 --
 -- 이 파일에는 실제 직원 정보도, 연봉 인상률 수치도 들어가지 않는다.
 -- hr-portal은 Public 저장소이고, 그런 데이터는 서버 DB에만 존재한다.
@@ -56,22 +57,77 @@ CREATE TABLE departments (
 );
 CREATE INDEX idx_departments_parent ON departments(parent_id);
 
+-- 직책·HR 권한은 users.role 한 칸이 아니라 user_roles 에 둔다 (로그인 설계 §6 "사람별 설정").
+-- 사번·입사일은 하이웍스 조직 조회에 없어 명단 동기화로 들어온 사람은 비어 있다 (로그인 설계 §11).
 CREATE TABLE users (
-    id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    employee_no   TEXT    NOT NULL UNIQUE,
-    name          TEXT    NOT NULL,
-    email         TEXT    NOT NULL UNIQUE,
-    role          TEXT    NOT NULL DEFAULT 'EMPLOYEE'
-                  CHECK (role IN ('EMPLOYEE','TEAM_LEADER','DIVISION_HEAD','HR_ADMIN')),
-    department_id INTEGER NOT NULL REFERENCES departments(id) ON DELETE RESTRICT,
-    hire_date     TEXT    NOT NULL,
-    is_active     INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0,1)),
-    created_at    TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
-    updated_at    TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
-    created_by    INTEGER NULL REFERENCES users(id) ON DELETE SET NULL
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    employee_no     TEXT    NULL UNIQUE,   -- 비어 있는 사람은 여럿이어도 된다. 값이 있으면 중복 금지
+    name            TEXT    NOT NULL,
+    email           TEXT    NOT NULL UNIQUE,
+    department_id   INTEGER NOT NULL REFERENCES departments(id) ON DELETE RESTRICT,
+    hire_date       TEXT    NULL,          -- HR 이 포털에서 넣는다
+    is_active       INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0,1)),
+    -- 하이웍스 로그인
+    hiworks_user_no TEXT    NULL UNIQUE,   -- 하이웍스 사용자 번호. 명단 동기화가 미리 채운다
+    last_login_at   TEXT    NULL,
+    deactivated_at  TEXT    NULL,
+    -- 사람별 설정. HR 이 구성원 설정 화면에서 정한다
+    portal_enabled  INTEGER NOT NULL DEFAULT 0 CHECK (portal_enabled IN (0,1)),  -- 포털 사용(출입). 시범 사용자 명단
+    writes_kpi      INTEGER NOT NULL DEFAULT 1 CHECK (writes_kpi IN (0,1)),      -- 0 = 현장직(팀장 평가)
+    in_evaluation   INTEGER NOT NULL DEFAULT 1 CHECK (in_evaluation IN (0,1)),   -- 평가 대상
+    has_contract    INTEGER NOT NULL DEFAULT 1 CHECK (has_contract IN (0,1)),    -- 연봉계약서 대상
+    created_at      TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+    updated_at      TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+    created_by      INTEGER NULL REFERENCES users(id) ON DELETE SET NULL,
+    -- 비활성인데 날짜가 없거나, 활성인데 날짜가 남아 있는 상태를 막는다
+    CONSTRAINT users_active_chk CHECK ((is_active = 1) = (deactivated_at IS NULL))
 );
 CREATE INDEX idx_users_department ON users(department_id) WHERE is_active = 1;
-CREATE INDEX idx_users_role       ON users(role);
+
+-- 직책(TEAM_LEADER·DIVISION_HEAD·CEO) 한 줄 + HR 권한(HR_ADMIN) 한 줄까지. 줄이 없으면 직책 없는 직원.
+-- 직책 겸직 금지는 구성원 설정 기능이 지킨다 — DB 로 막지 않는다 (겸직을 풀 때 자료를 옮기지 않으려고).
+-- 본부장·대표이사의 평가 대상·연봉계약서 잠금도 같은 기능이 지킨다.
+CREATE TABLE user_roles (
+    user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+    role       TEXT    NOT NULL CHECK (role IN ('TEAM_LEADER','DIVISION_HEAD','CEO','HR_ADMIN')),
+    granted_at TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+    granted_by INTEGER NULL REFERENCES users(id) ON DELETE SET NULL,  -- 비어 있으면 시스템(첫 HR 지정)
+    PRIMARY KEY (user_id, role)
+);
+CREATE INDEX idx_user_roles_role ON user_roles(role);
+
+-- ============================================================
+-- 로그인 (하이웍스 SSO, 로그인 설계 §3·§5·§6)
+-- ============================================================
+-- 세션 토큰·확인표(token)는 원본을 저장하지 않는다. SHA-256 해시만.
+CREATE TABLE sessions (
+    token_hash   TEXT    PRIMARY KEY,
+    user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at   TEXT    NOT NULL,
+    last_seen_at TEXT    NOT NULL,
+    expires_at   TEXT    NOT NULL,   -- 발급 후 최대 12시간. 마지막 사용 후 4시간은 last_seen_at 으로 따진다
+    ip           TEXT    NULL,       -- CF-Connecting-IP
+    user_agent   TEXT    NULL,
+    revoked_at   TEXT    NULL
+);
+CREATE INDEX idx_sessions_user ON sessions(user_id) WHERE revoked_at IS NULL;
+
+-- 한 번 쓴 확인표. 하이웍스에 묻기 전에 먼저 넣는다 — 기본 키라 같은 확인표는 하나만 들어간다.
+-- 60초 지난 행은 로그인 처리 때 함께 지운다.
+CREATE TABLE sso_used_tokens (
+    token_hash TEXT PRIMARY KEY,
+    used_at    TEXT NOT NULL
+);
+
+-- 요청 빈도 제한. 서버 프로그램(gunicorn) 2개가 같은 숫자를 보도록 메모리가 아니라 여기에 센다.
+-- 더하기와 세기는 한 문장: INSERT ... ON CONFLICT DO UPDATE SET hits = hits + 1 RETURNING hits
+-- 지난 창의 행은 로그인 처리 때 함께 지운다.
+CREATE TABLE sso_rate_hits (
+    ip           TEXT    NOT NULL,   -- CF-Connecting-IP
+    window_start TEXT    NOT NULL,   -- 1분 단위로 자른 시각
+    hits         INTEGER NOT NULL CHECK (hits >= 1),
+    PRIMARY KEY (ip, window_start)
+);
 
 -- ============================================================
 -- §3.3 평가기간·쿼터
@@ -331,9 +387,11 @@ CREATE TABLE audit_logs (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     occurred_at   TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
     actor_user_id INTEGER NULL REFERENCES users(id) ON DELETE SET NULL,
-    actor_role    TEXT    NULL
-                  CHECK (actor_role IS NULL
-                         OR actor_role IN ('EMPLOYEE','TEAM_LEADER','DIVISION_HEAD','HR_ADMIN')),
+    -- 그때의 직책과 HR 권한. 한 칸으로는 대표이사도, HR 팀장(팀장 + HR)도 적을 수 없다 (로그인 설계 §6)
+    actor_position TEXT   NULL
+                  CHECK (actor_position IS NULL
+                         OR actor_position IN ('TEAM_LEADER','DIVISION_HEAD','CEO')),  -- NULL = 직책 없음·시스템
+    actor_is_hr   INTEGER NOT NULL DEFAULT 0 CHECK (actor_is_hr IN (0,1)),
     action        TEXT    NOT NULL,   -- 'CONTRACT_SIGNED', 'CONTRACT_CANCELLED', ...
     entity_type   TEXT    NOT NULL,   -- 'salary_contract', 'kpi_sheet', ...
     entity_id     INTEGER NULL,

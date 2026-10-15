@@ -5,3 +5,5 @@ backend/.cache/
 regulations/*
 !regulations/README.md
 .superpowers/
+# 서버의 직원·로그인 DB (docker-compose.yml 이 여기에 보관한다). 실제 직원 정보라 절대 올리지 않는다
+/data/
