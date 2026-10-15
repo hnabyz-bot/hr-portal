@@ -22,6 +22,9 @@ services:
       - NAVER_LOCAL_CLIENT_SECRET=${NAVER_LOCAL_CLIENT_SECRET:-}
       - OPINET_API_KEY=${OPINET_API_KEY:-}
       - HR_DB_PATH=/app/data/hr-portal.db
+      # 직원 명단 동기화 (python -m hr_eval.roster_sync). 값은 서버 .env 에만
+      - HIWORKS_OFFICE_TOKEN=${HIWORKS_OFFICE_TOKEN:-}
+      - HIWORKS_DOMAIN=${HIWORKS_DOMAIN:-}
     volumes:
       - ./regulations:/app/regulations:ro
       # 직원·로그인 DB. 상자(이미지) 안에 두면 merge 때 재빌드하면서 사라진다 → 서버 폴더 data/ 에 보관

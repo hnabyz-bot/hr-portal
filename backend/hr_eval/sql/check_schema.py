@@ -511,6 +511,19 @@ def check_login_tables(conn: sqlite3.Connection) -> None:
     )
     _report(ok, "없는 사람을 대표이사로 적으면 거부")
 
+    print("15. 명단 동기화 칸 (003)")
+    conn.execute("INSERT INTO departments (code, name, level, hiworks_node_id) VALUES ('HW-N1', '동기화본부', 'DIVISION', 'N1')")
+    ok, _ = _rejects(
+        conn, "INSERT INTO departments (code, name, level, hiworks_node_id) VALUES ('HW-N1b', '겹침', 'DIVISION', 'N1')"
+    )
+    _report(ok, "하이웍스 조직 번호가 같은 부서 두 개 거부")
+    conn.execute("INSERT INTO departments (code, name, level) VALUES ('DIV9', '짝없는본부', 'DIVISION')")
+    n = conn.execute("SELECT COUNT(*) FROM departments WHERE hiworks_node_id IS NULL").fetchone()[0]
+    _report(n >= 2, "하이웍스와 짝짓지 않은 부서는 여럿이어도 됨", f"실제 {n}")
+    conn.execute(f"UPDATE users SET phone = '02-000-0000', mobile = '가상' WHERE id = {user}")
+    row = conn.execute(f"SELECT phone, mobile FROM users WHERE id = {user}").fetchone()
+    _report(row == ("02-000-0000", "가상"), "직원 전화·휴대폰 칸", f"실제 {row}")
+
 
 def main() -> int:
     print("=" * 62)

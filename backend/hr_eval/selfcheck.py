@@ -58,6 +58,14 @@ from hr_eval.domain.contract_rules import (
 from hr_eval.domain.grading import Assignment, validate_and_assign_evaluation_grades
 from hr_eval.domain.kpi import KpiInput, validate_kpi_set
 from hr_eval.domain.access import Act, Delegation, Pool, PoolRef, Target, can
+from hr_eval.domain.roster import (
+    PortalDept,
+    PortalUser,
+    RosterError,
+    parse_orgs,
+    parse_users,
+    plan_sync,
+)
 from hr_eval.domain.members import (
     MSG_DENIED,
     Member,
@@ -1293,6 +1301,173 @@ def HR은_본인의_것을_대신할_수_없다():
     assert can(_HR팀장, Act.ASSIGN, _묶음[Pool.DIRECT], delegation=_맡김)
     assert not can(_HR팀장, Act.CONFIRM, _묶음[Pool.LEADERS], delegation=_맡김)  # 본인이 든 묶음
     assert can(_HR, Act.CONFIRM, _묶음[Pool.LEADERS], delegation=_맡김)
+
+
+# ------------------------------------------------------------------
+# 직원 명단 동기화 비교 규칙 (로그인 설계 §11, 9장 9번). 가짜 하이웍스 응답이다.
+# 실제 저장까지 도는 검사는 python -m hr_eval.roster_sync --check
+# ------------------------------------------------------------------
+
+
+def _hw사람(no, node, email=None, phone="", cell="", mail_id=None):
+    return {"user_no": no, "mail_id": mail_id if mail_id is not None else no.lower(), "name": f"가상{no}",
+            "email": f"{no.lower()}@example.invalid" if email is None else email,
+            "phone": phone, "cell": cell, "node_id": node}
+
+
+def _hw조직(root=(), **본부):
+    """본부=(이름, [사람], {팀번호: (이름, [사람])}) → 하이웍스 조직도 모양."""
+    return {"node_id": "C", "name": "가상회사", "entries": list(root), "nodes": [
+        {"node_id": nid, "name": name, "entries": list(people),
+         "nodes": [{"node_id": tid, "name": tname, "entries": list(tp), "nodes": []} for tid, (tname, tp) in teams.items()]}
+        for nid, (name, people, teams) in 본부.items()]}
+
+
+def _동기화(users_body, org_body, depts=(), users=(), **kw):
+    nos = parse_users(users_body)
+    nodes, people, at_root = parse_orgs(org_body)
+    return plan_sync(nos, nodes, people, list(depts), list(users), at_root=at_root, **kw)
+
+
+_기본조직 = _hw조직(
+    root=[_hw사람("R1", "C")],
+    B1=("가상본부", [_hw사람("H1", "B1")], {"T1": ("가상팀", [_hw사람("U1", "T1", phone="02-1"), _hw사람("U2", "T1")])}),
+)
+_기본명단 = [{"no": n, "user_id": n.lower(), "name": n} for n in ("R1", "H1", "U1", "U2", "N1")]  # N1 = 부서 없음
+
+
+@check
+def 명단동기화_처음에는_부서와_직원을_추가한다():
+    plan = _동기화(_기본명단, _기본조직)
+    assert [(n.node_id, n.depth, n.parent_id) for n in plan.dept_add] == [("B1", 1, None), ("T1", 2, "B1")]
+    assert sorted(p.user_no for p in plan.user_add) == ["H1", "U1", "U2"]
+    # 회사 바로 아래 · 부서 없음은 올리지 않고 숫자로만 알린다
+    assert plan.notes["회사 바로 아래(올리지 않음)"] == 1 and plan.notes["부서 없음(올리지 않음)"] == 1
+    # 새 사람에게 넘기는 것은 이름·메일·전화·소속뿐 — 포털 사용·직책 같은 사람별 설정 칸이 없다
+    assert set(vars(plan.user_add[0])) == {"user_no", "name", "email", "phone", "mobile", "node_id", "mail_id"}
+    assert "가상" not in str(plan.counts())  # 요약에는 이름이 없다
+
+
+@check
+def 명단동기화_조회가_실패하거나_비면_멈춘다():
+    """9장 9: 아무도 비활성화되지 않는다 — 비교까지 가지 않는다."""
+    for body in ({"code": "ERR", "message": "content-type 오류입니다."}, [], {"items": []}, None, [{"name": "번호 없음"}]):
+        try:
+            parse_users(body)
+        except RosterError:
+            pass
+        else:
+            raise AssertionError(f"이상한 사용자 목록인데 멈추지 않았다: {body!r}")
+    for body in ({"code": "ERR"}, {"node_id": "C", "name": "x"}, _hw조직(), _hw조직(B1=("b", [], {}))):  # 모양 · 빈 조직 · 소속 0명
+        try:
+            parse_orgs(body)
+        except RosterError:
+            pass
+        else:
+            raise AssertionError(f"이상한 조직도인데 멈추지 않았다: {body!r}")
+    # 성공 표시를 감싼 모양({"code": "SUC", "data": …})은 받는다
+    assert parse_users({"code": "SUC", "data": _기본명단}) == frozenset({"R1", "H1", "U1", "U2", "N1"})
+
+
+@check
+def 명단동기화_3단계_조직이나_같은_조직_번호는_멈춘다():
+    깊음 = _hw조직(B1=("b", [], {"T1": ("t", [_hw사람("U1", "T1")])}))
+    깊음["nodes"][0]["nodes"][0]["nodes"] = [{"node_id": "X", "name": "x", "entries": [], "nodes": []}]
+    겹침 = _hw조직(B1=("b", [], {"B1": ("t", [_hw사람("U1", "B1")])}))
+    for body in (깊음, 겹침):
+        try:
+            parse_orgs(body)
+        except RosterError:
+            pass
+        else:
+            raise AssertionError("멈추지 않았다")
+
+
+_포털부서 = [PortalDept(1, "B1", "가상본부", None), PortalDept(2, "T1", "가상팀", "B1")]
+
+
+def _포털직원(**바꿈):
+    base = {
+        "H1": PortalUser(11, "H1", True, "B1", "h1@example.invalid"),
+        "U1": PortalUser(12, "U1", True, "T1", "u1@example.invalid", "02-1"),
+        "U2": PortalUser(13, "U2", True, "T1", "u2@example.invalid"),
+        "X9": PortalUser(14, "X9", True, "T1", "x9@example.invalid"),  # 하이웍스에서 사라진 사람
+        "M1": PortalUser(15, None, True, "T1", "m1@example.invalid"),  # 하이웍스와 연결 안 된 사람
+    }
+    for k, v in 바꿈.items():
+        base[k] = replace(base[k], **v)
+    return list(base.values())
+
+
+@check
+def 명단동기화_사라진_사람만_비활성이고_연결_안된_사람은_그대로다():
+    plan = _동기화(_기본명단, _기본조직, _포털부서, _포털직원())
+    assert [u.user_no for u in plan.user_deactivate] == ["X9"]
+    assert plan.user_add == [] and plan.user_update == [] and plan.dept_add == []
+
+
+@check
+def 명단동기화_비활성인_사람은_다시_켜지도_고치지도_않는다():
+    """9장 9: 다시 켜는 것은 HR 만."""
+    조직 = _hw조직(B1=("가상본부", [_hw사람("H1", "B1")], {"T1": ("가상팀", [_hw사람("U1", "T1", phone="02-9"), _hw사람("U2", "T1")])}))
+    plan = _동기화(_기본명단, 조직, _포털부서, _포털직원(U1=dict(is_active=False), X9=dict(is_active=False)))
+    assert all(u.user_no != "U1" for u, _, _ in plan.user_update)  # 전화가 바뀌었어도 손대지 않는다
+    assert all(p.user_no != "U1" for p in plan.user_add) and plan.user_deactivate == []
+
+
+@check
+def 명단동기화_소속과_연락처만_고친다():
+    조직 = _hw조직(B1=("가상본부", [_hw사람("H1", "B1"), _hw사람("U2", "B1")],
+                     {"T1": ("가상팀", [_hw사람("U1", "T1", phone="", cell="휴대-1", email="new@example.invalid")])}))
+    plan = _동기화(_기본명단, 조직, _포털부서, _포털직원())
+    바뀜 = {u.user_no: changed for u, _, changed in plan.user_update}
+    assert 바뀜 == {"U1": ("메일", "전화", "휴대폰"), "U2": ("소속",)}, 바뀜
+    # 메일이 비어 오면 지금 메일을 지우지 않는다
+    조직2 = _hw조직(B1=("가상본부", [_hw사람("H1", "B1", email="")], {"T1": ("가상팀", [_hw사람("U1", "T1", phone="02-1"), _hw사람("U2", "T1")])}))
+    assert _동기화(_기본명단, 조직2, _포털부서, _포털직원()).user_update == []
+
+
+@check
+def 명단동기화_메일이_없으면_하이웍스_아이디와_도메인으로_만든다():
+    조직 = _hw조직(B1=("b", [_hw사람("H1", "B1", email="", mail_id="h1")], {}))
+    assert _동기화(_기본명단, 조직, domain="example.invalid").user_add[0].email == "h1@example.invalid"
+    plan = _동기화(_기본명단, 조직)  # 도메인도 없으면 올리지 않는다 (users.email 은 비울 수 없다)
+    assert plan.user_add == [] and plan.notes["메일 없음(올리지 않음)"] == 1
+
+
+@check
+def 명단동기화_부서는_이름과_위치를_따르고_사라지면_닫는다():
+    조직 = _hw조직(B1=("새이름본부", [_hw사람("H1", "B1"), _hw사람("U1", "B1"), _hw사람("U2", "B1")], {}))
+    plan = _동기화(_기본명단, 조직, _포털부서, _포털직원())
+    assert [(d.id, n.name) for d, n in plan.dept_update] == [(1, "새이름본부")]
+    assert [d.id for d in plan.dept_close] == [2]  # 지우지 않고 닫는다
+    # 닫힌 부서가 다시 나오면 연다
+    닫힘 = [_포털부서[0], replace(_포털부서[1], is_active=False)]
+    assert [d.id for d, _ in _동기화(_기본명단, _기본조직, 닫힘, _포털직원()).dept_update] == [2]
+
+
+@check
+def 명단동기화_한꺼번에_많이_사라지면_멈춘다():
+    from hr_eval.domain.roster import MASS_DEACTIVATE_LIMIT
+
+    많이 = [PortalUser(100 + i, f"Z{i}", True, "T1", f"z{i}@example.invalid") for i in range(MASS_DEACTIVATE_LIMIT + 1)]
+    try:
+        _동기화(_기본명단, _기본조직, _포털부서, 많이)
+    except RosterError as err:
+        assert "allow-mass" in str(err)
+    else:
+        raise AssertionError("한꺼번에 많이 사라졌는데 멈추지 않았다")
+    assert len(_동기화(_기본명단, _기본조직, _포털부서, 많이, allow_mass=True).user_deactivate) == MASS_DEACTIVATE_LIMIT + 1
+    # 상한까지는 그대로 진행한다
+    assert len(_동기화(_기본명단, _기본조직, _포털부서, 많이[:-1]).user_deactivate) == MASS_DEACTIVATE_LIMIT
+
+
+@check
+def 명단동기화_여러_부서에_있으면_먼저_나온_부서다():
+    조직 = _hw조직(B1=("b", [_hw사람("H1", "B1")], {"T1": ("t", [_hw사람("H1", "T1"), _hw사람("U1", "T1")])}))
+    plan = _동기화(_기본명단, 조직)
+    assert [p.node_id for p in plan.user_add if p.user_no == "H1"] == ["B1"]
+    assert plan.notes["여러 부서(먼저 나온 부서로)"] == 1
 
 
 def main() -> int:
