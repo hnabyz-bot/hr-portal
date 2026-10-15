@@ -27,7 +27,7 @@ main merge
 | `docker-compose.yml`·`nginx.conf` | 재빌드 후 반영 (자동) |
 | **서버 `.env`** | **자동 아님** — 사람이 직접 (3장) |
 | **`regulations/` 원문** | **자동 아님** — 사람이 직접 (4장) |
-| **직원 명단 가져오기** (하이웍스 → `data/`) | **자동 아님** — 서버 타이머로 하루 1회 (8장) |
+| **직원 명단 가져오기** (하이웍스 → `data/`) | **자동 아님** — 서버 타이머로 하루 1회 (9장) |
 | **`data/` 직원·로그인 DB** | 계산 컨테이너가 처음 뜰 때 `data/hr-portal.db`를 만들고, 새 표가 생기면 시작할 때 더한다(자동). 재빌드해도 남는다. **이 폴더를 지우면 직원·로그인 정보가 모두 사라진다** — 백업 절차는 로그인 설계(PR #51) 9장 7번 |
 
 ---
@@ -171,7 +171,16 @@ git -C ~/workspace/github-hnabyz-bot/hr-portal worktree add --detach ~/workspace
 
 ---
 
-## 8. 직원 명단 가져오기 — 하이웍스에서 하루 1회
+## 8. 로그인 (하이웍스 SSO) — 4단계부터
+
+- **모든 `/api/*`는 로그인한 사람만 쓴다.** 세션 없이 열린 곳은 `/api/health`와 로그인 받는 곳(`/api/auth/hiworks`, `/api/auth/message`)뿐이다. 그래서 하이웍스 메뉴를 켜기(6단계) 전에는 규정 검색·경비 산출기도 쓸 수 없다.
+- `.env` 새 값: `HIWORKS_FIRST_HR_USER_NO`(첫 HR의 하이웍스 사용자 번호 — 가이드 8장 "첫 HR 번호 넣기"), 필요할 때만 `HIWORKS_SSO_LINK_BY_EMPLOYEE_NO=1`.
+- **`HIWORKS_LINK_API_BASE`를 서버 `.env`에 넣지 않는다** — 운영 모드(`docker-compose.yml`의 `HR_ENV=production`)에서 이 값이 있으면 api가 뜨지 않는다(로그에 이유가 나온다).
+- 로그인이 안 될 때: `docker compose logs api --tail 50`. 안내 화면 문구는 `backend/auth.py`의 `MESSAGES`.
+
+---
+
+## 9. 직원 명단 가져오기 — 하이웍스에서 하루 1회
 
 하이웍스의 직원 명단·조직도를 포털 DB(`data/`)에 맞춘다. 새 사람 추가(포털 사용은 꺼진 채) · 소속·연락처 고치기 · 사라진 사람 비활성. 규칙은 로그인 설계(PR #51) 11장. **`.env`에 `HIWORKS_OFFICE_TOKEN`·`HIWORKS_DOMAIN`이 있어야 한다**(3장).
 

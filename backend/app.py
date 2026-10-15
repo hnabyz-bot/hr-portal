@@ -15,6 +15,7 @@ from urllib.parse import quote
 
 from flask import Flask, Response, jsonify, request
 
+import auth
 import export_utils
 from services import opinet_api
 from services.calculator import (
@@ -38,13 +39,18 @@ from hr_eval.sql.db import init_db
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# 운영 모드에 개발용 확인 주소가 있으면 여기서 멈춘다 — 경고가 아니라 거부 (로그인 설계 §7)
+auth.refuse_unsafe_config()
+
 app = Flask(__name__)
+# 하이웍스 로그인 + 모든 /api/* 세션 검사. 세션 없이 열린 곳은 /api/health 와 로그인 받는 곳뿐 (로그인 설계 §3)
+auth.register(app)
 # 규정 11개를 장·조·표로 나누는 데 30초쯤 걸린다(요청 제한 30초). 서버가 요청을 받기 전에 한 번 읽어 둔다 —
 # gunicorn --preload라 이 결과를 작업 프로세스들이 함께 쓴다. 이후 규정 파일이 바뀌면 그 파일만 다시 읽는다(수 초).
 rules_search.list_rules()
 
 # 직원·로그인 DB (로그인 설계 §6). docker-compose.yml 이 HR_DB_PATH 를 서버 폴더 data/ 에 둔다 — 재빌드해도 남는다.
-# 값이 없으면(PC 개발) 만들지 않는다. 실패해도 경비 산출기·규정 검색은 그대로 돈다 — 아직 DB 를 쓰는 기능이 없다.
+# 값이 없으면(PC 개발) 만들지 않는다. 실패해도 서버는 뜬다 — 다만 로그인·세션이 DB 를 쓰므로 /api/health 말고는 동작하지 않는다(로그 확인).
 if os.environ.get("HR_DB_PATH"):
     try:
         logger.info("DB 준비 완료 (판 %s)", init_db(os.environ["HR_DB_PATH"]))

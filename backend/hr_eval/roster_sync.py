@@ -37,7 +37,7 @@ API_BASE = "https://api.hiworks.com"  # 고정. 다른 곳으로 토큰을 보�
 Fetch = Callable[[str], object]
 
 
-class _NoRedirect(urllib.request.HTTPRedirectHandler):
+class NoRedirect(urllib.request.HTTPRedirectHandler):
     """다른 주소로 넘기면 따라가지 않는다 — 따라가면 오피스 토큰이 함께 간다."""
 
     def redirect_request(self, *args, **kwargs):  # noqa: ANN002, ANN003
@@ -45,7 +45,7 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
 
 
 def hiworks_fetch(token: str) -> Fetch:
-    opener = urllib.request.build_opener(_NoRedirect)
+    opener = urllib.request.build_opener(NoRedirect)
 
     def fetch(path: str) -> object:
         req = urllib.request.Request(
