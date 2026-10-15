@@ -31,7 +31,8 @@ class Act(str, Enum):
     APPEAL_CONFIRM = "APPEAL_CONFIRM"  # 등급을 바꾸는 답변 확인
     VIEW_RESULT = "VIEW_RESULT"  # 평가 결과 조회
     VIEW_KPI = "VIEW_KPI"  # 남의 KPI 조회
-    VIEW_CONTRACT = "VIEW_CONTRACT"  # 남의 연봉계약서 조회
+    VIEW_CONTRACT = "VIEW_CONTRACT"  # 남의 연봉계약서 조회 (금액·본문)
+    VIEW_CONTRACT_STATUS = "VIEW_CONTRACT_STATUS"  # 계약 현황 — 이름·상태·서명한 날만. 응답에 금액·본문·등급을 넣지 않는다
     DELEGATE = "DELEGATE"  # "HR에 맡기기" 켜고 끄기
 
 
@@ -146,6 +147,8 @@ def _own(a: Actor, act: Act, t: Target | PoolRef | None) -> bool:
             return mine or a.is_hr or _in_team(a, t) or _in_division(a, t)
         if act is Act.VIEW_CONTRACT:  # 본인과 HR 만. 팀장·본부장·대표이사는 못 본다 (인사담당자 2026-10-15)
             return mine or a.is_hr
+        if act is Act.VIEW_CONTRACT_STATUS:  # 본부장은 자기 본부의 서명 진행만 본다 (같은 날 인사담당자)
+            return mine or a.is_hr or _in_division(a, t)
     if isinstance(t, PoolRef) and act is Act.ASSIGN:
         return (
             t.pool is Pool.DIVISION

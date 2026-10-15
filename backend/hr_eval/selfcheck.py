@@ -1160,6 +1160,18 @@ def 연봉계약서는_본인과_HR만_본다():
 
 
 @check
+def 계약_현황은_HR과_자기_본부의_본부장만_본다():
+    """금액 없이 이름·상태·서명한 날 (인사담당자 2026-10-15)."""
+    현황 = Act.VIEW_CONTRACT_STATUS
+    assert can(_본부장, 현황, _T[22]) and can(_본부장, 현황, _T[21])  # 자기 본부 팀원·팀장
+    assert not can(_본부장, 현황, _T[32])  # 다른 본부
+    assert not can(_팀장, 현황, _T[22]) and not can(_대표, 현황, _T[22])
+    assert not can(_대표, 현황, _T[22], delegation=_맡김) and not can(Actor(24), 현황, _T[22])
+    assert can(_HR, 현황, _T[22]) and can(_HR팀장, 현황, _T[32])
+    assert not can(_본부장, Act.VIEW_CONTRACT, _T[22])  # 현황을 봐도 계약서(금액·본문)는 못 본다
+
+
+@check
 def 포털_사용이_꺼진_사람은_세션을_받지_못하고_준비중이다():
     r = resolve_sso_user(SsoToken("HW-44"), _명단())
     assert r.outcome is SsoOutcome.NOT_READY and r.user_id == 44 and "준비 중" in r.message
