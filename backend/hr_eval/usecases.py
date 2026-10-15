@@ -25,7 +25,6 @@ from hr_eval.domain.models import (
     KpiSheet,
     KpiSheetStatus,
     PdfStatus,
-    Role,
     SalaryContract,
     SignatureInput,
 )
@@ -44,7 +43,7 @@ def submit_kpi_goal(
     kpis: Sequence[KpiInput],
     uow: UnitOfWork,
 ) -> KpiSheet:
-    if actor.user_id != user_id and actor.role is not Role.HR_ADMIN:
+    if actor.user_id != user_id and not actor.is_hr:
         raise PermissionDeniedError("본인 또는 인사담당자만 KPI를 제출할 수 있습니다")
 
     with uow:
@@ -81,12 +80,11 @@ def submit_kpi_goal(
         uow.kpis.save_sheet(sheet)
 
         uow.audit.append(
-            AuditEntry(
+            AuditEntry.by(
+                actor,
                 action="KPI_SUBMITTED",
                 entity_type="kpi_sheet",
                 entity_id=sheet.id,
-                actor_user_id=actor.user_id,
-                actor_role=actor.role,
                 after_data={"kpi_count": len(kpis)},
             )
         )
@@ -144,12 +142,11 @@ def finalize_salary_contract(
         uow.contracts.save(signed)
 
         uow.audit.append(
-            AuditEntry(
+            AuditEntry.by(
+                actor,
                 action="CONTRACT_SIGNED",
                 entity_type="salary_contract",
                 entity_id=signed.id,
-                actor_user_id=actor.user_id,
-                actor_role=actor.role,
                 before_data={"status": contract.status.value},
                 after_data={
                     "status": signed.status.value,
@@ -177,7 +174,7 @@ def _apply_cancel(
 
 
 def _guard_cancel(actor: Actor, reason: str) -> None:
-    if actor.role is not Role.HR_ADMIN:
+    if not actor.is_hr:
         raise PermissionDeniedError("계약 파기·재발송은 인사담당자만 할 수 있습니다")
     if not reason or not reason.strip():
         raise ValidationError([Issue("CANCEL_REASON_REQUIRED", "파기 사유를 입력해야 합니다")])
@@ -196,12 +193,11 @@ def cancel_salary_contract(
         cancelled = _apply_cancel(contract, actor, reason)
         uow.contracts.save(cancelled)
         uow.audit.append(
-            AuditEntry(
+            AuditEntry.by(
+                actor,
                 action="CONTRACT_CANCELLED",
                 entity_type="salary_contract",
                 entity_id=cancelled.id,
-                actor_user_id=actor.user_id,
-                actor_role=actor.role,
                 before_data={"status": contract.status.value},
                 after_data={"status": cancelled.status.value},
                 reason=cancelled.cancel_reason,
@@ -230,12 +226,11 @@ def resend_salary_contract(
         cancelled = _apply_cancel(original, actor, reason)
         uow.contracts.save(cancelled)
         uow.audit.append(
-            AuditEntry(
+            AuditEntry.by(
+                actor,
                 action="CONTRACT_CANCELLED",
                 entity_type="salary_contract",
                 entity_id=cancelled.id,
-                actor_user_id=actor.user_id,
-                actor_role=actor.role,
                 before_data={"status": original.status.value},
                 after_data={"status": cancelled.status.value},
                 reason=cancelled.cancel_reason,
@@ -268,12 +263,11 @@ def resend_salary_contract(
         fresh = uow.contracts.insert(fresh)
 
         uow.audit.append(
-            AuditEntry(
+            AuditEntry.by(
+                actor,
                 action="CONTRACT_RESENT",
                 entity_type="salary_contract",
                 entity_id=fresh.id,
-                actor_user_id=actor.user_id,
-                actor_role=actor.role,
                 after_data={"version": fresh.version, "resent_from_id": fresh.resent_from_id},
                 reason=reason.strip(),
             )

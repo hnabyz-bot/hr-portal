@@ -10,13 +10,31 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
 from enum import Enum
+from typing import Iterable
+
+from hr_eval.domain.errors import Issue, ValidationError
 
 
 class Role(str, Enum):
-    EMPLOYEE = "EMPLOYEE"
+    """user_roles 한 줄. 직책 셋 + HR 권한. 줄이 없으면 직책 없는 직원이다 (로그인 설계 §6)."""
+
     TEAM_LEADER = "TEAM_LEADER"
     DIVISION_HEAD = "DIVISION_HEAD"
+    CEO = "CEO"
     HR_ADMIN = "HR_ADMIN"
+
+
+POSITIONS = (Role.TEAM_LEADER, Role.DIVISION_HEAD, Role.CEO)
+
+
+def position_of(roles: Iterable[Role]) -> Role | None:
+    """user_roles 줄들에서 직책 하나를 꺼낸다. 직책 겸직은 운영에서 막는다 (겸직 C)."""
+    found = [r for r in roles if r in POSITIONS]
+    if len(found) > 1:
+        raise ValidationError(
+            [Issue("POSITION_DUPLICATED", "직책은 한 사람에 하나입니다 (HR 권한은 따로)")]
+        )
+    return found[0] if found else None
 
 
 class Grade(str, Enum):
@@ -54,10 +72,27 @@ class PdfStatus(str, Enum):
 
 @dataclass(frozen=True)
 class Actor:
-    """이미 인증된 요청자. 인증 자체는 이 계층의 책임이 아니다."""
+    """이미 인증된 요청자. 인증 자체는 이 계층의 책임이 아니다.
+
+    직책과 HR 권한을 따로 담는다 — HR 팀장은 팀장이면서 HR 이다 (로그인 설계 §6).
+    led_* 는 "그 부서의 장인가"다. 소속만으로는 장인지 알 수 없다 (8월 설계 §8).
+    """
 
     user_id: int
-    role: Role
+    position: Role | None = None  # TEAM_LEADER · DIVISION_HEAD · CEO. None = 직책 없음
+    is_hr: bool = False
+    led_team_id: int | None = None  # 팀장이면 그 팀
+    led_division_id: int | None = None  # 본부장이면 그 본부
+
+    def __post_init__(self) -> None:
+        if self.position is not None and self.position not in POSITIONS:
+            raise ValueError(f"직책이 아닙니다: {self.position}")
+
+    @classmethod
+    def from_roles(cls, user_id: int, roles: Iterable[Role], **scope: int | None) -> Actor:
+        """user_roles 줄들로 만든다. 직책이 두 줄이면 ValidationError."""
+        roles = list(roles)
+        return cls(user_id, position_of(roles), Role.HR_ADMIN in roles, **scope)
 
 
 @dataclass(frozen=True)
@@ -150,10 +185,23 @@ class AuditEntry:
     action: str
     entity_type: str
     entity_id: int | None
-    actor_user_id: int | None
-    actor_role: Role | None
+    actor_user_id: int | None  # None = 시스템 (명단 동기화 · 첫 HR 지정)
+    actor_position: Role | None = None  # 그때의 직책
+    actor_is_hr: bool = False  # 그때 HR 권한이 있었나
+    on_behalf_of: int | None = None  # HR 이 대표이사 대신 한 일이면 그 대표이사. actor 는 실제로 넣은 HR
     before_data: dict | None = None
     after_data: dict | None = None
     reason: str | None = None
     ip: str | None = None
     user_agent: str | None = None
+
+    @classmethod
+    def by(cls, actor: Actor, *, on_behalf_of: int | None = None, **fields) -> AuditEntry:
+        """요청자의 직책·HR 권한을 그때 값으로 적는다."""
+        return cls(
+            actor_user_id=actor.user_id,
+            actor_position=actor.position,
+            actor_is_hr=actor.is_hr,
+            on_behalf_of=on_behalf_of,
+            **fields,
+        )
