@@ -92,7 +92,7 @@ Docker 컨테이너  "hr-portal-web"  (nginx:alpine)
 
 | 항목 | 값 |
 |---|---|
-| 서버 | `abyz-lab0-OptiPlex-3060` |
+| 서버 | `<호스트명>` (관리자 문서 참고 — 공개 저장소에 적지 않음) |
 | OS | Ubuntu 24.04.4 LTS |
 | 접속 주소 | https://hr.abyz-lab.work |
 | 로컬 바인딩 | `127.0.0.1:8080` (외부·사내망 직접 노출 없음) |
