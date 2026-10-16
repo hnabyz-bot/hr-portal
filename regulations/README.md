@@ -27,7 +27,7 @@ PDF를 권장한다 — 조항마다 "원본 PDF n쪽"으로 바로 갈 수 있�
 ## 서버에 넣는 방법
 
 ```bash
-scp "1. 인사규정(2026.05).pdf" abyz-lab0@100.73.145.44:~/workspace/github-hnabyz-bot/hr-portal/regulations/
+scp "1. 인사규정(2026.05).pdf" <계정>@<서버 주소>:~/workspace/github-hnabyz-bot/hr-portal/regulations/
 ```
 
 (또는 SFTP 클라이언트로 같은 경로에 직접 업로드)
