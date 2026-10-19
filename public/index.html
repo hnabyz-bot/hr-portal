@@ -459,6 +459,12 @@
   /* "휴대폰에 설치" 안내창 */
   .org-modal .card:has(.inst-qr){ max-width:560px; }
   .org-modal .card:has(.preg){ max-width:560px; }
+  .ms-data{ display:block; width:100%; text-align:left; margin-top:8px; padding:12px 14px; border:1px solid var(--border); border-radius:var(--radius); background:var(--surface); font:inherit; cursor:pointer; }
+  .ms-data:hover{ border-color:var(--accent); }
+  .ms-data b{ display:block; font-size:var(--fs-md); margin-bottom:2px; }
+  .ms-data span{ font-size:var(--fs-xs); color:var(--text-muted); line-height:1.6; }
+  .ms-hire{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:10px; }
+  .ms-hire input{ height:32px; border:1px solid var(--border); border-radius:var(--radius-sm); padding:0 8px; font:inherit; font-size:var(--fs-sm); }
   .ms-ct-lead{ display:flex; gap:10px; align-items:flex-start; margin:10px 0; padding:10px 12px; border:1px solid var(--border); border-radius:var(--radius-sm); font-size:var(--fs-sm); cursor:pointer; }
   .ms-ct-lead input{ margin-top:3px; }
   .ms-ct-lead small{ display:block; margin-top:3px; color:var(--text-muted); font-size:var(--fs-xs); line-height:1.6; }
@@ -1546,7 +1552,7 @@ function homePct(name, pct, cls=''){ return `<li class="hm-pct"><span>${name}</s
 function homeDonut(pct){ return `<div class="hm-donut"><svg viewBox="0 0 120 120" aria-hidden="true" fill="none" stroke-width="11"><circle cx="60" cy="60" r="50" stroke="#E8EEF5"/>${pct ? `<circle cx="60" cy="60" r="50" style="stroke:var(--donut, var(--accent))" stroke-linecap="round" stroke-dasharray="${(pct*3.1416).toFixed(1)} 314.2"/>` : ''}</svg><b>${pct==null ? '–' : pct+'%'}</b></div>`; }
 const HOME_HERO = 'img/home/hero.jpg?v=4';   // 배너의 하늘과 건물에 함께 쓴다. 사진을 바꾸면 번호를 올린다
 function homeHero(t){
-  const me = AUTH.live ? AUTH.me : KPI_USERS[kpiRole], om = !AUTH.live && orgMembers.find(m=>m.name===me.name), since = om && homeSince(om.hireDate, t);   // 실제 로그인: 이름은 서버, 입사일은 아직 저장 전이라 경과를 숨긴다
+  const me = AUTH.live ? AUTH.me : KPI_USERS[kpiRole], om = !AUTH.live && orgMembers.find(m=>m.name===me.name), since = AUTH.live ? me.hire_date && homeSince(me.hire_date, t) : om && homeSince(om.hireDate, t);   // 실제 로그인: 이름·입사일은 서버(HR 이 구성원 설정에서 넣는다). 입사일이 없으면 경과를 숨긴다
   const worked = since && [since[0] && since[0]+'년', since[1] && since[1]+'개월', since[2] && since[2]+'일'].filter(Boolean).join(' ');
   const w = payWindow(t), left = Math.round((w.next - new Date(t.getFullYear(), t.getMonth(), t.getDate()))/864e5);
   return `<section class="hm-hero" style="background-image:url(${HOME_HERO})">
@@ -6361,7 +6367,9 @@ function msBirthMd(v){   // 생년월일 글자에서 월-일만 남긴다 — �
 function msParsePaste(text, members, birth){   // 엑셀에서 복사한 "이름 ⇥ 직급 ⇥ 입사일" 줄, birth면 "이름 ⇥ 생년월일" 줄. 빈 칸은 그대로 둔다(직급만, 입사일만 넣을 수도 있다)
   const out = { rows:[], miss:[], dup:[], bad:[] };
   String(text||'').split(/\r?\n/).map(l=>l.trim()).filter(Boolean).forEach(l=>{
-    const c = l.split(/\t|,/).map(x=>x.trim()), name = c[0] || '', title = birth ? '' : c[1] || '', date = (birth ? c[1] : c[2]) || '';
+    const c = l.split(/\t|,/).map(x=>x.trim()), name = c[0] || '';
+    let title = birth ? '' : c[1] || '', date = (birth ? c[1] : c[2]) || '';
+    if(!birth && !date && msDate(title)){ date = title; title = ''; }   // "이름 ⇥ 입사일" 두 칸만 붙여넣은 줄 — 날짜를 직급으로 넣지 않는다
     if(!name || name==='이름' || name==='성명') return;   // 제목 줄
     const hit = members.filter(m=>m.name===name), val = !date ? '' : birth ? msBirthMd(date) : msDate(date);
     if(!hit.length) return out.miss.push(name);
@@ -6480,7 +6488,7 @@ function msContent(){
         <span class="sp"></span>
         <select aria-label="본부" onchange="msDiv=this.value; msSel.clear(); renderContent()"><option value="">본부 전체</option>${(live ? [...new Set(L.map(m=>m.division))].sort((a,b)=>a.localeCompare(b, 'ko')) : ORG_TREE.map(t=>t.division)).map(dv=>`<option ${msDiv===dv?'selected':''}>${escapeHtml(dv)}</option>`).join('')}</select>
         <input id="msQ" aria-label="이름 검색" placeholder="이름 검색" value="${escapeHtml(msQuery)}" oninput="msQuery=this.value; msSel.clear(); renderContent(); const i=document.getElementById('msQ'); i.focus(); i.setSelectionRange(i.value.length,i.value.length);">
-        ${live ? `<button type="button" class="btn sm" style="height:32px;" onclick="rzPick('contact')">${icon('clip')}비상연락망 파일로 넣기</button>` : `<button type="button" class="btn sm" style="height:32px;" onclick="msPasteAsk(false)">${icon('clip')}엑셀에서 붙여넣기</button>`}</div>
+        ${live ? `<button type="button" class="btn sm" style="height:32px;" onclick="msDataAsk()">${icon('clip')}자료 넣기</button>` : `<button type="button" class="btn sm" style="height:32px;" onclick="msPasteAsk(false)">${icon('clip')}엑셀에서 붙여넣기</button>`}</div>
       ${picked.length ? `<div class="ms-bulk"><b>${picked.length}명 선택</b>${bulk('use','포털 사용')}${bulk('kpi','KPI 작성')}${bulk('ev','평가 대상')}${bulk('ct','연봉계약서')}<button type="button" class="x" onclick="msSel.clear(); renderContent()">선택 해제</button></div>` : ''}
       <div class="ct-tbl"><table class="ms-tbl">
         <colgroup><col style="width:44px"><col><col style="width:104px"><col style="width:124px"><col style="width:92px"><col style="width:132px"><col style="width:116px"><col style="width:116px"></colgroup>
@@ -6672,20 +6680,45 @@ async function msCtSave(){
     + (leads.length ? ` <b>직책 초안 ${leads.length - fails.length}명</b>을 채웠습니다 — 표에서 확인하고 아래 <b>저장</b>을 눌러야 적용됩니다.` : '')
     + (fails.length ? ` 못 채운 사람: ${fails.map(([x, why])=>`${escapeHtml(nameOf(x.id))}(${escapeHtml(why)})`).join(', ')}` : ''), fails.length ? 'warning' : 'success');
 }
+function msDataAsk(){   // 실제 로그인: 구성원 설정에 넣는 자료 고르기 — 걸러 보기 줄이 1280px에서 한 줄이게 단추 하나로 모았다
+  const opt = (fn, title, sub)=>`<button type="button" class="ms-data" onclick="orgCloseModal(true); ${fn}"><b>${title}</b><span>${sub}</span></button>`;
+  orgModal(`<div class="card-title"><span>자료 넣기</span><button type="button" class="x-btn" onclick="orgCloseModal()" aria-label="닫기">${icon('x')}</button></div>
+    ${opt("rzPick('contact')", '비상연락망 파일', '엑셀 파일을 고르면 직급 · 내선 · 연락처 · 메일을 넣고, 직책 초안도 채울 수 있습니다')}
+    ${opt('msPasteAsk(false)', '입사일 붙여넣기', '엑셀에서 이름 · 입사일(직급은 있어도 됨) 칸을 복사해 붙여넣습니다. 홈 배너의 재직 기간에 씁니다')}`);
+}
+async function msHireSave(id){   // 실제 로그인: 입사일 한 사람씩 (HR)
+  const v = (document.getElementById('msHire') || {}).value; if(!v) return;
+  const r = await fetch('/api/members/contacts', { method:'POST', headers:{ 'Content-Type':'application/json' }, body:JSON.stringify({ rows:[{ id, hire_date:v }] }) }), j = await r.json().catch(()=>({}));
+  orgCloseModal();
+  if(!r.ok) return kpiFlash(escapeHtml(j.error || '저장하지 못했습니다.'), 'danger');
+  MS_LIVE.state = '';
+  kpiFlash('입사일을 저장했습니다.');
+}
 let msPasteBirth = false;   // 붙여넣기 창에서 고른 종류: false 직급·입사일 / true 생일
 function msPasteAsk(birth){   // 종류를 바꾸면 창을 다시 그린다(적던 글은 지워진다)
   msPasteBirth = !!birth;
   const kind = (b, l)=>`<button type="button" class="ms-chip ${msPasteBirth===b?'on':''}" aria-pressed="${msPasteBirth===b}" onclick="msPasteAsk(${b})">${l}</button>`;
   orgModal(`<div class="card-title"><span>엑셀에서 붙여넣기</span><button type="button" class="x-btn" onclick="orgCloseModal()" aria-label="닫기">${icon('x')}</button></div>
-    <div class="ms-bar" style="margin-bottom:10px;">${kind(false, '직급 · 입사일')}${kind(true, '생일')}</div>
+    <div class="ms-bar" style="margin-bottom:10px;">${kind(false, '직급 · 입사일')}${AUTH.live ? '' : kind(true, '생일')}</div>
     <div class="list-sub" style="margin:0 0 10px; line-height:1.7;">${birth ? '엑셀에서 <b>이름 · 생년월일</b> 두 칸을 골라 복사한 뒤 아래에 붙여넣으세요. 제목 줄은 있어도 됩니다. <b>연도는 저장하지 않고 월·일만</b> 남깁니다 — 홈 "이번 주 소식"의 생일 축하에 씁니다.' : '엑셀에서 <b>이름 · 직급 · 입사일</b> 세 칸을 골라 복사한 뒤 아래에 붙여넣으세요. 제목 줄은 있어도 됩니다. 빈 칸은 지금 값을 그대로 둡니다.'}</div>
     <textarea id="msPaste" rows="8" aria-label="${birth ? '이름, 생년월일' : '이름, 직급, 입사일'}" placeholder="${birth ? '신입사&#9;1998-03-15&#10;주야간&#9;950702' : '신입사&#9;사원&#9;2026-10-05&#10;주야간&#9;사원&#9;2026.10.12'}" style="width:100%; border:1px solid var(--border); border-radius:var(--radius-sm); padding:9px 11px; font:inherit; font-size:var(--fs-sm); resize:vertical;"></textarea>
-    <div class="list-sub" style="margin:6px 0 12px;">이름이 명단과 똑같아야 합니다. 같은 이름이 여러 명이면 건너뛰니 그분들은 "정보 입력"으로 한 사람씩 적어 주세요.</div>
+    <div class="list-sub" style="margin:6px 0 12px;">이름이 명단과 똑같아야 합니다. 같은 이름이 여러 명이면 건너뛰니 그분들은 ${AUTH.live ? '이름을 누른 창에서' : '"정보 입력"으로'} 한 사람씩 적어 주세요.${AUTH.live ? ' <b>이름 ⇥ 입사일</b> 두 칸만 붙여넣어도 됩니다.' : ''}</div>
     <div style="display:flex; gap:8px; justify-content:flex-end;"><button type="button" class="btn" onclick="orgCloseModal()">취소</button><button type="button" class="btn coral" onclick="msPasteDo()">반영</button></div>`);
 }
-function msPasteDo(){
-  const r = msParsePaste(document.getElementById('msPaste').value, orgMembers, msPasteBirth), n = msApplyPaste(orgMembers, r.rows), list = a=>escapeHtml([...new Set(a)].join(', '));
+async function msPasteDo(){
+  const live = AUTH.live, people = live ? MS_LIVE.list.filter(m=>m.active!==false) : orgMembers;
+  const r = msParsePaste(document.getElementById('msPaste').value, people, msPasteBirth), list = a=>escapeHtml([...new Set(a)].join(', '));
   const more = [r.miss.length && `명단에 없는 이름: ${list(r.miss)}`, r.dup.length && `같은 이름이 여러 명이라 건너뜀: ${list(r.dup)}`, r.bad.length && `날짜를 읽지 못함: ${list(r.bad)}`].filter(Boolean);
+  if(live){   // 실제 로그인: 서버에 저장 (직급·입사일)
+    const rows = r.rows.map(x=>({ id:x.id, ...(x.title ? { title:x.title } : {}), ...(x.hireDate ? { hire_date:x.hireDate } : {}) }));
+    orgCloseModal();
+    if(!rows.length) return kpiFlash(`넣을 내용이 없습니다.${more.length ? ' ' + more.join(' / ') : ''}`, 'warning');
+    const res = await fetch('/api/members/contacts', { method:'POST', headers:{ 'Content-Type':'application/json' }, body:JSON.stringify({ rows }) }), j = await res.json().catch(()=>({}));
+    if(!res.ok) return kpiFlash(escapeHtml(j.error || '저장하지 못했습니다.'), 'danger');
+    MS_LIVE.state = ''; ORG_LIVE.state = '';
+    return kpiFlash(`${j.saved}명의 직급·입사일을 넣었습니다. 홈 배너의 재직 기간에 바로 보입니다.${more.length ? ' ' + more.join(' / ') : ''}`, more.length ? 'warning' : 'success');
+  }
+  const n = msApplyPaste(orgMembers, r.rows);
   orgCloseModal(); kpiFlash(`${n}명의 ${msPasteBirth ? '생일' : '직급·입사일'}을 반영했습니다.${more.length ? ' ' + more.join(' / ') : ''}`, more.length ? 'warning' : 'success');
 }
 function msSee(id){
@@ -6699,6 +6732,7 @@ function msSee(id){
       : m.use ? `<ul class="ms-see">${msSeeList(m).map(([a, b])=>`<li class="${b?'':'no'}"><b>${a}</b><span>${b || '보이는 것이 없음'}</span></li>`).join('')}</ul>`
       : kpiNote('포털 사용이 꺼져 있어 <b>들어올 수 없습니다.</b> 하이웍스에서 메뉴를 누르면 "인사포털은 준비 중입니다" 화면이 나옵니다.')}
     ${AUTH.live && m.phone ? `<div style="display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:10px;"><span class="list-sub" style="margin:0;">등록된 휴대폰: ${escapeHtml(m.phone)}</span><button type="button" class="btn sm" onclick="msPhoneRevoke(${id})">휴대폰 해제</button></div>` : ''}
+    ${AUTH.live ? `<div class="ms-hire"><label for="msHire" class="list-sub" style="margin:0;">입사일</label><input type="date" id="msHire" value="${escapeHtml(m.hireDate || '')}"><button type="button" class="btn sm" onclick="msHireSave(${id})">저장</button><span class="list-sub" style="margin:0;">${m.hireDate ? '' : '아직 없음 — 홈 배너의 재직 기간이 보이지 않습니다'}</span></div>` : ''}
     ${AUTH.live ? `<div style="display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:10px;"><span class="list-sub" style="margin:0;">조직도: ${m.orgHidden ? '<b>뺌</b> — 조직도에 보이지 않습니다' : '보임'}${m.title ? ' · 직급 '+escapeHtml(m.title) : ''}</span><button type="button" class="btn sm" onclick="orgHide(${id}, ${!m.orgHidden})">${m.orgHidden ? '조직도에 다시 보이기' : '조직도에서 빼기'}</button></div>` : ''}
     ${AUTH.live ? `<div style="display:flex; align-items:center; justify-content:space-between; gap:10px;"><span class="list-sub" style="margin:0;">${m.active===false ? '비활성 — 포털에 들어올 수 없습니다' : '퇴사자는 하이웍스 계정을 정지하기 전에 먼저 비활성화합니다'}</span>${m.me ? '' : `<button type="button" class="btn sm" onclick="msActiveAsk(${id}, ${m.active===false})">${m.active===false ? '다시 켜기' : '비활성화'}</button>`}</div>`
       : `<div style="display:flex; align-items:center; justify-content:space-between; gap:10px;"><span class="list-sub" style="margin:0;">직급 ${escapeHtml(m.title.trim() || '없음')} · 입사일 ${m.hireDate || '없음'}</span><button type="button" class="btn sm" onclick="orgEdit(${id})">직급·입사일 수정</button></div>`}`);

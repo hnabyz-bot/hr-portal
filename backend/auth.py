@@ -11,7 +11,7 @@ app.py 가 register(app) 로 붙인다.
   POST /api/members/<id>/active   비활성화 · 다시 켜기 (HR)
   POST /api/members/<id>/phone/revoke  그 사람의 휴대폰 등록 해제 (HR)
   POST /api/members/<id>/org      조직도에서 빼기 · 다시 보이기 (HR) — DB 에서 지우지 않는다
-  POST /api/members/contacts      비상연락망 파일 값 저장 (HR) — 직급·내선·연락처·메일. 화면이 이름으로 맞춘 뒤 보낸다
+  POST /api/members/contacts      HR 이 넣는 사람 정보 (HR) — 비상연락망(직급·내선·연락처·메일)과 입사일. 화면이 이름으로 맞춘 뒤 보낸다
   GET  /api/org                   조직도 명단 (로그인한 누구나) — 필요한 칸만, 비공개 휴대폰은 본인·HR 에게만
   POST /api/me/privacy            내 휴대폰 공개 여부 (본인)
   POST /api/phone/code            PC 에서 "휴대폰 등록" → QR 에 담을 1회용 값(3분) — §13.1
@@ -301,11 +301,11 @@ def logout() -> Response:
 @bp.get("/api/me")
 def me() -> Response:
     a: Actor = g.actor
-    name, dept, writes_kpi = _db().execute(
-        "SELECT u.name, d.name, u.writes_kpi FROM users u JOIN departments d ON d.id = u.department_id WHERE u.id = ?",
+    name, dept, writes_kpi, hire = _db().execute(
+        "SELECT u.name, d.name, u.writes_kpi, u.hire_date FROM users u JOIN departments d ON d.id = u.department_id WHERE u.id = ?",
         (a.user_id,),
     ).fetchone()
-    return jsonify(user_id=a.user_id, name=name, department=dept, kind=g.session_kind,
+    return jsonify(user_id=a.user_id, name=name, department=dept, kind=g.session_kind, hire_date=hire,
                    position=a.position.value if a.position else None, is_hr=a.is_hr, writes_kpi=bool(writes_kpi))
 
 
@@ -485,7 +485,7 @@ def members_list() -> Response:
         "         AND a.action IN ('MEMBER_UPDATED', 'MEMBER_ACTIVE')),"
         " (SELECT s.device || ' · 마지막 사용 ' || substr(s.last_seen_at, 6, 5) FROM sessions s WHERE s.user_id = u.id"
         "  AND s.kind = 'phone' AND s.revoked_at IS NULL AND s.last_seen_at > ? ORDER BY s.created_at DESC LIMIT 1),"
-        " u.title, u.org_hidden"
+        " u.title, u.org_hidden, u.hire_date"
         " FROM users u JOIN departments d ON d.id = u.department_id LEFT JOIN departments p ON p.id = d.parent_id"
         " ORDER BY u.name",
         (_iso(_now() - PHONE_IDLE),),
@@ -501,7 +501,7 @@ def members_list() -> Response:
             "isNew": not r[6] and not r[11],  # 명단 동기화로 들어와 HR 이 아직 손대지 않은 사람
             "me": r[0] == g.actor.user_id,
             "phone": r[12] or "",  # 등록된 휴대폰 (§13.1) — "갤럭시 · 마지막 사용 10-19"
-            "title": r[13] or "", "orgHidden": bool(r[14]),
+            "title": r[13] or "", "orgHidden": bool(r[14]), "hireDate": r[15] or "",
         })
     return jsonify(members=out)
 
@@ -587,7 +587,7 @@ def members_phone_revoke(user_id: int) -> Response:
 
 
 # ---------------- 조직도 (2026-10-19) — 하이웍스 명단 + 비상연락망 값. 구조는 하이웍스 조직 그대로 ----------------
-TEXT_MAX = {"title": 30, "ext": 20, "mobile": 30, "email": 120}
+TEXT_MAX = {"title": 30, "ext": 20, "mobile": 30, "email": 120, "hire_date": 10}
 PHONE_RE = re.compile(r"[0-9+()\- ]{2,30}")
 EMAIL_RE = re.compile(r"[^@\s]+@[^@\s]+\.[^@\s]+")
 
@@ -652,14 +652,16 @@ def members_org(user_id: int) -> Response:
 
 @bp.post("/api/members/contacts")
 def members_contacts() -> Response:
-    """{"rows": [{"id": n, "title"?, "ext"?, "mobile"?, "email"?}]} — 비상연락망 파일 값 (HR). 빈 칸은 보내지 않고, 보낸 칸만 덮어쓴다.
+    """{"rows": [{"id": n, "title"?, "ext"?, "mobile"?, "email"?, "hire_date"?: "YYYY-MM-DD"}]} — 비상연락망 파일 값·입사일 (HR).
+    빈 칸은 보내지 않고, 보낸 칸만 덮어쓴다.
     한 줄이라도 모양이 틀리면 아무것도 저장하지 않는다. 감사로그에는 값이 아니라 바뀐 칸 이름과 사람 수만 남긴다."""
     if (denied := _hr_only()) is not None:
         return denied
     rows = (request.get_json(silent=True) or {}).get("rows")
     if not isinstance(rows, list) or not rows or len(rows) > 2000:
         return jsonify(error="저장할 내용이 없습니다."), 400
-    col = {"title": "title", "ext": "ext", "mobile": "hr_mobile", "email": "hr_email"}
+    col = {"title": "title", "ext": "ext", "mobile": "hr_mobile", "email": "hr_email", "hire_date": "hire_date"}
+    today = _now().date()
     conn = _db()
     known = {r[0] for r in conn.execute("SELECT id FROM users")}
     try:
@@ -676,6 +678,10 @@ def members_contacts() -> Response:
                     v = v.strip()
                     if (k == "mobile" and not PHONE_RE.fullmatch(v)) or (k == "email" and not EMAIL_RE.fullmatch(v)):
                         raise ValueError(k)
+                    if k == "hire_date":  # 실제 있는 날짜 · 1950년부터 · 앞날은 1년까지(입사 예정)
+                        d = datetime.strptime(v, "%Y-%m-%d").date()  # 틀린 날짜는 ValueError
+                        if v != d.isoformat() or d.year < 1950 or (d - today).days > 366:
+                            raise ValueError(k)
                     vals[col[k]] = v
             if vals:
                 plan.append((row["id"], vals))
