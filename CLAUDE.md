@@ -98,6 +98,7 @@ CI(`.github/workflows/ci.yml`)가 자동 검사하는 것: 한글 인코딩, HTM
 ```
 
 - `backend/`: Flask 앱. `/api/calculate`(핵심 계산), `/api/search-places`, `/api/export/{excel,pdf,application-form}`.
+- **로그인 4단계부터 모든 `/api/*`는 세션이 있어야 한다**(`backend/auth.py`, 세션 없이 열린 곳은 `/api/health`와 로그인 받는 곳뿐). 그래서 PC에서 Flask를 띄워 경비 산출기를 시험하려면 가짜 확인 서버로 로그인해야 한다 — 방법은 `backend/auth_check.py`.
 - **회계전표 입력용 목록 (2026-10-03)**: 계산 결과를 "전표에 담기"로 모아 ERP 전표 입력창에 붙여넣을 줄을 만든다 — `/api/export/voucher`(엑셀), `/api/voucher`(표 복사용 JSON). 줄 구성은 `services/calculator.py`의 `build_voucher_rows`, 부서별 계정과목·세목은 `app_config.py`의 `VOUCHER_*`(인사담당자 지정). 귀속부서 이름은 화면 `ORG_TREE`의 팀 이름과 같아야 한다. 목록은 브라우저 메모리에만 있다(저장은 로그인 이후).
 - `nginx.conf`: `/api/`만 `api` 컨테이너로 proxy_pass, 나머지는 기존처럼 정적 서빙.
 - `docker-compose.yml`: `api` 서비스는 `expose`만 하고 host 포트를 열지 않음 (nginx만 접근 가능, 새 Cloudflare Tunnel 규칙 불필요).
@@ -314,7 +315,7 @@ CI(`.github/workflows/ci.yml`)가 자동 검사하는 것: 한글 인코딩, HTM
 | SSO 연동 URL 등록 (`/api/auth/hiworks`) | 완료 |
 | 조직 조회 실측 | 완료 — 조회 가능, 직급·사번 없음. 요청에 `Content-Type: application/json` 필수 |
 | 오피스 홈 메뉴 "인사포털" | **2026-10-12 등록, 꺼 둠** — [기본 정보 > 메뉴 설정 > 바로 가기 메뉴 설정], SSO `hr-portal` 연동. 켜 보니 token이 `/api/auth/hiworks?token=`(64자리)로 새 탭에 왔다. 포털 로그인 준비 후 켠다 |
-| 포털 로그인 구현 | PR #51 설계 **재검토 통과 (2026-10-15)** — 고칠 것 4가지 반영 후 merge, 이어서 단계별 구현. 순서·지시문은 설정 가이드 8장 "로그인 구현 따라하기" |
+| 포털 로그인 구현 | PR #51 설계 **재검토 통과 (2026-10-15)**. 단계별 구현 중 — 1단계 표(#136) · 2단계 규칙(#137) · 3단계 명단 동기화(#139) merge, 4단계 서버(`backend/auth.py`). 순서·지시문은 설정 가이드 8장 "로그인 구현 따라하기" |
 
 ## 모듈 구현 순서
 
