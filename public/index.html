@@ -6838,6 +6838,7 @@ document.addEventListener('keydown', e=>{
    서버(/api/me)가 누구인지 알려 주면 실제 모드 — 역할은 구성원 설정의 직책·HR 권한대로, 시연용 역할 전환은 없다.
    401 이면 화면 전체를 가리고 하이웍스에서 들어오라고 안내한다(휴대폰 폭이면 PC 안내 — 1차는 PC 전용, §3).
    안내일 뿐 보안이 아니다 — 데이터는 서버가 막는다(8월 설계 §8 "세 겹").
+   PC는 하이웍스 메뉴로 연 창에서만 쓴다(2026-10-19 인사담당자 결정, 설계 §3) — 주소를 직접 쳐서 연 창은 세션이 남아 있어도 로그아웃하고 안내한다(authEntered).
    서버가 없으면(PC 미리보기 — /api/me 가 404·연결 실패) 지금처럼 시연 모드다. */
 const AUTH_TEXT = {
   login:['하이웍스에서 들어와 주세요', '하이웍스에 로그인한 뒤 <b>인사포털</b> 메뉴를 눌러 들어와 주세요.'],
@@ -6870,9 +6871,17 @@ async function authBoot(){
   try { r = await fetch('/api/me', { headers:{ Accept:'application/json' } }); } catch(e){ return; }   // 서버 없음 = 시연
   if(r.status===401) return authLock('login');
   if(!r.ok || !(r.headers.get('content-type')||'').includes('application/json')) return;   // PC 미리보기(정적 서버) = 시연
+  if(!authEntered()){ await fetch('/api/auth/logout', { method:'POST' }).catch(()=>{}); return authLock('login'); }   // 주소로 연 창 — 공용 PC의 다음 사람이 앞사람 세션을 이어 쓰지 않게 끊는다
   AUTH.live = true; AUTH.me = await r.json();
   kpiSetRole(authRole(AUTH.me));
   renderSidebar(); renderContent();
+}
+// ponytail: 창을 닫았는지는 서버가 알 수 없어 화면이 판단한다. 개발자 도구로 표시를 만들면 넘어갈 수 있다 — 세션 쿠키는 브라우저를 끄면 사라지고, 서버 만료(4시간·12시간)는 그대로
+function authEntered(){   // 하이웍스 메뉴로 연 창인가. 표시는 창마다 따로(sessionStorage) — 창을 닫으면 사라지고 새로 고침에는 남는다
+  const fresh = document.cookie.split('; ').includes('hr_entry=1');   // 서버가 로그인 때 주는 1분짜리 신호 (auth.py ENTRY_COOKIE)
+  if(fresh) document.cookie = 'hr_entry=; Max-Age=0; path=/; secure';
+  try { if(fresh) sessionStorage.setItem('hrEntry', '1'); return sessionStorage.getItem('hrEntry')==='1'; }
+  catch(e){ return true; }   // 창 저장소를 못 쓰는 브라우저는 막지 않는다
 }
 function authLogout(){
   fetch('/api/auth/logout', { method:'POST' }).catch(()=>{}).finally(()=>{ AUTH.live = false; authLock('out'); });

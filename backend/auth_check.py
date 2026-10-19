@@ -237,8 +237,15 @@ def main() -> int:
        "운영 모드는 docker-compose.yml 에 고정, 우회 주소는 넘기지 않음")
 
     print("5. 세션")
-    set_cookie = r.headers.get("Set-Cookie", "")
+    sets = r.headers.getlist("Set-Cookie")
+    set_cookie = next((c for c in sets if c.startswith(auth.COOKIE + "=")), "")
+    entry = next((c for c in sets if c.startswith(auth.ENTRY_COOKIE + "=")), "")
     ok(all(f in set_cookie for f in ("Secure", "HttpOnly", "SameSite=Lax")), "쿠키 세 가지: Secure · HttpOnly · SameSite=Lax")
+    ok("Max-Age" not in set_cookie and "Expires" not in set_cookie, "세션 쿠키는 브라우저를 끄면 사라짐 (유지 기간은 서버가 셈)")
+    ok(entry.startswith(auth.ENTRY_COOKIE + "=1;") and "Max-Age=60" in entry and "Secure" in entry and "HttpOnly" not in entry,
+       "하이웍스로 들어왔다는 표시: 1분짜리, 화면(JS)이 읽을 수 있음")
+    ok(app.test_client().get("/api/me", base_url=BASE, headers={"Cookie": entry.split(";")[0]}).status_code == 401,
+       "표시 쿠키만으로는 들어올 수 없음")
     raw = cookie(emp)
     ok(q("SELECT COUNT(*) FROM sessions WHERE token_hash = ?", hashlib.sha256(raw.encode()).hexdigest()) == [(1,)]
        and not q("SELECT 1 FROM sessions WHERE token_hash = ?", raw), "세션은 해시만 저장")
