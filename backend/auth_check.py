@@ -328,6 +328,18 @@ def check_org(hr, save) -> None:
     audit = q("SELECT after_data FROM audit_logs WHERE action = 'MEMBER_CONTACTS' ORDER BY id DESC LIMIT 1")[0][0]
     ok('"people": 2' in audit and m3 not in audit and "u3hr" not in audit, "감사로그에는 사람 수와 칸 이름만 (값은 남기지 않음)")
 
+    print("입사일")
+    ok(contacts(hr, [{"id": 3, "hire_date": "2021-03-02"}]).status_code == 200
+       and q("SELECT hire_date FROM users WHERE id = 3") == [("2021-03-02",)], "입사일 저장 (HR)")
+    ok(emp.get("/api/me", base_url=BASE).json["hire_date"] == "2021-03-02", "/api/me 에 내 입사일 (홈 배너의 재직 기간)")
+    ok(next(m for m in hr.get("/api/members", base_url=BASE).json["members"] if m["id"] == 3)["hireDate"] == "2021-03-02",
+       "구성원 설정에 입사일")
+    for bad in ("2021-13-01", "2021-3-2", "1900-01-01", "2999-01-01", "어제"):
+        ok(contacts(hr, [{"id": 3, "hire_date": bad}]).status_code == 400 and q("SELECT hire_date FROM users WHERE id = 3") == [("2021-03-02",)],
+           f"틀린 입사일은 저장 안 함 ({bad})")
+    ok(contacts(emp, [{"id": 3, "hire_date": "2020-01-01"}]).status_code == 403, "입사일은 HR 만")
+    ok("hire_date" not in person(emp, 3) and "hireDate" not in person(emp, 3), "조직도 명단에는 입사일이 없음")
+
 
 def main() -> int:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
