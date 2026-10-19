@@ -537,6 +537,13 @@ def check_login_tables(conn: sqlite3.Connection) -> None:
     ok, _ = _rejects(conn, code.format(u=9999), ("f" * 64,))
     _report(ok, "없는 직원의 QR 값 거부")
 
+    print("17. 조직도 칸 (005)")
+    row = conn.execute(f"SELECT mobile_public, org_hidden, title, ext, hr_mobile, hr_email FROM users WHERE id = {user}").fetchone()
+    _report(row == (1, 0, None, None, None, None), "처음엔 휴대폰 공개 · 조직도에 보임 · 비상연락망 칸 비어 있음", f"실제 {row}")
+    for c in ("mobile_public", "org_hidden"):
+        ok, _ = _rejects(conn, f"UPDATE users SET {c} = 2 WHERE id = {user}")
+        _report(ok, f"{c} 는 0·1 만")
+
 
 def main() -> int:
     print("=" * 62)
