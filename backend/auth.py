@@ -54,6 +54,7 @@ from hr_eval.sql.db import connect
 
 LINK_API_DEFAULT = "https://link-api.hiworks.com"  # 코드에 고정 (§5 "가짜 확인 서버")
 COOKIE = "hr_session"
+ENTRY_COOKIE = "hr_entry"  # 하이웍스 메뉴로 막 들어왔다는 1분짜리 표시 — 화면이 읽고 지운다 (§3 "주소로 연 창")
 IDLE = timedelta(hours=4)  # 마지막 사용 후 (§10 확정)
 MAX_AGE = timedelta(hours=12)  # 발급 후 최대 (§10)
 TOKEN_KEEP = timedelta(seconds=60)  # 하이웍스 token 유효시간과 같게 (#65 ③)
@@ -255,8 +256,10 @@ def hiworks_login() -> Response:
         raise
 
     resp = redirect("/", 302)  # ⑥ 주소창에서 token 을 지운다
-    resp.set_cookie(COOKIE, raw, max_age=int(MAX_AGE.total_seconds()), path="/",
-                    secure=True, httponly=True, samesite="Lax")
+    # max_age 없음 = 브라우저를 끄면 사라지는 쿠키. 유지 기간(4시간·12시간)은 서버가 센다 (§10)
+    resp.set_cookie(COOKIE, raw, path="/", secure=True, httponly=True, samesite="Lax")
+    # 화면이 "하이웍스 메뉴로 연 창"을 알아보는 신호 — 비밀 값이 아니라서 화면(JS)이 읽는다
+    resp.set_cookie(ENTRY_COOKIE, "1", max_age=60, path="/", secure=True, samesite="Lax")
     return resp
 
 
