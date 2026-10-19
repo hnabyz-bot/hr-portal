@@ -2928,8 +2928,8 @@ const ORG_TREE = [
   { division:'DR사업본부',        teams:['Device 개발팀','솔루션 개발팀'] },
   { division:'품질경영제조본부',  teams:['CsI팀','DR제조팀','품질경영팀'] },
   { division:'전략마케팅본부',    teams:['해외영업1팀','해외영업2팀','국내영업팀','CX팀'] },
-  { division:'솔루션사업본부',    teams:['솔루션 제조팀'] },
-  { division:'연구개발본부',      teams:['SCM팀'] },
+  { division:'솔루션사업본부',    teams:['솔루션 제조팀','SCM팀'] },
+  { division:'신사업본부',        teams:[] },   // 2026-10-19 비상연락망(10/06)에 맞춤: SCM팀은 솔루션사업본부, 연구개발본부는 없음, 신사업본부는 본부장만
 ];
 let orgSeq = 0;
 function orgMember(name, title, division, team, lead='', hideMobile=false){   // team '' = 본부 직속
@@ -2966,8 +2966,8 @@ const orgMembers = [
   orgMember('정해외','대리','전략마케팅본부','해외영업1팀'),
   orgSet(orgMember('도통역','사원','전략마케팅본부','해외영업1팀'), { ct:false }),
   orgFresh('방신규','전략마케팅본부','해외영업2팀'),
-  orgHead('배연구','연구개발본부'),
-  orgMember('신에스','사원','연구개발본부','SCM팀'),
+  orgHead('배신사','신사업본부'),
+  orgMember('신에스','사원','솔루션사업본부','SCM팀'),
 ];
 let orgQuery = '';
 function orgIsHr(){ return kpiIsHr(); }
@@ -3575,7 +3575,7 @@ const KV_DIV_POOL = {   // 본부장(= 본부 KPI)의 가상 KPI
   'DR사업본부':[['차세대 제품','차세대 디텍터 출시','출시 일정 준수'],['기술 경쟁력','핵심 특허 확보','등록 건수'],['개발 효율','개발 일정 준수','준수율(%)']],
   '품질경영제조본부':[['생산성','전사 생산 계획 달성','달성률(%)'],['품질·인증','고객 불량 감소','불량 건수'],['품질·인증','해외 인증 유지·확대','인증 건수']],
   '솔루션사업본부':[['매출 성장','솔루션 수주 확대','수주액(억)'],['납기','납기 준수','준수율(%)'],['품질·인증','설치 불량 감소','불량 건수']],
-  '연구개발본부':[['차세대 제품','선행 과제 완료','완료 과제 수'],['원가','원가 절감','절감액(억)'],['협력','산학 과제 수행','과제 수']],
+  '신사업본부':[['신사업 발굴','신규 사업 아이템 검토','검토 건수'],['사업화','시범 사업 착수','착수 건수'],['협력','외부 협력처 발굴','협력 건수']],
 };
 const kvP = (name, title, prog, upd=7, why=[])=>({ name, title, prog, upd, why });   // prog: [항목별 진행률] / null = 현장직 / 글자 = 아직 확정 전. upd = 진행률을 마지막으로 고친 지 며칠. why = 항목별 늦어지는 이유
 const kvL = (name, title, key)=>({ name, title, key });   // 시연 역할이 있는 사람 — KPI·진행률은 목표설정 탭 것을 읽는다
@@ -3602,9 +3602,9 @@ const KV_ORG = [   // 본부·부서 순서는 조직도(ORG_TREE)와 같다
   ]},
   { div:'솔루션사업본부', head:kvP('채솔루','본부장',[75,70,80],10), teams:[
     { team:'솔루션 제조팀', lead:kvP('양산태','팀장',[70,75,65],12), members:[ kvP('납품진','사원',[80,70,75],7) ]},
-  ]},
-  { div:'연구개발본부', head:kvP('배연구','본부장',[85,75,80],4), teams:[
     { team:'SCM팀', lead:kvP('구매린','팀장',[60,65,70],9), members:[ kvP('신에스','사원',[70,65,72],6) ]},
+  ]},
+  { div:'신사업본부', head:kvP('배신사','본부장',[85,75,80],4), teams:[
   ]},
 ];
 const kvTeams = KV_ORG.flatMap(d=>d.teams), kvPeople = [];
@@ -4180,7 +4180,7 @@ const CT_PEOPLE = [   // key = 시연 역할(kpiRole). null이면 시연에서 �
   { pid:1, key:'emp',  name:'홍길동', title:'대리',   team:'국내영업팀', division:'전략마케팅본부', rrn:'900315-1******' },
   { pid:2, key:'lead', name:'김영희', title:'팀장',   team:'국내영업팀', division:'전략마케팅본부', rrn:'850702-2******' },
   { pid:3, key:'head', name:'이철수', title:'본부장', team:'',           division:'전략마케팅본부', rrn:'780911-1******' },
-  { pid:4, key:null,   name:'신에스', title:'사원',   team:'SCM팀',      division:'연구개발본부',   rrn:'990120-1******' },
+  { pid:4, key:null,   name:'신에스', title:'사원',   team:'SCM팀',      division:'솔루션사업본부',   rrn:'990120-1******' },
   { pid:5, key:'line', name:'최현장', title:'사원',   team:'국내영업팀', division:'전략마케팅본부', rrn:'960805-1******' },
 ];
 const CT_GRADES = ['S','A','B','C','D'];
@@ -5407,7 +5407,7 @@ const evPeople = [   // 평가받는 사람만 — 본부장·대표이사는 �
   ...[['오디바','Device 개발팀','DR사업본부','윤개발 본부장','AAB','B'], ['서솔루','솔루션 개발팀','DR사업본부','윤개발 본부장','SAA','A'],
       ['정씨에','CsI팀','품질경영제조본부','한품질 본부장','BBA','C'], ['임제조','DR제조팀','품질경영제조본부','한품질 본부장','CBC','D'], ['인증아','품질경영팀','품질경영제조본부','한품질 본부장','AAA','B'],
       ['구미주','해외영업2팀',EV_DIVISION,'head','BCB','C'], ['고객희','CX팀',EV_DIVISION,'head','AAB','C'],
-      ['양산태','솔루션 제조팀','솔루션사업본부','채솔루 본부장','BBB','C'], ['구매린','SCM팀','연구개발본부','배연구 본부장','ABB','C']]
+      ['양산태','솔루션 제조팀','솔루션사업본부','채솔루 본부장','BBB','C'], ['구매린','SCM팀','솔루션사업본부','채솔루 본부장','ABB','C']]
     .map(([name, team, div, by, marks, proposed], i)=>({ pid:13+i, key:null, name, title:'팀장', team, div, ...(by==='head' ? { evaluator:'head' } : { evaluator:null, rater:by }),
       stage:'CEO', grade:proposed, proposed, comment:'부서 목표를 책임 있게 이끌었습니다.', demoKpi:evPoolKpi(team, 0), entries:[...marks].map(g=>['시연 실적', g, [], g]) })),
 ].map(p=>({ comment:'', headComment:'', bonus:0, bonusReason:'', grade:null, proposed:null, subScore:null, subMarks:null, editSeen:'', proxy:'', out:null, noSelf:false, kpi:true, late:0, leaveOver:0, line:'', div:EV_DIVISION, ...p,
