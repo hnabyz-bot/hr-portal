@@ -459,6 +459,9 @@
   /* "휴대폰에 설치" 안내창 */
   .org-modal .card:has(.inst-qr){ max-width:560px; }
   .org-modal .card:has(.preg){ max-width:560px; }
+  .ms-ct-lead{ display:flex; gap:10px; align-items:flex-start; margin:10px 0; padding:10px 12px; border:1px solid var(--border); border-radius:var(--radius-sm); font-size:var(--fs-sm); cursor:pointer; }
+  .ms-ct-lead input{ margin-top:3px; }
+  .ms-ct-lead small{ display:block; margin-top:3px; color:var(--text-muted); font-size:var(--fs-xs); line-height:1.6; }
   .ms-ct-more{ margin:6px 0; font-size:var(--fs-sm); }
   .ms-ct-more summary{ cursor:pointer; color:var(--text-secondary); }
   .ms-ct-more > div{ margin-top:6px; padding:8px 10px; border-radius:var(--radius-sm); background:var(--bg-page); color:var(--text-secondary); line-height:1.7; max-height:180px; overflow:auto; }
@@ -6629,13 +6632,20 @@ function msCtSelfCheck(){   // 브라우저 콘솔에서 msCtSelfCheck() 실행 
   const t = msCtRead([rows[1], ['가본부', '다팀', '가나다', '프로', 1, '', '']], people);
   ok(t.diff.length===1, '본부가 같아도 팀이 다르면 알려 줌');
   ok(msCtRead([['아무 표'], ['a', 'b']], people).error==='HEAD', '제목 줄이 없으면 읽지 않음');
+  const L = msCtLeads([{ id:1, title:'팀장' }, { id:2, title:' 본부장' }, { id:3, title:'리더' }, { id:5, title:'대표이사' }, { id:6 }], [{ id:1, lead:'TEAM' }, { id:2, lead:'' }, { id:3, lead:'' }, { id:5, lead:'' }, { id:6, lead:'TEAM' }]);
+  ok(JSON.stringify(L)===JSON.stringify([{ id:2, lead:'DIVISION' }, { id:5, lead:'CEO' }]), '직책 초안: 이미 같으면 빼고, 리더는 팀장이 아니고, 직책을 없애지는 않음');
   return 'msCtSelfCheck 통과';
+}
+const MS_CT_LEAD = { '팀장':'TEAM', '본부장':'DIVISION', '대표이사':'CEO' };   // 비상연락망 직책 → 구성원 설정 직책 초안 (2026-10-19 인사담당자 요청). 리더·상무이사·이사·프로·조장은 그대로 — 팀마다 팀장은 한 명이고 파일에 팀장 13 · 리더 13이라 리더는 팀장이 아니다
+function msCtLeads(rows, people){   // 순수 함수 — 파일 직책이 팀장·본부장·대표이사인데 지금 직책이 다른 사람만 [{id, lead}]. 직책을 없애는 쪽으로는 바꾸지 않는다
+  return rows.map(r=>({ id:r.id, lead:MS_CT_LEAD[String(r.title || '').replace(/\s+/g, '')] })).filter(x=>x.lead && (people.find(p=>p.id===x.id) || {}).lead!==x.lead);
 }
 let MS_CT = null;   // 맞춘 결과 (저장 전 확인)
 function msCtConfirm(file, rows){
   const r = msCtRead(rows, MS_LIVE.list);
   if(r.error){ orgCloseModal(); return kpiFlash('비상연락망 파일의 제목 줄(이름 · 내선번호 · 연락처)을 찾지 못했습니다. 첫째 시트가 비상연락망인지 확인해 주세요.', 'danger'); }
   MS_CT = r;
+  const leads = r.leads = msCtLeads(r.rows, MS_LIVE.list), byLead = ['CEO', 'DIVISION', 'TEAM'].map(k=>[k, leads.filter(x=>x.lead===k).length]).filter(x=>x[1]);
   const names = a=>escapeHtml([...new Set(a)].join(', '));
   const more = (label, list, html)=>list.length ? `<details class="ms-ct-more"><summary>${label} ${list.length}명</summary><div>${html}</div></details>` : '';
   orgModal(`<div class="card-title"><span>비상연락망 파일로 넣기</span><button type="button" class="x-btn" onclick="orgCloseModal()" aria-label="닫기">${icon('x')}</button></div>
@@ -6645,17 +6655,22 @@ function msCtConfirm(file, rows){
     ${more('하이웍스 계정이 없거나 이름이 다른 사람', r.miss, names(r.miss))}
     ${more('같은 이름이 여럿이라 건너뛴 사람', r.dup, names(r.dup) + ' — 이름 창에서 한 사람씩 확인해 주세요.')}
     ${more('파일에 두 번 나와 첫 줄만 넣은 사람', r.twice, names(r.twice))}
+    ${leads.length ? `<label class="ms-ct-lead"><input type="checkbox" id="msCtLead" checked><span>파일의 직책으로 <b>구성원 설정의 직책</b>도 채우기 — ${byLead.map(([k, n])=>`${MS_LEAD[k]} ${n}명`).join(' · ')}<small>초안으로만 채웁니다. 표에서 확인한 뒤 아래 <b>저장</b>을 눌러야 적용됩니다. 리더·상무이사·프로 등은 직책을 바꾸지 않고, 지금 있는 직책을 없애지도 않습니다.</small></span></label>` : ''}
     ${more('부서가 하이웍스와 다른 사람', r.diff, r.diff.map(d=>`${escapeHtml(d.name)}: 파일 ${escapeHtml(d.file)} · 하이웍스 ${escapeHtml(d.hw)}`).join('<br>') + '<br>조직도는 하이웍스 부서로 보입니다. 바꿔야 하면 하이웍스 조직도에서 고치면 다음 날 반영됩니다.')}
     <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:14px;"><button type="button" class="btn" onclick="orgCloseModal()">취소</button><button type="button" class="btn coral" ${r.rows.length ? '' : 'disabled'} onclick="msCtSave()">${r.rows.length}명 저장</button></div>`);
 }
 async function msCtSave(){
   if(!MS_CT) return;
   const r = await fetch('/api/members/contacts', { method:'POST', headers:{ 'Content-Type':'application/json' }, body:JSON.stringify({ rows:MS_CT.rows }) });
-  const j = await r.json().catch(()=>({}));
+  const j = await r.json().catch(()=>({})), leads = document.getElementById('msCtLead')?.checked ? MS_CT.leads : [];
   orgCloseModal(); MS_CT = null;
   if(!r.ok) return kpiFlash(escapeHtml(j.error || '저장하지 못했습니다.'), 'danger');
+  const nameOf = id=>(MS_LIVE.list.find(m=>m.id===id) || {}).name || '';
+  const fails = leads.map(x=>[x, msSet(MS_LIVE.list, msDraft, x.id, 'lead', x.lead, evPeople)]).filter(([, why])=>why);   // 구성원 설정의 초안에 담는다 — 규칙(팀마다 팀장 한 명 등)에 걸리면 이유와 함께 건너뜀
   MS_LIVE.state = ''; ORG_LIVE.state = '';
-  kpiFlash(`${j.saved}명의 직급·내선·연락처·메일을 넣었습니다. 조직도에 바로 보입니다.`);
+  kpiFlash(`${j.saved}명의 직급·내선·연락처·메일을 넣었습니다. 조직도에 바로 보입니다.`
+    + (leads.length ? ` <b>직책 초안 ${leads.length - fails.length}명</b>을 채웠습니다 — 표에서 확인하고 아래 <b>저장</b>을 눌러야 적용됩니다.` : '')
+    + (fails.length ? ` 못 채운 사람: ${fails.map(([x, why])=>`${escapeHtml(nameOf(x.id))}(${escapeHtml(why)})`).join(', ')}` : ''), fails.length ? 'warning' : 'success');
 }
 let msPasteBirth = false;   // 붙여넣기 창에서 고른 종류: false 직급·입사일 / true 생일
 function msPasteAsk(birth){   // 종류를 바꾸면 창을 다시 그린다(적던 글은 지워진다)
