@@ -11,9 +11,13 @@ app.py 가 register(app) 로 붙인다.
   POST /api/members/<id>/active   비활성화 · 다시 켜기 (HR)
   POST /api/members/<id>/phone/revoke  그 사람의 휴대폰 등록 해제 (HR)
   POST /api/members/<id>/org      조직도에서 빼기 · 다시 보이기 (HR) — DB 에서 지우지 않는다
-  POST /api/members/contacts      HR 이 넣는 사람 정보 (HR) — 비상연락망(직급·내선·연락처·메일)과 입사일. 화면이 이름으로 맞춘 뒤 보낸다
+  POST /api/members/contacts      HR 이 넣는 사람 정보 (HR) — 비상연락망(직급·내선·연락처·메일)과 입사일·생일. 화면이 이름으로 맞춘 뒤 보낸다
+  POST /api/members/<id>/privacy  그 사람의 생일 알림 끄기·켜기 (HR) — 포털을 아직 못 쓰는 직원이 부탁할 때
   GET  /api/org                   조직도 명단 (로그인한 누구나) — 필요한 칸만, 비공개 휴대폰은 본인·HR 에게만
-  POST /api/me/privacy            내 휴대폰 공개 여부 (본인)
+  POST /api/me/privacy            내 휴대폰 공개 · 생일 알림 (본인)
+  GET  /api/news                  홈 "이번 주 소식" (로그인한 누구나) — 이번 주에 보일 줄만. 생일·입사일 원본은 보내지 않는다
+  POST /api/news/events           경사·조사 올리기 (HR)
+  POST /api/news/events/<id>/remove  경사·조사 게시 내리기 (HR)
   POST /api/phone/code            PC 에서 "휴대폰 등록" → QR 에 담을 1회용 값(3분) — §13.1
   POST /api/phone/register        휴대폰이 QR 주소(/#d=값)를 열면 화면이 보낸다 → 휴대폰 세션(30일)
   GET  /api/phone                 내 등록된 휴대폰 (PC 창이 "등록됐는지"를 볼 때도 쓴다)
@@ -40,7 +44,8 @@ import secrets
 import sqlite3
 import urllib.error
 import urllib.request
-from datetime import datetime, timedelta, timezone
+from calendar import isleap
+from datetime import date, datetime, timedelta, timezone
 from urllib.parse import urlparse
 
 from dataclasses import replace
@@ -485,7 +490,7 @@ def members_list() -> Response:
         "         AND a.action IN ('MEMBER_UPDATED', 'MEMBER_ACTIVE')),"
         " (SELECT s.device || ' · 마지막 사용 ' || substr(s.last_seen_at, 6, 5) FROM sessions s WHERE s.user_id = u.id"
         "  AND s.kind = 'phone' AND s.revoked_at IS NULL AND s.last_seen_at > ? ORDER BY s.created_at DESC LIMIT 1),"
-        " u.title, u.org_hidden, u.hire_date"
+        " u.title, u.org_hidden, u.hire_date, u.birthday, u.birthday_public"
         " FROM users u JOIN departments d ON d.id = u.department_id LEFT JOIN departments p ON p.id = d.parent_id"
         " ORDER BY u.name",
         (_iso(_now() - PHONE_IDLE),),
@@ -502,6 +507,7 @@ def members_list() -> Response:
             "me": r[0] == g.actor.user_id,
             "phone": r[12] or "",  # 등록된 휴대폰 (§13.1) — "갤럭시 · 마지막 사용 10-19"
             "title": r[13] or "", "orgHidden": bool(r[14]), "hireDate": r[15] or "",
+            "birthday": r[16] or "", "birthdayPublic": bool(r[17]),
         })
     return jsonify(members=out)
 
@@ -587,7 +593,7 @@ def members_phone_revoke(user_id: int) -> Response:
 
 
 # ---------------- 조직도 (2026-10-19) — 하이웍스 명단 + 비상연락망 값. 구조는 하이웍스 조직 그대로 ----------------
-TEXT_MAX = {"title": 30, "ext": 20, "mobile": 30, "email": 120, "hire_date": 10}
+TEXT_MAX = {"title": 30, "ext": 20, "mobile": 30, "email": 120, "hire_date": 10, "birthday": 5}
 PHONE_RE = re.compile(r"[0-9+()\- ]{2,30}")
 EMAIL_RE = re.compile(r"[^@\s]+@[^@\s]+\.[^@\s]+")
 
@@ -606,7 +612,7 @@ def org_list() -> Response:
     for r in conn.execute(
         "SELECT u.id, u.name, u.title, d.name, d.level, p.name, COALESCE(NULLIF(u.ext, ''), u.phone),"
         " COALESCE(NULLIF(u.hr_mobile, ''), u.mobile), COALESCE(NULLIF(u.hr_email, ''), u.email), u.mobile_public,"
-        " u.hiworks_user_no, (SELECT group_concat(role) FROM user_roles x WHERE x.user_id = u.id)"
+        " u.hiworks_user_no, (SELECT group_concat(role) FROM user_roles x WHERE x.user_id = u.id), u.birthday, u.birthday_public"
         " FROM users u JOIN departments d ON d.id = u.department_id LEFT JOIN departments p ON p.id = d.parent_id"
         " WHERE u.is_active = 1 AND u.org_hidden = 0 ORDER BY u.name"
     ):
@@ -619,20 +625,36 @@ def org_list() -> Response:
             "mobile": (r[7] or "") if show else None, "mobilePublic": bool(r[9]),
             "userNo": r[10] if (r[10] or "").isdigit() else "", "me": me,
         })
+        if me:  # 생일은 본인 줄에만 — 다른 직원의 생일은 이번 주 소식(/api/news)으로만 보인다
+            out[-1].update(birthday=r[12] or "", birthdayPublic=bool(r[13]))
     return jsonify(divisions=divisions, members=out, hr=a.is_hr)
+
+
+def _privacy(user_id: int, allowed: tuple[str, ...]) -> Response:
+    """{칸: true/false} — allowed 안의 칸만. 칸 이름은 allowed 에서 오므로 SQL 에 바로 넣어도 된다."""
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict) or not body or any(k not in allowed or not isinstance(v, bool) for k, v in body.items()):
+        return jsonify(error=f"{' · '.join(allowed)} 은 true/false 입니다."), 400
+    conn = _db()
+    if not conn.execute(f"UPDATE users SET {', '.join(f'{k} = ?' for k in body)} WHERE id = ?",
+                        (*map(int, body.values()), user_id)).rowcount:
+        return jsonify(error="명단에 없는 사람입니다."), 404
+    _audit(conn, AuditEntry.by(g.actor, action="PRIVACY_UPDATED", entity_type="user", entity_id=user_id, after_data=body))
+    return jsonify(ok=True)
 
 
 @bp.post("/api/me/privacy")
 def me_privacy() -> Response:
-    """{"mobile_public": bool} — 내 휴대폰 번호를 조직도에서 다른 직원에게 보일지 (본인만)."""
-    on = (request.get_json(silent=True) or {}).get("mobile_public")
-    if not isinstance(on, bool):
-        return jsonify(error="mobile_public 은 true/false 입니다."), 400
-    conn = _db()
-    conn.execute("UPDATE users SET mobile_public = ? WHERE id = ?", (int(on), g.actor.user_id))
-    _audit(conn, AuditEntry.by(g.actor, action="PRIVACY_UPDATED", entity_type="user", entity_id=g.actor.user_id,
-                               after_data={"mobile_public": on}))
-    return jsonify(ok=True)
+    """{"mobile_public"?: bool, "birthday_public"?: bool} — 조직도의 내 휴대폰 공개 · 홈 이번 주 소식의 생일 알림 (본인만)."""
+    return _privacy(g.actor.user_id, ("mobile_public", "birthday_public"))
+
+
+@bp.post("/api/members/<int:user_id>/privacy")
+def members_privacy(user_id: int) -> Response:
+    """{"birthday_public": bool} — 포털을 아직 못 쓰는 직원이 생일 알림을 꺼 달라고 하면 HR 이 대신 (2026-10-19 인사담당자)."""
+    if (denied := _hr_only()) is not None:
+        return denied
+    return _privacy(user_id, ("birthday_public",))
 
 
 @bp.post("/api/members/<int:user_id>/org")
@@ -652,7 +674,7 @@ def members_org(user_id: int) -> Response:
 
 @bp.post("/api/members/contacts")
 def members_contacts() -> Response:
-    """{"rows": [{"id": n, "title"?, "ext"?, "mobile"?, "email"?, "hire_date"?: "YYYY-MM-DD"}]} — 비상연락망 파일 값·입사일 (HR).
+    """{"rows": [{"id": n, "title"?, "ext"?, "mobile"?, "email"?, "hire_date"?: "YYYY-MM-DD", "birthday"?: "MM-DD"}]} — 비상연락망 파일 값·입사일·생일 (HR).
     빈 칸은 보내지 않고, 보낸 칸만 덮어쓴다.
     한 줄이라도 모양이 틀리면 아무것도 저장하지 않는다. 감사로그에는 값이 아니라 바뀐 칸 이름과 사람 수만 남긴다."""
     if (denied := _hr_only()) is not None:
@@ -660,7 +682,7 @@ def members_contacts() -> Response:
     rows = (request.get_json(silent=True) or {}).get("rows")
     if not isinstance(rows, list) or not rows or len(rows) > 2000:
         return jsonify(error="저장할 내용이 없습니다."), 400
-    col = {"title": "title", "ext": "ext", "mobile": "hr_mobile", "email": "hr_email", "hire_date": "hire_date"}
+    col = {"title": "title", "ext": "ext", "mobile": "hr_mobile", "email": "hr_email", "hire_date": "hire_date", "birthday": "birthday"}
     today = _now().date()
     conn = _db()
     known = {r[0] for r in conn.execute("SELECT id FROM users")}
@@ -682,6 +704,8 @@ def members_contacts() -> Response:
                         d = datetime.strptime(v, "%Y-%m-%d").date()  # 틀린 날짜는 ValueError
                         if v != d.isoformat() or d.year < 1950 or (d - today).days > 366:
                             raise ValueError(k)
+                    if k == "birthday" and not (re.fullmatch(r"\d{2}-\d{2}", v) and datetime.strptime("2000-" + v, "%Y-%m-%d")):
+                        raise ValueError(k)  # 월-일만 (연도 없이). 02-29 는 된다 — 2000년이 윤년
                     vals[col[k]] = v
             if vals:
                 plan.append((row["id"], vals))
@@ -699,6 +723,87 @@ def members_contacts() -> Response:
         conn.execute("ROLLBACK")
         raise
     return jsonify(saved=len(plan))
+
+
+# ---------------- 홈 "이번 주 소식" (2026-10-19) — 새 식구 · 생일 · 입사 기념은 입사일·생일로, 경사·조사는 HR 이 올린다 ----------------
+KST = timezone(timedelta(hours=9))  # 서버 컨테이너 시계는 UTC — "이번 주"는 한국 날짜로
+CELEB_KINDS = ("joy", "condol")  # 경사 · 조사
+
+
+def _today() -> date:
+    return _now().astimezone(KST).date()
+
+
+def news_items(people: list[tuple], today: date) -> list[dict]:
+    """people = [(id, hire_date, birthday, birthday_public)] → 이번 주에 보일 줄. 화면 celebList 와 같은 규칙:
+    새 식구 = 입사 후 30일 · 생일 = 이번 주 월~일(평년에는 02-29 를 02-28 에), 생일 알림을 끈 사람은 빼고 ·
+    입사 N주년 = 이번 달, 1·3·5·10년 이후 5년마다. 순서는 새 식구 · 생일(날짜순) · 입사 기념."""
+    week = [today - timedelta(days=today.weekday() - i) for i in range(7)]
+    md = lambda m, d: f"{m}월 {d}일"  # noqa: E731
+    welcome, birthday, anniv = [], [], []
+    for uid, hire, bday, public in people:
+        h = date.fromisoformat(hire) if hire else None
+        if h and 0 <= (today - h).days <= 30:
+            welcome.append({"kind": "welcome", "id": uid, "note": f"{md(h.month, h.day)} 입사"})
+        y = today.year - h.year if h else 0
+        if h and h.month == today.month and (y in (1, 3, 5) or (y >= 10 and y % 5 == 0)):
+            anniv.append({"kind": "anniversary", "id": uid, "note": f"입사 {y}주년 · {md(h.month, h.day)}"})
+        if bday and public:
+            day = next((d for d in week if d.strftime("%m-%d") == ("02-28" if bday == "02-29" and not isleap(d.year) else bday)), None)
+            if day:
+                birthday.append((day, {"kind": "birthday", "id": uid, "note": f"{md(int(bday[:2]), int(bday[3:]))} 생일"}))
+    return welcome + [x for _, x in sorted(birthday, key=lambda b: b[0])] + anniv
+
+
+@bp.get("/api/news")
+def news() -> Response:
+    """로그인한 누구나. 조직도에 보이는 사람만(비활성·조직도에서 뺀 사람은 없다). 생일·입사일 원본 대신 이번 주에 보일 줄만 보낸다."""
+    conn, today = _db(), _today()
+    shown = "u.is_active = 1 AND u.org_hidden = 0"
+    people = conn.execute(f"SELECT u.id, u.hire_date, u.birthday, u.birthday_public FROM users u WHERE {shown}").fetchall()
+    events = conn.execute(
+        f"SELECT e.id, e.user_id, e.kind, e.label FROM celeb_events e JOIN users u ON u.id = e.user_id"
+        f" WHERE {shown} AND e.removed_at IS NULL AND e.until_date >= ? ORDER BY e.id", (today.isoformat(),))
+    return jsonify(items=news_items(people, today) + [{"kind": k, "id": uid, "note": label, "event": eid} for eid, uid, k, label in events])
+
+
+@bp.post("/api/news/events")
+def news_event_add() -> Response:
+    """{"user_id": n, "kind": "joy"|"condol", "label": "결혼", "until": "YYYY-MM-DD"} — HR 이 본인(가족) 동의를 받고 올린다.
+    게시 종료일이 지나면 저절로 안 보인다. 감사로그에는 내용(부친상 등)을 남기지 않는다."""
+    if (denied := _hr_only()) is not None:
+        return denied
+    b = request.get_json(silent=True)
+    b = b if isinstance(b, dict) else {}
+    uid, kind, label, until, today = b.get("user_id"), b.get("kind"), b.get("label"), b.get("until"), _today()
+    try:
+        d = date.fromisoformat(until) if isinstance(until, str) and re.fullmatch(r"\d{4}-\d{2}-\d{2}", until) else None
+    except ValueError:
+        d = None
+    conn = _db()
+    if (kind not in CELEB_KINDS or not isinstance(label, str) or not 0 < len(label.strip()) <= 30
+            or d is None or not 0 <= (d - today).days <= 366 or type(uid) is not int
+            or not conn.execute("SELECT 1 FROM users WHERE id = ? AND is_active = 1", (uid,)).fetchone()):
+        return jsonify(error="종류 · 대상자 · 내용(30자까지) · 게시 종료일(오늘부터 1년 안)을 확인해 주세요."), 400
+    eid = conn.execute(
+        "INSERT INTO celeb_events (user_id, kind, label, until_date, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+        (uid, kind, label.strip(), until, g.actor.user_id, _iso(_now()))).lastrowid
+    _audit(conn, AuditEntry.by(g.actor, action="NEWS_POSTED", entity_type="celeb_event", entity_id=eid,
+                               after_data={"user_id": uid, "kind": kind, "until": until}))
+    return jsonify(id=eid)
+
+
+@bp.post("/api/news/events/<int:event_id>/remove")
+def news_event_remove(event_id: int) -> Response:
+    """게시 내리기 (HR). 지우지 않고 내린 때만 적는다."""
+    if (denied := _hr_only()) is not None:
+        return denied
+    conn = _db()
+    if not conn.execute("UPDATE celeb_events SET removed_at = ? WHERE id = ? AND removed_at IS NULL",
+                        (_iso(_now()), event_id)).rowcount:
+        return jsonify(error="없거나 이미 내린 소식입니다."), 404
+    _audit(conn, AuditEntry.by(g.actor, action="NEWS_REMOVED", entity_type="celeb_event", entity_id=event_id))
+    return jsonify(ok=True)
 
 
 def _session() -> Actor | None:
