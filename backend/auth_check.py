@@ -251,6 +251,81 @@ def check_phone(hr, save) -> None:
     auth._qr_rows = real
 
 
+def check_org(hr, save) -> None:
+    """조직도 실제 명단 (2026-10-19): 누구나 보는 명단 · 비공개 휴대폰 · 조직도에서 빼기 · 비상연락망 값."""
+    print("조직도")
+    m1, m2, m3 = ("010-" + s for s in ("1111-0002", "2222-0002", "3333-0003"))  # 가상 번호 — 파일에 완성된 번호를 남기지 않는다 (CI 개인정보 검사)
+    emp, lead = app.test_client(), app.test_client()
+    login(emp, new_token("emp"))
+    login(lead, new_token("lead"))
+
+    def org(client):
+        return client.get("/api/org", base_url=BASE)
+
+    def person(client, uid):
+        return next((m for m in org(client).json["members"] if m["id"] == uid), None)
+
+    ok(app.test_client().get("/api/org", base_url=BASE).status_code == 401, "로그인 없이는 조직도 명단 401")
+    r = org(emp)
+    ok(r.status_code == 200 and {"divisions", "members"} <= set(r.json)
+       and any(d["name"] == "가상본부" and "가상팀" in d["teams"] for d in r.json["divisions"]), "조직도 명단 (본부 · 팀은 하이웍스 부서 그대로)")
+    p2 = person(emp, 2)
+    ok(p2 and p2["division"] == "가상본부" and p2["team"] == "가상팀" and p2["lead"] == "TEAM", "사람마다 본부 · 팀 · 직책")
+    ok(person(emp, 5) is None, "비활성인 사람은 조직도에 없음")
+    ok(set(p2) == {"id", "name", "title", "division", "team", "lead", "ext", "email", "mobile", "mobilePublic", "userNo", "me"},
+       "조직도 명단은 필요한 칸만 (포털 사용 · HR 권한 · 사번 등은 없음)")
+
+    x("UPDATE users SET mobile = ?, phone = '02-000-0002', email = 'u2@example.invalid' WHERE id = 2", m1)
+    ok(person(emp, 2)["mobile"] == m1 and person(emp, 2)["ext"] == "02-000-0002", "하이웍스 휴대폰 · 회사 전화")
+    x("UPDATE users SET hr_mobile = ?, ext = '1002', hr_email = 'hr2@example.invalid' WHERE id = 2", m2)
+    p2 = person(emp, 2)
+    ok(p2["mobile"] == m2 and p2["ext"] == "1002" and p2["email"] == "hr2@example.invalid",
+       "비상연락망 값이 하이웍스 값보다 먼저 (휴대폰 · 내선 · 메일)")
+
+    x("UPDATE users SET mobile_public = 0 WHERE id = 2")
+    ok(person(emp, 2)["mobile"] is None and person(emp, 2)["mobilePublic"] is False, "비공개 휴대폰은 다른 직원에게 안 보임")
+    ok(person(lead, 2)["mobile"] == m2 and person(lead, 2)["me"] is True, "본인에게는 보임")
+    ok(person(hr, 2)["mobile"] == m2, "HR 에게는 보임 (비상연락망 관리)")
+    ok(lead.post("/api/me/privacy", base_url=BASE, headers=ORIGIN, json={"mobile_public": "yes"}).status_code == 400
+       and lead.post("/api/me/privacy", base_url=BASE, json={"mobile_public": True}).status_code == 403, "공개 설정: 모양 · Origin 검사")
+    ok(lead.post("/api/me/privacy", base_url=BASE, headers=ORIGIN, json={"mobile_public": True}).status_code == 200
+       and person(emp, 2)["mobile"] == m2, "본인이 다시 공개하면 보임")
+
+    x("UPDATE users SET hiworks_user_no = '777' WHERE id = 4")
+    ok(person(emp, 4)["userNo"] == "777" and person(emp, 3)["userNo"] == "", "메일 받는 사람 채우기용 하이웍스 번호 (숫자일 때만)")
+    x("UPDATE users SET hiworks_user_no = 'HW-4' WHERE id = 4")
+    ok(emp.post("/api/members/4/org", base_url=BASE, headers=ORIGIN, json={"hidden": True}).status_code == 403, "HR 이 아니면 조직도에서 못 뺌")
+    ok(hr.post("/api/members/4/org", base_url=BASE, headers=ORIGIN, json={"hidden": True}).status_code == 200
+       and person(emp, 4) is None and q("SELECT is_active, org_hidden FROM users WHERE id = 4") == [(1, 1)],
+       "HR 이 조직도에서 빼면 명단에서 빠짐 (DB 에는 그대로)")
+    ok(next(m for m in hr.get("/api/members", base_url=BASE).json["members"] if m["id"] == 4)["orgHidden"] is True,
+       "구성원 설정에 '조직도에서 뺌' 표시")
+    ok(hr.post("/api/members/4/org", base_url=BASE, headers=ORIGIN, json={"hidden": False}).status_code == 200
+       and person(emp, 4) is not None, "다시 보이기")
+    ok(hr.post("/api/members/999/org", base_url=BASE, headers=ORIGIN, json={"hidden": True}).status_code == 404, "없는 사람은 404")
+
+    def contacts(client, rows, headers=ORIGIN):
+        return client.post("/api/members/contacts", base_url=BASE, headers=headers, json={"rows": rows})
+
+    good = [{"id": 3, "title": "프로", "ext": "1003", "mobile": m3, "email": "u3hr@example.invalid"}, {"id": 4, "title": "리더"}]
+    ok(contacts(emp, good).status_code == 403 and contacts(hr, good, headers={}).status_code == 403, "비상연락망 저장은 HR · 포털 화면에서만")
+    before = q("SELECT title, ext, hr_mobile, hr_email FROM users WHERE id = 3")
+    for bad, why in (([{"id": 3, "email": "nope"}], "메일 모양"), ([{"id": 3, "mobile": "010-abc"}], "전화 모양"),
+                     ([{"id": 999, "title": "프로"}], "없는 사람"), ([{"id": 3, "title": " "}], "빈 값"),
+                     ([{"id": 3, "portal_enabled": True}], "다른 칸"), ([{"id": 3, "title": "가" * 31}], "너무 김"),
+                     ([good[0], {"id": 3, "email": "bad"}], "한 줄이라도 틀리면")):
+        ok(contacts(hr, bad).status_code == 400 and q("SELECT title, ext, hr_mobile, hr_email FROM users WHERE id = 3") == before,
+           f"틀린 값은 아무것도 저장 안 함 ({why})")
+    r = contacts(hr, good)
+    ok(r.status_code == 200 and r.json["saved"] == 2
+       and q("SELECT title, ext, hr_mobile, hr_email FROM users WHERE id = 3") == [("프로", "1003", m3, "u3hr@example.invalid")]
+       and q("SELECT title, ext FROM users WHERE id = 4") == [("리더", None)], "비상연락망 값 저장 (보낸 칸만)")
+    p3 = person(emp, 3)
+    ok(p3["title"] == "프로" and p3["mobile"] == m3 and p3["email"] == "u3hr@example.invalid", "조직도에 바로 보임")
+    audit = q("SELECT after_data FROM audit_logs WHERE action = 'MEMBER_CONTACTS' ORDER BY id DESC LIMIT 1")[0][0]
+    ok('"people": 2' in audit and m3 not in audit and "u3hr" not in audit, "감사로그에는 사람 수와 칸 이름만 (값은 남기지 않음)")
+
+
 def main() -> int:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     seed()
@@ -482,6 +557,7 @@ def main() -> int:
        and save(leader, {"3": {"use": False}}).status_code == 403, "로그인한 팀장이라도 HR 이 아니면 비활성화·저장 못 함")
 
     check_phone(hr, save)
+    check_org(hr, save)
 
     acts = {r[0] for r in q("SELECT action FROM audit_logs")}
     ok({"LOGIN", "HR_BOOTSTRAP"} <= acts, "감사로그 LOGIN 이 남음")

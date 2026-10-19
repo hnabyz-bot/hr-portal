@@ -10,6 +10,10 @@ app.py 가 register(app) 로 붙인다.
   POST /api/members               사람별 설정 여섯 칸 저장 (HR, 규칙은 domain/members.validate_members)
   POST /api/members/<id>/active   비활성화 · 다시 켜기 (HR)
   POST /api/members/<id>/phone/revoke  그 사람의 휴대폰 등록 해제 (HR)
+  POST /api/members/<id>/org      조직도에서 빼기 · 다시 보이기 (HR) — DB 에서 지우지 않는다
+  POST /api/members/contacts      비상연락망 파일 값 저장 (HR) — 직급·내선·연락처·메일. 화면이 이름으로 맞춘 뒤 보낸다
+  GET  /api/org                   조직도 명단 (로그인한 누구나) — 필요한 칸만, 비공개 휴대폰은 본인·HR 에게만
+  POST /api/me/privacy            내 휴대폰 공개 여부 (본인)
   POST /api/phone/code            PC 에서 "휴대폰 등록" → QR 에 담을 1회용 값(3분) — §13.1
   POST /api/phone/register        휴대폰이 QR 주소(/#d=값)를 열면 화면이 보낸다 → 휴대폰 세션(30일)
   GET  /api/phone                 내 등록된 휴대폰 (PC 창이 "등록됐는지"를 볼 때도 쓴다)
@@ -480,7 +484,8 @@ def members_list() -> Response:
         " EXISTS (SELECT 1 FROM audit_logs a WHERE a.entity_type = 'user' AND a.entity_id = u.id"
         "         AND a.action IN ('MEMBER_UPDATED', 'MEMBER_ACTIVE')),"
         " (SELECT s.device || ' · 마지막 사용 ' || substr(s.last_seen_at, 6, 5) FROM sessions s WHERE s.user_id = u.id"
-        "  AND s.kind = 'phone' AND s.revoked_at IS NULL AND s.last_seen_at > ? ORDER BY s.created_at DESC LIMIT 1)"
+        "  AND s.kind = 'phone' AND s.revoked_at IS NULL AND s.last_seen_at > ? ORDER BY s.created_at DESC LIMIT 1),"
+        " u.title, u.org_hidden"
         " FROM users u JOIN departments d ON d.id = u.department_id LEFT JOIN departments p ON p.id = d.parent_id"
         " ORDER BY u.name",
         (_iso(_now() - PHONE_IDLE),),
@@ -496,6 +501,7 @@ def members_list() -> Response:
             "isNew": not r[6] and not r[11],  # 명단 동기화로 들어와 HR 이 아직 손대지 않은 사람
             "me": r[0] == g.actor.user_id,
             "phone": r[12] or "",  # 등록된 휴대폰 (§13.1) — "갤럭시 · 마지막 사용 10-19"
+            "title": r[13] or "", "orgHidden": bool(r[14]),
         })
     return jsonify(members=out)
 
@@ -578,6 +584,115 @@ def members_phone_revoke(user_id: int) -> Response:
     if _revoke_phone(conn, user_id, _now()):
         _audit(conn, AuditEntry.by(g.actor, action="PHONE_REVOKED", entity_type="user", entity_id=user_id))
     return jsonify(ok=True)
+
+
+# ---------------- 조직도 (2026-10-19) — 하이웍스 명단 + 비상연락망 값. 구조는 하이웍스 조직 그대로 ----------------
+TEXT_MAX = {"title": 30, "ext": 20, "mobile": 30, "email": 120}
+PHONE_RE = re.compile(r"[0-9+()\- ]{2,30}")
+EMAIL_RE = re.compile(r"[^@\s]+@[^@\s]+\.[^@\s]+")
+
+
+@bp.get("/api/org")
+def org_list() -> Response:
+    """로그인한 누구나. 비활성·조직도에서 뺀 사람은 없다. 비공개 휴대폰은 본인과 HR 에게만 (비상연락망 관리)."""
+    conn, a = _db(), g.actor
+    divisions = [{"id": r[0], "name": r[1], "teams": []} for r in conn.execute(
+        "SELECT id, name FROM departments WHERE level = 'DIVISION' ORDER BY id")]
+    by_id = {d["id"]: d for d in divisions}
+    for tid, name, parent in conn.execute("SELECT id, name, parent_id FROM departments WHERE level = 'TEAM' ORDER BY id"):
+        if parent in by_id:
+            by_id[parent]["teams"].append(name)
+    out = []
+    for r in conn.execute(
+        "SELECT u.id, u.name, u.title, d.name, d.level, p.name, COALESCE(NULLIF(u.ext, ''), u.phone),"
+        " COALESCE(NULLIF(u.hr_mobile, ''), u.mobile), COALESCE(NULLIF(u.hr_email, ''), u.email), u.mobile_public,"
+        " u.hiworks_user_no, (SELECT group_concat(role) FROM user_roles x WHERE x.user_id = u.id)"
+        " FROM users u JOIN departments d ON d.id = u.department_id LEFT JOIN departments p ON p.id = d.parent_id"
+        " WHERE u.is_active = 1 AND u.org_hidden = 0 ORDER BY u.name"
+    ):
+        me, team = r[0] == a.user_id, r[4] == "TEAM"
+        roles = [Role(x) for x in (r[11] or "").split(",") if x]
+        show = bool(r[9]) or me or a.is_hr
+        out.append({
+            "id": r[0], "name": r[1], "title": r[2] or "", "division": r[5] if team else r[3], "team": r[3] if team else "",
+            "lead": LEAD.get(position_of(roles), ""), "ext": r[6] or "", "email": r[8] or "",
+            "mobile": (r[7] or "") if show else None, "mobilePublic": bool(r[9]),
+            "userNo": r[10] if (r[10] or "").isdigit() else "", "me": me,
+        })
+    return jsonify(divisions=divisions, members=out, hr=a.is_hr)
+
+
+@bp.post("/api/me/privacy")
+def me_privacy() -> Response:
+    """{"mobile_public": bool} — 내 휴대폰 번호를 조직도에서 다른 직원에게 보일지 (본인만)."""
+    on = (request.get_json(silent=True) or {}).get("mobile_public")
+    if not isinstance(on, bool):
+        return jsonify(error="mobile_public 은 true/false 입니다."), 400
+    conn = _db()
+    conn.execute("UPDATE users SET mobile_public = ? WHERE id = ?", (int(on), g.actor.user_id))
+    _audit(conn, AuditEntry.by(g.actor, action="PRIVACY_UPDATED", entity_type="user", entity_id=g.actor.user_id,
+                               after_data={"mobile_public": on}))
+    return jsonify(ok=True)
+
+
+@bp.post("/api/members/<int:user_id>/org")
+def members_org(user_id: int) -> Response:
+    """{"hidden": bool} 조직도에서 빼기 · 다시 보이기 (HR). 명단 동기화가 덮어쓰지 않는다."""
+    if (denied := _hr_only()) is not None:
+        return denied
+    hidden = (request.get_json(silent=True) or {}).get("hidden")
+    if not isinstance(hidden, bool):
+        return jsonify(error="hidden 은 true/false 입니다."), 400
+    conn = _db()
+    if not conn.execute("UPDATE users SET org_hidden = ? WHERE id = ?", (int(hidden), user_id)).rowcount:
+        return jsonify(error="명단에 없는 사람입니다."), 404
+    _audit(conn, AuditEntry.by(g.actor, action="ORG_HIDDEN" if hidden else "ORG_SHOWN", entity_type="user", entity_id=user_id))
+    return jsonify(ok=True)
+
+
+@bp.post("/api/members/contacts")
+def members_contacts() -> Response:
+    """{"rows": [{"id": n, "title"?, "ext"?, "mobile"?, "email"?}]} — 비상연락망 파일 값 (HR). 빈 칸은 보내지 않고, 보낸 칸만 덮어쓴다.
+    한 줄이라도 모양이 틀리면 아무것도 저장하지 않는다. 감사로그에는 값이 아니라 바뀐 칸 이름과 사람 수만 남긴다."""
+    if (denied := _hr_only()) is not None:
+        return denied
+    rows = (request.get_json(silent=True) or {}).get("rows")
+    if not isinstance(rows, list) or not rows or len(rows) > 2000:
+        return jsonify(error="저장할 내용이 없습니다."), 400
+    col = {"title": "title", "ext": "ext", "mobile": "hr_mobile", "email": "hr_email"}
+    conn = _db()
+    known = {r[0] for r in conn.execute("SELECT id FROM users")}
+    try:
+        plan = []
+        for row in rows:
+            if not isinstance(row, dict) or row.get("id") not in known or any(k not in ("id", *col) for k in row):
+                raise ValueError("사람·칸")
+            vals = {}
+            for k in col:
+                if k in row:
+                    v = row[k]
+                    if not isinstance(v, str) or not v.strip() or len(v.strip()) > TEXT_MAX[k]:
+                        raise ValueError(k)
+                    v = v.strip()
+                    if (k == "mobile" and not PHONE_RE.fullmatch(v)) or (k == "email" and not EMAIL_RE.fullmatch(v)):
+                        raise ValueError(k)
+                    vals[col[k]] = v
+            if vals:
+                plan.append((row["id"], vals))
+    except ValueError:
+        return jsonify(error="파일 값의 모양이 올바르지 않습니다. 다시 골라 주세요."), 400
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        for uid, vals in plan:
+            conn.execute(f"UPDATE users SET {', '.join(f'{c} = ?' for c in vals)} WHERE id = ?", (*vals.values(), uid))
+        fields = sorted({k for _, vals in plan for k in vals})
+        _audit(conn, AuditEntry.by(g.actor, action="MEMBER_CONTACTS", entity_type="user", entity_id=None,
+                                   after_data={"people": len(plan), "fields": fields}))
+        conn.execute("COMMIT")
+    except BaseException:
+        conn.execute("ROLLBACK")
+        raise
+    return jsonify(saved=len(plan))
 
 
 def _session() -> Actor | None:

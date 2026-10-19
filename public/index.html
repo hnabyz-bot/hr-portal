@@ -459,6 +459,9 @@
   /* "휴대폰에 설치" 안내창 */
   .org-modal .card:has(.inst-qr){ max-width:560px; }
   .org-modal .card:has(.preg){ max-width:560px; }
+  .ms-ct-more{ margin:6px 0; font-size:var(--fs-sm); }
+  .ms-ct-more summary{ cursor:pointer; color:var(--text-secondary); }
+  .ms-ct-more > div{ margin-top:6px; padding:8px 10px; border-radius:var(--radius-sm); background:var(--bg-page); color:var(--text-secondary); line-height:1.7; max-height:180px; overflow:auto; }
   .preg-left{ display:block; font-size:var(--fs-md); color:var(--accent); }
   .preg-ok{ flex:none; width:188px; min-height:250px; box-sizing:border-box; padding:16px 12px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px;
     border:1px solid var(--border); border-radius:var(--radius); background:var(--bg-page); text-align:center; font-size:var(--fs-xs); color:var(--text-muted); }
@@ -787,6 +790,14 @@
   .org-name{ color:var(--accent); font-weight:600; cursor:pointer; text-decoration:underline; text-underline-offset:3px; }
   .org-modal{ position:fixed; inset:0; background:rgba(27,36,51,.45); z-index:60; display:flex; align-items:center; justify-content:center; padding:16px; }
   .org-modal .card{ width:100%; max-width:420px; max-height:90vh; overflow-y:auto; box-shadow:0 20px 40px -16px rgba(37,93,170,.35); }
+  .org-priv{ margin-top:14px; border-top:1px solid var(--border); padding-top:12px; }
+  .org-priv > b{ display:block; font-size:var(--fs-sm); margin-bottom:4px; }
+  .org-priv-row{ display:flex; align-items:center; gap:12px; padding:8px 0; }
+  .org-priv-row > div{ flex:1; font-size:var(--fs-sm); }
+  .org-priv-row small{ display:block; color:var(--text-muted); font-size:var(--fs-xs); margin-top:2px; line-height:1.5; }
+  .org-hrbox{ display:flex; align-items:center; justify-content:space-between; gap:10px; margin-top:14px; padding:10px 12px; border-radius:var(--radius); background:var(--bg-page); }
+  .org-hrbox span{ font-size:var(--fs-xs); color:var(--text-secondary); line-height:1.5; }
+  .org-hrbox .btn{ flex:none; }
   .org-contact{ display:flex; align-items:center; justify-content:space-between; gap:8px; padding:8px 0; border-bottom:1px solid var(--border); font-size:var(--fs-sm); }
   .org-contact b{ min-width:64px; color:var(--text-secondary); font-weight:600; }
   .org-contact span{ flex:1; }
@@ -2960,7 +2971,42 @@ const orgMembers = [
 ];
 let orgQuery = '';
 function orgIsHr(){ return kpiIsHr(); }
-function orgFind(id){ return orgMembers.find(m=>m.id===id); }
+/* 실제 로그인이면 조직도(부서별 조직도 · 구성원 검색 · 이름 창)는 서버 명단(GET /api/org)이다 — 2026-10-19 인사담당자 결정.
+   구조는 하이웍스 조직 그대로, 연락처·내선·메일은 HR 이 넣은 비상연락망 값이 먼저. 다른 메뉴(KPI·평가·홈 경조사 등)는 아직 시연 명단(orgMembers)을 쓴다. */
+const ORG_LIVE = { state:'', tree:[], people:[] };   // state: '' 아직 · loading · ok · err
+const ORG_ID = 100000;   // 실제 명단의 화면 번호 = DB 번호 + ORG_ID — 시연 명단(1부터)과 겹치지 않게 (경조사 배너는 시연 번호로 orgShow 를 부른다)
+const orgLive = ()=>AUTH.live && ORG_LIVE.state==='ok';
+const orgTree = ()=>orgLive() ? ORG_LIVE.tree : ORG_TREE;
+const orgPeople = ()=>orgLive() ? ORG_LIVE.people : orgMembers;
+function orgFind(id){ return (id>=ORG_ID ? ORG_LIVE.people : orgMembers).find(m=>m.id===id); }
+async function orgLoad(){
+  ORG_LIVE.state = 'loading';
+  try {
+    const r = await fetch('/api/org'); if(!r.ok) throw new Error(r.status);
+    const j = await r.json();
+    ORG_LIVE.people = j.members.map(m=>({ ...m, uid:m.id, id:ORG_ID+m.id, hideMobile:m.mobile===null }));
+    ORG_LIVE.tree = j.divisions.map(d=>({ division:d.name, teams:d.teams, noHead:!j.members.some(m=>m.division===d.name && m.lead==='DIVISION') }));
+    ORG_LIVE.state = 'ok';
+  } catch(e){ ORG_LIVE.state = 'err'; }
+  renderContent();
+}
+function orgGate(){   // 실제 로그인인데 명단이 아직이면 안내 (불러오기 시작)
+  if(!AUTH.live || ORG_LIVE.state==='ok') return '';
+  if(!ORG_LIVE.state) orgLoad();
+  return kpiNote(ORG_LIVE.state==='err' ? '조직도를 불러오지 못했습니다. 잠시 뒤 새로 고쳐 주세요.' : '조직도를 불러오는 중입니다…', ORG_LIVE.state==='err' ? 'danger' : 'info');
+}
+async function orgPrivacy(on, el){   // 내 휴대폰 공개 (본인)
+  const r = await fetch('/api/me/privacy', { method:'POST', headers:{ 'Content-Type':'application/json' }, body:JSON.stringify({ mobile_public:on }) });
+  if(!r.ok){ el.checked = !on; return; }
+  const me = ORG_LIVE.people.find(m=>m.me); if(me) me.mobilePublic = on;
+}
+async function orgHide(id, hidden){   // HR: 조직도에서 빼기 · 다시 보이기 (DB 번호)
+  const r = await fetch(`/api/members/${id}/org`, { method:'POST', headers:{ 'Content-Type':'application/json' }, body:JSON.stringify({ hidden }) });
+  orgCloseModal();
+  if(!r.ok) return kpiFlash('바꾸지 못했습니다. 잠시 뒤 다시 해 주세요.', 'danger');
+  ORG_LIVE.state = ''; MS_LIVE.state = '';
+  kpiFlash(hidden ? '조직도에서 뺐습니다. 다시 보이게 하려면 구성원 설정에서 이름을 누르세요.' : '조직도에 다시 보이게 했습니다.');
+}
 function orgTeamsOf(div){ const d = ORG_TREE.find(x=>x.division===div); return d ? d.teams : []; }
 
 /* ----- 규칙 (순수 로직, orgSelfCheck가 검증) ----- */
@@ -3002,8 +3048,8 @@ function orgRemove(members, id, isHr){
 }
 const HW_MAIL = 'https://mails.office.hiworks.com/write?mode=normal';   // 하이웍스 메일 쓰기 (2026-10-19 인사담당자 지시 — 메일은 하이웍스로)
 // 받는 사람을 미리 채우는 것은 메일 주소로는 안 된다(to= 를 무시함, 2026-10-19 확인). 하이웍스 번호로만 된다: &user_nos=번호,번호
-// ponytail: 조직도가 아직 가상 명단이라 빈 메일 쓰기 화면만 연다 — 조직도를 실제 명단(users.hiworks_user_no)으로 바꿀 때 user_nos 를 붙인다
-const hwMailLink = (inner, cls='')=>`<a ${cls ? `class="${cls}" ` : ''}href="${HW_MAIL}" target="_blank" rel="noopener">${inner}</a>`;
+// 실제 명단(조직도)은 하이웍스 번호를 함께 받는다. 시연 명단(경조사 배너 등)은 번호가 없어 빈 메일 쓰기 화면
+const hwMailLink = (inner, cls='', userNo='')=>`<a ${cls ? `class="${cls}" ` : ''}href="${HW_MAIL}${userNo ? '&user_nos='+encodeURIComponent(userNo) : ''}" target="_blank" rel="noopener">${inner}</a>`;
 function orgVisibleContacts(m){ return { ext:m.ext, email:m.email, mobile: m.hideMobile ? null : m.mobile }; }
 function orgSelfCheck(){   // 브라우저 콘솔에서 orgSelfCheck() 실행
   const ok = (c,msg)=>{ if(!c) throw new Error('orgSelfCheck 실패: '+msg); };
@@ -3027,15 +3073,17 @@ function orgSelfCheck(){   // 브라우저 콘솔에서 orgSelfCheck() 실행
 /* ----- 화면 ----- */
 function orgLeadBadge(m){ return m.lead==='CEO' ? '<span class="badge info">대표이사</span>' : m.lead==='DIVISION' ? '<span class="badge success">본부장</span>' : m.lead==='TEAM' ? '<span class="badge warning">팀장</span>' : ''; }
 function orgMemberRow(m){
-  const hr = orgIsHr() ? `<span style="margin-left:auto; display:flex; gap:6px;"><button class="btn sm" onclick="orgEdit(${m.id})">수정</button><button class="btn sm" onclick="orgDelete(${m.id})">삭제</button></span>` : '';
+  const hr = orgIsHr() && !AUTH.live ? `<span style="margin-left:auto; display:flex; gap:6px;"><button class="btn sm" onclick="orgEdit(${m.id})">수정</button><button class="btn sm" onclick="orgDelete(${m.id})">삭제</button></span>` : '';
   return `<div class="org-member"><span class="org-name" onclick="orgShow(${m.id})">${escapeHtml(m.name)}</span><span style="color:var(--text-secondary);">${escapeHtml(m.title)}</span>${orgLeadBadge(m)}${hr}</div>`;
 }
 function orgShortTeam(t){ return t.replace(/팀$/, ''); }   // 화면 표시만 '팀' 생략, 데이터는 원래 이름
 function orgPerson(m, cls){ return m ? `<div class="org-bx ${cls}"><span class="org-name" style="text-decoration:none;" onclick="orgShow(${m.id})">${escapeHtml(m.name)} ${escapeHtml(m.title)}</span></div>` : `<div class="org-bx ${cls} org-muted">공석</div>`; }
 function orgChart(){
-  const hrBar = orgIsHr() ? `<div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px;"><button class="btn sm primary" onclick="orgEdit(null)">＋ 구성원 추가</button><button class="btn sm" onclick="orgAddTeam()">＋ 팀 추가</button><button class="btn sm" onclick="orgAddDivision()">＋ 본부 추가</button></div>` : '';
-  const cols = ORG_TREE.map(d=>{
-    const all = orgMembers.filter(m=>m.division===d.division), head = all.find(m=>m.lead==='DIVISION');
+  const gate = orgGate(); if(gate) return gate;
+  const live = AUTH.live;
+  const hrBar = orgIsHr() && !live ? `<div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px;"><button class="btn sm primary" onclick="orgEdit(null)">＋ 구성원 추가</button><button class="btn sm" onclick="orgAddTeam()">＋ 팀 추가</button><button class="btn sm" onclick="orgAddDivision()">＋ 본부 추가</button></div>` : '';
+  const cols = orgTree().map(d=>{
+    const all = orgPeople().filter(m=>m.division===d.division), head = all.find(m=>m.lead==='DIVISION');
     const teams = d.teams.map(t=>{
       const ms = all.filter(m=>m.team===t), lead = ms.find(m=>m.lead==='TEAM');
       return `<div class="org-bx org-teambx" onclick="orgShowTeam('${escapeHtml(d.division)}','${escapeHtml(t)}')" title="${escapeHtml(t)} 구성원 보기">${escapeHtml(orgShortTeam(t))}<small>${ms.length}명</small></div>${orgPerson(lead,'org-leadbx')}`;
@@ -3045,8 +3093,8 @@ function orgChart(){
       ${d.noHead ? '<div class="org-bx org-headbx org-muted">본부장 없음</div>' : orgPerson(head,'org-headbx')}
       ${teams}</div>`;
   }).join('');
-  return `${roleSwitcher()}${kpiMsg ? kpiNote(kpiMsg.msg, kpiMsg.type) : ''}
-    <div class="card" style="margin-bottom:14px;"><div class="card-title">조직도 <span style="font-weight:500; color:var(--text-muted); font-size:var(--fs-xs);">전 직원 ${orgMembers.length}명 · 가상 데이터</span></div>
+  return `${live ? '' : roleSwitcher()}${kpiMsg ? kpiNote(kpiMsg.msg, kpiMsg.type) : ''}
+    <div class="card" style="margin-bottom:14px;"><div class="card-title">조직도 <span style="font-weight:500; color:var(--text-muted); font-size:var(--fs-xs);">전 직원 ${orgPeople().length}명 · ${live ? '하이웍스 명단' : '가상 데이터'}</span></div>
       ${hrBar}
       <div class="org-chart">
         <div style="display:flex; flex-direction:column; align-items:center;"><div class="org-bx org-ceo">대표이사</div><div class="org-vline"></div></div>
@@ -3057,17 +3105,18 @@ function orgChart(){
     </div>`;
 }
 function orgShowTeam(division, team){   // team '' = 본부 전체
-  const ms = orgMembers.filter(m=>m.division===division && (!team || m.team===team)).sort((a,b)=>(b.lead?1:0)-(a.lead?1:0));
+  const ms = orgPeople().filter(m=>m.division===division && (!team || m.team===team)).sort((a,b)=>(b.lead?1:0)-(a.lead?1:0));
   orgModal(`<div class="card-title"><span>${escapeHtml(team || division)} <span style="font-weight:500; color:var(--text-secondary);">${ms.length}명</span></span><button type="button" class="x-btn" onclick="orgCloseModal()" aria-label="닫기">${icon('x')}</button></div>
     ${team ? `<div class="list-sub" style="margin-bottom:8px;">${escapeHtml(division)}</div>` : ''}
     ${ms.map(orgMemberRow).join('') || '<div class="list-sub">등록된 구성원이 없습니다.</div>'}`);
 }
 function memberSearch(){
+  const gate = orgGate(); if(gate) return gate;
   const q = orgQuery.trim().toLowerCase();
-  const rows = orgMembers.filter(m=>!q || [m.name,m.title,m.division,m.team].join(' ').toLowerCase().includes(q));
-  return `${roleSwitcher()}<div class="card" style="margin-bottom:14px;"><div class="field"><input id="orgSearch" placeholder="이름, 직급, 본부, 팀으로 검색" value="${escapeHtml(orgQuery)}" oninput="orgQuery=this.value; renderContent(); const i=document.getElementById('orgSearch'); i.focus(); i.setSelectionRange(i.value.length,i.value.length);"/></div></div>
+  const rows = orgPeople().filter(m=>!q || [m.name,m.title,m.division,m.team].join(' ').toLowerCase().includes(q));
+  return `${AUTH.live ? '' : roleSwitcher()}${kpiMsg ? kpiNote(kpiMsg.msg, kpiMsg.type) : ''}<div class="card" style="margin-bottom:14px;"><div class="field"><input id="orgSearch" placeholder="이름, 직급, 본부, 팀으로 검색" value="${escapeHtml(orgQuery)}" oninput="orgQuery=this.value; renderContent(); const i=document.getElementById('orgSearch'); i.focus(); i.setSelectionRange(i.value.length,i.value.length);"/></div></div>
     <div class="card"><div class="card-title">구성원 목록 <span class="more">${rows.length}명</span></div><table class="org-list"><thead><tr><th>이름</th><th>직급</th><th>소속</th><th>내선</th><th>메일</th></tr></thead><tbody>
-    ${rows.map(m=>`<tr><td><span class="org-name" onclick="orgShow(${m.id})">${escapeHtml(m.name)}</span> ${orgLeadBadge(m)}</td><td>${escapeHtml(m.title)}</td><td>${escapeHtml(m.division)}${m.team?' › '+escapeHtml(m.team):''}</td><td>${escapeHtml(m.ext)}</td><td>${m.email ? hwMailLink(escapeHtml(m.email)) : ''}</td></tr>`).join('') || '<tr><td colspan="5" style="color:var(--text-muted);">검색 결과가 없습니다</td></tr>'}
+    ${rows.map(m=>`<tr><td><span class="org-name" onclick="orgShow(${m.id})">${escapeHtml(m.name)}</span> ${orgLeadBadge(m)}</td><td>${escapeHtml(m.title)}</td><td>${escapeHtml(m.division)}${m.team?' › '+escapeHtml(m.team):''}</td><td>${escapeHtml(m.ext)}</td><td>${m.email ? hwMailLink(escapeHtml(m.email), '', m.userNo) : ''}</td></tr>`).join('') || '<tr><td colspan="5" style="color:var(--text-muted);">검색 결과가 없습니다</td></tr>'}
     </tbody></table></div>`;
 }
 let orgReturnFocus = null;
@@ -3086,14 +3135,16 @@ function orgShow(id){
   const off = 'style="opacity:.45; pointer-events:none;"';
   orgModal(`<div class="card-title"><span>${escapeHtml(m.name)} <span style="font-weight:500; color:var(--text-secondary);">${escapeHtml(m.title)}</span> ${orgLeadBadge(m)}</span><button type="button" class="x-btn" onclick="orgCloseModal()" aria-label="닫기">${icon('x')}</button></div>
     <div class="list-sub" style="margin-bottom:10px;">${escapeHtml(m.division)}${m.team?' › '+escapeHtml(m.team):' (본부 직속)'}</div>
-    ${c.mobile ? row('휴대폰', c.mobile, 'tel:'+c.mobile) : '<div class="org-contact"><b>휴대폰</b><span style="color:var(--text-muted);">본인 요청으로 비공개</span></div>'}
+    ${c.mobile ? row('휴대폰', c.mobile, 'tel:'+c.mobile) : `<div class="org-contact"><b>휴대폰</b><span style="color:var(--text-muted);">${m.hideMobile ? '본인 요청으로 비공개' : '등록된 번호 없음'}</span></div>`}
     ${row('내선', c.ext)}${row('메일', c.email, c.email && HW_MAIL, true)}
     <div class="org-actions">
       <a class="btn primary" href="tel:${c.mobile||''}" ${c.mobile?'':off}>${icon('phone')} 전화</a>
       <a class="btn" href="sms:${c.mobile||''}" ${c.mobile?'':off}>${icon('message')} 문자</a>
-      ${hwMailLink(`${icon('mail')} 메일`, 'btn')}
+      ${hwMailLink(`${icon('mail')} 메일`, 'btn', m.userNo)}
     </div>
-    <div class="list-sub" style="margin-top:10px;">메일은 하이웍스 메일 쓰기 화면이 새 창으로 열립니다 — 받는 사람 칸에 이름을 적고 자동완성 줄을 누르세요. 스마트폰에서는 전화·문자 앱이 바로 열리고, PC에서는 "복사"를 쓰세요.</div>`);
+    <div class="list-sub" style="margin-top:10px;">${m.userNo ? '메일은 받는 사람이 채워진 하이웍스 메일 쓰기 화면이 새 창으로 열립니다.' : '메일은 하이웍스 메일 쓰기 화면이 새 창으로 열립니다 — 받는 사람 칸에 이름을 적고 자동완성 줄을 누르세요.'} 스마트폰에서는 전화·문자 앱이 바로 열리고, PC에서는 "복사"를 쓰세요.</div>
+    ${AUTH.live && m.me ? `<div class="org-priv"><b>내 정보 공개</b><div class="org-priv-row"><div>휴대폰 번호 공개<small>끄면 다른 직원에게 "본인 요청으로 비공개"로 보여요. 비상연락망을 관리하는 HR에게는 보여요.</small></div><label class="ms-sw"><input type="checkbox" aria-label="휴대폰 번호 공개" ${m.mobilePublic ? 'checked' : ''} onchange="orgPrivacy(this.checked, this)"><span></span></label></div></div>` : ''}
+    ${AUTH.live && orgIsHr() && !m.me ? `<div class="org-hrbox"><span><b>HR</b> · 조직도에서 빼도 DB에서 지워지지 않고, 내일 아침 명단을 다시 가져와도 빠진 채로 남아요. 다시 보이게 하려면 구성원 설정에서.</span><button type="button" class="btn sm" onclick="orgHide(${m.uid}, true)">조직도에서 빼기</button></div>` : ''}`);
 }
 function orgTeamOptions(div, selected){ return `<option value="">(본부 직속)</option>`+orgTeamsOf(div).map(t=>`<option ${t===selected?'selected':''}>${escapeHtml(t)}</option>`).join(''); }
 function orgEdit(id){
@@ -4654,6 +4705,7 @@ async function rzLoad(kind, file, pw){   // 암호가 걸린 파일이면 암호
   try{
     let buf = await file.arrayBuffer();
     if(rzLocked(buf)){ if(pw==null) return rzAskPw(kind, file); buf = await rzUnlockBuf(buf, pw); }
+    if(kind==='contact'){ const c = await rzXlsx(buf); rz.lock = null; return msCtConfirm(file.name, c.rows); }   // 비상연락망 (구성원 설정)
     const x = await rzXlsx(buf), fields = kind==='pay' ? RZ_PAY : RZ_GRADE, h = rzHead(x.rows, fields);
     rz.lock = null; rz.pick = { kind, file:file.name, sheet:x.sheet, rows:x.rows, at:h.at, head:h.head, map:rzGuess(h.head, fields) }; rzConfirm();
   }catch(e){
@@ -4661,7 +4713,7 @@ async function rzLoad(kind, file, pw){   // 암호가 걸린 파일이면 암호
     rz.lock = null; orgCloseModal();
     kpiFlash({ OLD:'옛 형식(.xls) 파일이라 읽지 못했습니다. 엑셀에서 열어 <b>.xlsx로 다시 저장</b>한 뒤 골라 주세요.',
       ENC:'이 파일에 걸린 암호 방식은 읽지 못합니다. 엑셀에서 열어 <b>파일 → 정보 → 통합 문서 보호 → 암호 설정</b>으로 암호를 다시 걸어 저장해 주세요.',
-      BIG:'파일이 너무 커서 읽지 못했습니다. 필요 없는 시트를 지우고 다시 저장해 주세요.' }[e.message] || '엑셀 파일(.xlsx)을 읽지 못했습니다. 급여 프로그램에서 내려받은 파일이 맞는지 확인해 주세요.', 'danger');
+      BIG:'파일이 너무 커서 읽지 못했습니다. 필요 없는 시트를 지우고 다시 저장해 주세요.' }[e.message] || (kind==='contact' ? '엑셀 파일(.xlsx)을 읽지 못했습니다. 비상연락망 파일이 맞는지 확인해 주세요.' : '엑셀 파일(.xlsx)을 읽지 못했습니다. 급여 프로그램에서 내려받은 파일이 맞는지 확인해 주세요.'), 'danger');
   }
 }
 function rzAskPw(kind, file, err){   // 암호를 묻는 창. 틀리면 err와 함께 다시 뜬다
@@ -6408,7 +6460,7 @@ function msContent(){
       rows += `<tr class="grp"><td class="c"><input class="ms-ck" type="checkbox" ${ids.every(id=>msSel.has(id))?'checked':''} aria-label="${escapeHtml(m.team||m.division)} 모두 선택" onchange="msPick([${ids}], this.checked)"></td><td colspan="7">${escapeHtml(m.division)} · ${escapeHtml(m.team||'본부 직속')}<span>${ids.length}명</span></td></tr>`;
     }
     rows += `<tr class="${msDraft[m.id]?'chg':''} ${e.use?'':'off'}"><td class="c"><input class="ms-ck" type="checkbox" ${msSel.has(m.id)?'checked':''} aria-label="${escapeHtml(m.name)} 선택" onchange="msPick([${m.id}], this.checked)"></td>
-      <td><div class="ms-name"><button type="button" onclick="msSee(${m.id})">${escapeHtml(m.name)}</button><i>${escapeHtml(m.title)}</i>${m.isNew?'<span class="ms-tag">새로 들어옴</span>':''}${m.active===false?'<span class="ms-tag gray">비활성</span>':''}${isMe(m)?'<span class="ms-tag gray">나</span>':''}${!live && msNeed(m) ? `<button type="button" class="ms-need" onclick="orgEdit(${m.id})" title="${msNeed(m)}이 없습니다 — 눌러서 입력">정보 입력</button>` : ''}</div></td>
+      <td><div class="ms-name"><button type="button" onclick="msSee(${m.id})">${escapeHtml(m.name)}</button><i>${escapeHtml(m.title)}</i>${m.isNew?'<span class="ms-tag">새로 들어옴</span>':''}${m.active===false?'<span class="ms-tag gray">비활성</span>':''}${m.orgHidden?'<span class="ms-tag gray">조직도에서 뺌</span>':''}${isMe(m)?'<span class="ms-tag gray">나</span>':''}${!live && msNeed(m) ? `<button type="button" class="ms-need" onclick="orgEdit(${m.id})" title="${msNeed(m)}이 없습니다 — 눌러서 입력">정보 입력</button>` : ''}</div></td>
       ${MS_FIELDS.map(([k])=>`<td class="c">${msCell(m, e, k, eff)}</td>`).join('')}</tr>`;
   });
   const d = msDiffs(L, msDraft).length;
@@ -6425,7 +6477,7 @@ function msContent(){
         <span class="sp"></span>
         <select aria-label="본부" onchange="msDiv=this.value; msSel.clear(); renderContent()"><option value="">본부 전체</option>${(live ? [...new Set(L.map(m=>m.division))].sort((a,b)=>a.localeCompare(b, 'ko')) : ORG_TREE.map(t=>t.division)).map(dv=>`<option ${msDiv===dv?'selected':''}>${escapeHtml(dv)}</option>`).join('')}</select>
         <input id="msQ" aria-label="이름 검색" placeholder="이름 검색" value="${escapeHtml(msQuery)}" oninput="msQuery=this.value; msSel.clear(); renderContent(); const i=document.getElementById('msQ'); i.focus(); i.setSelectionRange(i.value.length,i.value.length);">
-        ${live ? '' : `<button type="button" class="btn sm" style="height:32px;" onclick="msPasteAsk(false)">${icon('clip')}엑셀에서 붙여넣기</button>`}</div>
+        ${live ? `<button type="button" class="btn sm" style="height:32px;" onclick="rzPick('contact')">${icon('clip')}비상연락망 파일로 넣기</button>` : `<button type="button" class="btn sm" style="height:32px;" onclick="msPasteAsk(false)">${icon('clip')}엑셀에서 붙여넣기</button>`}</div>
       ${picked.length ? `<div class="ms-bulk"><b>${picked.length}명 선택</b>${bulk('use','포털 사용')}${bulk('kpi','KPI 작성')}${bulk('ev','평가 대상')}${bulk('ct','연봉계약서')}<button type="button" class="x" onclick="msSel.clear(); renderContent()">선택 해제</button></div>` : ''}
       <div class="ct-tbl"><table class="ms-tbl">
         <colgroup><col style="width:44px"><col><col style="width:104px"><col style="width:124px"><col style="width:92px"><col style="width:132px"><col style="width:116px"><col style="width:116px"></colgroup>
@@ -6509,6 +6561,102 @@ async function msPhoneRevoke(id){   // 실제 로그인: 그 사람의 휴대폰
   MS_LIVE.state = '';
   kpiFlash('휴대폰 등록을 해제했습니다. 그 휴대폰은 바로 로그아웃됩니다.');
 }
+/* ----- 비상연락망 파일로 넣기 (실제 로그인 · HR, 2026-10-19 인사담당자 결정) -----
+   HR 이 고른 엑셀을 브라우저 안에서 읽어(rzLoad — 암호가 걸려 있으면 묻는다) 하이웍스 명단과 이름으로 맞춘 뒤 서버에 보낸다.
+   파일은 서버로 보내지 않고 맞춘 값(직급·내선·연락처·메일)만 보낸다. 엑셀 값이 하이웍스 값보다 먼저 보이고, 매일 아침 명단 가져오기는 이 값을 덮어쓰지 않는다.
+   부서는 바꾸지 않는다(조직 구조는 하이웍스) — 엑셀과 다른 사람만 알려 준다. */
+const MS_CT_HEAD = { name:/^(이름|성명)$/, title:/^(직책|직급|직위|호칭)$/, ext:/내선/, mobile:/연락처|휴대|핸드폰/, email:/mail|메일/i, dept:/부서|소속/ };
+const msCtKey = s=>String(s ?? '').replace(/\(.*?\)/g, '').replace(/\s+/g, '').toLowerCase();   // "품질경영\n제조본부\n(MQ본부)\n(65명)" → "품질경영제조본부"
+function msCtRead(rows, people){   // 순수 함수 — msCtSelfCheck 가 검증. people = 구성원 설정 명단(MS_LIVE.list)
+  let at = -1, col = {};
+  for(let r = 0; r < Math.min(15, rows.length) && at<0; r++){
+    const row = (rows[r] || []).map(c=>String(c ?? '').replace(/\s+/g, ''));
+    const c = Object.fromEntries(Object.entries(MS_CT_HEAD).map(([k, re])=>[k, row.findIndex(v=>v && re.test(v))]));
+    if(c.name>=0 && (c.ext>=0 || c.mobile>=0)){ at = r; col = c; }
+  }
+  if(at<0) return { error:'HEAD' };
+  if(col.email<0){ const n = i=>rows.slice(at+1, at+21).filter(r=>String((r || [])[i] ?? '').includes('@')).length; col.email = [...(rows[at] || []).keys()].reduce((b, i)=>n(i)>(b<0 ? 0 : n(b)) ? i : b, -1); }   // 메일 제목을 못 알아보면 @ 가 든 칸
+  const team = col.dept>=0 && !String(rows[at][col.dept+1] ?? '').trim() ? col.dept+1 : -1;   // 부서명이 두 칸을 합친 제목이면 오른쪽 칸이 팀
+  const byName = {}; people.filter(p=>p.active!==false).forEach(p=>(byName[msCtKey(p.name)] ||= []).push(p));
+  const out = { total:0, rows:[], miss:[], dup:[], twice:[], diff:[], count:{ title:0, ext:0, mobile:0, email:0 } }, taken = new Set(), cell = (row, i)=>i<0 ? '' : String(row[i] ?? '').trim();
+  let div = '', tm = '';
+  for(let r = at+1; r < rows.length; r++){
+    const row = rows[r] || [], d = cell(row, col.dept), t = cell(row, team);
+    if(d){ if(d!==div) tm = ''; div = d; }   // 합친 칸은 위 값으로 (본부가 바뀌면 팀은 비운다)
+    if(t) tm = t;
+    const name = cell(row, col.name); if(!name) continue;
+    out.total++;
+    const where = msCtKey(tm) || msCtKey(div), hw = p=>msCtKey(p.team) || msCtKey(p.division);
+    let c = byName[msCtKey(name)] || [];
+    if(c.length>1) c = c.filter(p=>where && (where.includes(hw(p)) || hw(p).includes(where)));
+    if(!c.length){ out.miss.push(name); continue; }
+    if(c.length>1){ out.dup.push(name); continue; }
+    const p = c[0];
+    if(taken.has(p.id)){ out.twice.push(name); continue; }
+    taken.add(p.id);
+    // ponytail: 팀 칸이 정말 빈 줄(본부 직속)도 위 팀을 이어받는다 — rzXlsx 가 합친 칸을 모른다. 부서 다름 안내·같은 이름 가리기에만 쓰여 값에는 영향 없음
+    if(where && msCtKey(div)!=='임원' && !(where.includes(hw(p)) || hw(p).includes(where) || (!p.team && msCtKey(div).includes(msCtKey(p.division))))) out.diff.push({ name, file:(tm || div).replace(/\s+/g, ' ').replace(/\(.*?\)/g, '').trim(), hw:p.team || p.division });
+    const v = { id:p.id }, raw = { title:cell(row, col.title), ext:cell(row, col.ext), mobile:cell(row, col.mobile), email:cell(row, col.email) };
+    if(/^1\d{9}$/.test(raw.mobile)) raw.mobile = '0'+raw.mobile;   // 숫자로 저장돼 앞의 0이 빠진 휴대폰
+    if(raw.title && raw.title.length<=30) v.title = raw.title;
+    if(raw.ext && raw.ext.length<=20) v.ext = raw.ext;
+    if(/^[0-9+()\- ]{2,30}$/.test(raw.mobile)) v.mobile = raw.mobile;
+    if(raw.email.length<=120 && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(raw.email)) v.email = raw.email;
+    Object.keys(out.count).forEach(k=>{ if(v[k]) out.count[k]++; });
+    if(Object.keys(v).length>1) out.rows.push(v);
+  }
+  return out;
+}
+function msCtSelfCheck(){   // 브라우저 콘솔에서 msCtSelfCheck() 실행 — 가상 명단으로 맞추기 규칙을 본다
+  const ok = (c, msg)=>{ if(!c) throw new Error('msCtSelfCheck 실패: '+msg); };
+  const people = [{ id:1, name:'가나다', division:'가본부', team:'가팀' }, { id:2, name:'라마바', division:'가본부', team:'나팀' }, { id:3, name:'라마바', division:'다본부', team:'' }, { id:4, name:'사아자', division:'가본부', team:'가팀', active:false }];
+  const rows = [['[ 비상연락망 ]'], ['부서명', '', '이름', '직책', '내선번호', '연락처', 'Mail'],
+    ['가본부\n(3명)', '가 팀\n(2명)', '가나다', '프로', 1001, '010-0000-'+'0001', 'a@example.invalid'],
+    ['', '', '없는이', '프로', 1002, '', ''],
+    ['', '나팀', '라마바', '리더', '1003', 1000000003, 'bad'],
+    ['다본부', '', '라 마 바', '본부장', '', '010-0000-'+'0004', 'c@example.invalid'],
+    ['', '', '사아자', '프로', 1005, '', ''], ['', '', '가나다', '프로', 1006, '', ''], ['', '', '', '', '', '', '']];
+  const r = msCtRead(rows, people);
+  ok(r.total===6, '이름 있는 줄 수 '+r.total);
+  ok(r.rows.length===3 && r.rows[0].id===1 && r.rows[0].ext==='1001' && r.rows[0].email==='a@example.invalid', '이름으로 맞추고 값을 담음');
+  ok(r.rows[1].id===2 && r.rows[1].mobile==='0'+1000000003 && !r.rows[1].email, '같은 이름은 부서로 가림 · 앞의 0 · 틀린 메일은 뺌');
+  ok(r.rows[2].id===3, '띄어쓰기가 달라도 같은 이름 · 본부 직속');
+  ok(r.miss.join()==='없는이,사아자', '없는 사람 · 비활성인 사람은 못 맞춤');
+  ok(r.twice.join()==='가나다', '같은 사람이 두 번 나오면 첫 줄만');
+  ok(!r.diff.length, '부서가 같으면 다름 없음');
+  const d = msCtRead([rows[1], ['다본부', '', '가나다', '프로', 1, '', ''], ['가본부', '나팀', '라마바', '프로', 2, '', '']], people);
+  ok(d.diff.length===1 && d.diff[0].hw==='가팀', '부서가 다르면 알려 줌 (바꾸지는 않음)');
+  const t = msCtRead([rows[1], ['가본부', '다팀', '가나다', '프로', 1, '', '']], people);
+  ok(t.diff.length===1, '본부가 같아도 팀이 다르면 알려 줌');
+  ok(msCtRead([['아무 표'], ['a', 'b']], people).error==='HEAD', '제목 줄이 없으면 읽지 않음');
+  return 'msCtSelfCheck 통과';
+}
+let MS_CT = null;   // 맞춘 결과 (저장 전 확인)
+function msCtConfirm(file, rows){
+  const r = msCtRead(rows, MS_LIVE.list);
+  if(r.error){ orgCloseModal(); return kpiFlash('비상연락망 파일의 제목 줄(이름 · 내선번호 · 연락처)을 찾지 못했습니다. 첫째 시트가 비상연락망인지 확인해 주세요.', 'danger'); }
+  MS_CT = r;
+  const names = a=>escapeHtml([...new Set(a)].join(', '));
+  const more = (label, list, html)=>list.length ? `<details class="ms-ct-more"><summary>${label} ${list.length}명</summary><div>${html}</div></details>` : '';
+  orgModal(`<div class="card-title"><span>비상연락망 파일로 넣기</span><button type="button" class="x-btn" onclick="orgCloseModal()" aria-label="닫기">${icon('x')}</button></div>
+    <div class="list-sub rz-file" style="margin:0 0 12px;">${icon('clip')} <b>${escapeHtml(file)}</b></div>
+    <div class="rz-sum"><div><small>파일의 사람</small><b>${r.total}명</b></div><div><small>하이웍스 명단과 맞춤</small><b>${r.rows.length}명</b></div><div><small>못 맞춤</small><b>${r.miss.length + r.dup.length}명</b></div></div>
+    <div class="list-sub" style="margin:10px 0;">넣을 칸 — 직급 ${r.count.title} · 내선 ${r.count.ext} · 연락처 ${r.count.mobile} · 메일 ${r.count.email}명. 파일의 값이 하이웍스 값보다 먼저 보이고, 매일 아침 명단을 다시 가져와도 덮어쓰지 않습니다. 파일에 빈 칸은 지금 값을 그대로 둡니다.</div>
+    ${more('하이웍스 계정이 없거나 이름이 다른 사람', r.miss, names(r.miss))}
+    ${more('같은 이름이 여럿이라 건너뛴 사람', r.dup, names(r.dup) + ' — 이름 창에서 한 사람씩 확인해 주세요.')}
+    ${more('파일에 두 번 나와 첫 줄만 넣은 사람', r.twice, names(r.twice))}
+    ${more('부서가 하이웍스와 다른 사람', r.diff, r.diff.map(d=>`${escapeHtml(d.name)}: 파일 ${escapeHtml(d.file)} · 하이웍스 ${escapeHtml(d.hw)}`).join('<br>') + '<br>조직도는 하이웍스 부서로 보입니다. 바꿔야 하면 하이웍스 조직도에서 고치면 다음 날 반영됩니다.')}
+    <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:14px;"><button type="button" class="btn" onclick="orgCloseModal()">취소</button><button type="button" class="btn coral" ${r.rows.length ? '' : 'disabled'} onclick="msCtSave()">${r.rows.length}명 저장</button></div>`);
+}
+async function msCtSave(){
+  if(!MS_CT) return;
+  const r = await fetch('/api/members/contacts', { method:'POST', headers:{ 'Content-Type':'application/json' }, body:JSON.stringify({ rows:MS_CT.rows }) });
+  const j = await r.json().catch(()=>({}));
+  orgCloseModal(); MS_CT = null;
+  if(!r.ok) return kpiFlash(escapeHtml(j.error || '저장하지 못했습니다.'), 'danger');
+  MS_LIVE.state = ''; ORG_LIVE.state = '';
+  kpiFlash(`${j.saved}명의 직급·내선·연락처·메일을 넣었습니다. 조직도에 바로 보입니다.`);
+}
 let msPasteBirth = false;   // 붙여넣기 창에서 고른 종류: false 직급·입사일 / true 생일
 function msPasteAsk(birth){   // 종류를 바꾸면 창을 다시 그린다(적던 글은 지워진다)
   msPasteBirth = !!birth;
@@ -6536,6 +6684,7 @@ function msSee(id){
       : m.use ? `<ul class="ms-see">${msSeeList(m).map(([a, b])=>`<li class="${b?'':'no'}"><b>${a}</b><span>${b || '보이는 것이 없음'}</span></li>`).join('')}</ul>`
       : kpiNote('포털 사용이 꺼져 있어 <b>들어올 수 없습니다.</b> 하이웍스에서 메뉴를 누르면 "인사포털은 준비 중입니다" 화면이 나옵니다.')}
     ${AUTH.live && m.phone ? `<div style="display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:10px;"><span class="list-sub" style="margin:0;">등록된 휴대폰: ${escapeHtml(m.phone)}</span><button type="button" class="btn sm" onclick="msPhoneRevoke(${id})">휴대폰 해제</button></div>` : ''}
+    ${AUTH.live ? `<div style="display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:10px;"><span class="list-sub" style="margin:0;">조직도: ${m.orgHidden ? '<b>뺌</b> — 조직도에 보이지 않습니다' : '보임'}${m.title ? ' · 직급 '+escapeHtml(m.title) : ''}</span><button type="button" class="btn sm" onclick="orgHide(${id}, ${!m.orgHidden})">${m.orgHidden ? '조직도에 다시 보이기' : '조직도에서 빼기'}</button></div>` : ''}
     ${AUTH.live ? `<div style="display:flex; align-items:center; justify-content:space-between; gap:10px;"><span class="list-sub" style="margin:0;">${m.active===false ? '비활성 — 포털에 들어올 수 없습니다' : '퇴사자는 하이웍스 계정을 정지하기 전에 먼저 비활성화합니다'}</span>${m.me ? '' : `<button type="button" class="btn sm" onclick="msActiveAsk(${id}, ${m.active===false})">${m.active===false ? '다시 켜기' : '비활성화'}</button>`}</div>`
       : `<div style="display:flex; align-items:center; justify-content:space-between; gap:10px;"><span class="list-sub" style="margin:0;">직급 ${escapeHtml(m.title.trim() || '없음')} · 입사일 ${m.hireDate || '없음'}</span><button type="button" class="btn sm" onclick="orgEdit(${id})">직급·입사일 수정</button></div>`}`);
 }
