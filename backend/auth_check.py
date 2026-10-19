@@ -244,7 +244,10 @@ def check_phone(hr, save) -> None:
     ok(reg(late, c).status_code == 410, "포털 사용이 꺼진 사람의 값은 못 씀")
     save(hr, {"3": {"use": True}})
 
+    real_now, fixed = auth._now, auth._now().replace(second=5)  # 1분 창 경계에 걸려 숫자가 나뉘지 않게 시각을 고정한다 (11절과 같음)
+    auth._now = lambda: fixed
     codes = [reg(app.test_client(), "x", ip="203.0.113.99").status_code for _ in range(31)]
+    auth._now = real_now
     ok(codes[:30] == [410] * 30 and codes[30] == 429, "휴대폰 등록도 같은 접속자 주소 1분 30번까지")
     acts = {r[0] for r in q("SELECT action FROM audit_logs")}
     ok({"PHONE_REGISTERED", "PHONE_REVOKED"} <= acts, "감사로그 PHONE_REGISTERED · PHONE_REVOKED")
