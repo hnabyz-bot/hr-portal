@@ -18,6 +18,8 @@ app.py 가 register(app) 로 붙인다.
   GET  /api/news                  홈 "이번 주 소식" (로그인한 누구나) — 이번 주에 보일 줄만. 생일·입사일 원본은 보내지 않는다
   POST /api/news/events           경사·조사 올리기 (HR)
   POST /api/news/events/<id>/remove  경사·조사 게시 내리기 (HR)
+  GET  /api/workspace             내 워크스페이스(나의 업무 · 나의 일상) — 본인만. PC·휴대폰이 같은 내용
+  POST /api/workspace/<kind>      저장 (tasks · routines). 판 번호가 다르면 409 + 서버 것 (다른 기기가 먼저 고침)
   POST /api/phone/code            PC 에서 "휴대폰 등록" → QR 에 담을 1회용 값(3분) — §13.1
   POST /api/phone/register        휴대폰이 QR 주소(/#d=값)를 열면 화면이 보낸다 → 휴대폰 세션(30일)
   GET  /api/phone                 내 등록된 휴대폰 (PC 창이 "등록됐는지"를 볼 때도 쓴다)
@@ -804,6 +806,51 @@ def news_event_remove(event_id: int) -> Response:
         return jsonify(error="없거나 이미 내린 소식입니다."), 404
     _audit(conn, AuditEntry.by(g.actor, action="NEWS_REMOVED", entity_type="celeb_event", entity_id=event_id))
     return jsonify(ok=True)
+
+
+# ---------------- 워크스페이스 (2026-10-19) — 나의 업무 · 나의 일상을 사람별로. 전에는 기기마다 브라우저에만 있었다 ----------------
+WS_KINDS = ("tasks", "routines")
+WS_MAX_BYTES = 2_000_000  # 한 목록. 루틴 10개 × 1년 기록 ≈ 60KB, 업무 1,000건 ≈ 300KB (nginx 는 5MB)
+WS_MAX_ITEMS = 5000
+
+
+@bp.get("/api/workspace")
+def workspace_get() -> Response:
+    """{"tasks": {"data": [...] | null, "version": n}, "routines": {...}} — version 0 = 아직 서버에 없음."""
+    rows = {k: (json.loads(d), v) for k, d, v in _db().execute(
+        "SELECT kind, data, version FROM workspace_data WHERE user_id = ?", (g.actor.user_id,))}
+    return jsonify({k: {"data": rows[k][0], "version": rows[k][1]} if k in rows else {"data": None, "version": 0} for k in WS_KINDS})
+
+
+@bp.post("/api/workspace/<kind>")
+def workspace_put(kind: str) -> Response:
+    """{"data": [...], "version": 화면이 아는 판} → {"version": 새 판}. 판이 다르면 409 + 지금 서버 것 — 덮어쓰지 않는다.
+    내용(업무 제목 · 메모 등)은 본인 것이라 감사로그에 남기지 않는다. 모양만 본다: 목록 · 항목은 객체."""
+    if kind not in WS_KINDS:
+        abort(404)
+    raw = request.get_data(cache=True)
+    b = request.get_json(silent=True)
+    data, ver = (b.get("data"), b.get("version")) if isinstance(b, dict) else (None, None)
+    if (not isinstance(data, list) or len(data) > WS_MAX_ITEMS or not all(isinstance(x, dict) for x in data)
+            or type(ver) is not int or ver < 0 or len(raw) > WS_MAX_BYTES):
+        return jsonify(error="저장할 내용의 모양이 올바르지 않습니다."), 400
+    conn, uid = _db(), g.actor.user_id
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        row = conn.execute("SELECT data, version FROM workspace_data WHERE user_id = ? AND kind = ?", (uid, kind)).fetchone()
+        now = row[1] if row else 0
+        if now != ver:
+            conn.execute("ROLLBACK")
+            return jsonify(error="다른 기기에서 먼저 바꿨습니다.", data=json.loads(row[0]) if row else None, version=now), 409
+        conn.execute(
+            "INSERT INTO workspace_data (user_id, kind, data, version, updated_at) VALUES (?, ?, ?, ?, ?)"
+            " ON CONFLICT (user_id, kind) DO UPDATE SET data = excluded.data, version = excluded.version, updated_at = excluded.updated_at",
+            (uid, kind, json.dumps(data, ensure_ascii=False), now + 1, _iso(_now())))
+        conn.execute("COMMIT")
+    except BaseException:
+        conn.execute("ROLLBACK")
+        raise
+    return jsonify(version=now + 1)
 
 
 def _session() -> Actor | None:

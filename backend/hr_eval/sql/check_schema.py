@@ -86,6 +86,7 @@ def apply_schema(path: str) -> sqlite3.Connection | None:
         "sso_rate_hits",
         "phone_codes",
         "celeb_events",
+        "workspace_data",
     }
     missing = expected - tables
     _report(not missing, f"테이블 {len(expected)}개 생성", f"누락: {sorted(missing)}")
@@ -564,6 +565,17 @@ def check_login_tables(conn: sqlite3.Connection) -> None:
         _report(ok, f"경사·조사 {why} 거부")
     ok, _ = _rejects(conn, ev.format(u=9999), ("joy", "결혼", "2027-03-09"))
     _report(ok, "없는 직원의 소식 거부")
+
+    print("19. 워크스페이스 (007)")
+    ws = "INSERT INTO workspace_data (user_id, kind, data, version, updated_at) VALUES ({u}, ?, ?, ?, '2027-03-02T09:00:00Z')"
+    conn.execute(ws.format(u=user), ("tasks", '[{"id": 1, "title": "가상"}]', 1))
+    _report(True, "나의 업무 목록 저장 (JSON 목록)")
+    for args, why in ((("tasks", "[]", 1), "같은 사람 · 같은 종류 두 줄"), (("notes", "[]", 1), "종류"), (("routines", '{"a": 1}', 1), "목록이 아닌 JSON"),
+                      (("routines", "[", 1), "깨진 JSON"), (("routines", "[]", 0), "판 0")):
+        ok, _ = _rejects(conn, ws.format(u=user), args)
+        _report(ok, f"워크스페이스 {why} 거부")
+    ok, _ = _rejects(conn, ws.format(u=9999), ("routines", "[]", 1))
+    _report(ok, "없는 직원의 워크스페이스 거부")
 
 
 def main() -> int:

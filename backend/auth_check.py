@@ -446,6 +446,42 @@ def check_news(hr) -> None:
     ok(rm(hr, eid).status_code == 404 and rm(hr, 999).status_code == 404, "이미 내렸거나 없는 소식은 404")
 
 
+def check_workspace(hr) -> None:
+    """워크스페이스 서버 저장 (2026-10-19): 본인만 · 판 번호로 다른 기기와 겹침 막기."""
+    print("워크스페이스")
+    emp, emp_phone, lead = app.test_client(), app.test_client(), app.test_client()
+    login(emp, new_token("emp"))
+    login(emp_phone, new_token("emp"))  # 같은 사람의 두 번째 기기
+    login(lead, new_token("lead"))
+
+    def get(client):
+        return client.get("/api/workspace", base_url=BASE)
+
+    def put(client, kind, data, version, headers=ORIGIN):
+        return client.post(f"/api/workspace/{kind}", base_url=BASE, headers=headers, json={"data": data, "version": version})
+
+    ok(app.test_client().get("/api/workspace", base_url=BASE).status_code == 401, "로그인 없이는 401")
+    ok(get(emp).json == {"tasks": {"data": None, "version": 0}, "routines": {"data": None, "version": 0}}, "처음엔 서버에 없음 (판 0)")
+    tasks = [{"id": 1, "title": "주간 보고", "due": "2026-10-20", "subs": [{"t": "취합", "done": False}]}]
+    r = put(emp, "tasks", tasks, 0)
+    ok(r.status_code == 200 and r.json == {"version": 1}, "처음 저장 → 판 1")
+    ok(get(emp_phone).json["tasks"] == {"data": tasks, "version": 1}, "다른 기기(휴대폰)에서 같은 내용")
+    ok(get(lead).json["tasks"]["data"] is None, "다른 사람에게는 안 보임 (본인만)")
+    ok(put(emp_phone, "tasks", tasks + [{"id": 2, "title": "휴대폰에서"}], 1).json == {"version": 2}, "휴대폰에서 고쳐 저장 → 판 2")
+    r = put(emp, "tasks", [{"id": 1, "title": "PC 옛 판"}], 1)
+    ok(r.status_code == 409 and r.json["version"] == 2 and r.json["data"][1]["title"] == "휴대폰에서"
+       and get(emp).json["tasks"]["version"] == 2, "옛 판으로 저장하면 409 + 서버 것 (덮어쓰지 않음)")
+    ok(put(emp, "routines", [{"id": 1, "title": "산책", "log": {"2026-10-19": 1}, "sch": [{"from": "2026-10-01", "rep": "daily"}]}], 0).status_code == 200
+       and get(emp).json["routines"]["version"] == 1 and get(emp).json["tasks"]["version"] == 2, "나의 일상은 따로 (판도 따로)")
+    for bad, why in ((("tasks", {"a": 1}, 2), "목록이 아님"), (("tasks", [1, 2], 2), "항목이 객체가 아님"), (("tasks", [], "2"), "판 번호 모양"),
+                     (("tasks", [{"t": "가" * 2_100_000}], 2), "너무 큼")):
+        ok(put(emp, *bad).status_code == 400 and get(emp).json["tasks"]["version"] == 2, f"틀린 모양은 저장 안 함 ({why})")
+    ok(put(emp, "notes", [], 0).status_code == 404, "없는 종류는 404")
+    ok(put(emp, "tasks", [], 2, headers={}).status_code == 403, "포털 화면에서만 (Origin)")
+    ok(put(emp, "tasks", [], 2).json == {"version": 3} and get(emp_phone).json["tasks"]["data"] == [], "다 지운 목록도 저장")
+    ok(not q("SELECT 1 FROM audit_logs WHERE after_data LIKE '%주간 보고%' OR after_data LIKE '%휴대폰에서%'"), "내용은 감사로그에 남기지 않음")
+
+
 def main() -> int:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     seed()
@@ -679,6 +715,7 @@ def main() -> int:
     check_phone(hr, save)
     check_org(hr, save)
     check_news(hr)
+    check_workspace(hr)
 
     acts = {r[0] for r in q("SELECT action FROM audit_logs")}
     ok({"LOGIN", "HR_BOOTSTRAP"} <= acts, "감사로그 LOGIN 이 남음")

@@ -1702,7 +1702,7 @@ function homeContent(){
 /* ---------------- 워크스페이스 > 나의 업무 (2026-10-11) ----------------
    내가 할 일을 적고 마감·상태를 관리한다. 홈의 "오늘의 업무"·요약 칸·이번 주 달성률·달력 점이 같은 자료를 읽는다.
    노션에서 가져온 것: 하위 할 일, 보드 보기, 반복 업무, 주간 보고 초안, 날짜별 묶어 보기, 태그·검색, 날짜 자동 인식, 내일로 넘기기·되돌리기.
-   - 저장: 로그인 전이라 각자 브라우저(localStorage)에, 시연 역할(가상 인물)마다 따로 둔다. 손대기 전에는 예시 업무가 보인다(처음 고칠 때 저장).
+   - 저장: 실제 로그인이면 서버에 사람별로(아래 "서버 저장" — PC·휴대폰이 같은 내용, 2026-10-19). 시연은 각자 브라우저(localStorage)에, 시연 역할(가상 인물)마다 따로. 손대기 전에는 예시 업무가 보인다(처음 고칠 때 저장).
    - 개인 업무는 평가와 잇지 않는다. 왼쪽 메뉴 숫자(TODO)에도 세지 않는다 — 그 숫자는 서명·승인처럼 인사포털이 만든 일만 센다.
    - 글자를 적는 칸(빠른 등록·검색)은 적는 동안 다시 그리지 않는다 — 다시 그리면 한글 조합이 끊긴다. 목록만 다시 그린다(wsRenderBody).
    업무 한 건: { id, title, due:'YYYY-MM-DD'|'', time:'HH:MM'|'', pri:긴급·보통·낮음, state:예정·진행 중·완료, memo, doneAt,
@@ -1726,16 +1726,16 @@ function wsSeed(){
     { title:'출장 경비 정산 제출', due:d(0), time:'09:30', state:'완료', doneAt:d(0) },
   ];
 }
+function wsNorm(saved){   // 저장된 목록(브라우저 · 서버)을 화면용으로. 목록이 아니면 예시
+  const list = Array.isArray(saved) ? saved.filter(x=>x && typeof x.title==='string') : wsSeed();
+  const ids = list.every(x=>Number.isInteger(x.id)) && new Set(list.map(x=>x.id)).size===list.length;   // 번호가 온전하면 그대로 (반복 회차가 앞 회차 번호를 가리킨다)
+  return list.map((x,i)=>wsFill(ids ? x : { ...x, id:i+1, from:undefined }));
+}
 function wsTasks(){   // 지금 역할의 업무 목록. 저장된 것이 없으면 예시
-  if(!wsStore[kpiRole]){
-    let saved; try{ saved = JSON.parse(localStorage.getItem('wsTasks:'+kpiRole)); }catch(_){}
-    const list = Array.isArray(saved) ? saved.filter(x=>x && typeof x.title==='string') : wsSeed();
-    const ids = list.every(x=>Number.isInteger(x.id)) && new Set(list.map(x=>x.id)).size===list.length;   // 번호가 온전하면 그대로 (반복 회차가 앞 회차 번호를 가리킨다)
-    wsStore[kpiRole] = list.map((x,i)=>wsFill(ids ? x : { ...x, id:i+1, from:undefined }));
-  }
+  if(!wsStore[kpiRole]) wsStore[kpiRole] = wsNorm(wsLocal('tasks'));
   return wsStore[kpiRole];
 }
-function wsSave(role=kpiRole){ try{ localStorage.setItem('wsTasks:'+role, JSON.stringify(wsStore[role])); }catch(_){} renderContent(); }
+function wsSave(role=kpiRole){ try{ localStorage.setItem('wsTasks:'+role, JSON.stringify(wsStore[role])); }catch(_){} wsPush('tasks'); renderContent(); }
 
 /* ----- 규칙 (순수 로직, wsSelfCheck가 검증) ----- */
 function wsWeek(today){   // 이번 주 [월요일, 일요일]
@@ -2060,7 +2060,7 @@ function wsContent(){
 
 /* ---------------- 워크스페이스 > 나의 일상 (2026-10-11) ----------------
    반복해서 실천할 행동(루틴)을 날마다 체크한다. 그 기록이 주간 표·기록 달력·연속 실천·달성률이 되고, 홈의 "오늘의 루틴"·이번 주 달성률이 같은 자료를 읽는다.
-   - 저장: 나의 업무와 같이 각자 브라우저(localStorage)에, 시연 역할(가상 인물)마다 따로. 손대기 전에는 예시 루틴이 보인다(처음 고칠 때 저장).
+   - 저장: 나의 업무와 같다 — 실제 로그인이면 서버에 사람별로, 시연은 각자 브라우저에 시연 역할마다 따로. 손대기 전에는 예시 루틴이 보인다(처음 고칠 때 저장).
    - 루틴 기록은 본인만 보고 평가와 잇지 않는다. 알림·공유는 없다(로그인 이후의 일).
    - 지난 날은 언제든 고칠 수 있고 앞날은 못 누른다 (인사담당자 확정).
    루틴 한 건: { id, title, cat:분류, when:시간대, archived:보관한 날|'', log:{ 'YYYY-MM-DD':1 },
@@ -2082,15 +2082,93 @@ function rtSeed(){   // 예시: 5주 전부터 해 온 것처럼 — 가끔 빠�
     return x;
   });
 }
+function rtNorm(saved){   // 저장된 목록(브라우저 · 서버)을 화면용으로. 목록이 아니면 예시
+  return Array.isArray(saved) ? saved.filter(x=>x && typeof x.title==='string' && Array.isArray(x.sch) && x.sch.length && x.sch.every(s=>s && typeof s.from==='string')).map((x,i)=>rtFill({ ...x, id:i+1 })) : rtSeed();
+}
 function rtData(){   // 지금 역할의 루틴 전부(보관한 것 포함). 저장된 것이 없으면 예시
-  if(!rtStore[kpiRole]){
-    let saved; try{ saved = JSON.parse(localStorage.getItem('wsRoutines:'+kpiRole)); }catch(_){}
-    rtStore[kpiRole] = Array.isArray(saved) ? saved.filter(x=>x && typeof x.title==='string' && Array.isArray(x.sch) && x.sch.length && x.sch.every(s=>s && typeof s.from==='string')).map((x,i)=>rtFill({ ...x, id:i+1 })) : rtSeed();
-  }
+  if(!rtStore[kpiRole]) rtStore[kpiRole] = rtNorm(wsLocal('routines'));
   return rtStore[kpiRole];
 }
 const rtList = ()=>rtData().filter(x=>!x.archived).sort((a,b)=>RT_WHENS.indexOf(a.when) - RT_WHENS.indexOf(b.when) || a.id - b.id);   // 쓰고 있는 루틴, 시간대 순
-function rtSave(role=kpiRole){ try{ localStorage.setItem('wsRoutines:'+role, JSON.stringify(rtStore[role])); }catch(_){} renderContent(); }
+function rtSave(role=kpiRole){ try{ localStorage.setItem('wsRoutines:'+role, JSON.stringify(rtStore[role])); }catch(_){} wsPush('routines'); renderContent(); }
+
+/* ---------------- 워크스페이스 서버 저장 (2026-10-19 인사담당자 — "PC에 적은 것이 휴대폰에서 안 보인다") ----------------
+   실제 로그인이면 나의 업무 · 나의 일상을 서버에 사람별로 둔다(GET · POST /api/workspace) — PC와 휴대폰이 같은 내용이고 본인만 본다.
+   - 이 기기 브라우저(localStorage)는 마지막으로 본 내용을 담아 두는 곳으로만 쓴다.
+   - 처음 한 번(이 기기 · 이 사람): 이 기기에 적어 둔 것을 서버 것에 합친다(wsMerge — 업무는 제목 · 마감일, 루틴은 제목이 같으면 하나로, 루틴 기록은 합침. 인사담당자 선택).
+   - 고칠 때마다 저장한다(wsPush, 한 번에 하나씩 — 저장 중에 또 고치면 끝난 뒤 한 번 더).
+   - 판 번호가 다르면(다른 기기가 먼저 저장) 서버 것을 불러오고 알린다 — 방금 고친 한 가지는 다시 해야 한다.
+   - 화면이 다시 보일 때(다른 앱 · 창에서 돌아올 때) 서버에 새 판이 있으면 불러온다(wsPull).
+   ponytail: 목록 하나를 통째로 저장한다 — 두 기기에서 동시에 고치면 늦게 저장한 쪽이 한 가지를 다시 해야 한다. 자주 겹치면 항목별 저장으로 바꾼다.
+   시연(서버 없음)은 예전처럼 브라우저에만. */
+const WS_SYNC = { tasks:{ v:0, busy:false, again:false }, routines:{ v:0, busy:false, again:false } };
+const WS_KIND = { tasks:['wsTasks:', wsStore, l=>wsNorm(l)], routines:['wsRoutines:', rtStore, l=>rtNorm(l)] };   // 종류 → [브라우저 칸 이름, 화면 저장소, 읽어 들이기]
+function wsLocal(kind){ try{ const v = JSON.parse(localStorage.getItem(WS_KIND[kind][0]+kpiRole)); return Array.isArray(v) ? v : null; }catch(_){ return null; } }
+function wsMerge(kind, server, local){   // 순수 함수 — 이 기기에 있던 것을 서버 것 뒤에 더한다. 같은 것은 하나로 (wsSyncSelfCheck 가 검증)
+  const out = server.map(x=>({ ...x }));
+  if(kind==='routines'){
+    local.forEach(l=>{ const s = out.find(x=>x.title===l.title); if(s) s.log = { ...(l.log || {}), ...(s.log || {}) }; else out.push({ ...l }); });
+    return out;
+  }
+  const add = local.filter(l=>!out.some(x=>x.title===l.title && (x.due || '')===(l.due || ''))), base = Math.max(0, ...out.map(x=>Number.isInteger(x.id) ? x.id : 0));
+  const id = new Map(add.map((l, i)=>[l.id, base+i+1]));   // 새 번호 — 반복 회차가 가리키는 앞 회차 번호도 같이 바꾼다
+  return out.concat(add.map(l=>({ ...l, id:id.get(l.id), from:id.get(l.from) })));
+}
+function wsTake(kind, data, v){   // 서버 것을 화면 저장소와 이 기기 브라우저에
+  const [key, store, norm] = WS_KIND[kind];
+  store[kpiRole] = norm(data); WS_SYNC[kind].v = v;
+  try{ localStorage.setItem(key+kpiRole, JSON.stringify(store[kpiRole])); }catch(_){}
+}
+async function wsPull(first){   // first = 로그인 직후 한 번 (합치기 포함)
+  let j; try{ const r = await fetch('/api/workspace'); if(!r.ok) return; j = await r.json(); }catch(_){ return; }
+  const mark = 'wsSynced:'+AUTH.me.user_id; let synced = true; try{ synced = localStorage.getItem(mark)==='1'; }catch(_){}
+  let changed = false;
+  for(const kind of ['tasks', 'routines']){
+    const srv = j[kind], s = WS_SYNC[kind], local = first && !synced ? wsLocal(kind) : null;
+    if(s.busy || (!first && srv.version===s.v)) continue;
+    if(srv.data && !local){ wsTake(kind, srv.data, srv.version); changed = true; continue; }
+    s.v = srv.version;
+    if(local){   // 이 기기에 적어 둔 것 → 서버로 (서버에 있으면 합쳐서)
+      const [, store, norm] = WS_KIND[kind];
+      store[kpiRole] = norm(srv.data ? wsMerge(kind, srv.data, local) : local); changed = true;
+      wsPush(kind);
+    }
+  }
+  if(first){ try{ localStorage.setItem(mark, '1'); }catch(_){} }
+  if(changed && !first) renderContent();
+}
+async function wsPush(kind){
+  const s = WS_SYNC[kind]; if(!AUTH.live) return;
+  if(s.busy){ s.again = true; return; }
+  s.busy = true;
+  try{
+    const r = await fetch('/api/workspace/'+kind, { method:'POST', headers:{ 'Content-Type':'application/json' }, body:JSON.stringify({ data:WS_KIND[kind][1][kpiRole], version:s.v }) });
+    const j = await r.json().catch(()=>({}));
+    if(r.ok) s.v = j.version;
+    else if(r.status===409){ s.again = false; clearTimeout(wsUndo?.timer); wsUndo = null; wsTake(kind, j.data || [], j.version); renderContent(); wsNotice('다른 기기에서 바뀐 내용이 있어 새로 불러왔습니다. 방금 고친 것은 한 번 더 해 주세요.'); }
+    else wsNotice(j.error || '저장하지 못했습니다. 잠시 뒤 다시 해 주세요.');
+  }catch(_){ wsNotice('저장하지 못했습니다(인터넷 연결을 확인해 주세요). 다시 연결되면 한 번 더 고쳐 주세요.'); }
+  finally{ s.busy = false; if(s.again){ s.again = false; wsPush(kind); } }
+}
+function wsNotice(msg){   // 아래쪽 알림(되돌리기 알림과 같은 자리) — 어느 화면에서든 보인다. 8초 뒤 사라진다
+  document.getElementById('wsToast')?.remove();
+  const d = document.createElement('div'); d.id = 'wsToast'; d.className = 'ws-toast'; d.setAttribute('role', 'status');
+  d.innerHTML = `<span>${escapeHtml(msg)}</span><button type="button" onclick="this.parentNode.remove()">닫기</button>`;
+  document.body.appendChild(d); setTimeout(()=>d.remove(), 8000);
+}
+document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='visible' && AUTH.live) wsPull(false); });
+function wsSyncSelfCheck(){   // 브라우저 콘솔에서 wsSyncSelfCheck() 실행
+  const ok = (c, msg)=>{ if(!c) throw new Error('wsSyncSelfCheck 실패: '+msg); };
+  const srv = [{ id:1, title:'보고', due:'2026-10-20' }, { id:2, title:'회의', due:'' }];
+  const loc = [{ id:1, title:'보고', due:'2026-10-20' }, { id:2, title:'주간', due:'2026-10-21', repeat:'weekly' }, { id:3, title:'주간', due:'2026-10-28', from:2 }, { id:4, title:'회의', due:'2026-10-22' }];
+  const t = wsMerge('tasks', srv, loc);
+  ok(t.map(x=>x.title+x.id).join()==='보고1,회의2,주간3,주간4,회의5', '업무: 제목·마감일이 같으면 하나, 나머지는 새 번호로 뒤에 '+t.map(x=>x.title+x.id).join());
+  ok(t[3].from===3 && t[2].from===undefined, '반복 회차가 가리키는 앞 회차 번호도 같이 바뀜');
+  const r = wsMerge('routines', [{ title:'산책', log:{ '2026-10-01':1 } }], [{ title:'산책', log:{ '2026-10-02':1 } }, { title:'독서', log:{} }]);
+  ok(r.length===2 && Object.keys(r[0].log).sort().join()==='2026-10-01,2026-10-02' && r[1].title==='독서', '루틴: 제목이 같으면 하나로, 기록은 합침');
+  ok(srv.length===2 && !srv[0].log, '서버 것은 그대로 두고 새 목록을 만든다');
+  return 'wsSyncSelfCheck 통과';
+}
 
 /* ----- 규칙 (순수 로직, rtSelfCheck가 검증) ----- */
 function rtDays(from, to){ const out = []; for(let d=from; d<=to; d=wsShift(d, 1)) out.push(d); return out; }   // from~to의 날짜들
@@ -7236,6 +7314,7 @@ async function authBoot(){
   if(me.kind!=='phone' && !authEntered()){ await fetch('/api/auth/logout', { method:'POST' }).catch(()=>{}); return authLock('login'); }   // 주소로 연 PC 창 — 공용 PC의 다음 사람이 앞사람 세션을 이어 쓰지 않게 끊는다. 등록한 휴대폰은 창을 닫아도 유지
   AUTH.live = true; AUTH.me = me;
   kpiSetRole(authRole(AUTH.me));
+  await wsPull(true);   // 나의 업무 · 나의 일상을 서버에서 (이 기기에 적어 둔 것은 처음 한 번 합친다)
   renderSidebar(); renderContent();
   if(code) installNotice(null, true);   // 방금 등록한 휴대폰: 홈 화면에 추가하는 순서
 }
