@@ -64,7 +64,7 @@
   .sidebar-logo{
     display:flex; align-items:center; gap:10px; flex-shrink:0;
     height:60px; padding:0 20px; color:var(--text-primary);
-    border-bottom:1px solid var(--border);
+    border-bottom:1px solid var(--border); cursor:pointer;
   }
   .logo-word{ font-weight:800; font-size:var(--fs-lg); line-height:1.2; }
   .logo-sub{ font-size:var(--fs-xs); color:var(--text-muted); margin-top:1px; }
@@ -247,6 +247,7 @@
   .hm-bar{ grid-column:1 / -1; height:5px; border-radius:3px; background:#E8EEF5; overflow:hidden; }
   .hm-bar i{ display:block; height:100%; border-radius:3px; background:var(--accent); transition:width .4s var(--ease); }
   .hm-bar.green i{ background:var(--success); }
+  .hm-bar.red i{ background:var(--coral-text); }
   .hm-calnav{ display:flex; align-items:center; gap:4px; font-size:var(--fs-sm); font-weight:600; color:var(--text-secondary); }
   .hm-calnav button{ width:26px; height:26px; padding:0; border:0; border-radius:var(--radius-sm); background:none; color:var(--text-muted); cursor:pointer; display:grid; place-items:center; }
   .hm-calnav button:hover{ background:var(--bg-page); color:var(--text-primary); }
@@ -1396,7 +1397,7 @@ function wcEnter(skip){   // 들어간다: 서서히 사라지고 이 창(탭)�
 </script>
 
 <aside class="sidebar" aria-label="메뉴">
-  <div class="sidebar-logo">
+  <div class="sidebar-logo" role="button" tabindex="0" aria-label="홈으로" onclick="selectNav('home')">   <!-- 누르면 홈 (2026-10-19 인사담당자 지시) -->
     <img src="img/logo-mark.png" alt="" width="30" height="30">
     <div><div class="logo-word">H&abyz</div><div class="logo-sub">인사포털</div></div>
   </div>
@@ -1645,7 +1646,7 @@ function homeKpi(){   // KPI가 있는 직원에게만, 진행률만. 현장직�
   const [label, cls] = kpiStatus(kpiRole);
   return `<div class="card">
     <div class="card-title"><span>나의 KPI 진행률 <span class="hm-dim">${KPI_YEAR}년</span> <span class="badge ${cls}">${label}</span>${kvMe() && kvIsSlow(kvMe()) ? `<span class="kv-mk bell" title="진행이 기대보다 늦습니다" style="vertical-align:-5px;">${icon('bell')}</span>` : ''}</span><span class="more" onclick="goTo('perf','e1')">상세 보기 →</span></div>
-    ${s.confirmed ? `<ul class="hm-kpi"><li class="hm-kpi-total"><b>${kpiProgress(s.confirmed)}%</b><small>종합 달성률</small></li>${s.confirmed.flatMap(g=>g.items).map(i=>homePct(escapeHtml(i.action), i.progress||0)).join('')}</ul>
+    ${s.confirmed ? `<ul class="hm-kpi"><li class="hm-kpi-total"><b>${kpiProgress(s.confirmed)}%</b><small>종합 달성률</small></li>${s.confirmed.flatMap(g=>g.items).map(i=>homePct(escapeHtml(i.action), i.progress||0, 'red')).join('')}</ul>
     <div class="hm-foot">진행률은 본인이 입력한 값이며 평가 점수와는 별개입니다.</div>`
     : '<div class="placeholder-note" style="margin:0;">아직 확정된 KPI가 없습니다. 목표를 작성해 제출해 주세요.</div>'}
   </div>`;
@@ -2999,6 +3000,10 @@ function orgRemove(members, id, isHr){
   if(i>=0) members.splice(i,1);
   return [];
 }
+const HW_MAIL = 'https://mails.office.hiworks.com/write?mode=normal';   // 하이웍스 메일 쓰기 (2026-10-19 인사담당자 지시 — 메일은 하이웍스로)
+// 받는 사람을 미리 채우는 것은 메일 주소로는 안 된다(to= 를 무시함, 2026-10-19 확인). 하이웍스 번호로만 된다: &user_nos=번호,번호
+// ponytail: 조직도가 아직 가상 명단이라 빈 메일 쓰기 화면만 연다 — 조직도를 실제 명단(users.hiworks_user_no)으로 바꿀 때 user_nos 를 붙인다
+const hwMailLink = (inner, cls='')=>`<a ${cls ? `class="${cls}" ` : ''}href="${HW_MAIL}" target="_blank" rel="noopener">${inner}</a>`;
 function orgVisibleContacts(m){ return { ext:m.ext, email:m.email, mobile: m.hideMobile ? null : m.mobile }; }
 function orgSelfCheck(){   // 브라우저 콘솔에서 orgSelfCheck() 실행
   const ok = (c,msg)=>{ if(!c) throw new Error('orgSelfCheck 실패: '+msg); };
@@ -3062,7 +3067,7 @@ function memberSearch(){
   const rows = orgMembers.filter(m=>!q || [m.name,m.title,m.division,m.team].join(' ').toLowerCase().includes(q));
   return `${roleSwitcher()}<div class="card" style="margin-bottom:14px;"><div class="field"><input id="orgSearch" placeholder="이름, 직급, 본부, 팀으로 검색" value="${escapeHtml(orgQuery)}" oninput="orgQuery=this.value; renderContent(); const i=document.getElementById('orgSearch'); i.focus(); i.setSelectionRange(i.value.length,i.value.length);"/></div></div>
     <div class="card"><div class="card-title">구성원 목록 <span class="more">${rows.length}명</span></div><table class="org-list"><thead><tr><th>이름</th><th>직급</th><th>소속</th><th>내선</th><th>메일</th></tr></thead><tbody>
-    ${rows.map(m=>`<tr><td><span class="org-name" onclick="orgShow(${m.id})">${escapeHtml(m.name)}</span> ${orgLeadBadge(m)}</td><td>${escapeHtml(m.title)}</td><td>${escapeHtml(m.division)}${m.team?' › '+escapeHtml(m.team):''}</td><td>${escapeHtml(m.ext)}</td><td>${escapeHtml(m.email)}</td></tr>`).join('') || '<tr><td colspan="5" style="color:var(--text-muted);">검색 결과가 없습니다</td></tr>'}
+    ${rows.map(m=>`<tr><td><span class="org-name" onclick="orgShow(${m.id})">${escapeHtml(m.name)}</span> ${orgLeadBadge(m)}</td><td>${escapeHtml(m.title)}</td><td>${escapeHtml(m.division)}${m.team?' › '+escapeHtml(m.team):''}</td><td>${escapeHtml(m.ext)}</td><td>${m.email ? hwMailLink(escapeHtml(m.email)) : ''}</td></tr>`).join('') || '<tr><td colspan="5" style="color:var(--text-muted);">검색 결과가 없습니다</td></tr>'}
     </tbody></table></div>`;
 }
 let orgReturnFocus = null;
@@ -3077,18 +3082,18 @@ function orgCloseModal(keepFocus){ const d = document.getElementById('orgModal')
 function orgCopy(text, btn){ if(!navigator.clipboard) return; navigator.clipboard.writeText(text).then(()=>{ btn.textContent='복사됨'; setTimeout(()=>btn.textContent='복사', 1200); }); }
 function orgShow(id){
   const m = orgFind(id), c = orgVisibleContacts(m);
-  const row = (label, val, href)=> val ? `<div class="org-contact"><b>${label}</b><span>${href?`<a href="${href}" style="color:inherit;">${escapeHtml(val)}</a>`:escapeHtml(val)}</span><button class="btn sm" onclick="orgCopy('${escapeHtml(val)}', this)">복사</button></div>` : '';
+  const row = (label, val, href, blank)=> val ? `<div class="org-contact"><b>${label}</b><span>${href?`<a href="${escapeHtml(href)}" style="color:inherit;"${blank ? ' target="_blank" rel="noopener"' : ''}>${escapeHtml(val)}</a>`:escapeHtml(val)}</span><button class="btn sm" onclick="orgCopy('${escapeHtml(val)}', this)">복사</button></div>` : '';
   const off = 'style="opacity:.45; pointer-events:none;"';
   orgModal(`<div class="card-title"><span>${escapeHtml(m.name)} <span style="font-weight:500; color:var(--text-secondary);">${escapeHtml(m.title)}</span> ${orgLeadBadge(m)}</span><button type="button" class="x-btn" onclick="orgCloseModal()" aria-label="닫기">${icon('x')}</button></div>
     <div class="list-sub" style="margin-bottom:10px;">${escapeHtml(m.division)}${m.team?' › '+escapeHtml(m.team):' (본부 직속)'}</div>
     ${c.mobile ? row('휴대폰', c.mobile, 'tel:'+c.mobile) : '<div class="org-contact"><b>휴대폰</b><span style="color:var(--text-muted);">본인 요청으로 비공개</span></div>'}
-    ${row('내선', c.ext)}${row('메일', c.email, 'mailto:'+c.email)}
+    ${row('내선', c.ext)}${row('메일', c.email, c.email && HW_MAIL, true)}
     <div class="org-actions">
       <a class="btn primary" href="tel:${c.mobile||''}" ${c.mobile?'':off}>${icon('phone')} 전화</a>
       <a class="btn" href="sms:${c.mobile||''}" ${c.mobile?'':off}>${icon('message')} 문자</a>
-      <a class="btn" href="mailto:${c.email}">${icon('mail')} 메일</a>
+      ${hwMailLink(`${icon('mail')} 메일`, 'btn')}
     </div>
-    <div class="list-sub" style="margin-top:10px;">스마트폰에서는 전화·문자 앱이 바로 열립니다. PC에서는 "복사"를 쓰세요.</div>`);
+    <div class="list-sub" style="margin-top:10px;">메일은 하이웍스 메일 쓰기 화면이 새 창으로 열립니다 — 받는 사람 칸에 이름을 적고 자동완성 줄을 누르세요. 스마트폰에서는 전화·문자 앱이 바로 열리고, PC에서는 "복사"를 쓰세요.</div>`);
 }
 function orgTeamOptions(div, selected){ return `<option value="">(본부 직속)</option>`+orgTeamsOf(div).map(t=>`<option ${t===selected?'selected':''}>${escapeHtml(t)}</option>`).join(''); }
 function orgEdit(id){
@@ -4076,7 +4081,7 @@ function celebShow(key){
     return `<div class="celeb-person"><div class="celeb-av">${escapeHtml(m.name.slice(0,1))}</div><div>
       <div><span class="org-name" onclick="orgShow(${m.id})">${escapeHtml(m.name)}</span> ${escapeHtml(m.title)} <span class="list-sub" style="display:inline;">· ${escapeHtml(m.team || m.division)}</span></div>
       <div class="list-sub">${escapeHtml(note)} · 내선 ${escapeHtml(ct.ext)} · ${escapeHtml(ct.email)}</div>
-      <div class="celeb-acts">${ct.mobile ? `<a class="btn sm" href="tel:${escapeHtml(ct.mobile)}">${icon('phone')} 전화</a>` : ''}<a class="btn sm" href="mailto:${escapeHtml(ct.email)}">${icon('mail')} 메일</a>${gift}
+      <div class="celeb-acts">${ct.mobile ? `<a class="btn sm" href="tel:${escapeHtml(ct.mobile)}">${icon('phone')} 전화</a>` : ''}${hwMailLink(`${icon('mail')} 메일`, 'btn sm')}${gift}
         ${hr && ev ? `<button class="btn sm" onclick="celebDelete(${ev.id})">게시 내리기</button>` : ''}</div>
     </div></div>`;
   }).join('');
