@@ -3070,6 +3070,9 @@ function orgSelfCheck(){   // 브라우저 콘솔에서 orgSelfCheck() 실행
   const ms = orgMembers.map(m=>({...m}));
   const mk = o=>({ id:0, name:'테스트', title:'사원', division:'DR사업본부', team:'Device 개발팀', lead:'', hideMobile:false, mobile:'', ext:'', email:'', ...o });
   ok(orgUpsert(ms, mk({}), false).length===1, 'HR 아니면 등록 불가');
+  const order = [mk({ name:'프로', title:'프로' }), mk({ name:'기타', title:'사원' }), mk({ name:'조장', title:'조장' }), mk({ name:'이사팀장', title:'이사', lead:'TEAM' }), mk({ name:'리더', title:'리더' }), mk({ name:'본부장', title:'상무이사', lead:'DIVISION' })]
+    .sort((a,b)=>orgRank(a)-orgRank(b)).map(m=>m.name).join();
+  ok(order==='본부장,이사팀장,리더,조장,프로,기타', '부서 명단 순서: 본부장 → 팀장 → 리더 → 조장 → 프로 → 그 밖 (직책이 직급보다 먼저) '+order);
   ok(orgRemove(ms, ms[0].id, false).length===1 && ms.length===orgMembers.length, 'HR 아니면 삭제 불가');
   ok(orgUpsert(ms, mk({}), true).length===0 && ms.length===orgMembers.length+1, 'HR 등록');
   ok(orgUpsert(ms, mk({name:' '}), true).length===1, '이름 필수');
@@ -3126,8 +3129,12 @@ function orgChart(){
       <div class="list-sub" style="margin-top:14px;">팀 상자를 누르면 구성원 명단이, 이름을 누르면 연락처와 전화·문자·메일 버튼이 나옵니다.</div>
     </div>`;
 }
+// 부서를 눌렀을 때 위에서부터 이 순서 (2026-10-19 인사담당자: 팀장 → 리더 → 조장 → 프로). 본부를 누르면 본부장 · 임원이 그 위.
+// 구성원 설정의 직책(팀장 · 본부장 · 대표이사)이 있으면 직책으로, 없으면 직급으로 센다. 목록에 없는 직급은 맨 아래, 같으면 가나다
+const ORG_RANK = ['대표이사', '본부장', '상무이사', '이사', '팀장', '리더', '조장', '프로'];
+function orgRank(m){ const i = ORG_RANK.indexOf(m.lead ? MS_LEAD[m.lead] : String(m.title || '').replace(/\s+/g, '')); return i<0 ? ORG_RANK.length : i; }
 function orgShowTeam(division, team){   // team '' = 본부 전체
-  const ms = orgPeople().filter(m=>m.division===division && (!team || m.team===team)).sort((a,b)=>(b.lead?1:0)-(a.lead?1:0));
+  const ms = orgPeople().filter(m=>m.division===division && (!team || m.team===team)).sort((a,b)=>orgRank(a)-orgRank(b) || a.name.localeCompare(b.name, 'ko'));
   orgModal(`<div class="card-title"><span>${escapeHtml(team || division)} <span style="font-weight:500; color:var(--text-secondary);">${ms.length}명</span></span><button type="button" class="x-btn" onclick="orgCloseModal()" aria-label="닫기">${icon('x')}</button></div>
     ${team ? `<div class="list-sub" style="margin-bottom:8px;">${escapeHtml(division)}</div>` : ''}
     ${ms.map(orgMemberRow).join('') || '<div class="list-sub">등록된 구성원이 없습니다.</div>'}`);
