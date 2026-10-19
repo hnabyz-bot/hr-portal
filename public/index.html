@@ -457,6 +457,24 @@
   }
   /* "휴대폰에 설치" 안내창 */
   .org-modal .card:has(.inst-qr){ max-width:560px; }
+  .org-modal .card:has(.preg){ max-width:560px; }
+  .preg-left{ display:block; font-size:var(--fs-md); color:var(--accent); }
+  .preg-ok{ flex:none; width:188px; min-height:250px; box-sizing:border-box; padding:16px 12px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px;
+    border:1px solid var(--border); border-radius:var(--radius); background:var(--bg-page); text-align:center; font-size:var(--fs-xs); color:var(--text-muted); }
+  .preg-ok b{ font-size:var(--fs-lg); color:var(--text-primary); }
+  .preg-ok .btn{ margin-top:8px; }
+  .preg-ok > i, .preg-who > i{ width:52px; height:52px; border-radius:50%; background:var(--success); color:#fff; font-style:normal; font-size:28px; font-weight:800;
+    display:flex; align-items:center; justify-content:center; margin-bottom:6px; flex:none; }
+  .preg-dev{ margin-top:14px; border-top:1px solid var(--border); padding-top:12px; }
+  .preg-dev > b{ display:block; font-size:var(--fs-sm); margin-bottom:8px; }
+  .preg-dev > b small{ font-weight:500; color:var(--text-muted); margin-left:6px; }
+  .preg-row{ display:flex; align-items:center; gap:10px; padding:10px 12px; border:1px solid var(--border); border-radius:var(--radius); }
+  .preg-row b{ min-width:56px; }
+  .preg-row span{ flex:1; color:var(--text-secondary); font-size:var(--fs-sm); }
+  .preg-row em{ font-style:normal; font-size:var(--fs-xs); font-weight:700; color:var(--success); background:rgba(17,115,77,.1); padding:2px 8px; border-radius:999px; }
+  .preg-who{ display:flex; align-items:center; gap:12px; padding:14px; border-radius:var(--radius); background:rgba(17,115,77,.1); margin-bottom:6px; }
+  .preg-who > i{ width:40px; height:40px; font-size:22px; margin:0; }
+  .preg-who small{ display:block; color:var(--text-secondary); font-size:var(--fs-xs); margin-top:2px; }
   .inst{ word-break:keep-all; }
   .inst-body{ display:flex; gap:22px; align-items:flex-start; }
   .inst-qr{ flex:none; width:188px; text-align:center; font-size:var(--fs-xs); color:var(--text-muted); }
@@ -1529,7 +1547,8 @@ function homeHero(t){
         <li>${icon('wallet')}${w.isPayday ? '<b>오늘은 급여일</b>' : `급여일까지 <b>D-${left}</b>`}</li>
       </ul>
     </div>
-    ${AUTH.live ? '' : `<button type="button" class="hero-install" onclick="installNotice()" aria-label="휴대폰에 설치">${icon('mobile')}<span>휴대폰에 설치</span></button>`}
+    ${AUTH.live && !isPhone() ? `<button type="button" class="hero-install" onclick="phoneReg()" aria-label="휴대폰 등록">${icon('mobile')}<span>휴대폰 등록</span></button>`
+      : `<button type="button" class="hero-install" onclick="installNotice()" aria-label="휴대폰에 설치">${icon('mobile')}<span>휴대폰에 설치</span></button>`}
   </section>`;
 }
 function homePortalRows(pre=''){   // 인사포털이 만든 일의 줄. pre = 누르면 먼저 할 일(팝업 닫기)
@@ -6106,10 +6125,10 @@ function evResultContent(){
    앱 장터에서 받는 앱이 아니라 사이트 바로가기다 — 아이콘·이름·여는 방식은 site.webmanifest 가 정한다.
    QR은 운영 주소 하나를 미리 바꿔 둔 무늬다(행마다 #=검은 칸 — 0·1로 적으면 개인정보 검사가 전화번호로 오인한다). 주소가 바뀌면 다시 만든다 — 만드는 법은 CLAUDE.md. */
 const INSTALL_QR = '#######..###.##...#######|#.....#.#.#.#.....#.....#|#.###.#.####..###.#.###.#|#.###.#.##.###.##.#.###.#|#.###.#..###....#.#.###.#|#.....#....###..#.#.....#|#######.#.#.#.#.#.#######|........#.#.....#........|#.....#.######...##..###.|..##.#..#.##.#####.#####.|#.##..####.#.###..#..#.##|#..............#....##..#|####.########....###....#|#..##...###...###..#...#.|#.#######..#######.###.##|#....#.#...#....#..#.##.#|#.###.##.######.#####.#..|........#...##.##...#....|#######...##....#.#.#...#|#.....#....#..###...#..##|#.###.#...###########.#..|#.###.#...###....##....##|#.###.#..##..#.#.....##.#|#.....#...###...#.###...#|#######.#...#...#.#..#..#';
-function installQrSvg(){
-  const rows = INSTALL_QR.split('|'), n = rows.length, q = 4;   // q = 둘레 흰 여백(칸). 없으면 카메라가 못 읽는다
+function installQrSvg(code=INSTALL_QR, label='인사포털 주소 QR'){
+  const rows = code.split('|'), n = rows.length, q = 4;   // q = 둘레 흰 여백(칸). 없으면 카메라가 못 읽는다
   let d = ''; rows.forEach((row, r)=>[...row].forEach((b, c)=>{ if(b==='#') d += `M${c+q} ${r+q}h1v1h-1z`; }));
-  return `<svg viewBox="0 0 ${n+2*q} ${n+2*q}" shape-rendering="crispEdges" role="img" aria-label="인사포털 주소 QR"><rect width="100%" height="100%" fill="#fff"/><path d="${d}" fill="#1B2433"/></svg>`;
+  return `<svg viewBox="0 0 ${n+2*q} ${n+2*q}" shape-rendering="crispEdges" role="img" aria-label="${label}"><rect width="100%" height="100%" fill="#fff"/><path d="${d}" fill="#1B2433"/></svg>`;
 }
 const INSTALL_STEPS = {
   galaxy: ['갤럭시', [
@@ -6120,7 +6139,7 @@ const INSTALL_STEPS = {
     ['사파리로 열렸을 때', ['화면 아래쪽 <b>공유 버튼</b>(네모에서 화살표가 위로 나가는 모양)을 누릅니다.', '목록을 위로 올려 <b>홈 화면에 추가</b>를 누릅니다.', '오른쪽 위 <b>추가</b>를 누릅니다.']],
   ]],
 };
-function installNotice(tab){
+function installNotice(tab, fresh){   // fresh = QR 로 방금 등록한 휴대폰 (authBoot)
   const head = t=>`<div class="card-title"><span>${t}</span><button type="button" class="x-btn" onclick="orgCloseModal()" aria-label="닫기">${icon('x')}</button></div>`;
   const steps = list=>`<ol class="inst-steps">${list.map((t, i)=>`<li><i>${i+1}</i><span>${t}</span></li>`).join('')}</ol>`;
   const app = `<div class="inst-app"><figure><img src="android-chrome-192x192.png?v=3" alt="" width="52" height="52">인사포털</figure><span>설치하면 휴대폰 홈 화면에 <b>회사 리본 아이콘</b>이 생깁니다.</span></div>`;
@@ -6129,11 +6148,61 @@ function installNotice(tab){
       ${steps(['휴대폰 <b>기본 카메라</b>로 왼쪽 QR을 찍습니다.', '열린 인사포털에서 <b>휴대폰에 설치</b>를 누릅니다. 갤럭시·아이폰에 맞는 순서가 나옵니다.', '홈 화면에 생긴 아이콘으로 바로 들어옵니다.'])}</div>
     ${app}<div class="inst-note">카카오톡으로 QR을 찍으면 설치가 되지 않습니다. 휴대폰 기본 카메라로 찍어 주세요.</div></div>`);
   tab = tab || (/iPhone|iPad|iPod/.test(navigator.userAgent) ? 'iphone' : 'galaxy');
-  orgModal(`<div class="inst">${head('이 휴대폰에 설치하기')}
-    <div class="inst-tabs">${Object.keys(INSTALL_STEPS).map(k=>`<button type="button" aria-pressed="${k===tab}" onclick="installNotice('${k}')">${INSTALL_STEPS[k][0]}</button>`).join('')}</div>
+  orgModal(`<div class="inst">${head(fresh ? '이 휴대폰이 등록됐습니다' : '이 휴대폰에 설치하기')}
+    ${fresh ? `<div class="preg-who"><i>✓</i><div><b>${escapeHtml(AUTH.me.name)}</b> · ${escapeHtml(AUTH.me.department)}<small>30일 동안 로그인이 유지됩니다 (쓸 때마다 연장)</small></div></div>
+      <p class="inst-sub" style="margin-bottom:10px;">홈 화면에 추가하면 다음부터 아이콘으로 바로 들어옵니다</p>` : ''}
+    <div class="inst-tabs">${Object.keys(INSTALL_STEPS).map(k=>`<button type="button" aria-pressed="${k===tab}" onclick="installNotice('${k}', ${!!fresh})">${INSTALL_STEPS[k][0]}</button>`).join('')}</div>
     ${INSTALL_STEPS[tab][1].map(g=>`<p class="inst-sub">${g[0]}</p>${steps(g[1])}`).join('')}
-    ${app}<div class="inst-note">카카오톡 안에서 열린 화면에서는 설치가 되지 않습니다. 메뉴에서 <b>다른 브라우저로 열기</b>를 먼저 눌러 주세요.</div>
+    ${app}<div class="inst-note">${fresh ? '아이폰은 이 화면이 열린 <b>사파리</b>에서 바로 홈 화면에 추가해 주세요. ' : ''}카카오톡 안에서 열린 화면에서는 설치가 되지 않습니다. 메뉴에서 <b>다른 브라우저로 열기</b>를 먼저 눌러 주세요.</div>
     <button type="button" class="btn primary" style="width:100%; justify-content:center; margin-top:14px;" onclick="orgCloseModal()">확인</button></div>`);
+}
+
+/* ---------------- 휴대폰 등록 (로그인 설계 13.1, 2026-10-19 인사담당자 결정) ----------------
+   PC(하이웍스로 들어온 창)에서 홈 배너의 "휴대폰 등록" → 서버가 3분짜리 1회용 값을 담은 QR 무늬를 준다(POST /api/phone/code).
+   휴대폰 카메라로 찍으면 포털이 /#d=값 으로 열리고 authBoot 가 값을 서버로 보내 휴대폰 세션(마지막 사용 후 30일)을 받는다.
+   한 사람에 한 대 — 새로 등록하면 앞 휴대폰은 끊긴다. 찍으면 바로 등록되고(PC 에서 허용하는 단계 없음) 이 창이 2초마다 확인해 바로 바꿔 보여 준다. */
+const PHONE = { qr:'', since:'', end:0, cur:null, state:'qr', timer:null, busy:false };   // state: qr · done(방금 등록) · over(3분 지남) · off(해제함)
+const phoneDay = iso=>{ const d = new Date(iso); return `${d.getMonth()+1}/${d.getDate()}`; };
+async function phoneGet(){ try { return (await (await fetch('/api/phone')).json()).phone; } catch(e){ return null; } }
+function phoneDraw(){
+  const P = PHONE, head = `<div class="card-title"><span>휴대폰 등록</span><button type="button" class="x-btn" onclick="orgCloseModal()" aria-label="닫기">${icon('x')}</button></div>`;
+  const left = P.state==='done' ? `<div class="preg-ok"><i>✓</i><b>등록됐습니다</b>${escapeHtml(P.cur.device)} · 방금<button type="button" class="btn sm" onclick="phoneRevoke()">내가 한 게 아니면 해제</button></div>`
+    : P.state==='over' ? `<div class="preg-ok"><b>시간이 지났습니다</b>QR은 3분 동안 한 번만 쓸 수 있어요<button type="button" class="btn sm primary" onclick="phoneReg()">새 QR</button></div>`
+    : P.state==='off' ? `<div class="preg-ok"><b>해제했습니다</b>그 휴대폰은 바로 로그아웃됩니다<button type="button" class="btn sm primary" onclick="phoneReg()">새 QR</button></div>`
+    : `<div class="inst-qr">${installQrSvg(P.qr, '휴대폰 등록 QR')}<b class="preg-left" id="phoneLeft">3:00 남음</b>한 번만 쓸 수 있어요<br><button type="button" class="btn sm" style="margin-top:8px;" onclick="phoneReg()">새 QR</button></div>`;
+  const row = P.cur ? `<div class="preg-row"><b>${escapeHtml(P.cur.device)}</b><span>${phoneDay(P.cur.created_at)} 등록 · 마지막 사용 ${phoneDay(P.cur.last_seen_at)}</span>${P.state==='done' ? '<em>방금 등록</em>' : ''}<button type="button" class="btn sm" onclick="phoneRevoke()">해제</button></div>`
+    : '<div class="list-sub" style="margin:0;">등록된 휴대폰이 없습니다.</div>';
+  orgModal(`<div class="inst preg">${head}
+    <div class="inst-body">${left}<ol class="inst-steps">${['휴대폰 <b>기본 카메라</b>로 왼쪽 QR을 찍습니다.', '휴대폰에 인사포털이 열리고 <b>이 휴대폰이 등록</b>됩니다.', '안내대로 <b>홈 화면에 추가</b>하면 다음부터 아이콘만 누르면 바로 열립니다.'].map((t, i)=>`<li><i>${i+1}</i><span>${t}</span></li>`).join('')}</ol></div>
+    <div class="preg-dev"><b>등록된 휴대폰<small>한 사람에 한 대 — 새로 등록하면 이전 휴대폰은 해제됩니다</small></b>${row}</div>
+    <div class="inst-note">로그인은 <b>30일</b> 유지되고 쓸 때마다 늘어납니다. 휴대폰을 잃어버리면 여기서 해제하거나 지원팀에 알려 주세요. 카카오톡으로 QR을 찍으면 등록되지 않습니다 — 휴대폰 기본 카메라로 찍어 주세요.</div></div>`);
+}
+async function phoneReg(){   // 새 QR — 서버가 앞서 띄운 값은 지운다
+  clearInterval(PHONE.timer);
+  const r = await fetch('/api/phone/code', { method:'POST' }), j = await r.json().catch(()=>({}));
+  if(!r.ok){ orgCloseModal(); return kpiFlash(escapeHtml(j.error || '휴대폰 등록 QR을 만들지 못했습니다. 잠시 뒤 다시 눌러 주세요.'), 'danger'); }
+  Object.assign(PHONE, { qr:j.qr, since:j.since, end:Date.now() + j.seconds*1000, cur:await phoneGet(), state:'qr', busy:false });
+  phoneDraw();
+  let n = 0;
+  PHONE.timer = setInterval(async ()=>{
+    if(!document.querySelector('#orgModal .preg')) return clearInterval(PHONE.timer);   // 창을 닫으면 그만 묻는다
+    const s = Math.max(0, Math.ceil((PHONE.end - Date.now())/1000)), el = document.getElementById('phoneLeft');
+    if(el) el.textContent = `${Math.floor(s/60)}:${String(s%60).padStart(2, '0')} 남음`;
+    if((++n % 2 && s) || PHONE.busy) return;   // 등록됐는지는 2초마다 (시간이 다 되면 바로)
+    PHONE.busy = true;
+    const p = await phoneGet();
+    PHONE.busy = false;
+    if(!document.querySelector('#orgModal .preg') || PHONE.state!=='qr') return;
+    if(p && p.created_at >= PHONE.since){ clearInterval(PHONE.timer); Object.assign(PHONE, { cur:p, state:'done' }); phoneDraw(); }
+    else if(!s){ clearInterval(PHONE.timer); PHONE.state = 'over'; phoneDraw(); }
+  }, 1000);
+}
+async function phoneRevoke(){
+  clearInterval(PHONE.timer);
+  const r = await fetch('/api/phone/revoke', { method:'POST' });
+  if(!r.ok){ orgCloseModal(); return kpiFlash('휴대폰 등록을 해제하지 못했습니다. 잠시 뒤 다시 해 주세요.', 'danger'); }
+  Object.assign(PHONE, { cur:null, state:'off' });
+  phoneDraw();
 }
 
 /* ---------------- 탕비실 ----------------
@@ -6428,6 +6497,13 @@ async function msActive(id, on){
   MS_LIVE.state = '';
   kpiFlash(on ? '다시 켰습니다.' : '비활성화했습니다. 그 사람의 로그인도 끊겼습니다.');
 }
+async function msPhoneRevoke(id){   // 실제 로그인: 그 사람의 휴대폰 등록 해제 (잃어버렸을 때 — 로그인 설계 13.1)
+  const r = await fetch(`/api/members/${id}/phone/revoke`, { method:'POST' });
+  orgCloseModal();
+  if(!r.ok) return kpiFlash('휴대폰 등록을 해제하지 못했습니다.', 'danger');
+  MS_LIVE.state = '';
+  kpiFlash('휴대폰 등록을 해제했습니다. 그 휴대폰은 바로 로그아웃됩니다.');
+}
 let msPasteBirth = false;   // 붙여넣기 창에서 고른 종류: false 직급·입사일 / true 생일
 function msPasteAsk(birth){   // 종류를 바꾸면 창을 다시 그린다(적던 글은 지워진다)
   msPasteBirth = !!birth;
@@ -6454,6 +6530,7 @@ function msSee(id){
     ${m.active===false ? kpiNote('비활성이라 <b>들어올 수 없습니다.</b> 하이웍스에서 메뉴를 누르면 "등록되지 않은 사용자" 안내가 나옵니다.')
       : m.use ? `<ul class="ms-see">${msSeeList(m).map(([a, b])=>`<li class="${b?'':'no'}"><b>${a}</b><span>${b || '보이는 것이 없음'}</span></li>`).join('')}</ul>`
       : kpiNote('포털 사용이 꺼져 있어 <b>들어올 수 없습니다.</b> 하이웍스에서 메뉴를 누르면 "인사포털은 준비 중입니다" 화면이 나옵니다.')}
+    ${AUTH.live && m.phone ? `<div style="display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:10px;"><span class="list-sub" style="margin:0;">등록된 휴대폰: ${escapeHtml(m.phone)}</span><button type="button" class="btn sm" onclick="msPhoneRevoke(${id})">휴대폰 해제</button></div>` : ''}
     ${AUTH.live ? `<div style="display:flex; align-items:center; justify-content:space-between; gap:10px;"><span class="list-sub" style="margin:0;">${m.active===false ? '비활성 — 포털에 들어올 수 없습니다' : '퇴사자는 하이웍스 계정을 정지하기 전에 먼저 비활성화합니다'}</span>${m.me ? '' : `<button type="button" class="btn sm" onclick="msActiveAsk(${id}, ${m.active===false})">${m.active===false ? '다시 켜기' : '비활성화'}</button>`}</div>`
       : `<div style="display:flex; align-items:center; justify-content:space-between; gap:10px;"><span class="list-sub" style="margin:0;">직급 ${escapeHtml(m.title.trim() || '없음')} · 입사일 ${m.hireDate || '없음'}</span><button type="button" class="btn sm" onclick="orgEdit(${id})">직급·입사일 수정</button></div>`}`);
 }
@@ -6842,7 +6919,8 @@ document.addEventListener('keydown', e=>{
    서버가 없으면(PC 미리보기 — /api/me 가 404·연결 실패) 지금처럼 시연 모드다. */
 const AUTH_TEXT = {
   login:['하이웍스에서 들어와 주세요', '하이웍스에 로그인한 뒤 <b>인사포털</b> 메뉴를 눌러 들어와 주세요.'],
-  phone:['PC에서 열어 주세요', 'PC의 하이웍스에서 <b>인사포털</b> 메뉴로 열어 주세요. 휴대폰에서 쓰는 방법은 준비 중입니다.'],
+  phone:['휴대폰 등록이 필요합니다', 'PC의 하이웍스에서 <b>인사포털</b>을 열고 홈 배너의 <b>휴대폰 등록</b>을 누른 뒤, 나온 QR을 이 휴대폰 카메라로 찍어 주세요. 한 번 등록하면 30일 동안 로그인이 유지됩니다.'],
+  qr:['QR을 다시 띄워 주세요', 'QR은 <b>3분 동안 한 번만</b> 쓸 수 있습니다. PC 화면의 <b>새 QR</b>을 눌러 다시 찍어 주세요.'],
   out:['로그아웃했습니다', '공용 PC라면 하이웍스도 로그아웃해 주세요. 다시 들어올 때는 하이웍스의 <b>인사포털</b> 메뉴를 누르면 됩니다.'],
 };
 function authRole(me){   // 서버의 직책·HR 권한 → 화면이 쓰는 역할 이름 (KPI_USERS 의 열쇠)
@@ -6863,18 +6941,26 @@ function authLock(kind){
   }
   el.innerHTML = `<div class="auth-card"><div class="brand"><img src="img/logo-mark-clear.png" alt="" width="34" height="34"><span>H&abyz<small>인사포털</small></span></div>
     <h1 id="authTitle">${title}</h1><p>${body}</p>
-    ${kind==='phone' ? '' : '<a class="btn primary" href="https://login.office.hiworks.com/" rel="noopener">하이웍스 열기</a>'}
+    ${kind==='phone' || kind==='qr' ? '' : '<a class="btn primary" href="https://login.office.hiworks.com/" rel="noopener">하이웍스 열기</a>'}
     <p class="note">인사포털은 하이웍스 계정으로만 들어올 수 있습니다.</p></div>`;
 }
 async function authBoot(){
+  const code = (location.hash.match(/^#d=([\w-]{20,100})$/) || [])[1];   // 휴대폰이 PC 의 QR 로 열렸다 (휴대폰 등록)
+  if(code){
+    history.replaceState(null, '', location.pathname + location.search);   // 1회용 값을 주소창·방문 기록에서 지운다
+    const ok = await fetch('/api/phone/register', { method:'POST', headers:{ 'Content-Type':'application/json' }, body:JSON.stringify({ code }) }).then(x=>x.ok, ()=>false);
+    if(!ok) return authLock('qr');
+  }
   let r;
   try { r = await fetch('/api/me', { headers:{ Accept:'application/json' } }); } catch(e){ return; }   // 서버 없음 = 시연
   if(r.status===401) return authLock('login');
   if(!r.ok || !(r.headers.get('content-type')||'').includes('application/json')) return;   // PC 미리보기(정적 서버) = 시연
-  if(!authEntered()){ await fetch('/api/auth/logout', { method:'POST' }).catch(()=>{}); return authLock('login'); }   // 주소로 연 창 — 공용 PC의 다음 사람이 앞사람 세션을 이어 쓰지 않게 끊는다
-  AUTH.live = true; AUTH.me = await r.json();
+  const me = await r.json();
+  if(me.kind!=='phone' && !authEntered()){ await fetch('/api/auth/logout', { method:'POST' }).catch(()=>{}); return authLock('login'); }   // 주소로 연 PC 창 — 공용 PC의 다음 사람이 앞사람 세션을 이어 쓰지 않게 끊는다. 등록한 휴대폰은 창을 닫아도 유지
+  AUTH.live = true; AUTH.me = me;
   kpiSetRole(authRole(AUTH.me));
   renderSidebar(); renderContent();
+  if(code) installNotice(null, true);   // 방금 등록한 휴대폰: 홈 화면에 추가하는 순서
 }
 // ponytail: 창을 닫았는지는 서버가 알 수 없어 화면이 판단한다. 개발자 도구로 표시를 만들면 넘어갈 수 있다 — 세션 쿠키는 브라우저를 끄면 사라지고, 서버 만료(4시간·12시간)는 그대로
 function authEntered(){   // 하이웍스 메뉴로 연 창인가. 표시는 창마다 따로(sessionStorage) — 창을 닫으면 사라지고 새로 고침에는 남는다

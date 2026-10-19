@@ -84,6 +84,7 @@ def apply_schema(path: str) -> sqlite3.Connection | None:
         "sessions",
         "sso_used_tokens",
         "sso_rate_hits",
+        "phone_codes",
     }
     missing = expected - tables
     _report(not missing, f"테이블 {len(expected)}개 생성", f"누락: {sorted(missing)}")
@@ -523,6 +524,18 @@ def check_login_tables(conn: sqlite3.Connection) -> None:
     conn.execute(f"UPDATE users SET phone = '02-000-0000', mobile = '가상' WHERE id = {user}")
     row = conn.execute(f"SELECT phone, mobile FROM users WHERE id = {user}").fetchone()
     _report(row == ("02-000-0000", "가상"), "직원 전화·휴대폰 칸", f"실제 {row}")
+
+    print("16. 휴대폰 등록 (004)")
+    kind = conn.execute("SELECT kind FROM sessions WHERE token_hash = ?", ("b" * 64,)).fetchone()
+    _report(kind == ("pc",), "앞서 있던 세션은 PC 세션으로 남음", f"실제 {kind}")
+    ok, _ = _rejects(conn, f"UPDATE sessions SET kind = 'tablet' WHERE user_id = {user}")
+    _report(ok, "세션 종류는 pc · phone 만")
+    code = "INSERT INTO phone_codes (code_hash, user_id, created_at, expires_at) VALUES (?, {u}, '2027-03-02T09:00:00Z', '2027-03-02T09:03:00Z')"
+    conn.execute(code.format(u=user), ("e" * 64,))
+    ok, _ = _rejects(conn, code.format(u=user), ("e" * 64,))
+    _report(ok, "같은 QR 값을 두 번 기록하면 거부")
+    ok, _ = _rejects(conn, code.format(u=9999), ("f" * 64,))
+    _report(ok, "없는 직원의 QR 값 거부")
 
 
 def main() -> int:

@@ -9,7 +9,12 @@ app.py 가 register(app) 로 붙인다.
   GET  /api/members               구성원 설정 명단 (HR) — 5단계
   POST /api/members               사람별 설정 여섯 칸 저장 (HR, 규칙은 domain/members.validate_members)
   POST /api/members/<id>/active   비활성화 · 다시 켜기 (HR)
-  그 밖의 /api/* 전부             세션 검사. 세션 없이 열린 곳은 /api/health 와 위의 두 곳뿐 (§3)
+  POST /api/members/<id>/phone/revoke  그 사람의 휴대폰 등록 해제 (HR)
+  POST /api/phone/code            PC 에서 "휴대폰 등록" → QR 에 담을 1회용 값(3분) — §13.1
+  POST /api/phone/register        휴대폰이 QR 주소(/#d=값)를 열면 화면이 보낸다 → 휴대폰 세션(30일)
+  GET  /api/phone                 내 등록된 휴대폰 (PC 창이 "등록됐는지"를 볼 때도 쓴다)
+  POST /api/phone/revoke          내 휴대폰 등록 해제
+  그 밖의 /api/* 전부             세션 검사. 세션 없이 열린 곳은 /api/health · 로그인 받는 곳 · 안내 · 휴대폰 등록뿐 (§3)
 
 서버 설정 (.env → docker-compose.yml):
   HR_ENV=production                    운영 모드 — docker-compose.yml 에 고정 (§7)
@@ -57,12 +62,16 @@ COOKIE = "hr_session"
 ENTRY_COOKIE = "hr_entry"  # 하이웍스 메뉴로 막 들어왔다는 1분짜리 표시 — 화면이 읽고 지운다 (§3 "주소로 연 창")
 IDLE = timedelta(hours=4)  # 마지막 사용 후 (§10 확정)
 MAX_AGE = timedelta(hours=12)  # 발급 후 최대 (§10)
+PHONE_IDLE = timedelta(days=30)  # 휴대폰 세션: 마지막 사용 후, 쓸 때마다 연장 (§13.1)
+CODE_KEEP = timedelta(minutes=3)  # QR 에 담는 1회용 값 (§13.1)
 TOKEN_KEEP = timedelta(seconds=60)  # 하이웍스 token 유효시간과 같게 (#65 ③)
 RATE_PER_MIN = 30  # 접속자 주소마다 1분 (§5)
 TOKEN_RE = re.compile(r"[0-9a-f]{64}")  # 하이웍스 token 모양 (2026-10-12 실측)
-OPEN = {"/api/health", "/api/auth/hiworks", "/api/auth/message"}
+MOBILE_RE = re.compile(r"iPhone|Android|Mobile")  # 휴대폰 브라우저 (§13.1 — 등록은 휴대폰에서만)
+OPEN = {"/api/health", "/api/auth/hiworks", "/api/auth/message", "/api/phone/register"}
 MSG_LOGIN = "로그인이 필요합니다. 하이웍스에서 인사포털 메뉴로 들어와 주세요."
 AGAIN = "하이웍스에서 인사포털 메뉴를 다시 눌러 주세요."
+MSG_QR = "QR을 다시 띄워 주세요. QR은 3분 동안 한 번만 쓸 수 있습니다."
 MESSAGES = {  # 안내 문구와 상태 코드
     "bad": (f"잘못된 접근입니다. {AGAIN}", 400),
     "used": (f"이미 사용한 접속입니다. {AGAIN}", 403),
@@ -277,6 +286,7 @@ def login_message() -> Response:
 
 @bp.post("/api/auth/logout")
 def logout() -> Response:
+    g.pop("phone_cookie", None)  # 끊는 응답에서 쿠키를 다시 늘리지 않는다
     _db().execute("UPDATE sessions SET revoked_at = ? WHERE token_hash = ? AND revoked_at IS NULL",
                   (_iso(_now()), g.session_hash))
     resp = jsonify(ok=True, message="포털에서 로그아웃했습니다. 공용 PC라면 하이웍스도 로그아웃해 주세요.")
@@ -291,8 +301,120 @@ def me() -> Response:
         "SELECT u.name, d.name, u.writes_kpi FROM users u JOIN departments d ON d.id = u.department_id WHERE u.id = ?",
         (a.user_id,),
     ).fetchone()
-    return jsonify(user_id=a.user_id, name=name, department=dept,
+    return jsonify(user_id=a.user_id, name=name, department=dept, kind=g.session_kind,
                    position=a.position.value if a.position else None, is_hr=a.is_hr, writes_kpi=bool(writes_kpi))
+
+
+# ---------------- 휴대폰 등록 (§13.1) — PC 에서 QR 을 띄우고 휴대폰 카메라로 찍는다 ----------------
+def _site() -> str:
+    """QR 에 넣을 포털 주소. 운영은 Cloudflare 가 https 로 받는다(nginx·api 사이는 http). PC 시험은 localhost."""
+    host = request.host
+    return f"{'http' if host.split(':')[0] in ('localhost', '127.0.0.1') else 'https'}://{host}"
+
+
+def _qr_rows(text: str) -> str:
+    """QR 무늬 — 검은 칸 #, 흰 칸 . 를 줄마다 | 로 이어 화면(installQrSvg)이 그린다. reportlab 에 든 QR 부호기."""
+    from reportlab.graphics.barcode import qrencoder as qr
+    c = qr.QRCode(None, qr.QRErrorCorrectLevel.M)
+    c.addData(text)
+    c.make()
+    n = c.getModuleCount()
+    return "|".join("".join("#" if c.isDark(r, x) else "." for x in range(n)) for r in range(n))
+
+
+def _device(ua: str) -> str:
+    """등록 목록에 보일 휴대폰 이름. 짐작일 뿐이다(안드로이드 크롬은 기종을 숨긴다)."""
+    if "iPhone" in ua or "iPad" in ua:
+        return "아이폰"
+    if "SM-" in ua or "Samsung" in ua:
+        return "갤럭시"
+    return "안드로이드" if "Android" in ua else "휴대폰"
+
+
+def _phone_of(conn: sqlite3.Connection, user_id: int, now: datetime) -> dict | None:
+    row = conn.execute(
+        "SELECT device, created_at, last_seen_at FROM sessions WHERE user_id = ? AND kind = 'phone'"
+        " AND revoked_at IS NULL AND last_seen_at > ? ORDER BY created_at DESC LIMIT 1",
+        (user_id, _iso(now - PHONE_IDLE)),
+    ).fetchone()
+    return {"device": row[0], "created_at": row[1], "last_seen_at": row[2]} if row else None
+
+
+def _revoke_phone(conn: sqlite3.Connection, user_id: int, now: datetime) -> int:
+    return conn.execute("UPDATE sessions SET revoked_at = ? WHERE user_id = ? AND kind = 'phone' AND revoked_at IS NULL",
+                        (_iso(now), user_id)).rowcount
+
+
+@bp.post("/api/phone/code")
+def phone_code() -> Response:
+    """QR 에 담을 1회용 값(3분). PC(하이웍스로 들어온 세션)에서만. 이 사람이 앞서 띄운 값은 지운다."""
+    if g.session_kind != "pc":
+        return jsonify(error="휴대폰 등록은 PC에서 합니다."), 403
+    conn, now, raw = _db(), _now(), secrets.token_urlsafe(32)
+    conn.execute("DELETE FROM phone_codes WHERE user_id = ? OR expires_at < ?", (g.actor.user_id, _iso(now)))
+    conn.execute("INSERT INTO phone_codes (code_hash, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)",
+                 (_sha(raw), g.actor.user_id, _iso(now), _iso(now + CODE_KEEP)))
+    url = f"{_site()}/#d={raw}"  # 값은 # 뒤 — 서버로 가지 않아 nginx 기록·Referer 에 남지 않는다. 화면이 POST 로 보낸다
+    return jsonify(qr=_qr_rows(url), seconds=int(CODE_KEEP.total_seconds()), since=_iso(now))
+
+
+@bp.post("/api/phone/register")
+def phone_register() -> Response:
+    """{"code": 값} → 그 사람의 휴대폰 세션(30일). 한 사람에 한 대 — 앞서 등록한 휴대폰은 끊는다 (§13.1)."""
+    conn, now, ip = _db(), _now(), _client_ip()
+    if not _same_origin():  # 세션 검사 밖(OPEN)이라 여기서 따로 본다
+        return jsonify(error="허용되지 않은 요청입니다."), 403
+    if not _rate_ok(conn, ip, now):
+        return jsonify(error=MESSAGES["busy"][0]), 429
+    raw = str((request.get_json(silent=True) or {}).get("code", ""))[:100]
+    ua = (request.headers.get("User-Agent") or "")[:300]
+    if not MOBILE_RE.search(ua):  # QR 주소를 PC 에 옮겨 쳐서 30일 세션을 받는 일을 막는다. 값은 쓰지 않고 남긴다
+        return jsonify(error="휴대폰 카메라로 찍어 주세요."), 400  # ponytail: 브라우저 이름은 꾸밀 수 있다 — 안내 수준, 공용 PC 대비는 PC 규칙
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        row = conn.execute(  # 쓰는 순간 표시한다 — 같은 값이 동시에 와도 하나만 통과
+            "UPDATE phone_codes SET used_at = ? WHERE code_hash = ? AND used_at IS NULL AND expires_at > ? RETURNING user_id",
+            (_iso(now), _sha(raw), _iso(now)),
+        ).fetchone()
+        uid = row[0] if row else None
+        if uid is None or not conn.execute(
+            "SELECT 1 FROM users WHERE id = ? AND is_active = 1 AND portal_enabled = 1", (uid,)
+        ).fetchone():
+            conn.execute("COMMIT")
+            return jsonify(error=MSG_QR), 410
+        _revoke_phone(conn, uid, now)
+        old = request.cookies.get(COOKIE)  # 이 휴대폰에 남아 있던 세션도 이어 쓰지 않는다 (§5 세션 고정)
+        if old:
+            conn.execute("UPDATE sessions SET revoked_at = ? WHERE token_hash = ? AND revoked_at IS NULL", (_iso(now), _sha(old)))
+        sess = secrets.token_urlsafe(32)
+        conn.execute(
+            "INSERT INTO sessions (token_hash, user_id, created_at, last_seen_at, expires_at, ip, user_agent, kind, device)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, 'phone', ?)",
+            (_sha(sess), uid, _iso(now), _iso(now), _iso(now + PHONE_IDLE), ip, ua, _device(ua)),
+        )
+        _audit(conn, AuditEntry.by(actor_of(conn, uid), action="PHONE_REGISTERED", entity_type="user",
+                                   entity_id=uid, ip=ip, user_agent=ua))
+        conn.execute("COMMIT")
+    except BaseException:
+        conn.execute("ROLLBACK")
+        raise
+    resp = jsonify(ok=True)
+    resp.set_cookie(COOKIE, sess, max_age=int(PHONE_IDLE.total_seconds()), path="/", secure=True, httponly=True, samesite="Lax")
+    return resp
+
+
+@bp.get("/api/phone")
+def phone_mine() -> Response:
+    return jsonify(phone=_phone_of(_db(), g.actor.user_id, _now()), this=g.session_kind == "phone")
+
+
+@bp.post("/api/phone/revoke")
+def phone_revoke() -> Response:
+    g.pop("phone_cookie", None)
+    conn, now = _db(), _now()
+    if _revoke_phone(conn, g.actor.user_id, now):
+        _audit(conn, AuditEntry.by(g.actor, action="PHONE_REVOKED", entity_type="user", entity_id=g.actor.user_id))
+    return jsonify(ok=True)
 
 
 # ---------------- 구성원 설정 (HR) — 칸 이름은 화면(public/index.html 의 MS_FIELDS)과 같다 ----------------
@@ -356,9 +478,12 @@ def members_list() -> Response:
         "SELECT u.id, u.name, d.name, d.level, p.name, u.is_active, u.portal_enabled, u.writes_kpi, u.in_evaluation,"
         " u.has_contract, (SELECT group_concat(role) FROM user_roles r WHERE r.user_id = u.id),"
         " EXISTS (SELECT 1 FROM audit_logs a WHERE a.entity_type = 'user' AND a.entity_id = u.id"
-        "         AND a.action IN ('MEMBER_UPDATED', 'MEMBER_ACTIVE'))"
+        "         AND a.action IN ('MEMBER_UPDATED', 'MEMBER_ACTIVE')),"
+        " (SELECT s.device || ' · 마지막 사용 ' || substr(s.last_seen_at, 6, 5) FROM sessions s WHERE s.user_id = u.id"
+        "  AND s.kind = 'phone' AND s.revoked_at IS NULL AND s.last_seen_at > ? ORDER BY s.created_at DESC LIMIT 1)"
         " FROM users u JOIN departments d ON d.id = u.department_id LEFT JOIN departments p ON p.id = d.parent_id"
-        " ORDER BY u.name"
+        " ORDER BY u.name",
+        (_iso(_now() - PHONE_IDLE),),
     )
     out = []
     for r in rows:
@@ -370,6 +495,7 @@ def members_list() -> Response:
             "lead": LEAD.get(position_of(roles), ""), "hr": Role.HR_ADMIN in roles,
             "isNew": not r[6] and not r[11],  # 명단 동기화로 들어와 HR 이 아직 손대지 않은 사람
             "me": r[0] == g.actor.user_id,
+            "phone": r[12] or "",  # 등록된 휴대폰 (§13.1) — "갤럭시 · 마지막 사용 10-19"
         })
     return jsonify(members=out)
 
@@ -443,25 +569,41 @@ def members_active(user_id: int) -> Response:
     return jsonify(ok=True)
 
 
+@bp.post("/api/members/<int:user_id>/phone/revoke")
+def members_phone_revoke(user_id: int) -> Response:
+    """그 사람의 휴대폰 등록 해제 (HR) — 휴대폰을 잃어버렸을 때 (§13.1)."""
+    if (denied := _hr_only()) is not None:
+        return denied
+    conn = _db()
+    if _revoke_phone(conn, user_id, _now()):
+        _audit(conn, AuditEntry.by(g.actor, action="PHONE_REVOKED", entity_type="user", entity_id=user_id))
+    return jsonify(ok=True)
+
+
 def _session() -> Actor | None:
-    """쿠키 → 세션. 폐기·만료(마지막 사용 후 4시간 또는 발급 후 12시간)·비활성·포털 사용 꺼짐이면 None."""
+    """쿠키 → 세션. 폐기·만료·비활성·포털 사용 꺼짐이면 None.
+    PC: 마지막 사용 후 4시간 또는 발급 후 12시간. 휴대폰: 마지막 사용 후 30일(쓸 때마다 만료일·쿠키를 늘린다)."""
     raw = request.cookies.get(COOKIE)
     if not raw:
         return None
     conn, now, h = _db(), _now(), _sha(raw)
     row = conn.execute(
-        "SELECT s.user_id, s.last_seen_at, s.expires_at FROM sessions s JOIN users u ON u.id = s.user_id"
+        "SELECT s.user_id, s.last_seen_at, s.expires_at, s.kind FROM sessions s JOIN users u ON u.id = s.user_id"
         " WHERE s.token_hash = ? AND s.revoked_at IS NULL AND u.is_active = 1 AND u.portal_enabled = 1",
         (h,),
     ).fetchone()
     if row is None:
         return None
-    user_id, seen, expires = row
-    if _iso(now) >= expires or seen <= _iso(now - IDLE):
+    user_id, seen, expires, kind = row
+    phone = kind == "phone"
+    if _iso(now) >= expires or seen <= _iso(now - (PHONE_IDLE if phone else IDLE)):
         return None
     if seen < _iso(now - timedelta(minutes=1)):  # 1분에 한 번만 적는다 (요청마다 쓰지 않게)
-        conn.execute("UPDATE sessions SET last_seen_at = ? WHERE token_hash = ?", (_iso(now), h))
-    g.session_hash = h
+        conn.execute("UPDATE sessions SET last_seen_at = ?, expires_at = ? WHERE token_hash = ?",
+                     (_iso(now), _iso(now + PHONE_IDLE) if phone else expires, h))
+        if phone:
+            g.phone_cookie = raw  # 응답에서 쿠키 유지 기간도 30일로 다시 늘린다 (_no_store)
+    g.session_hash, g.session_kind = h, kind
     return actor_of(conn, user_id)
 
 
@@ -479,9 +621,12 @@ def _guard() -> Response | None:
 
 
 def _no_store(resp: Response) -> Response:
-    if request.path.startswith("/api/auth/") or request.path == "/api/me":
+    if request.path.startswith(("/api/auth/", "/api/phone")) or request.path == "/api/me":
         resp.headers["Referrer-Policy"] = "no-referrer"
         resp.headers["Cache-Control"] = "no-store"
+    if g.get("phone_cookie") and resp.status_code < 400:
+        resp.set_cookie(COOKIE, g.phone_cookie, max_age=int(PHONE_IDLE.total_seconds()), path="/",
+                        secure=True, httponly=True, samesite="Lax")
     return resp
 
 

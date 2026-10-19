@@ -145,6 +145,112 @@ def seed() -> None:
     c.close()
 
 
+IPHONE = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148 Safari/604.1"
+GALAXY = "Mozilla/5.0 (Linux; Android 14; SM-S921N) AppleWebKit/537.36 SamsungBrowser/26.0 Mobile Safari/537.36"
+
+
+def check_phone(hr, save) -> None:
+    """휴대폰 등록 (설계 13.1): QR 1회용 값(3분) → 휴대폰 세션(마지막 사용 후 30일) · 한 사람 한 대 · 해제."""
+    print("13.1 휴대폰 등록")
+    seen: list[str] = []
+    real = auth._qr_rows
+    auth._qr_rows = lambda text: (seen.append(text), real(text))[1]  # QR 에 담긴 주소를 엿본다 (화면은 그림만 받는다)
+
+    def iso(d: datetime) -> str:
+        return d.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    def sha(v: str) -> str:
+        return hashlib.sha256(v.encode()).hexdigest()
+
+    def new_code(client):
+        r = client.post("/api/phone/code", base_url=BASE, headers=ORIGIN)
+        return r, (seen[-1].split("#d=")[-1] if r.status_code == 200 else "")
+
+    def reg(client, code, ua=IPHONE, headers=ORIGIN, ip=None):
+        _seq[0] += 1
+        h = {**headers, "User-Agent": ua, "CF-Connecting-IP": ip or f"192.0.2.{_seq[0] % 250}"}
+        return client.post("/api/phone/register", base_url=BASE, headers=h, json={"code": code})
+
+    def me(client):
+        return client.get("/api/me", base_url=BASE)
+
+    pc = app.test_client()
+    login(pc, new_token("emp"))
+    r, code = new_code(pc)
+    rows = r.json.get("qr", "").split("|") if r.status_code == 200 else []
+    ok(r.status_code == 200 and r.json["seconds"] == 180 and len(rows) >= 21 and all(len(x) == len(rows) for x in rows)
+       and seen[-1] == f"http://localhost/#d={code}", "PC 에서 QR: 3분짜리 1회용 값, 주소는 # 뒤 (서버 기록에 안 남음)")
+    ok(r.headers.get("Cache-Control") == "no-store"
+       and q("SELECT COUNT(*) FROM phone_codes WHERE code_hash = ?", sha(code)) == [(1,)]
+       and not q("SELECT 1 FROM phone_codes WHERE code_hash = ?", code), "1회용 값은 해시만 저장, 응답은 저장 안 함")
+
+    phone = app.test_client()
+    ok(reg(phone, code, headers={}).status_code == 403, "Origin 없는 등록은 거부")
+    ok(reg(phone, code, ua="Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/141.0 Safari/537.36").status_code == 400
+       and q("SELECT used_at FROM phone_codes WHERE code_hash = ?", sha(code)) == [(None,)],
+       "PC 브라우저로는 등록 안 됨 (값은 남아 휴대폰이 쓸 수 있음)")
+    ok(reg(phone, "wrong").status_code == 410 and me(phone).status_code == 401, "틀린 값은 410, 로그인 안 됨")
+    r = reg(phone, code)
+    sc = r.headers.get("Set-Cookie", "")
+    ok(r.status_code == 200 and "Max-Age=2592000" in sc and all(f in sc for f in ("Secure", "HttpOnly", "SameSite=Lax")),
+       "QR 값으로 휴대폰 등록: 30일 쿠키 (Secure · HttpOnly · SameSite=Lax)")
+    ok(me(phone).json.get("kind") == "phone" and me(pc).json.get("kind") == "pc", "/api/me 가 세션 종류를 알려 줌 (휴대폰 · PC)")
+    ok(reg(app.test_client(), code).status_code == 410, "같은 QR 값은 한 번만")
+    got = pc.get("/api/phone", base_url=BASE).json
+    ok(got["phone"]["device"] == "아이폰" and got["this"] is False and phone.get("/api/phone", base_url=BASE).json["this"] is True,
+       "등록된 휴대폰 이름(아이폰) · 지금 기기가 휴대폰인지")
+    ok(new_code(phone)[0].status_code == 403, "휴대폰에서는 QR 을 띄울 수 없음 (PC 에서 등록)")
+
+    h, now = sha(cookie(phone)), datetime.now(timezone.utc)
+    x("UPDATE sessions SET last_seen_at = ? WHERE token_hash = ?", iso(now - timedelta(hours=5)), h)
+    ok(me(phone).status_code == 200, "휴대폰은 4시간 넘게 안 써도 그대로 (PC 규칙 아님)")
+    x("UPDATE sessions SET last_seen_at = ?, expires_at = ? WHERE token_hash = ?",
+      iso(now - timedelta(days=29)), iso(now + timedelta(days=1)), h)
+    r = me(phone)
+    left = q("SELECT (julianday(expires_at) - julianday('now')) FROM sessions WHERE token_hash = ?", h)[0][0]
+    ok(r.status_code == 200 and 29.9 < left <= 30.0 and "Max-Age=2592000" in r.headers.get("Set-Cookie", ""),
+       "쓸 때마다 30일로 연장 (만료일 · 쿠키 둘 다)")
+    x("UPDATE sessions SET last_seen_at = ? WHERE token_hash = ?", iso(now - timedelta(days=31)), h)
+    ok(me(phone).status_code == 401, "30일 동안 안 쓰면 끝")
+
+    galaxy, other = app.test_client(), app.test_client()
+    reg(galaxy, new_code(pc)[1], ua=GALAXY)
+    ok(me(galaxy).json.get("kind") == "phone" and pc.get("/api/phone", base_url=BASE).json["phone"]["device"] == "갤럭시",
+       "갤럭시 등록")
+    reg(other, new_code(pc)[1])
+    ok(me(galaxy).status_code == 401 and me(other).status_code == 200, "한 사람에 한 대 — 새로 등록하면 앞 휴대폰은 끊김")
+
+    _, a = new_code(pc)
+    _, b = new_code(pc)
+    ok(reg(app.test_client(), a).status_code == 410, "QR 을 새로 띄우면 앞의 값은 못 씀")
+    x("UPDATE phone_codes SET expires_at = '2000-01-01T00:00:00Z' WHERE code_hash = ?", sha(b))
+    ok(reg(app.test_client(), b).status_code == 410, "3분이 지난 값은 못 씀")
+
+    ok(any(m["id"] == 3 and m["phone"].startswith("아이폰 · 마지막 사용") for m in hr.get("/api/members", base_url=BASE).json["members"]),
+       "구성원 설정 명단에 등록된 휴대폰")
+    ok(pc.post("/api/members/3/phone/revoke", base_url=BASE, headers=ORIGIN).status_code == 403, "HR 이 아니면 남의 휴대폰을 못 끊음")
+    ok(hr.post("/api/members/3/phone/revoke", base_url=BASE, headers=ORIGIN).status_code == 200 and me(other).status_code == 401,
+       "HR 이 해제하면 그 휴대폰은 바로 끊김")
+
+    mine = app.test_client()
+    reg(mine, new_code(pc)[1])
+    ok(pc.post("/api/phone/revoke", base_url=BASE, headers=ORIGIN).status_code == 200 and me(mine).status_code == 401
+       and pc.get("/api/phone", base_url=BASE).json["phone"] is None and me(pc).status_code == 200,
+       "본인이 해제 — 휴대폰만 끊기고 PC 는 그대로")
+
+    late = app.test_client()
+    _, c = new_code(pc)
+    save(hr, {"3": {"use": False}})
+    ok(reg(late, c).status_code == 410, "포털 사용이 꺼진 사람의 값은 못 씀")
+    save(hr, {"3": {"use": True}})
+
+    codes = [reg(app.test_client(), "x", ip="203.0.113.99").status_code for _ in range(31)]
+    ok(codes[:30] == [410] * 30 and codes[30] == 429, "휴대폰 등록도 같은 접속자 주소 1분 30번까지")
+    acts = {r[0] for r in q("SELECT action FROM audit_logs")}
+    ok({"PHONE_REGISTERED", "PHONE_REVOKED"} <= acts, "감사로그 PHONE_REGISTERED · PHONE_REVOKED")
+    auth._qr_rows = real
+
+
 def main() -> int:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     seed()
@@ -374,6 +480,8 @@ def main() -> int:
     ok(active(999, False).status_code == 404, "명단에 없는 사람은 404")
     ok(leader.post("/api/members/3/active", base_url=BASE, headers=ORIGIN, json={"active": False}).status_code == 403
        and save(leader, {"3": {"use": False}}).status_code == 403, "로그인한 팀장이라도 HR 이 아니면 비활성화·저장 못 함")
+
+    check_phone(hr, save)
 
     acts = {r[0] for r in q("SELECT action FROM audit_logs")}
     ok({"LOGIN", "HR_BOOTSTRAP"} <= acts, "감사로그 LOGIN 이 남음")
