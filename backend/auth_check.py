@@ -341,6 +341,111 @@ def check_org(hr, save) -> None:
     ok("hire_date" not in person(emp, 3) and "hireDate" not in person(emp, 3), "조직도 명단에는 입사일이 없음")
 
 
+def check_news(hr) -> None:
+    """홈 이번 주 소식 (2026-10-19): 생일(월-일) · 생일 알림 · 새 식구·입사 기념 · 경사·조사."""
+    print("이번 주 소식 — 규칙 (날짜 고정)")
+    d = auth.date
+    t = d(2026, 10, 1)  # 목요일 → 이번 주 9/28(월)~10/4(일)
+
+    def kinds(people, today=t):
+        return [(i["kind"], i["id"]) for i in auth.news_items(people, today)]
+
+    ok(kinds([(1, "2026-09-01", None, 1), (2, "2026-08-31", None, 1), (3, "2026-10-01", None, 1), (4, "2026-10-02", None, 1)])
+       == [("welcome", 1), ("welcome", 3)], "새 식구 = 입사 후 30일 (앞날 입사는 아직)")
+    ok(kinds([(1, None, "09-28", 1), (2, None, "10-04", 1), (3, None, "09-27", 1), (4, None, "10-05", 1), (5, None, "10-01", 0)])
+       == [("birthday", 1), ("birthday", 2)], "생일 = 이번 주 월~일, 생일 알림을 끈 사람은 빠짐")
+    ok(kinds([(1, None, "02-29", 1)], d(2027, 2, 28)) == [("birthday", 1)] and kinds([(1, None, "02-28", 1)], d(2028, 2, 29)) == [("birthday", 1)],
+       "평년에는 2월 29일 생일을 2월 28일에")
+    ok(kinds([(1, None, "01-02", 1), (2, None, "12-29", 1)], d(2026, 12, 31)) == [("birthday", 2), ("birthday", 1)], "연말연초 주 · 날짜순")
+    ok(kinds([(1, "2021-10-20", None, 1), (2, "2022-10-01", None, 1), (3, "2021-09-20", None, 1), (4, "2016-10-05", None, 1), (5, "2025-10-30", None, 1)])
+       == [("anniversary", 1), ("anniversary", 4), ("anniversary", 5)], "입사 N주년 = 이번 달, 1·3·5·10년 이후 5년마다")
+    notes = [i["note"] for i in auth.news_items([(1, "2026-09-07", "03-05", 1), (2, "2021-10-20", None, 1)], d(2026, 10, 5))]
+    ok(notes == ["9월 7일 입사", "입사 5주년 · 10월 20일"] and auth.news_items([(1, None, "10-05", 1)], d(2026, 10, 5))[0]["note"] == "10월 5일 생일",
+       "보이는 글 (입사 · 생일 · 주년)")
+
+    print("이번 주 소식 — 저장 · 화면")
+    emp, lead = app.test_client(), app.test_client()
+    login(emp, new_token("emp"))
+    login(lead, new_token("lead"))
+    today = auth._today()
+
+    def news(client):
+        return client.get("/api/news", base_url=BASE)
+
+    def has(kind, uid, client=None):
+        return any(i["kind"] == kind and i["id"] == uid for i in news(client or emp).json["items"])
+
+    def contacts(rows):
+        return hr.post("/api/members/contacts", base_url=BASE, headers=ORIGIN, json={"rows": rows})
+
+    ok(app.test_client().get("/api/news", base_url=BASE).status_code == 401, "로그인 없이는 401")
+    md = today.strftime("%m-%d")
+    ok(contacts([{"id": 2, "birthday": md}, {"id": 4, "hire_date": (today - auth.timedelta(days=3)).isoformat()}]).status_code == 200
+       and q("SELECT birthday FROM users WHERE id = 2") == [(md,)], "생일 저장 (HR · 월-일)")
+    for bad in ("02-30", "13-01", "3-05", "1990-03-15", "0315"):
+        ok(contacts([{"id": 2, "birthday": bad}]).status_code == 400 and q("SELECT birthday FROM users WHERE id = 2") == [(md,)],
+           f"틀린 생일은 저장 안 함 ({bad})")
+    ok(emp.post("/api/members/contacts", base_url=BASE, headers=ORIGIN, json={"rows": [{"id": 2, "birthday": "01-01"}]}).status_code == 403,
+       "생일은 HR 만")
+    ok(has("birthday", 2) and has("welcome", 4), "이번 주 소식에 생일 · 새 식구")
+    items = news(emp).json["items"]
+    ok(all(set(i) <= {"kind", "id", "note", "event"} for i in items) and md not in str(news(emp).json),
+       "생일·입사일 원본은 보내지 않음 (보일 줄만)")
+    x("UPDATE users SET birthday = ? WHERE id = 5", md)
+    ok(not has("birthday", 5), "비활성인 사람은 안 나옴")
+    hr.post("/api/members/2/org", base_url=BASE, headers=ORIGIN, json={"hidden": True})
+    ok(not has("birthday", 2), "조직도에서 뺀 사람은 안 나옴")
+    hr.post("/api/members/2/org", base_url=BASE, headers=ORIGIN, json={"hidden": False})
+
+    me2 = next(m for m in lead.get("/api/org", base_url=BASE).json["members"] if m["id"] == 2)
+    other = next(m for m in emp.get("/api/org", base_url=BASE).json["members"] if m["id"] == 2)
+    ok(me2["birthday"] == md and me2["birthdayPublic"] is True and "birthday" not in other, "조직도: 생일은 본인 줄에만")
+    m2 = next(m for m in hr.get("/api/members", base_url=BASE).json["members"] if m["id"] == 2)
+    ok(m2["birthday"] == md and m2["birthdayPublic"] is True, "구성원 설정에 생일 · 생일 알림")
+
+    def privacy(client, body, path="/api/me/privacy", headers=ORIGIN):
+        return client.post(path, base_url=BASE, headers=headers, json=body)
+
+    ok(privacy(lead, {"birthday_public": False}).status_code == 200 and not has("birthday", 2)
+       and q("SELECT birthday_public, mobile_public FROM users WHERE id = 2") == [(0, 1)], "본인이 생일 알림을 끄면 빠짐 (휴대폰 공개는 그대로)")
+    for bad in ({"birthday_public": "no"}, {"is_hr": True}, {}, [True]):
+        ok(privacy(lead, bad).status_code == 400, f"공개 설정: 틀린 값 거부 ({bad})")
+    ok(privacy(lead, {"birthday_public": True}).status_code == 200 and has("birthday", 2), "다시 켜면 나옴")
+    ok(privacy(emp, {"birthday_public": False}, "/api/members/2/privacy").status_code == 403, "남의 생일 알림은 HR 만")
+    ok(privacy(hr, {"mobile_public": False}, "/api/members/2/privacy").status_code == 400, "HR 은 생일 알림만 대신 끔 (휴대폰 공개는 본인)")
+    ok(privacy(hr, {"birthday_public": False}, "/api/members/2/privacy", {}).status_code == 403, "포털 화면에서만 (Origin)")
+    ok(privacy(hr, {"birthday_public": False}, "/api/members/2/privacy").status_code == 200 and not has("birthday", 2)
+       and privacy(hr, {"birthday_public": False}, "/api/members/999/privacy").status_code == 404, "HR 이 대신 끔 · 없는 사람은 404")
+    privacy(hr, {"birthday_public": True}, "/api/members/2/privacy")
+
+    def post(client, body, headers=ORIGIN):
+        return client.post("/api/news/events", base_url=BASE, headers=headers, json=body)
+
+    good = {"user_id": 3, "kind": "joy", "label": " 결혼 ", "until": (today + auth.timedelta(days=7)).isoformat()}
+    ok(post(emp, good).status_code == 403 and post(hr, good, {}).status_code == 403, "경사·조사 올리기는 HR · 포털 화면에서만")
+    far, past = (today + auth.timedelta(days=400)).isoformat(), (today - auth.timedelta(days=1)).isoformat()
+    for bad, why in (({**good, "kind": "party"}, "종류"), ({**good, "label": "  "}, "빈 내용"), ({**good, "label": "가" * 31}, "너무 김"),
+                     ({**good, "until": past}, "지난 날"), ({**good, "until": far}, "1년 넘게"), ({**good, "until": "2026-02-30"}, "없는 날"),
+                     ({**good, "user_id": 999}, "없는 사람"), ({**good, "user_id": "3"}, "번호 모양"), ({**good, "user_id": 5}, "비활성"), ([good], "모양")):
+        ok(post(hr, bad).status_code == 400, f"경사·조사: 틀리면 거부 ({why})")
+    n0 = q("SELECT COUNT(*) FROM celeb_events")[0][0]
+    ok(n0 == 0, "틀린 요청은 하나도 저장 안 됨")
+    r = post(hr, good)
+    eid = r.json["id"]
+    ok(r.status_code == 200 and {"kind": "joy", "id": 3, "note": "결혼", "event": eid} in news(lead).json["items"], "올리면 모두에게 보임 (앞뒤 빈칸은 지움)")
+    audit = q("SELECT after_data FROM audit_logs WHERE action = 'NEWS_POSTED' ORDER BY id DESC LIMIT 1")[0][0]
+    ok("결혼" not in audit and '"kind": "joy"' in audit, "감사로그에는 내용을 남기지 않음 (종류 · 사람 · 종료일만)")
+    x("INSERT INTO celeb_events (user_id, kind, label, until_date, created_by, created_at) VALUES (3, 'condol', '지난소식', ?, 1, 'x')", past)
+    x("INSERT INTO celeb_events (user_id, kind, label, until_date, created_by, created_at) VALUES (3, 'condol', '오늘까지', ?, 1, 'x')", today.isoformat())
+    notes = [i["note"] for i in news(emp).json["items"] if i["kind"] == "condol"]
+    ok(notes == ["오늘까지"], "게시 종료일이 지나면 안 보임 (종료일 당일까지)")
+    rm = lambda c, i: c.post(f"/api/news/events/{i}/remove", base_url=BASE, headers=ORIGIN)  # noqa: E731
+    ok(rm(emp, eid).status_code == 403, "게시 내리기는 HR 만")
+    ok(rm(hr, eid).status_code == 200 and not has("joy", 3) and q("SELECT removed_at IS NOT NULL FROM celeb_events WHERE id = ?", eid) == [(1,)],
+       "게시 내리기 (지우지 않고 표시)")
+    ok(rm(hr, eid).status_code == 404 and rm(hr, 999).status_code == 404, "이미 내렸거나 없는 소식은 404")
+
+
 def main() -> int:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     seed()
@@ -573,6 +678,7 @@ def main() -> int:
 
     check_phone(hr, save)
     check_org(hr, save)
+    check_news(hr)
 
     acts = {r[0] for r in q("SELECT action FROM audit_logs")}
     ok({"LOGIN", "HR_BOOTSTRAP"} <= acts, "감사로그 LOGIN 이 남음")

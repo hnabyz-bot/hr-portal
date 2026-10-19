@@ -1675,7 +1675,7 @@ function homeContent(){
   const t = new Date(), [left, mineDone] = wsTodayCount();
   const [rDone, rAll] = rtDay(rtList(), kpiDay(0), kpiDay(0)), [dueToday, dueWeek] = homeDue();
   const short = { welcome:'새 식구', birthday:'생일', anniversary:'입사 기념', joy:'경사', condol:'조사' };
-  const news = CELEB.map(c=>[short[c.key], celebList(c.key, orgMembers, celebEvents, t).length]).filter(x=>x[1]);
+  const news = CELEB.map(c=>[short[c.key], celebItems(c.key).length]).filter(x=>x[1]);
   const tile = (cls, id, label, n, unit, sub)=>`<div class="hm-tile ${cls}" onclick="homeJump('${id}')"><span>${label}</span><b>${n}<small>${unit}</small></b><em>${sub}</em></div>`;
   return `<div class="hm">
     ${homeHero(t)}
@@ -2981,7 +2981,7 @@ const orgMembers = [
 let orgQuery = '';
 function orgIsHr(){ return kpiIsHr(); }
 /* 실제 로그인이면 조직도(부서별 조직도 · 구성원 검색 · 이름 창)는 서버 명단(GET /api/org)이다 — 2026-10-19 인사담당자 결정.
-   구조는 하이웍스 조직 그대로, 연락처·내선·메일은 HR 이 넣은 비상연락망 값이 먼저. 다른 메뉴(KPI·평가·홈 경조사 등)는 아직 시연 명단(orgMembers)을 쓴다. */
+   구조는 하이웍스 조직 그대로, 연락처·내선·메일은 HR 이 넣은 비상연락망 값이 먼저. 홈 이번 주 소식도 이 명단으로 사람을 찾는다(NEWS_LIVE). 다른 메뉴(KPI·평가 등)는 아직 시연 명단(orgMembers)을 쓴다. */
 const ORG_LIVE = { state:'', tree:[], people:[] };   // state: '' 아직 · loading · ok · err
 const ORG_ID = 100000;   // 실제 명단의 화면 번호 = DB 번호 + ORG_ID — 시연 명단(1부터)과 겹치지 않게 (경조사 배너는 시연 번호로 orgShow 를 부른다)
 const orgLive = ()=>AUTH.live && ORG_LIVE.state==='ok';
@@ -3004,10 +3004,11 @@ function orgGate(){   // 실제 로그인인데 명단이 아직이면 안내 (�
   if(!ORG_LIVE.state) orgLoad();
   return kpiNote(ORG_LIVE.state==='err' ? '조직도를 불러오지 못했습니다. 잠시 뒤 새로 고쳐 주세요.' : '조직도를 불러오는 중입니다…', ORG_LIVE.state==='err' ? 'danger' : 'info');
 }
-async function orgPrivacy(on, el){   // 내 휴대폰 공개 (본인)
-  const r = await fetch('/api/me/privacy', { method:'POST', headers:{ 'Content-Type':'application/json' }, body:JSON.stringify({ mobile_public:on }) });
+async function orgPrivacy(on, el, key='mobile_public'){   // 내 휴대폰 공개 · 생일 알림 (본인)
+  const r = await fetch('/api/me/privacy', { method:'POST', headers:{ 'Content-Type':'application/json' }, body:JSON.stringify({ [key]:on }) });
   if(!r.ok){ el.checked = !on; return; }
-  const me = ORG_LIVE.people.find(m=>m.me); if(me) me.mobilePublic = on;
+  const me = ORG_LIVE.people.find(m=>m.me); if(me) me[key==='mobile_public' ? 'mobilePublic' : 'birthdayPublic'] = on;
+  if(key==='birthday_public') NEWS_LIVE.state = '';   // 홈에 돌아가면 다시 불러온다
 }
 async function orgHide(id, hidden){   // HR: 조직도에서 빼기 · 다시 보이기 (DB 번호)
   const r = await fetch(`/api/members/${id}/org`, { method:'POST', headers:{ 'Content-Type':'application/json' }, body:JSON.stringify({ hidden }) });
@@ -3152,7 +3153,8 @@ function orgShow(id){
       ${hwMailLink(`${icon('mail')} 메일`, 'btn', m.userNo)}
     </div>
     <div class="list-sub" style="margin-top:10px;">${m.userNo ? '메일은 받는 사람이 채워진 하이웍스 메일 쓰기 화면이 새 창으로 열립니다.' : '메일은 하이웍스 메일 쓰기 화면이 새 창으로 열립니다 — 받는 사람 칸에 이름을 적고 자동완성 줄을 누르세요.'} 스마트폰에서는 전화·문자 앱이 바로 열리고, PC에서는 "복사"를 쓰세요.</div>
-    ${AUTH.live && m.me ? `<div class="org-priv"><b>내 정보 공개</b><div class="org-priv-row"><div>휴대폰 번호 공개<small>끄면 다른 직원에게 "본인 요청으로 비공개"로 보여요. 비상연락망을 관리하는 HR에게는 보여요.</small></div><label class="ms-sw"><input type="checkbox" aria-label="휴대폰 번호 공개" ${m.mobilePublic ? 'checked' : ''} onchange="orgPrivacy(this.checked, this)"><span></span></label></div></div>` : ''}
+    ${AUTH.live && m.me ? `<div class="org-priv"><b>내 정보 공개</b><div class="org-priv-row"><div>휴대폰 번호 공개<small>끄면 다른 직원에게 "본인 요청으로 비공개"로 보여요. 비상연락망을 관리하는 HR에게는 보여요.</small></div><label class="ms-sw"><input type="checkbox" aria-label="휴대폰 번호 공개" ${m.mobilePublic ? 'checked' : ''} onchange="orgPrivacy(this.checked, this)"><span></span></label></div>
+      <div class="org-priv-row"><div>생일 알림<small>켜 두면 생일이 있는 주에 홈 "이번 주 소식"에 이름이 나와요. ${m.birthday ? `등록된 생일: ${+m.birthday.slice(0,2)}월 ${+m.birthday.slice(3)}일 (연도는 저장하지 않아요)` : '아직 생일이 등록되지 않았어요 — HR이 넣어요.'}</small></div><label class="ms-sw"><input type="checkbox" aria-label="생일 알림" ${m.birthdayPublic ? 'checked' : ''} onchange="orgPrivacy(this.checked, this, 'birthday_public')"><span></span></label></div></div>` : ''}
     ${AUTH.live && orgIsHr() && !m.me ? `<div class="org-hrbox"><span><b>HR</b> · 조직도에서 빼도 DB에서 지워지지 않고, 내일 아침 명단을 다시 가져와도 빠진 채로 남아요. 다시 보이게 하려면 구성원 설정에서.</span><button type="button" class="btn sm" onclick="orgHide(${m.uid}, true)">조직도에서 빼기</button></div>` : ''}`);
 }
 function orgTeamOptions(div, selected){ return `<option value="">(본부 직속)</option>`+orgTeamsOf(div).map(t=>`<option ${t===selected?'selected':''}>${escapeHtml(t)}</option>`).join(''); }
@@ -4121,10 +4123,29 @@ function celebSelfCheck(){   // 브라우저 콘솔에서 celebSelfCheck() 실�
   return 'celebSelfCheck 통과';
 }
 
+/* 실제 로그인이면 이번 주 소식은 서버(GET /api/news)가 고른 줄이다 (2026-10-19 인사담당자 결정) — 생일·입사일 원본은 오지 않고,
+   이름·연락처는 조직도 명단(ORG_LIVE)에서 찾는다. 대상은 조직도에 보이는 전원, 생일 알림을 끈 사람은 빠진다. 경사·조사는 HR 이 서버에 올린다. */
+const NEWS_LIVE = { state:'', items:[] };   // state: '' 아직 · loading · ok · err
+async function newsLoad(){
+  NEWS_LIVE.state = 'loading';
+  try {
+    const r = await fetch('/api/news'); if(!r.ok) throw new Error(r.status);
+    NEWS_LIVE.items = (await r.json()).items; NEWS_LIVE.state = 'ok';
+  } catch(e){ NEWS_LIVE.state = 'err'; }
+  renderContent();
+}
+function celebItems(key){   // [{ m, note, ev }] — 시연은 celebList(브라우저 안 가상 명단)
+  if(!AUTH.live) return celebList(key, orgMembers, celebEvents, new Date());
+  if(!NEWS_LIVE.state) newsLoad();
+  if(!ORG_LIVE.state) orgLoad();
+  if(NEWS_LIVE.state!=='ok' || !orgLive()) return [];
+  return NEWS_LIVE.items.filter(x=>x.kind===key).map(x=>({ m:ORG_LIVE.people.find(p=>p.uid===x.id), note:x.note, ev:x.event ? { id:x.event } : null })).filter(x=>x.m);
+}
+
 /* ----- 화면 ----- */
 function celebBanners(){
-  const t = new Date(), hr = orgIsHr();
-  const items = CELEB.map(c=>({ c, n:celebList(c.key, orgMembers, celebEvents, t).length })).filter(x=>x.n);
+  const hr = orgIsHr();
+  const items = CELEB.map(c=>({ c, n:celebItems(c.key).length })).filter(x=>x.n);
   if(!items.length && !hr) return '';
   return `<section class="celeb card" id="hmNews" aria-label="이번 주 소식">
     <div class="celeb-head"><h3>이번 주 소식</h3>${hr ? '<button class="btn sm" onclick="celebEdit()">＋ 경조사 등록</button>' : ''}</div>
@@ -4133,15 +4154,15 @@ function celebBanners(){
   </section>`;
 }
 function celebShow(key){
-  const c = CELEB.find(x=>x.key===key), list = celebList(key, orgMembers, celebEvents, new Date()), hr = orgIsHr();
+  const c = CELEB.find(x=>x.key===key), list = celebItems(key), hr = orgIsHr();
   // 카카오톡 선물하기는 받는 사람을 주소로 지정할 수 없어 첫 화면만 연다(친구는 누른 사람이 고른다). 조사에는 넣지 않는다 — 인사담당자 결정
   const gift = key==='condol' ? '' : `<a class="btn sm celeb-gift" href="https://gift.kakao.com/home" target="_blank" rel="noopener noreferrer">${icon('gift')} 선물하기</a>`;
   const people = list.map(({m, note, ev})=>{
     const ct = orgVisibleContacts(m);
     return `<div class="celeb-person"><div class="celeb-av">${escapeHtml(m.name.slice(0,1))}</div><div>
       <div><span class="org-name" onclick="orgShow(${m.id})">${escapeHtml(m.name)}</span> ${escapeHtml(m.title)} <span class="list-sub" style="display:inline;">· ${escapeHtml(m.team || m.division)}</span></div>
-      <div class="list-sub">${escapeHtml(note)} · 내선 ${escapeHtml(ct.ext)} · ${escapeHtml(ct.email)}</div>
-      <div class="celeb-acts">${ct.mobile ? `<a class="btn sm" href="tel:${escapeHtml(ct.mobile)}">${icon('phone')} 전화</a>` : ''}${hwMailLink(`${icon('mail')} 메일`, 'btn sm')}${gift}
+      <div class="list-sub">${[note, ct.ext && '내선 '+ct.ext, ct.email].filter(Boolean).map(escapeHtml).join(' · ')}</div>
+      <div class="celeb-acts">${ct.mobile ? `<a class="btn sm" href="tel:${escapeHtml(ct.mobile)}">${icon('phone')} 전화</a>` : ''}${hwMailLink(`${icon('mail')} 메일`, 'btn sm', m.userNo)}${gift}
         ${hr && ev ? `<button class="btn sm" onclick="celebDelete(${ev.id})">게시 내리기</button>` : ''}</div>
     </div></div>`;
   }).join('');
@@ -4155,20 +4176,33 @@ function celebEdit(){
   orgModal(`<div class="card-title"><span>경조사 등록</span><button type="button" class="x-btn" onclick="orgCloseModal()" aria-label="닫기">${icon('x')}</button></div><div id="celebErr"></div>
     ${kpiNote('본인(또는 가족) 동의를 받은 경우에만 등록하세요. 게시 종료일이 지나면 배너에서 자동으로 내려갑니다.')}
     <div class="field-row"><div class="field"><label>종류</label><select id="celebF_type"><option value="joy">야호 경사 (결혼·출산 등)</option><option value="condol">토닥토닥 조사 (부고)</option></select></div>
-      <div class="field"><label>대상자</label><select id="celebF_member">${orgMembers.map(m=>`<option value="${m.id}">${escapeHtml(m.name)} ${escapeHtml(m.title)} · ${escapeHtml(m.team||m.division)}</option>`).join('')}</select></div></div>
+      <div class="field"><label>대상자</label><select id="celebF_member">${orgPeople().map(m=>`<option value="${m.id}">${escapeHtml(m.name)} ${escapeHtml(m.title)} · ${escapeHtml(m.team||m.division)}</option>`).join('')}</select></div></div>
     <div class="field-row"><div class="field"><label>내용</label><input id="celebF_label" placeholder="결혼"></div>
       <div class="field"><label>게시 종료일</label><input id="celebF_until" type="date" value="${until}"></div></div>
     <div style="display:flex; gap:8px;"><button class="btn primary" onclick="celebSave()">등록</button><button class="btn" onclick="orgCloseModal()">취소</button></div>`);
 }
-function celebSave(){
-  const v = k=>document.getElementById('celebF_'+k).value;
+async function celebSave(){
+  const v = k=>document.getElementById('celebF_'+k).value, err = t=>{ document.getElementById('celebErr').innerHTML = kpiNote(t, 'danger'); };
   const e = { id:celebSeq+1, type:v('type'), memberId:+v('member'), label:v('label').trim(), until:v('until') };
-  const errs = celebValidateEvent(e, orgMembers, new Date());
-  if(errs.length){ document.getElementById('celebErr').innerHTML = kpiNote(errs.map(escapeHtml).join('<br>'), 'danger'); return; }
+  const errs = celebValidateEvent(e, orgPeople(), new Date());
+  if(errs.length) return err(errs.map(escapeHtml).join('<br>'));
+  if(AUTH.live){   // 실제 로그인: 서버에 저장 → 모두에게 보임
+    const r = await fetch('/api/news/events', { method:'POST', headers:{ 'Content-Type':'application/json' },
+      body:JSON.stringify({ user_id:orgFind(e.memberId).uid, kind:e.type, label:e.label, until:e.until }) }), j = await r.json().catch(()=>({}));
+    if(!r.ok) return err(escapeHtml(j.error || '등록하지 못했습니다. 잠시 뒤 다시 해 주세요.'));
+    orgCloseModal(); kpiFlash('이번 주 소식에 올렸습니다. 게시 종료일이 지나면 저절로 내려갑니다.');
+    return newsLoad();
+  }
   celebSeq++; celebEvents.push(e); orgCloseModal(); renderContent();
 }
-function celebDelete(id){
+async function celebDelete(id){
   if(!orgIsHr() || !confirm('이 소식을 배너에서 내릴까요?')) return;
+  if(AUTH.live){
+    const r = await fetch(`/api/news/events/${id}/remove`, { method:'POST' });
+    orgCloseModal();
+    if(!r.ok) return kpiFlash('내리지 못했습니다. 잠시 뒤 다시 해 주세요.', 'danger');
+    return newsLoad();
+  }
   const i = celebEvents.findIndex(e=>e.id===id); if(i>=0) celebEvents.splice(i,1);
   orgCloseModal(); renderContent();
 }
@@ -6504,7 +6538,8 @@ function msContent(){
         <li>KPI 작성 칸은 그 사람의 평가가 시작된 뒤에는 바꿀 수 없습니다.</li>
         <li>위 여섯 칸은 저장을 눌러야 적용됩니다.</li>
         ${live ? `<li><b>포털 사용을 끄거나 비활성화하면</b> 그 사람의 로그인이 바로 끊깁니다. 퇴사자는 하이웍스 계정을 정지하기 전에 여기서 먼저 비활성화합니다(이름을 누른 창).</li>
-        <li>이름 · 소속 · 연락처는 하이웍스 명단에서 <b>하루 한 번</b> 가져옵니다. 직급 · 입사일 · 생일은 아직 시연 화면에서만 넣습니다 — 실제 저장은 다음 작업입니다.</li>`
+        <li>이름 · 소속 · 연락처는 하이웍스 명단에서 <b>하루 한 번</b> 가져옵니다. 직급 · 입사일 · 생일은 하이웍스에 없어 <b>"자료 넣기"</b>로 한꺼번에 넣거나 이름을 누른 창에서 한 사람씩 넣습니다. 생일은 <b>연도 없이 월·일만</b> 저장합니다.</li>
+        <li><b>생일 알림</b>은 처음엔 켜져 있고 본인이 내 이름 창에서 끕니다. 포털을 아직 못 쓰는 직원이 부탁하면 이름을 누른 창에서 대신 끕니다.</li>`
         : `<li><b>직급 · 입사일 · 생일</b>은 하이웍스 명단에 없습니다. "엑셀에서 붙여넣기"로 한꺼번에 넣거나, 이름 옆 "정보 입력"을 눌러 한 사람씩 적습니다(적는 즉시 반영). 생일은 생년월일을 붙여넣어도 <b>연도 없이 월·일만</b> 남깁니다. 이름 · 소속은 조직도에서 고칩니다.</li>`}
       </ol>
       ${live ? '' : `<div class="placeholder-note">지금은 시연 모드입니다 — <b>직책</b>은 조직도에, <b>KPI 작성</b>은 평가 진행 탭의 평가 대상 명단에 바로 이어집니다. 포털 사용 · HR 권한 · 평가 대상 · 연봉계약서는 값만 담아 두고, 로그인이 붙으면 이 설정대로 화면이 달라집니다. 새로 고치면 처음 상태로 돌아갑니다.</div>`}</div>
@@ -6684,39 +6719,56 @@ function msDataAsk(){   // 실제 로그인: 구성원 설정에 넣는 자료 �
   const opt = (fn, title, sub)=>`<button type="button" class="ms-data" onclick="orgCloseModal(true); ${fn}"><b>${title}</b><span>${sub}</span></button>`;
   orgModal(`<div class="card-title"><span>자료 넣기</span><button type="button" class="x-btn" onclick="orgCloseModal()" aria-label="닫기">${icon('x')}</button></div>
     ${opt("rzPick('contact')", '비상연락망 파일', '엑셀 파일을 고르면 직급 · 내선 · 연락처 · 메일을 넣고, 직책 초안도 채울 수 있습니다')}
-    ${opt('msPasteAsk(false)', '입사일 붙여넣기', '엑셀에서 이름 · 입사일(직급은 있어도 됨) 칸을 복사해 붙여넣습니다. 홈 배너의 재직 기간에 씁니다')}`);
+    ${opt('msPasteAsk(false)', '입사일 붙여넣기', '엑셀에서 이름 · 입사일(직급은 있어도 됨) 칸을 복사해 붙여넣습니다. 홈 배너의 재직 기간 · 이번 주 소식(새 식구 · 입사 기념)에 씁니다')}
+    ${opt('msPasteAsk(true)', '생일 붙여넣기', '엑셀에서 이름 · 생년월일 칸을 복사해 붙여넣습니다. 연도는 저장하지 않고 월·일만 남겨 홈 "이번 주 소식"의 생일 축하에 씁니다')}`);
 }
 async function msHireSave(id){   // 실제 로그인: 입사일 한 사람씩 (HR)
   const v = (document.getElementById('msHire') || {}).value; if(!v) return;
   const r = await fetch('/api/members/contacts', { method:'POST', headers:{ 'Content-Type':'application/json' }, body:JSON.stringify({ rows:[{ id, hire_date:v }] }) }), j = await r.json().catch(()=>({}));
   orgCloseModal();
   if(!r.ok) return kpiFlash(escapeHtml(j.error || '저장하지 못했습니다.'), 'danger');
-  MS_LIVE.state = '';
+  MS_LIVE.state = ''; NEWS_LIVE.state = '';
   kpiFlash('입사일을 저장했습니다.');
+}
+async function msBdaySave(id){   // 실제 로그인: 생일 한 사람씩 (HR) — 생년월일을 적어도 월-일만 보낸다
+  const raw = ((document.getElementById('msBday') || {}).value || '').trim(), md = msBirthMd(raw); if(!raw) return;
+  if(!md) return kpiFlash('생일을 읽지 못했습니다. 03-15 처럼 적어 주세요.', 'danger');
+  const r = await fetch('/api/members/contacts', { method:'POST', headers:{ 'Content-Type':'application/json' }, body:JSON.stringify({ rows:[{ id, birthday:md }] }) }), j = await r.json().catch(()=>({}));
+  orgCloseModal();
+  if(!r.ok) return kpiFlash(escapeHtml(j.error || '저장하지 못했습니다.'), 'danger');
+  MS_LIVE.state = ''; NEWS_LIVE.state = ''; ORG_LIVE.state = '';
+  kpiFlash(`생일을 ${+md.slice(0,2)}월 ${+md.slice(3)}일로 저장했습니다.`);
+}
+async function msBdayPublic(id, on, el){   // 실제 로그인: 포털을 아직 못 쓰는 직원이 부탁하면 HR 이 생일 알림을 대신 끈다
+  const r = await fetch(`/api/members/${id}/privacy`, { method:'POST', headers:{ 'Content-Type':'application/json' }, body:JSON.stringify({ birthday_public:on }) });
+  if(!r.ok){ el.checked = !on; return kpiFlash('바꾸지 못했습니다. 잠시 뒤 다시 해 주세요.', 'danger'); }
+  const m = MS_LIVE.list.find(o=>o.id===id); if(m) m.birthdayPublic = on;
+  el.parentElement.nextElementSibling.textContent = '생일 알림 ' + (on ? '켜짐' : '꺼짐 — 이번 주 소식에 안 나옵니다');
+  NEWS_LIVE.state = '';
 }
 let msPasteBirth = false;   // 붙여넣기 창에서 고른 종류: false 직급·입사일 / true 생일
 function msPasteAsk(birth){   // 종류를 바꾸면 창을 다시 그린다(적던 글은 지워진다)
   msPasteBirth = !!birth;
   const kind = (b, l)=>`<button type="button" class="ms-chip ${msPasteBirth===b?'on':''}" aria-pressed="${msPasteBirth===b}" onclick="msPasteAsk(${b})">${l}</button>`;
   orgModal(`<div class="card-title"><span>엑셀에서 붙여넣기</span><button type="button" class="x-btn" onclick="orgCloseModal()" aria-label="닫기">${icon('x')}</button></div>
-    <div class="ms-bar" style="margin-bottom:10px;">${kind(false, '직급 · 입사일')}${AUTH.live ? '' : kind(true, '생일')}</div>
+    <div class="ms-bar" style="margin-bottom:10px;">${kind(false, '직급 · 입사일')}${kind(true, '생일')}</div>
     <div class="list-sub" style="margin:0 0 10px; line-height:1.7;">${birth ? '엑셀에서 <b>이름 · 생년월일</b> 두 칸을 골라 복사한 뒤 아래에 붙여넣으세요. 제목 줄은 있어도 됩니다. <b>연도는 저장하지 않고 월·일만</b> 남깁니다 — 홈 "이번 주 소식"의 생일 축하에 씁니다.' : '엑셀에서 <b>이름 · 직급 · 입사일</b> 세 칸을 골라 복사한 뒤 아래에 붙여넣으세요. 제목 줄은 있어도 됩니다. 빈 칸은 지금 값을 그대로 둡니다.'}</div>
     <textarea id="msPaste" rows="8" aria-label="${birth ? '이름, 생년월일' : '이름, 직급, 입사일'}" placeholder="${birth ? '신입사&#9;1998-03-15&#10;주야간&#9;950702' : '신입사&#9;사원&#9;2026-10-05&#10;주야간&#9;사원&#9;2026.10.12'}" style="width:100%; border:1px solid var(--border); border-radius:var(--radius-sm); padding:9px 11px; font:inherit; font-size:var(--fs-sm); resize:vertical;"></textarea>
-    <div class="list-sub" style="margin:6px 0 12px;">이름이 명단과 똑같아야 합니다. 같은 이름이 여러 명이면 건너뛰니 그분들은 ${AUTH.live ? '이름을 누른 창에서' : '"정보 입력"으로'} 한 사람씩 적어 주세요.${AUTH.live ? ' <b>이름 ⇥ 입사일</b> 두 칸만 붙여넣어도 됩니다.' : ''}</div>
+    <div class="list-sub" style="margin:6px 0 12px;">이름이 명단과 똑같아야 합니다. 같은 이름이 여러 명이면 건너뛰니 그분들은 ${AUTH.live ? '이름을 누른 창에서' : '"정보 입력"으로'} 한 사람씩 적어 주세요.${AUTH.live && !birth ? ' <b>이름 ⇥ 입사일</b> 두 칸만 붙여넣어도 됩니다.' : ''}</div>
     <div style="display:flex; gap:8px; justify-content:flex-end;"><button type="button" class="btn" onclick="orgCloseModal()">취소</button><button type="button" class="btn coral" onclick="msPasteDo()">반영</button></div>`);
 }
 async function msPasteDo(){
   const live = AUTH.live, people = live ? MS_LIVE.list.filter(m=>m.active!==false) : orgMembers;
   const r = msParsePaste(document.getElementById('msPaste').value, people, msPasteBirth), list = a=>escapeHtml([...new Set(a)].join(', '));
   const more = [r.miss.length && `명단에 없는 이름: ${list(r.miss)}`, r.dup.length && `같은 이름이 여러 명이라 건너뜀: ${list(r.dup)}`, r.bad.length && `날짜를 읽지 못함: ${list(r.bad)}`].filter(Boolean);
-  if(live){   // 실제 로그인: 서버에 저장 (직급·입사일)
-    const rows = r.rows.map(x=>({ id:x.id, ...(x.title ? { title:x.title } : {}), ...(x.hireDate ? { hire_date:x.hireDate } : {}) }));
+  if(live){   // 실제 로그인: 서버에 저장 (직급·입사일 또는 생일)
+    const rows = r.rows.map(x=>({ id:x.id, ...(x.title ? { title:x.title } : {}), ...(x.hireDate ? { hire_date:x.hireDate } : {}), ...(x.birthday ? { birthday:x.birthday } : {}) }));
     orgCloseModal();
     if(!rows.length) return kpiFlash(`넣을 내용이 없습니다.${more.length ? ' ' + more.join(' / ') : ''}`, 'warning');
     const res = await fetch('/api/members/contacts', { method:'POST', headers:{ 'Content-Type':'application/json' }, body:JSON.stringify({ rows }) }), j = await res.json().catch(()=>({}));
     if(!res.ok) return kpiFlash(escapeHtml(j.error || '저장하지 못했습니다.'), 'danger');
-    MS_LIVE.state = ''; ORG_LIVE.state = '';
-    return kpiFlash(`${j.saved}명의 직급·입사일을 넣었습니다. 홈 배너의 재직 기간에 바로 보입니다.${more.length ? ' ' + more.join(' / ') : ''}`, more.length ? 'warning' : 'success');
+    MS_LIVE.state = ''; ORG_LIVE.state = ''; NEWS_LIVE.state = '';
+    return kpiFlash(`${j.saved}명의 ${msPasteBirth ? '생일을 넣었습니다. 생일이 있는 주에 홈 "이번 주 소식"에 나옵니다.' : '직급·입사일을 넣었습니다. 홈 배너의 재직 기간에 바로 보입니다.'}${more.length ? ' ' + more.join(' / ') : ''}`, more.length ? 'warning' : 'success');
   }
   const n = msApplyPaste(orgMembers, r.rows);
   orgCloseModal(); kpiFlash(`${n}명의 ${msPasteBirth ? '생일' : '직급·입사일'}을 반영했습니다.${more.length ? ' ' + more.join(' / ') : ''}`, more.length ? 'warning' : 'success');
@@ -6732,7 +6784,9 @@ function msSee(id){
       : m.use ? `<ul class="ms-see">${msSeeList(m).map(([a, b])=>`<li class="${b?'':'no'}"><b>${a}</b><span>${b || '보이는 것이 없음'}</span></li>`).join('')}</ul>`
       : kpiNote('포털 사용이 꺼져 있어 <b>들어올 수 없습니다.</b> 하이웍스에서 메뉴를 누르면 "인사포털은 준비 중입니다" 화면이 나옵니다.')}
     ${AUTH.live && m.phone ? `<div style="display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:10px;"><span class="list-sub" style="margin:0;">등록된 휴대폰: ${escapeHtml(m.phone)}</span><button type="button" class="btn sm" onclick="msPhoneRevoke(${id})">휴대폰 해제</button></div>` : ''}
-    ${AUTH.live ? `<div class="ms-hire"><label for="msHire" class="list-sub" style="margin:0;">입사일</label><input type="date" id="msHire" value="${escapeHtml(m.hireDate || '')}"><button type="button" class="btn sm" onclick="msHireSave(${id})">저장</button><span class="list-sub" style="margin:0;">${m.hireDate ? '' : '아직 없음 — 홈 배너의 재직 기간이 보이지 않습니다'}</span></div>` : ''}
+    ${AUTH.live ? `<div class="ms-hire"><label for="msHire" class="list-sub" style="margin:0;">입사일</label><input type="date" id="msHire" value="${escapeHtml(m.hireDate || '')}"><button type="button" class="btn sm" onclick="msHireSave(${id})">저장</button><span class="list-sub" style="margin:0;">${m.hireDate ? '' : '아직 없음 — 홈 배너의 재직 기간이 보이지 않습니다'}</span></div>
+      <div class="ms-hire"><label for="msBday" class="list-sub" style="margin:0;">생일</label><input id="msBday" value="${escapeHtml(m.birthday || '')}" placeholder="03-15" style="width:92px;" aria-label="생일 (월-일)"><button type="button" class="btn sm" onclick="msBdaySave(${id})">저장</button>
+        <label class="ms-sw" style="margin-left:6px;"><input type="checkbox" aria-label="생일 알림" ${m.birthdayPublic ? 'checked' : ''} onchange="msBdayPublic(${id}, this.checked, this)"><span></span></label><span class="list-sub" style="margin:0;">생일 알림 ${m.birthdayPublic ? '켜짐' : '꺼짐 — 이번 주 소식에 안 나옵니다'}</span></div>` : ''}
     ${AUTH.live ? `<div style="display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:10px;"><span class="list-sub" style="margin:0;">조직도: ${m.orgHidden ? '<b>뺌</b> — 조직도에 보이지 않습니다' : '보임'}${m.title ? ' · 직급 '+escapeHtml(m.title) : ''}</span><button type="button" class="btn sm" onclick="orgHide(${id}, ${!m.orgHidden})">${m.orgHidden ? '조직도에 다시 보이기' : '조직도에서 빼기'}</button></div>` : ''}
     ${AUTH.live ? `<div style="display:flex; align-items:center; justify-content:space-between; gap:10px;"><span class="list-sub" style="margin:0;">${m.active===false ? '비활성 — 포털에 들어올 수 없습니다' : '퇴사자는 하이웍스 계정을 정지하기 전에 먼저 비활성화합니다'}</span>${m.me ? '' : `<button type="button" class="btn sm" onclick="msActiveAsk(${id}, ${m.active===false})">${m.active===false ? '다시 켜기' : '비활성화'}</button>`}</div>`
       : `<div style="display:flex; align-items:center; justify-content:space-between; gap:10px;"><span class="list-sub" style="margin:0;">직급 ${escapeHtml(m.title.trim() || '없음')} · 입사일 ${m.hireDate || '없음'}</span><button type="button" class="btn sm" onclick="orgEdit(${id})">직급·입사일 수정</button></div>`}`);

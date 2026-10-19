@@ -85,6 +85,7 @@ def apply_schema(path: str) -> sqlite3.Connection | None:
         "sso_used_tokens",
         "sso_rate_hits",
         "phone_codes",
+        "celeb_events",
     }
     missing = expected - tables
     _report(not missing, f"테이블 {len(expected)}개 생성", f"누락: {sorted(missing)}")
@@ -543,6 +544,26 @@ def check_login_tables(conn: sqlite3.Connection) -> None:
     for c in ("mobile_public", "org_hidden"):
         ok, _ = _rejects(conn, f"UPDATE users SET {c} = 2 WHERE id = {user}")
         _report(ok, f"{c} 는 0·1 만")
+
+    print("18. 이번 주 소식 (006)")
+    row = conn.execute(f"SELECT birthday, birthday_public FROM users WHERE id = {user}").fetchone()
+    _report(row == (None, 1), "처음엔 생일 없음 · 생일 알림 켜짐", f"실제 {row}")
+    conn.execute(f"UPDATE users SET birthday = '02-29' WHERE id = {user}")
+    _report(True, "생일 02-29 저장 (월-일)")
+    for bad in ("02-30", "13-01", "3-05", "1990-03-15"):
+        ok, _ = _rejects(conn, f"UPDATE users SET birthday = '{bad}' WHERE id = {user}")
+        _report(ok, f"생일 '{bad}' 거부 (월-일만)")
+    ok, _ = _rejects(conn, f"UPDATE users SET birthday_public = 2 WHERE id = {user}")
+    _report(ok, "birthday_public 는 0·1 만")
+    ev = "INSERT INTO celeb_events (user_id, kind, label, until_date, created_by, created_at) VALUES ({u}, ?, ?, ?, {u}, '2027-03-02T09:00:00Z')"
+    conn.execute(ev.format(u=user), ("joy", "결혼", "2027-03-09"))
+    _report(True, "경사 한 건 저장")
+    for args, why in ((("party", "결혼", "2027-03-09"), "종류"), (("joy", " ", "2027-03-09"), "빈 내용"), (("joy", "가" * 31, "2027-03-09"), "30자 넘음"),
+                      (("joy", "결혼", "2027-02-30"), "없는 날"), (("joy", "결혼", "2027-3-9"), "날짜 모양")):
+        ok, _ = _rejects(conn, ev.format(u=user), args)
+        _report(ok, f"경사·조사 {why} 거부")
+    ok, _ = _rejects(conn, ev.format(u=9999), ("joy", "결혼", "2027-03-09"))
+    _report(ok, "없는 직원의 소식 거부")
 
 
 def main() -> int:
