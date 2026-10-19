@@ -6,6 +6,9 @@ app.py 가 register(app) 로 붙인다.
   GET  /api/auth/message?m=       로그인이 안 됐을 때의 안내. 주소창에서 token 을 지우려고 여기로 보낸다
   POST /api/auth/logout           포털 세션만 끊는다 (하이웍스는 그대로)
   GET  /api/me                    지금 누구인가 (화면용)
+  GET  /api/members               구성원 설정 명단 (HR) — 5단계
+  POST /api/members               사람별 설정 여섯 칸 저장 (HR, 규칙은 domain/members.validate_members)
+  POST /api/members/<id>/active   비활성화 · 다시 켜기 (HR)
   그 밖의 /api/* 전부             세션 검사. 세션 없이 열린 곳은 /api/health 와 위의 두 곳뿐 (§3)
 
 서버 설정 (.env → docker-compose.yml):
@@ -31,9 +34,20 @@ import urllib.request
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlparse
 
+from dataclasses import replace
+
 from flask import Blueprint, Flask, Response, abort, g, jsonify, redirect, request
 
-from hr_eval.domain.members import MSG_DENIED, MSG_NOT_READY, Member, SsoOutcome, SsoToken, resolve_sso_user
+from hr_eval.domain.errors import ValidationError
+from hr_eval.domain.members import (
+    MSG_DENIED,
+    MSG_NOT_READY,
+    Member,
+    SsoOutcome,
+    SsoToken,
+    resolve_sso_user,
+    validate_members,
+)
 from hr_eval.domain.models import Actor, AuditEntry, Role, position_of
 from hr_eval.roster_sync import NoRedirect
 from hr_eval.sql.db import connect
@@ -270,11 +284,160 @@ def logout() -> Response:
 @bp.get("/api/me")
 def me() -> Response:
     a: Actor = g.actor
-    name, dept = _db().execute(
-        "SELECT u.name, d.name FROM users u JOIN departments d ON d.id = u.department_id WHERE u.id = ?", (a.user_id,)
+    name, dept, writes_kpi = _db().execute(
+        "SELECT u.name, d.name, u.writes_kpi FROM users u JOIN departments d ON d.id = u.department_id WHERE u.id = ?",
+        (a.user_id,),
     ).fetchone()
     return jsonify(user_id=a.user_id, name=name, department=dept,
-                   position=a.position.value if a.position else None, is_hr=a.is_hr)
+                   position=a.position.value if a.position else None, is_hr=a.is_hr, writes_kpi=bool(writes_kpi))
+
+
+# ---------------- 구성원 설정 (HR) — 칸 이름은 화면(public/index.html 의 MS_FIELDS)과 같다 ----------------
+LEAD = {Role.TEAM_LEADER: "TEAM", Role.DIVISION_HEAD: "DIVISION", Role.CEO: "CEO"}
+FIELD = {"use": "portal_enabled", "hr": "is_hr", "kpi": "writes_kpi", "ev": "in_evaluation", "ct": "has_contract"}
+AUDIT_KEYS = ("portal_enabled", "position", "is_hr", "writes_kpi", "in_evaluation", "has_contract", "is_active")
+
+
+def _hr_only() -> tuple[Response, int] | None:
+    return None if g.actor.is_hr else (jsonify(error="HR만 할 수 있습니다."), 403)
+
+
+def _fix(m: Member) -> Member:
+    """대표이사는 KPI·평가·계약서가 없고, 본부장은 평가·계약서가 없다 — 화면(msFix)과 같은 규칙 (§6)."""
+    if m.position is Role.CEO:
+        return replace(m, writes_kpi=False, in_evaluation=False, has_contract=False)
+    if m.position is Role.DIVISION_HEAD:
+        return replace(m, in_evaluation=False, has_contract=False)
+    return m
+
+
+def _audit_val(m: Member, k: str) -> object:
+    v = getattr(m, k)
+    return (v.value if v else None) if k == "position" else v
+
+
+def _save_members(conn: sqlite3.Connection, before: list[Member], after: list[Member], action: str) -> int:
+    """검사를 통과한 명단을 저장한다. 바뀐 사람마다 감사로그, 들어올 수 없게 된 사람은 세션을 끊는다."""
+    validate_members(after, before=before)  # 직책 자리 · 본부장/대표이사 잠금 · 마지막 HR 보호 → ValidationError
+    now, was, n = _iso(_now()), {m.id: m for m in before}, 0
+    for m in after:
+        b = was[m.id]
+        if m == b:
+            continue
+        n += 1
+        conn.execute(
+            "UPDATE users SET portal_enabled = ?, writes_kpi = ?, in_evaluation = ?, has_contract = ?, is_active = ?,"
+            " deactivated_at = CASE WHEN ? = 1 THEN NULL ELSE COALESCE(deactivated_at, ?) END WHERE id = ?",
+            (int(m.portal_enabled), int(m.writes_kpi), int(m.in_evaluation), int(m.has_contract), int(m.is_active),
+             int(m.is_active), now, m.id),
+        )
+        for r in b.roles() - m.roles():
+            conn.execute("DELETE FROM user_roles WHERE user_id = ? AND role = ?", (m.id, r.value))
+        for r in m.roles() - b.roles():
+            conn.execute("INSERT INTO user_roles (user_id, role, granted_by) VALUES (?, ?, ?)",
+                         (m.id, r.value, g.actor.user_id))
+        if not (m.portal_enabled and m.is_active):  # 들어올 수 없게 되면 지금 로그인도 끊는다 (§4)
+            conn.execute("UPDATE sessions SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL", (now, m.id))
+        diff = [k for k in AUDIT_KEYS if _audit_val(b, k) != _audit_val(m, k)]
+        _audit(conn, AuditEntry.by(g.actor, action=action, entity_type="user", entity_id=m.id,
+                                   before_data={k: _audit_val(b, k) for k in diff},
+                                   after_data={k: _audit_val(m, k) for k in diff}))
+    return n
+
+
+@bp.get("/api/members")
+def members_list() -> Response:
+    if (denied := _hr_only()) is not None:
+        return denied
+    rows = _db().execute(
+        "SELECT u.id, u.name, d.name, d.level, p.name, u.is_active, u.portal_enabled, u.writes_kpi, u.in_evaluation,"
+        " u.has_contract, (SELECT group_concat(role) FROM user_roles r WHERE r.user_id = u.id),"
+        " EXISTS (SELECT 1 FROM audit_logs a WHERE a.entity_type = 'user' AND a.entity_id = u.id"
+        "         AND a.action IN ('MEMBER_UPDATED', 'MEMBER_ACTIVE'))"
+        " FROM users u JOIN departments d ON d.id = u.department_id LEFT JOIN departments p ON p.id = d.parent_id"
+        " ORDER BY u.name"
+    )
+    out = []
+    for r in rows:
+        roles = [Role(x) for x in (r[10] or "").split(",") if x]
+        team = r[3] == "TEAM"
+        out.append({
+            "id": r[0], "name": r[1], "division": r[4] if team else r[2], "team": r[2] if team else "",
+            "active": bool(r[5]), "use": bool(r[6]), "kpi": bool(r[7]), "ev": bool(r[8]), "ct": bool(r[9]),
+            "lead": LEAD.get(position_of(roles), ""), "hr": Role.HR_ADMIN in roles,
+            "isNew": not r[6] and not r[11],  # 명단 동기화로 들어와 HR 이 아직 손대지 않은 사람
+            "me": r[0] == g.actor.user_id,
+        })
+    return jsonify(members=out)
+
+
+@bp.post("/api/members")
+def members_save() -> Response:
+    """{"changes": {"<id>": {"use"|"hr"|"kpi"|"ev"|"ct": bool, "lead": ""|"TEAM"|"DIVISION"|"CEO"}}} — 한 트랜잭션."""
+    if (denied := _hr_only()) is not None:
+        return denied
+    changes = (request.get_json(silent=True) or {}).get("changes")
+    if not isinstance(changes, dict) or not changes:
+        return jsonify(error="바꾼 내용이 없습니다."), 400
+    pos_of = {v: k for k, v in LEAD.items()}
+    conn = _db()
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        before = _members(conn)
+        if not {str(m.id) for m in before} >= set(changes):
+            raise ValueError("명단에 없는 사람")
+        after = []
+        for m in before:
+            c = changes.get(str(m.id)) or {}
+            if not isinstance(c, dict) or any(k not in (*FIELD, "lead") for k in c):
+                raise ValueError("알 수 없는 칸")
+            if any(not isinstance(v, bool) for k, v in c.items() if k in FIELD):
+                raise ValueError("켜짐·꺼짐이 아님")
+            upd = {FIELD[k]: v for k, v in c.items() if k in FIELD}
+            if "lead" in c:
+                if c["lead"] not in ("", *pos_of):
+                    raise ValueError("알 수 없는 직책")
+                upd["position"] = pos_of.get(c["lead"])
+            after.append(_fix(replace(m, **upd)) if upd else m)
+        n = _save_members(conn, before, after, "MEMBER_UPDATED")
+        conn.execute("COMMIT")
+    except ValidationError as err:
+        conn.execute("ROLLBACK")
+        return jsonify(error="저장하지 못했습니다.", issues=[i.message for i in err.errors]), 400
+    except ValueError:
+        conn.execute("ROLLBACK")
+        return jsonify(error="바꾼 내용의 모양이 올바르지 않습니다."), 400
+    except BaseException:
+        conn.execute("ROLLBACK")
+        raise
+    return jsonify(saved=n)
+
+
+@bp.post("/api/members/<int:user_id>/active")
+def members_active(user_id: int) -> Response:
+    """{"active": false} 비활성화(그 사람의 로그인도 끊김) / {"active": true} 다시 켜기. 마지막 HR 은 막는다."""
+    if (denied := _hr_only()) is not None:
+        return denied
+    on = (request.get_json(silent=True) or {}).get("active")
+    if not isinstance(on, bool):
+        return jsonify(error="active 는 true/false 입니다."), 400
+    conn = _db()
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        before = _members(conn)
+        if user_id not in {m.id for m in before}:
+            conn.execute("ROLLBACK")
+            return jsonify(error="명단에 없는 사람입니다."), 404
+        after = [replace(m, is_active=on) if m.id == user_id else m for m in before]
+        _save_members(conn, before, after, "MEMBER_ACTIVE")
+        conn.execute("COMMIT")
+    except ValidationError as err:
+        conn.execute("ROLLBACK")
+        return jsonify(error="바꾸지 못했습니다.", issues=[i.message for i in err.errors]), 400
+    except BaseException:
+        conn.execute("ROLLBACK")
+        raise
+    return jsonify(ok=True)
 
 
 def _session() -> Actor | None:
