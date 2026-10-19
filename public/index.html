@@ -780,8 +780,9 @@
   .tr-again:hover, .tr-help:hover{ background:var(--accent-soft); color:var(--accent); border-color:var(--sky); }
   .tr-again svg, .tr-help svg{ width:15px; height:15px; flex-shrink:0; }
   /* ---------- ORG ---------- */
-  .org-chart{ text-align:center; font-size:var(--fs-sm); line-height:1; }
-  .org-grid{ display:grid; grid-template-columns:repeat(var(--org-cols,6),minmax(0,1fr)); gap:8px; }
+  .org-chart{ text-align:center; font-size:var(--fs-sm); line-height:1; overflow-x:auto; }
+  /* 본부가 몇 개든 한 줄 (칸 수는 orgChart 가 --org-cols 로 넣는다). 칸이 너무 좁아지면 줄을 바꾸지 않고 옆으로 넘긴다 */
+  .org-grid{ display:grid; grid-template-columns:repeat(var(--org-cols,6),minmax(0,1fr)); gap:8px; min-width:calc(var(--org-cols,6) * 96px); }
   .org-col{ display:flex; flex-direction:column; align-items:center; min-width:0; }
   .org-bx{ width:100%; display:flex; align-items:center; justify-content:center; gap:5px; white-space:nowrap; overflow:hidden; padding:0 6px; border-radius:var(--radius-sm); }
   .org-ceo{ width:auto; height:38px; padding:0 28px; background:var(--bg-warning); color:var(--warning); font-weight:700; }
@@ -1206,7 +1207,7 @@
     .field input, .field select{ min-height:44px; }            /* 입력칸과 옆 단추 높이 맞춤 (손가락 크기) */
     .wh-step b{ white-space:nowrap; font-size:var(--fs-md); }  /* 금액은 한 줄 — 가린 상태의 ● 뒤 '원'이 혼자 내려가지 않게 */
     .org-list th:nth-child(5), .org-list td:nth-child(5){ display:none; }   /* 구성원 목록: 메일 칸 숨김 — 이름을 누르면 메일 단추가 나온다 */
-    .org-grid{ --org-cols:2; }
+    .org-grid{ --org-cols:2 !important; }   /* 휴대폰은 두 칸씩 (화면이 넣는 칸 수보다 먼저) */
     .celeb-bn{ flex-basis:58%; }
     /* 손가락으로 누르기 쉬운 크기 (44px) */
     .nav-item, .subtab, .btn, .menu-btn, .x-btn{ min-height:44px; }
@@ -3088,19 +3089,22 @@ function orgMemberRow(m){
 }
 function orgShortTeam(t){ return t.replace(/팀$/, ''); }   // 화면 표시만 '팀' 생략, 데이터는 원래 이름
 function orgPerson(m, cls){ return m ? `<div class="org-bx ${cls}"><span class="org-name" style="text-decoration:none;" onclick="orgShow(${m.id})">${escapeHtml(m.name)} ${escapeHtml(m.title)}</span></div>` : `<div class="org-bx ${cls} org-muted">공석</div>`; }
+const ORG_NO_COL = ['임원', '비상근'];   // 부서별 조직도에 칸을 만들지 않는 하이웍스 부서 (2026-10-19 인사담당자) — 그 사람들은 구성원 검색에는 그대로 나온다
 function orgChart(){
   const gate = orgGate(); if(gate) return gate;
   const live = AUTH.live;
   const hrBar = orgIsHr() && !live ? `<div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px;"><button class="btn sm primary" onclick="orgEdit(null)">＋ 구성원 추가</button><button class="btn sm" onclick="orgAddTeam()">＋ 팀 추가</button><button class="btn sm" onclick="orgAddDivision()">＋ 본부 추가</button></div>` : '';
-  const cols = orgTree().map(d=>{
-    const all = orgPeople().filter(m=>m.division===d.division), head = all.find(m=>m.lead==='DIVISION');
+  const tree = orgTree().filter(d=>!ORG_NO_COL.includes(d.division));
+  const cols = tree.map(d=>{
+    const all = orgPeople().filter(m=>m.division===d.division);
+    const head = all.find(m=>m.lead==='DIVISION') || (!d.teams.length && all.find(m=>m.lead==='TEAM'));   // 팀이 없는 맨 위 부서(총무팀 등)는 그 팀장을 보여 준다
     const teams = d.teams.map(t=>{
       const ms = all.filter(m=>m.team===t), lead = ms.find(m=>m.lead==='TEAM');
       return `<div class="org-bx org-teambx" onclick="orgShowTeam('${escapeHtml(d.division)}','${escapeHtml(t)}')" title="${escapeHtml(t)} 구성원 보기">${escapeHtml(orgShortTeam(t))}<small>${ms.length}명</small></div>${orgPerson(lead,'org-leadbx')}`;
     }).join('');
     return `<div class="org-col"><div class="org-vline"></div>
       <div class="org-bx org-divbx" onclick="orgShowTeam('${escapeHtml(d.division)}','')" style="cursor:pointer;" title="본부 전체 구성원 보기">${escapeHtml(d.division.replace('직속부서','직속'))}</div>
-      ${d.noHead ? '<div class="org-bx org-headbx org-muted">본부장 없음</div>' : orgPerson(head,'org-headbx')}
+      ${!head && d.noHead ? '<div class="org-bx org-headbx org-muted">본부장 없음</div>' : orgPerson(head,'org-headbx')}
       ${teams}</div>`;
   }).join('');
   return `${live ? '' : roleSwitcher()}${kpiMsg ? kpiNote(kpiMsg.msg, kpiMsg.type) : ''}
@@ -3109,7 +3113,7 @@ function orgChart(){
       <div class="org-chart">
         <div style="display:flex; flex-direction:column; align-items:center;"><div class="org-bx org-ceo">대표이사</div><div class="org-vline"></div></div>
         <div class="org-hline"></div>
-        <div class="org-grid">${cols}</div>
+        <div class="org-grid" style="--org-cols:${tree.length};">${cols}</div>
       </div>
       <div class="list-sub" style="margin-top:14px;">팀 상자를 누르면 구성원 명단이, 이름을 누르면 연락처와 전화·문자·메일 버튼이 나옵니다.</div>
     </div>`;
