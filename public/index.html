@@ -3134,12 +3134,15 @@ function orgShowTeam(division, team){   // team '' = 본부 전체
 }
 function memberSearch(){
   const gate = orgGate(); if(gate) return gate;
+  // 처음(빈 칸)에는 명단을 보이지 않고, 적으면 찾은 사람만 (2026-10-19 인사담당자). 직책(팀장·본부장·대표이사)으로도 찾는다 —
+  // 직급이 "이사"여도 구성원 설정에서 팀장이면 "팀장"으로 나온다. 본부·팀 이름으로 찾기는 그대로 (인사담당자 선택)
   const q = orgQuery.trim().toLowerCase();
-  const rows = orgPeople().filter(m=>!q || [m.name,m.title,m.division,m.team].join(' ').toLowerCase().includes(q));
-  return `${AUTH.live ? '' : roleSwitcher()}${kpiMsg ? kpiNote(kpiMsg.msg, kpiMsg.type) : ''}<div class="card" style="margin-bottom:14px;"><div class="field"><input id="orgSearch" placeholder="이름, 직급, 본부, 팀으로 검색" value="${escapeHtml(orgQuery)}" oninput="orgQuery=this.value; renderContent(); const i=document.getElementById('orgSearch'); i.focus(); i.setSelectionRange(i.value.length,i.value.length);"/></div></div>
-    <div class="card"><div class="card-title">구성원 목록 <span class="more">${rows.length}명</span></div><table class="org-list"><thead><tr><th>이름</th><th>직급</th><th>소속</th><th>내선</th><th>메일</th></tr></thead><tbody>
-    ${rows.map(m=>`<tr><td><span class="org-name" onclick="orgShow(${m.id})">${escapeHtml(m.name)}</span> ${orgLeadBadge(m)}</td><td>${escapeHtml(m.title)}</td><td>${escapeHtml(m.division)}${m.team?' › '+escapeHtml(m.team):''}</td><td>${escapeHtml(m.ext)}</td><td>${m.email ? hwMailLink(escapeHtml(m.email), '', m.userNo) : ''}</td></tr>`).join('') || '<tr><td colspan="5" style="color:var(--text-muted);">검색 결과가 없습니다</td></tr>'}
-    </tbody></table></div>`;
+  const rows = q ? orgPeople().filter(m=>[m.name, m.title, m.lead ? MS_LEAD[m.lead] : '', m.division, m.team].join(' ').toLowerCase().includes(q)) : [];
+  return `${AUTH.live ? '' : roleSwitcher()}${kpiMsg ? kpiNote(kpiMsg.msg, kpiMsg.type) : ''}<div class="card" style="margin-bottom:14px;"><div class="field"><input id="orgSearch" placeholder="이름, 직책(팀장 · 본부장 · 프로 등), 본부, 팀으로 검색" aria-label="구성원 검색" value="${escapeHtml(orgQuery)}" oninput="orgQuery=this.value; renderContent(); const i=document.getElementById('orgSearch'); i.focus(); i.setSelectionRange(i.value.length,i.value.length);"/></div></div>
+    ${!q ? '<div class="card"><div class="list-sub" style="margin:0;">이름이나 직책을 적으면 찾은 분만 나옵니다. 예) "팀장" → 팀장 모두</div></div>' : `
+    <div class="card"><div class="card-title">검색 결과 <span class="more">${rows.length}명</span></div><table class="org-list"><thead><tr><th>이름</th><th>직급</th><th>소속</th><th>내선</th><th>메일</th></tr></thead><tbody>
+    ${rows.map(m=>`<tr><td><span class="org-name" onclick="orgShow(${m.id})">${escapeHtml(m.name)}</span> ${orgLeadBadge(m)}</td><td>${escapeHtml(m.title)}</td><td>${escapeHtml(m.division)}${m.team?' › '+escapeHtml(m.team):''}</td><td>${escapeHtml(m.ext)}</td><td>${m.email ? hwMailLink(escapeHtml(m.email), '', m.userNo) : ''}</td></tr>`).join('') || '<tr><td colspan="5" style="color:var(--text-muted);">찾는 분이 없습니다</td></tr>'}
+    </tbody></table></div>`}`;
 }
 let orgReturnFocus = null;
 function orgModal(html){
