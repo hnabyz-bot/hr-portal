@@ -275,7 +275,7 @@ def check_org(hr, save) -> None:
     p2 = person(emp, 2)
     ok(p2 and p2["division"] == "가상본부" and p2["team"] == "가상팀" and p2["lead"] == "TEAM", "사람마다 본부 · 팀 · 직책")
     ok(person(emp, 5) is None, "비활성인 사람은 조직도에 없음")
-    ok(set(p2) == {"id", "name", "title", "division", "team", "lead", "ext", "email", "mobile", "mobilePublic", "userNo", "me"},
+    ok(set(p2) == {"id", "name", "title", "division", "team", "lead", "ext", "email", "mobile", "mobilePublic", "mailNo", "me"},
        "조직도 명단은 필요한 칸만 (포털 사용 · HR 권한 · 사번 등은 없음)")
 
     x("UPDATE users SET mobile = ?, phone = '02-000-0002', email = 'u2@example.invalid' WHERE id = 2", m1)
@@ -294,8 +294,15 @@ def check_org(hr, save) -> None:
     ok(lead.post("/api/me/privacy", base_url=BASE, headers=ORIGIN, json={"mobile_public": True}).status_code == 200
        and person(emp, 2)["mobile"] == m2, "본인이 다시 공개하면 보임")
 
+    mail = lambda c, pairs: c.post("/api/members/mail-nos", base_url=BASE, headers=ORIGIN, json={"pairs": pairs})  # noqa: E731
     x("UPDATE users SET hiworks_user_no = '777' WHERE id = 4")
-    ok(person(emp, 4)["userNo"] == "777" and person(emp, 3)["userNo"] == "", "메일 받는 사람 채우기용 하이웍스 번호 (숫자일 때만)")
+    r = mail(hr, {"777": "33094", "999999": "1"})
+    ok(r.status_code == 200 and r.json["saved"] == 1 and r.json["unknown"] == 1 and person(emp, 4)["mailNo"] == "33094" and person(emp, 3)["mailNo"] == "",
+       "메일 받는 사람 채우기용 회사 번호 (HR 이 넣은 짝 · 명단에 없는 번호는 건너뜀)")
+    ok(mail(emp, {"777": "1"}).status_code == 403 and person(emp, 4)["mailNo"] == "33094", "회사 번호는 HR 만")
+    for bad in ({}, {"777": "0123"}, {"777": 33094}, {"HW-4": "1"}, {"777": "1" * 13}, ["777"]):
+        ok(mail(hr, bad).status_code == 400 and person(emp, 4)["mailNo"] == "33094", f"틀린 번호 짝은 저장 안 함 ({str(bad)[:16]})")
+    ok(hr.post("/api/members/mail-nos", base_url=BASE, json={"pairs": {"777": "2"}}).status_code == 403, "포털 화면에서만 (Origin)")
     x("UPDATE users SET hiworks_user_no = 'HW-4' WHERE id = 4")
     ok(emp.post("/api/members/4/org", base_url=BASE, headers=ORIGIN, json={"hidden": True}).status_code == 403, "HR 이 아니면 조직도에서 못 뺌")
     ok(hr.post("/api/members/4/org", base_url=BASE, headers=ORIGIN, json={"hidden": True}).status_code == 200
@@ -345,18 +352,18 @@ def check_news(hr) -> None:
     """홈 이번 주 소식 (2026-10-19): 생일(월-일) · 생일 알림 · 새 식구·입사 기념 · 경사·조사."""
     print("이번 주 소식 — 규칙 (날짜 고정)")
     d = auth.date
-    t = d(2026, 10, 1)  # 목요일 → 이번 주 9/28(월)~10/4(일)
+    t = d(2026, 10, 1)  # 목요일 → 생일은 10/1~10/7
 
     def kinds(people, today=t):
         return [(i["kind"], i["id"]) for i in auth.news_items(people, today)]
 
     ok(kinds([(1, "2026-09-01", None, 1), (2, "2026-08-31", None, 1), (3, "2026-10-01", None, 1), (4, "2026-10-02", None, 1)])
        == [("welcome", 1), ("welcome", 3)], "새 식구 = 입사 후 30일 (앞날 입사는 아직)")
-    ok(kinds([(1, None, "09-28", 1), (2, None, "10-04", 1), (3, None, "09-27", 1), (4, None, "10-05", 1), (5, None, "10-01", 0)])
-       == [("birthday", 1), ("birthday", 2)], "생일 = 이번 주 월~일, 생일 알림을 끈 사람은 빠짐")
-    ok(kinds([(1, None, "02-29", 1)], d(2027, 2, 28)) == [("birthday", 1)] and kinds([(1, None, "02-28", 1)], d(2028, 2, 29)) == [("birthday", 1)],
-       "평년에는 2월 29일 생일을 2월 28일에")
-    ok(kinds([(1, None, "01-02", 1), (2, None, "12-29", 1)], d(2026, 12, 31)) == [("birthday", 2), ("birthday", 1)], "연말연초 주 · 날짜순")
+    ok(kinds([(1, None, "10-01", 1), (2, None, "10-07", 1), (3, None, "09-30", 1), (4, None, "10-08", 1), (5, None, "10-03", 0)])
+       == [("birthday", 1), ("birthday", 2)], "생일 = 오늘부터 7일 안(지난 날은 빠짐), 생일 알림을 끈 사람은 빠짐")
+    ok(kinds([(1, None, "02-29", 1)], d(2027, 2, 28)) == [("birthday", 1)] and kinds([(1, None, "02-29", 1)], d(2028, 2, 27)) == [("birthday", 1)],
+       "평년에는 2월 29일 생일을 2월 28일에 (윤년은 2월 29일)")
+    ok(kinds([(1, None, "01-02", 1), (2, None, "12-31", 1)], d(2026, 12, 31)) == [("birthday", 2), ("birthday", 1)], "연말연초 7일 · 날짜순")
     ok(kinds([(1, "2021-10-20", None, 1), (2, "2022-10-01", None, 1), (3, "2021-09-20", None, 1), (4, "2016-10-05", None, 1), (5, "2025-10-30", None, 1)])
        == [("anniversary", 1), ("anniversary", 4), ("anniversary", 5)], "입사 N주년 = 이번 달, 1·3·5·10년 이후 5년마다")
     notes = [i["note"] for i in auth.news_items([(1, "2026-09-07", "03-05", 1), (2, "2021-10-20", None, 1)], d(2026, 10, 5))]
