@@ -1540,8 +1540,9 @@ body.skin-g #ndOk{--bh:52px}
   </div>
 </div>
 
+<script src="../xray-portal.js?v=1"></script>
 <script>
-(() => {
+(window.XRSQ_GATE || Promise.resolve()).then(() => {   // 인사포털 로그인·기록을 먼저 확인한다 (../xray-portal.js · 포털 사본에만 있는 수정 6)
 'use strict';
 const CW = 1280, CH = 720, RES = 4.8;
 const W = CW / RES, H = CH / RES, GROUND = 131.25, ZLEN = 3800; // ~60s+ per zone
@@ -1562,7 +1563,7 @@ const PX = '6px "XPixel", "Press Start 2P", monospace';
 
 const store = {
   get(k, d) { try { const v = localStorage.getItem('xrsq_' + k); return v === null ? d : JSON.parse(v); } catch (e) { return d; } },
-  set(k, v) { try { localStorage.setItem('xrsq_' + k, JSON.stringify(v)); } catch (e) {} }
+  set(k, v) { try { localStorage.setItem('xrsq_' + k, JSON.stringify(v)); } catch (e) {} if (window.XRSQ_PORTAL) XRSQ_PORTAL.saved(k); }   // 포털: 서버에도 (포털 사본에만 있는 수정 6)
 };
 // 입장 선물 대상: 이 게임에 처음 들어온 사람만 (예전에 해 본 기록이 남아 있으면 대상이 아니에요). 저장소에 무엇이든 쓰기 전에 한 번만 정해요.
 //   welcome: '' = 대상(아직 안 받음) · 'none' = 대상 아님 · 날짜 = 받은 날
@@ -5281,7 +5282,7 @@ function setPause(v) {
 }
 
 let rankTab = 'week', lastResult = null, cdTimer = null;
-const SAMPLE = {
+const SAMPLE = (window.XRSQ_PORTAL && XRSQ_PORTAL.rk) || {   // 포털: 실제 직원 기록 — 같은 모양 [부서, 이름, 점수, 직급] (포털 사본에만 있는 수정 6)
   week: [['생산1팀', '박○○', 64200, '리더'], ['영업팀', '이○○', 41600, '조장'], ['연구소', '최○○', 33150, '팀장'], ['품질팀', '정○○', 18900, '조장'], ['경영지원팀', '한○○', 9400, '프로']],
   all: [['연구소', '최○○', 186400, '팀장'], ['생산1팀', '박○○', 121300, '리더'], ['영업팀', '이○○', 84100, '조장'], ['생산2팀', '윤○○', 52800, '리더'], ['품질팀', '정○○', 41000, '조장']],
   dept: [['생산1팀', 248300, 12], ['연구소', 231900, 8], ['품질팀', 176400, 9], ['영업팀', 142800, 7], ['생산2팀', 118500, 11], ['경영지원팀', 64200, 5]]
@@ -5328,7 +5329,8 @@ function seasonOf(wk) { const y = +wk.slice(0, 4), m = +wk.slice(5, 7); return y
 function seasonName(sk) { return sk.slice(0, 4) + (sk.endsWith('-1') ? ' 상반기' : ' 하반기'); }
 function prevSeason(sk) { const y = +sk.slice(0, 4); return sk.endsWith('-2') ? y + '-1' : (y - 1) + '-2'; }
 let rkHofView = 'season';
-function hofWeeks() { return HOF_SAMPLE.map(a => ({ wk: a[0], name: a[1], me: false })).concat((store.get('hofWins', []) || []).map(wk => ({ wk, name: '나', me: true }))); }
+function hofWeeks() { if (window.XRSQ_PORTAL) return XRSQ_PORTAL.rk.hof.map(a => ({ wk: a[0], name: a[1], dept: a[2], me: a[3] }));   // 포털 사본에만 있는 수정 6
+  return HOF_SAMPLE.map(a => ({ wk: a[0], name: a[1], me: false })).concat((store.get('hofWins', []) || []).map(wk => ({ wk, name: '나', me: true }))); }
 function hofNewcomers() {   // 최근 2주 안에 처음으로 주간 1위를 한 사람
   const cut = new Date(Date.parse(weekKey() + 'T00:00:00Z') - 14 * 864e5).toISOString().slice(0, 10);
   return hofRows('all').filter(r => r.first >= cut);
@@ -5338,10 +5340,10 @@ function hofRows(view, season) {
   for (const w of hofWeeks()) if (!allFirst[w.name] || w.wk < allFirst[w.name]) allFirst[w.name] = w.wk;
   const cut = new Date(Date.parse(weekKey() + 'T00:00:00Z') - 14 * 864e5).toISOString().slice(0, 10);
   const m = new Map();
-  const add = (wk, name, me) => { let r = m.get(name); if (!r) { r = { name, wins: 0, first: wk, last: wk, me }; m.set(name, r); } r.wins++; if (wk < r.first) r.first = wk; if (wk > r.last) r.last = wk; };
-  for (const w of hofWeeks()) if (view === 'all' || seasonOf(w.wk) === sk) add(w.wk, w.name, w.me);
+  const add = (wk, name, me, dept) => { let r = m.get(name); if (!r) { r = { name, wins: 0, first: wk, last: wk, me, dept }; m.set(name, r); } r.wins++; if (wk < r.first) r.first = wk; if (wk > r.last) r.last = wk; };
+  for (const w of hofWeeks()) if (view === 'all' || seasonOf(w.wk) === sk) add(w.wk, w.name, w.me, w.dept);
   return [...m.values()].map(r => ({ name: r.name, wins: r.wins, score: r.wins, first: r.first, hof: true, me: r.me, isNew: allFirst[r.name] >= cut,
-    face: r.me ? (sel.char === 'f' ? 2 : 1) : rkFaceId(r.name), sub: (r.me ? '' : (DEPT_OF[r.name] || '') + ' · ') + '최근 1위 ' + weekLabel(r.last) }))
+    face: r.me ? (sel.char === 'f' ? 2 : 1) : rkFaceId(r.name), sub: (r.me ? '' : (r.dept || DEPT_OF[r.name] || '') + ' · ') + '최근 1위 ' + weekLabel(r.last) }))
     .sort((a, b) => b.wins - a.wins || (a.first < b.first ? -1 : a.first > b.first ? 1 : 0));
 }
 const RKA = 'assets/rk/';
@@ -5360,15 +5362,17 @@ function rkBadge(n) {
   return rkEl('span', 'rk-pill', n);
 }
 function rkMine(tab) {
+  const lv = window.XRSQ_PORTAL && XRSQ_PORTAL.rk.me;   // 포털: 서버 기록 — 다른 기기에서 낸 점수도 (포털 사본에만 있는 수정 6)
+  if (lv) return tab === 'all' ? lv.best : lv.week;
   if (tab === 'all') return store.get('best', 0);
   const wb = store.get('weekBest', null); return wb && wb.key === weekKey() ? wb.score : 0;
 }
 function rkRows(tab) {
   if (tab === 'hof') return hofRows(rkHofView);
   let rows;
-  if (tab === 'dept') rows = SAMPLE.dept.map(a => ({ name: a[0], sub: '참여 ' + a[2] + '명', score: a[1], team: true }));
+  if (tab === 'dept') rows = SAMPLE.dept.map(a => ({ name: a[0], sub: '참여 ' + a[2] + '명', score: a[1], team: true, me: !!a[3] }));
   else {
-    rows = SAMPLE[tab].map(a => ({ name: a[1], sub: a[0] + ' · ' + a[3], score: a[2], face: rkFaceId(a[1]) }));
+    rows = SAMPLE[tab].map(a => ({ name: a[1], sub: [a[0], a[3]].filter(Boolean).join(' · '), score: a[2], face: rkFaceId(a[1]) }));
     const mine = rkMine(tab), r = lastResult || {};
     if (mine > 0) rows.push({ name: '나', sub: (r.title ? r.title + ' · ' : '') + D().name, score: mine, face: sel.char === 'f' ? 2 : 1, me: true });
   }
@@ -5434,7 +5438,8 @@ function renderRankScreen() {
   // my card
   const me = $('#rkMe'); me.innerHTML = ''; me.className = 'rk-mecard';
   const i = rows.findIndex(r => r.me);
-  if (rkTab === 'dept') { me.classList.add('none'); me.textContent = '부서원 각자의 이번 주 최고점을 합친 점수예요. 인사포털에 연결하면 내 부서가 표시돼요.'; }
+  if (rkTab === 'dept') { me.classList.add('none'); me.textContent = !window.XRSQ_PORTAL ? '부서원 각자의 이번 주 최고점을 합친 점수예요. 인사포털에 연결하면 내 부서가 표시돼요.'   // 포털 사본에만 있는 수정 6
+    : i >= 0 ? '우리 부서 ' + rows[i].name + ' · 지금 ' + (i + 1) + '위예요' : '우리 부서는 이번 주 기록이 아직 없어요. 한 판 하면 바로 올라가요!'; }
   else if (i < 0) { me.classList.add('none'); me.textContent = rkTab === 'week' ? '아직 이번 주 기록이 없어요. 한 판 하면 바로 순위에 올라요!' : rkTab === 'hof' ? (rkHofView === 'season' ? '이번 시즌 1위 기록이 아직 없어요. 한 번만 1위를 해도 명예의 전당에 이름이 올라요!' : '아직 주간 1위 기록이 없어요. 한 번만 1위를 해도 명예의 전당에 이름이 올라요!') : '아직 기록이 없어요. 한 판 해 보세요!'; }
   else {
     const r = rows[i], n = i + 1, box = rkEl('div');
@@ -5468,6 +5473,7 @@ function renderRankScreen() {
 }
 function openRank(from) {
   rkFrom = from; rkTab = 'week'; rkHofView = 'season'; rkSnap = { week: store.get('rkSeen_week', null), all: store.get('rkSeen_all', null), hof: store.get('rkSeen_hof', null) }; renderRankScreen(); show('scrRank'); $('#scrRank').scrollTop = 0;
+  if (window.XRSQ_PORTAL) XRSQ_PORTAL.refresh().then(() => { if (rkFrom) renderRankScreen(); }).catch(() => {});   // 포털: 다른 직원의 새 점수 (포털 사본에만 있는 수정 6)
   clearInterval(rkTimer); rkTimer = setInterval(() => { $('#rkCd').textContent = rkLeft(); }, 30000);
   try { $('#btnRkBack').focus({ preventScroll: true }); } catch (e) {}
 }
@@ -5496,7 +5502,7 @@ function ruConfetti(host, y, count, cols, delay) {
 function ruConfettiClear() { document.querySelectorAll('#rankUp .ru-pop').forEach(e => e.remove()); }
 setTimeout(() => ['violet', 'sky', 'mint', 'pink', 'lav', 'on'].forEach(c => { const im = new Image(); im.src = 'assets/btn/tab_' + c + '.webp'; }), 2500);
 function rankUpShow(prev, now) {
-  const others = SAMPLE.week.map(a => ({ name: a[1], sub: a[0] + ' · ' + a[3], score: a[2] })).sort((a, b) => b.score - a.score);
+  const others = SAMPLE.week.map(a => ({ name: a[1], sub: [a[0], a[3]].filter(Boolean).join(' · '), score: a[2] })).sort((a, b) => b.score - a.score);
   const rankOf = sc => others.filter(o => o.score >= sc).length + 1;
   const oldRank = prev > 0 ? rankOf(prev) : others.length + 1, newRank = rankOf(now);
   if (!(now > 0) || newRank >= oldRank) return false;
@@ -5609,21 +5615,23 @@ function gameOver() {
   const score = G.score, prevBest = store.get('best', 0), isNew = score > prevBest;
   const best = Math.max(score, prevBest); store.set('best', best);
   const wk = weekKey(); let wb = store.get('weekBest', null); if (!wb || wb.key !== wk) wb = { key: wk, score: 0 };
-  const prevWeek = wb.score;
+  const LV = window.XRSQ_PORTAL, prevWeek = LV ? LV.rk.me.week : wb.score;   // 포털: 이번 주 점수는 서버 기록 — 다른 기기에서 낸 것 포함 (포털 사본에만 있는 수정 6)
   wb.score = Math.max(wb.score, score); store.set('weekBest', wb);
+  if (LV) LV.score(score);
+  const weekNow = LV ? LV.rk.me.week : wb.score;
   const zk = G.zone % 7, lap = Math.floor(G.zone / 7);
   const res = Object.assign({}, G.stats, { bestCombo: G.bestCombo, reached: G.zone, diff: D().id, stamps: G.stampN || 0, cleared: !!G.cleared });
   const got = TITLES.filter(t => t.test(res));
   const owned = new Set(store.get('titles', [])), before = owned.size;
   const chips = $('#rTitles'); chips.innerHTML = '';
   if (!got.length) chips.innerHTML = '<span class="none">이번 판 칭호 없음 · 콤보 15, 헤드샷 15에 도전해 보세요</span>';
-  { const wr = SAMPLE.week.filter(a => a[2] >= wb.score).length + 1, el = $('#rWeekRank'); el.textContent = wr + '위';
+  { const wr = SAMPLE.week.filter(a => a[2] >= weekNow).length + 1, el = $('#rWeekRank'); el.textContent = wr + '위';
     if (wr <= 10) { const im = document.createElement('img'); im.className = 'rk-wr'; im.alt = ''; im.src = 'assets/rk/r' + wr + '.webp'; el.prepend(im); } }
   got.forEach(t => { const s = document.createElement('span'); s.textContent = t.name + (owned.has(t.id) ? '' : ' NEW'); if (!owned.has(t.id)) s.className = 'new'; chips.appendChild(s); owned.add(t.id); });
   store.set('titles', [...owned]);
   for (const h of HATLIST) if (!h.ev && h.need > before && h.need <= owned.size) { const s = document.createElement('span'); s.className = 'new'; s.textContent = '새 모자: ' + h.name; chips.appendChild(s); }
   if (G.evHat) { const s = document.createElement('span'); s.className = 'new'; s.textContent = '새 모자: 오픈 기념 (한정판)'; chips.appendChild(s); }
-  lastResult = { score, best, weekBest: wb.score, title: got.length ? got[0].name : '', zone: G.cleared && !lap && zk === 6 ? '남극 클리어' : ZONES[zk].name + (lap ? ' ' + (lap + 1) + '회차' : ''), kills: G.kills, combo: G.bestCombo, diff: D().name, device: G.pc ? 'PC' : '모바일', titles: got.map(t => t.name) };
+  lastResult = { score, best, weekBest: weekNow, title: got.length ? got[0].name : '', zone: G.cleared && !lap && zk === 6 ? '남극 클리어' : ZONES[zk].name + (lap ? ' ' + (lap + 1) + '회차' : ''), kills: G.kills, combo: G.bestCombo, diff: D().name, device: G.pc ? 'PC' : '모바일', titles: got.map(t => t.name) };
   $('#rScore').textContent = score.toLocaleString();
   $('#rNew').hidden = !isNew || score === 0;
   $('#rDiff').textContent = D().name + ' ×' + D().mult.toFixed(1) + (G.pc ? ' · PC' : ' · 모바일');
@@ -5651,7 +5659,7 @@ function gameOver() {
   $('#btnRetry').focus({ preventScroll: true });
   if (G.player.dead) welcomeGrant();   // 입장 선물: 첫 판에서 쓰러지면 1시간 무제한권 2장
   paintTixBars();
-  clearTimeout(RU.pending); RU.pending = setTimeout(() => { if (state === 'over' && !rankUpShow(prevWeek, wb.score)) evHatCheck() || welcomeCheck(); }, 450);
+  clearTimeout(RU.pending); RU.pending = setTimeout(() => { if (state === 'over' && !rankUpShow(prevWeek, weekNow)) evHatCheck() || welcomeCheck(); }, 450);
 }
 
 function soundLabels() {
@@ -6181,14 +6189,15 @@ function welcomeCheck() { if (!store.get(WELCOME.key, false) || ND.kind || RU.op
 // ---- 주간 랭킹 보상: 월요일 0시가 지나면 지난주 1~3위에게 출동권 (예시 모드: 내 지난주 최고점을 예시 순위표에 넣어 계산 · 포털 연결 시엔 서버에서 지급해 주세요)
 const WEEK_PRIZE = [50, 30, 20];
 function weekPrizeCheck() {
-  const wb = store.get('weekBest', null);
+  const LV = window.XRSQ_PORTAL, lv = LV && LV.rk.last;   // 포털: 서버가 센 지난번 내 순위 · 받았는지는 기록(prizePaid)으로 기기끼리 같다 (포털 사본에만 있는 수정 6)
+  const wb = LV ? lv && { key: lv.week, score: 1 } : store.get('weekBest', null);
   if (!wb || !wb.key || wb.key === weekKey() || !(wb.score > 0) || store.get('prizePaid', '') === wb.key) return null;
   store.set('prizePaid', wb.key);
-  const rank = SAMPLE.week.filter(a => a[2] >= wb.score).length + 1;
+  const rank = lv ? lv.rank : SAMPLE.week.filter(a => a[2] >= wb.score).length + 1;
   if (rank > WEEK_PRIZE.length) return null;
   const n = WEEK_PRIZE[rank - 1]; addTix(n);
   let hof = 0;
-  if (rank === 1) { const w = store.get('hofWins', []) || []; if (!w.includes(wb.key)) { w.push(wb.key); store.set('hofWins', w); } hof = w.length; }   // 명예의 전당
+  if (rank === 1) { const w = store.get('hofWins', []) || []; if (!w.includes(wb.key)) { w.push(wb.key); store.set('hofWins', w); } hof = LV ? LV.rk.hof.filter(h => h[3]).length : w.length; }   // 명예의 전당
   return { rank, n, hof };
 }
 function titlePopups() {
@@ -6500,7 +6509,7 @@ try { if (window.claude && window.claude.hot && typeof window.claude.hot.snapsho
 document.body.classList.add('sk', 'skin-f', 'skin-g'); // pixel button skin (F안)
 const hot = window.claude && window.claude.hot;
 if (hot && typeof hot.ready === 'function') hot.ready(boot); else boot((hot && hot.data) || {});
-})();
+});
 </script>
 
 </body></html>
