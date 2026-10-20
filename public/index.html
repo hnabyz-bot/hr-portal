@@ -3149,7 +3149,8 @@ function orgRemove(members, id, isHr){
 const HW_MAIL = 'https://mails.office.hiworks.com/write?mode=normal';   // 하이웍스 메일 쓰기 (2026-10-19 인사담당자 지시 — 메일은 하이웍스로)
 // 받는 사람을 미리 채우는 것은 메일 주소로는 안 된다(to= 를 무시함, 2026-10-19 확인). 하이웍스 번호로만 된다: &user_nos=번호,번호
 // 실제 명단(조직도)은 하이웍스 번호를 함께 받는다. 시연 명단(경조사 배너 등)은 번호가 없어 빈 메일 쓰기 화면
-const hwMailLink = (inner, cls='', userNo='')=>`<a ${cls ? `class="${cls}" ` : ''}href="${HW_MAIL}${userNo ? '&user_nos='+encodeURIComponent(userNo) : ''}" target="_blank" rel="noopener">${inner}</a>`;
+const hwMailUrl = userNo=>HW_MAIL + (userNo ? '&user_nos='+encodeURIComponent(userNo) : '');
+const hwMailLink = (inner, cls='', userNo='')=>`<a ${cls ? `class="${cls}" ` : ''}href="${hwMailUrl(userNo)}" target="_blank" rel="noopener">${inner}</a>`;
 function orgVisibleContacts(m){ return { ext:m.ext, email:m.email, mobile: m.hideMobile ? null : m.mobile }; }
 function orgSelfCheck(){   // 브라우저 콘솔에서 orgSelfCheck() 실행
   const ok = (c,msg)=>{ if(!c) throw new Error('orgSelfCheck 실패: '+msg); };
@@ -3229,10 +3230,13 @@ function memberSearch(){
   const gate = orgGate(); if(gate) return gate;
   // 처음(빈 칸)에는 명단을 보이지 않고, 적으면 찾은 사람만 (2026-10-19 인사담당자). 직책(팀장·본부장·대표이사)으로도 찾는다 —
   // 직급이 "이사"여도 구성원 설정에서 팀장이면 "팀장"으로 나온다. 본부·팀 이름으로 찾기는 그대로 (인사담당자 선택)
+  return `${AUTH.live ? '' : roleSwitcher()}${kpiMsg ? kpiNote(kpiMsg.msg, kpiMsg.type) : ''}<div class="card" style="margin-bottom:14px;"><div class="field"><input id="orgSearch" placeholder="이름, 직책(팀장 · 본부장 · 프로 등), 본부, 팀으로 검색" aria-label="구성원 검색" value="${escapeHtml(orgQuery)}" oninput="orgQuery=this.value; document.getElementById('orgSearchOut').innerHTML=orgSearchOut()"/></div></div>
+    <div id="orgSearchOut">${orgSearchOut()}</div>`;
+}
+function orgSearchOut(){   // 검색 결과만 — 입력칸까지 다시 그리면 한글 조합이 끊겨 "황"이 "ㅎㅗㅏㅇ"으로 들어간다 (2026-10-20)
   const q = orgQuery.trim().toLowerCase();
   const rows = q ? orgPeople().filter(m=>[m.name, m.title, m.lead ? MS_LEAD[m.lead] : '', m.division, m.team].join(' ').toLowerCase().includes(q)) : [];
-  return `${AUTH.live ? '' : roleSwitcher()}${kpiMsg ? kpiNote(kpiMsg.msg, kpiMsg.type) : ''}<div class="card" style="margin-bottom:14px;"><div class="field"><input id="orgSearch" placeholder="이름, 직책(팀장 · 본부장 · 프로 등), 본부, 팀으로 검색" aria-label="구성원 검색" value="${escapeHtml(orgQuery)}" oninput="orgQuery=this.value; renderContent(); const i=document.getElementById('orgSearch'); i.focus(); i.setSelectionRange(i.value.length,i.value.length);"/></div></div>
-    ${!q ? '<div class="card"><div class="list-sub" style="margin:0;">이름이나 직책을 적으면 찾은 분만 나옵니다. 예) "팀장" → 팀장 모두</div></div>' : `
+  return `${!q ? '<div class="card"><div class="list-sub" style="margin:0;">이름이나 직책을 적으면 찾은 분만 나옵니다. 예) "팀장" → 팀장 모두</div></div>' : `
     <div class="card"><div class="card-title">검색 결과 <span class="more">${rows.length}명</span></div><table class="org-list"><thead><tr><th>이름</th><th>직급</th><th>소속</th><th>내선</th><th>메일</th></tr></thead><tbody>
     ${rows.map(m=>`<tr><td><span class="org-name" onclick="orgShow(${m.id})">${escapeHtml(m.name)}</span> ${orgLeadBadge(m)}</td><td>${escapeHtml(m.title)}</td><td>${escapeHtml(m.division)}${m.team?' › '+escapeHtml(m.team):''}</td><td>${escapeHtml(m.ext)}</td><td>${m.email ? hwMailLink(escapeHtml(m.email), '', m.userNo) : ''}</td></tr>`).join('') || '<tr><td colspan="5" style="color:var(--text-muted);">찾는 분이 없습니다</td></tr>'}
     </tbody></table></div>`}`;
@@ -3254,7 +3258,7 @@ function orgShow(id){
   orgModal(`<div class="card-title"><span>${escapeHtml(m.name)} <span style="font-weight:500; color:var(--text-secondary);">${escapeHtml(m.title)}</span> ${orgLeadBadge(m)}</span><button type="button" class="x-btn" onclick="orgCloseModal()" aria-label="닫기">${icon('x')}</button></div>
     <div class="list-sub" style="margin-bottom:10px;">${escapeHtml(m.division)}${m.team?' › '+escapeHtml(m.team):' (본부 직속)'}</div>
     ${c.mobile ? row('휴대폰', c.mobile, 'tel:'+c.mobile) : `<div class="org-contact"><b>휴대폰</b><span style="color:var(--text-muted);">${m.hideMobile ? '본인 요청으로 비공개' : '등록된 번호 없음'}</span></div>`}
-    ${row('내선', c.ext)}${row('메일', c.email, c.email && HW_MAIL, true)}
+    ${row('내선', c.ext)}${row('메일', c.email, c.email && hwMailUrl(m.userNo), true)}
     <div class="org-actions">
       <a class="btn primary" href="tel:${c.mobile||''}" ${c.mobile?'':off}>${icon('phone')} 전화</a>
       <a class="btn" href="sms:${c.mobile||''}" ${c.mobile?'':off}>${icon('message')} 문자</a>
@@ -6593,16 +6597,8 @@ function msCell(m, e, k, eff){   // m = 저장된 값, e = 초안을 얹은 값
   if(k==='kpi' && e.lead==='CEO') return `<span class="ms-dash" title="${escapeHtml(why)}">—</span>`;
   return `<span class="ms-cell${c}"><input class="ms-ck" type="checkbox" ${e[k]?'checked':''} ${dis} aria-label="${label}" onchange="msChange(${m.id},'${k}',this.checked)"></span>`;
 }
-function msContent(){
-  if(!orgIsHr()) return `${roleSwitcher()}${kpiNote('구성원 설정은 HR만 볼 수 있습니다.')}`;
-  const live = AUTH.live, top = live ? '' : roleSwitcher();   // 실제 로그인이면 이 화면은 실제 자료다
-  if(live && MS_LIVE.state!=='ok'){
-    if(!MS_LIVE.state) msLoad();
-    return kpiNote(MS_LIVE.state==='err' ? '명단을 불러오지 못했습니다. 잠시 뒤 새로 고쳐 주세요.' : '명단을 불러오는 중입니다…', MS_LIVE.state==='err' ? 'danger' : 'info');
-  }
-  const L = msList(), act = L.filter(m=>m.active!==false), eff = msApply(L, msDraft), cnt = f=>act.filter(f).length, me = KPI_USERS[kpiRole].name, isMe = m=>live ? m.me : m.name===me;
-  const tile = (key, color, label, n, sub)=>`<div class="hm-tile ${color} ${msFilter===key?'on':''}" onclick="msShow('${key}')"><span>${label}</span><b>${n}<small>명</small></b><em>${escapeHtml(sub)}</em></div>`;
-  const chips = [['all','전체',cnt(()=>true)],['todo','설정 필요',cnt(m=>m.isNew)],['on','포털 사용',cnt(m=>m.use)],['off','사용 안 함',cnt(m=>!m.use)],['hr','HR 권한',cnt(m=>m.hr)], ...(live ? [['inactive','비활성',L.length-act.length]] : [])];
+function msTable(){   // 선택 막대 + 표. 이름 검색은 이것만 다시 그린다 — 입력칸까지 다시 그리면 한글 조합이 끊겨 "황"이 "ㅎㅗㅏㅇ"으로 들어간다 (2026-10-20)
+  const live = AUTH.live, L = msList(), eff = msApply(L, msDraft), me = KPI_USERS[kpiRole].name, isMe = m=>live ? m.me : m.name===me;
   const shown = msShown(), picked = shown.filter(m=>msSel.has(m.id));
   let rows = '', last = null;
   shown.forEach(m=>{
@@ -6615,8 +6611,24 @@ function msContent(){
       <td><div class="ms-name"><button type="button" onclick="msSee(${m.id})">${escapeHtml(m.name)}</button><i>${escapeHtml(m.title)}</i>${m.isNew?'<span class="ms-tag">새로 들어옴</span>':''}${m.active===false?'<span class="ms-tag gray">비활성</span>':''}${m.orgHidden?'<span class="ms-tag gray">조직도에서 뺌</span>':''}${isMe(m)?'<span class="ms-tag gray">나</span>':''}${!live && msNeed(m) ? `<button type="button" class="ms-need" onclick="orgEdit(${m.id})" title="${msNeed(m)}이 없습니다 — 눌러서 입력">정보 입력</button>` : ''}</div>${msDates(m)}</td>
       ${MS_FIELDS.map(([k])=>`<td class="c">${msCell(m, e, k, eff)}</td>`).join('')}</tr>`;
   });
-  const d = msDiffs(L, msDraft).length;
   const bulk = (k, label)=>`<span class="g">${label}<button type="button" onclick="msBulk('${k}',true)">켜기</button><button type="button" onclick="msBulk('${k}',false)">끄기</button></span>`;
+  return `${picked.length ? `<div class="ms-bulk"><b>${picked.length}명 선택</b>${bulk('use','포털 사용')}${bulk('kpi','KPI 작성')}${bulk('ev','평가 대상')}${bulk('ct','연봉계약서')}<button type="button" class="x" onclick="msSel.clear(); renderContent()">선택 해제</button></div>` : ''}
+      <div class="ct-tbl ms-wrap"><table class="ms-tbl">
+        <colgroup><col style="width:44px"><col><col style="width:104px"><col style="width:124px"><col style="width:92px"><col style="width:132px"><col style="width:116px"><col style="width:116px"></colgroup>
+        <thead><tr><th class="c"><input class="ms-ck" type="checkbox" ${shown.length && picked.length===shown.length?'checked':''} aria-label="보이는 사람 모두 선택" onchange="msPick([${shown.map(m=>m.id)}], this.checked)"></th><th><b>이름</b><small>누르면 보이는 화면 확인</small></th>${MS_FIELDS.map(([k, l, sub])=>`<th class="c"><b>${l}</b><small>${sub}</small></th>`).join('')}</tr></thead>
+        <tbody>${rows || '<tr><td colspan="8" class="c" style="color:var(--text-muted);">해당하는 사람이 없습니다.</td></tr>'}</tbody></table></div>`;
+}
+function msContent(){
+  if(!orgIsHr()) return `${roleSwitcher()}${kpiNote('구성원 설정은 HR만 볼 수 있습니다.')}`;
+  const live = AUTH.live, top = live ? '' : roleSwitcher();   // 실제 로그인이면 이 화면은 실제 자료다
+  if(live && MS_LIVE.state!=='ok'){
+    if(!MS_LIVE.state) msLoad();
+    return kpiNote(MS_LIVE.state==='err' ? '명단을 불러오지 못했습니다. 잠시 뒤 새로 고쳐 주세요.' : '명단을 불러오는 중입니다…', MS_LIVE.state==='err' ? 'danger' : 'info');
+  }
+  const L = msList(), act = L.filter(m=>m.active!==false), cnt = f=>act.filter(f).length;
+  const tile = (key, color, label, n, sub)=>`<div class="hm-tile ${color} ${msFilter===key?'on':''}" onclick="msShow('${key}')"><span>${label}</span><b>${n}<small>명</small></b><em>${escapeHtml(sub)}</em></div>`;
+  const chips = [['all','전체',cnt(()=>true)],['todo','설정 필요',cnt(m=>m.isNew)],['on','포털 사용',cnt(m=>m.use)],['off','사용 안 함',cnt(m=>!m.use)],['hr','HR 권한',cnt(m=>m.hr)], ...(live ? [['inactive','비활성',L.length-act.length]] : [])];
+  const d = msDiffs(L, msDraft).length;
   return `${top}${kpiMsg ? kpiNote(kpiMsg.msg, kpiMsg.type) : ''}<div class="ms">
     <div class="hm-tiles">
       ${tile('all','blue','전체 구성원',cnt(()=>true), live ? '하이웍스 명단 기준 (하루 한 번 가져옴)' : '조직도 명단 기준 · 가상 데이터')}
@@ -6628,13 +6640,9 @@ function msContent(){
       <div class="ms-bar">${chips.map(([k, l, n])=>`<button type="button" class="ms-chip ${msFilter===k?'on':''}" aria-pressed="${msFilter===k}" onclick="msShow('${k}')">${l} ${n}</button>`).join('')}
         <span class="sp"></span>
         <select aria-label="본부" onchange="msDiv=this.value; msSel.clear(); renderContent()"><option value="">본부 전체</option>${(live ? [...new Set(L.map(m=>m.division))].sort((a,b)=>a.localeCompare(b, 'ko')) : ORG_TREE.map(t=>t.division)).map(dv=>`<option ${msDiv===dv?'selected':''}>${escapeHtml(dv)}</option>`).join('')}</select>
-        <input id="msQ" aria-label="이름 검색" placeholder="이름 검색" value="${escapeHtml(msQuery)}" oninput="msQuery=this.value; msSel.clear(); renderContent(); const i=document.getElementById('msQ'); i.focus(); i.setSelectionRange(i.value.length,i.value.length);">
+        <input id="msQ" aria-label="이름 검색" placeholder="이름 검색" value="${escapeHtml(msQuery)}" oninput="msQuery=this.value; msSel.clear(); document.getElementById('msBody').innerHTML=msTable()">
         ${live ? `<button type="button" class="btn sm" style="height:32px;" onclick="msDataAsk()">${icon('clip')}자료 넣기</button>` : `<button type="button" class="btn sm" style="height:32px;" onclick="msPasteAsk(false)">${icon('clip')}엑셀에서 붙여넣기</button>`}</div>
-      ${picked.length ? `<div class="ms-bulk"><b>${picked.length}명 선택</b>${bulk('use','포털 사용')}${bulk('kpi','KPI 작성')}${bulk('ev','평가 대상')}${bulk('ct','연봉계약서')}<button type="button" class="x" onclick="msSel.clear(); renderContent()">선택 해제</button></div>` : ''}
-      <div class="ct-tbl ms-wrap"><table class="ms-tbl">
-        <colgroup><col style="width:44px"><col><col style="width:104px"><col style="width:124px"><col style="width:92px"><col style="width:132px"><col style="width:116px"><col style="width:116px"></colgroup>
-        <thead><tr><th class="c"><input class="ms-ck" type="checkbox" ${shown.length && picked.length===shown.length?'checked':''} aria-label="보이는 사람 모두 선택" onchange="msPick([${shown.map(m=>m.id)}], this.checked)"></th><th><b>이름</b><small>누르면 보이는 화면 확인</small></th>${MS_FIELDS.map(([k, l, sub])=>`<th class="c"><b>${l}</b><small>${sub}</small></th>`).join('')}</tr></thead>
-        <tbody>${rows || '<tr><td colspan="8" class="c" style="color:var(--text-muted);">해당하는 사람이 없습니다.</td></tr>'}</tbody></table></div>
+      <div id="msBody">${msTable()}</div>
     </div>
     <div class="card"><div class="card-title">이 화면의 규칙</div>
       <ol class="ms-rules">
