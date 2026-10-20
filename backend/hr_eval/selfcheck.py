@@ -66,6 +66,7 @@ from hr_eval.domain.roster import (
     parse_users,
     plan_sync,
 )
+from hr_eval.domain.org import Dept, Person, is_direct_team, manager_of
 from hr_eval.domain.members import (
     MSG_DENIED,
     Member,
@@ -1468,6 +1469,82 @@ def 명단동기화_여러_부서에_있으면_먼저_나온_부서다():
     plan = _동기화(_기본명단, 조직)
     assert [p.node_id for p in plan.user_add if p.user_no == "H1"] == ["B1"]
     assert plan.notes["여러 부서(먼저 나온 부서로)"] == 1
+
+
+def _가상조직():
+    """본부 B(10: 팀 11·12) · 직속 팀 S(20) · 임원(30). 사람 1~9 는 설계 4장 표를 한 번씩 건드린다."""
+    부서 = [
+        Dept(10, "가상본부", None),
+        Dept(11, "가상1팀", 10),
+        Dept(12, "가상2팀", 10),
+        Dept(20, "지원팀", None),
+        Dept(30, "임원", None),
+    ]
+    TL, DH, CEO = Role.TEAM_LEADER, Role.DIVISION_HEAD, Role.CEO
+    사람 = [
+        Person(1, 30, CEO),
+        Person(2, 30, DH, led_department_id=10),
+        Person(3, 11, TL, led_department_id=11),
+        Person(4, 11),
+        Person(5, 12),
+        Person(6, 10),
+        Person(7, 20, TL, led_department_id=20),
+        Person(8, 20),
+        Person(9, 30),
+    ]
+    return 사람, 부서
+
+
+
+@check
+def 맡은_부서로_본부장을_찾는다():
+    p, d = _가상조직()
+    assert manager_of(3, p, d) == 2 and manager_of(6, p, d) == 2 and manager_of(5, p, d) == 2
+
+
+
+@check
+def 팀원의_관리자는_팀장이다():
+    p, d = _가상조직()
+    assert manager_of(4, p, d) == 3 and manager_of(8, p, d) == 7
+
+
+
+@check
+def 직속팀_팀장과_본부장과_임원의_관리자는_대표이사다():
+    p, d = _가상조직()
+    assert manager_of(7, p, d) == 1 and manager_of(2, p, d) == 1 and manager_of(9, p, d) == 1
+
+
+
+@check
+def 대표이사의_관리자는_없다():
+    p, d = _가상조직()
+    assert manager_of(1, p, d) is None
+
+
+
+@check
+def 대표이사가_없으면_관리자가_없다():
+    p, d = _가상조직()
+    p = [x for x in p if x.id != 1]
+    assert manager_of(2, p, d) is None and manager_of(9, p, d) is None
+
+
+
+@check
+def 비활성_팀장은_건너뛰고_본부장이다():
+    p, d = _가상조직()
+    p = [replace(x, is_active=False) if x.id == 3 else x for x in p]
+    assert manager_of(4, p, d) == 2
+
+
+
+@check
+def 직속팀_판별():
+    _, d = _가상조직()
+    by = {x.id: x for x in d}
+    assert is_direct_team(by[20], d) and not is_direct_team(by[10], d) and not is_direct_team(by[30], d) and not is_direct_team(by[11], d)
 
 
 def main() -> int:
