@@ -58,7 +58,7 @@ from hr_eval.domain.contract_rules import (
 )
 from hr_eval.domain.grading import Assignment, validate_and_assign_evaluation_grades
 from hr_eval.domain.kpi import KpiInput, validate_kpi_set
-from hr_eval.domain.kpi_plan import ACTIONS, assign_ids, next_status, validate_plan, window_open
+from hr_eval.domain.kpi_plan import ACTIONS, assign_ids, clean_plan, next_status, validate_plan, window_open
 from hr_eval.domain.access import Act, Delegation, Pool, PoolRef, Target, can
 from hr_eval.domain.roster import (
     PortalDept,
@@ -1783,6 +1783,28 @@ def 글자_수_한도를_넘으면_TEXT_LONG():
             assert _codes(g) == 기대, (칸, n)
     일정 = lambda n: _codes(_바꿈(좋은, 2, scheds=[{"due": "2027-05-05", "name": "가" * n}]))
     assert 일정(40) == set() and 일정(41) == {"TEXT_LONG"}
+
+
+@check
+def 저장할_계획서는_아는_칸만_남긴다():
+    좋은 = _좋은계획()
+    assert clean_plan(좋은) == 좋은 and all("rid" not in it for it in _행들(clean_plan(좋은)))  # 번호가 없으면 칸도 없다
+    지저분 = _좋은계획()
+    지저분[0]["junk"] = "버릴 칸"
+    지저분[0]["items"][0].update(extra={"a": 1}, rid=7)
+    지저분[0]["items"][1].update(rid=None)
+    지저분[1]["items"][0]["scheds"][0].update(sid=5, extra=2)
+    기대 = _좋은계획()
+    기대[0]["items"][0]["rid"] = 7
+    기대[1]["items"][0]["scheds"][0]["sid"] = 5
+    복사 = copy.deepcopy(지저분)
+    assert clean_plan(지저분) == 기대 and 지저분 == 복사  # rid · sid 는 있을 때만 · 보낸 쪽은 건드리지 않는다
+    # 정기 · 비정기가 아닌 줄은 모양 검사가 업무 종류 · 목표 숫자를 안 본다 — 저장할 때는 글자 / 숫자 / None 으로 고른다
+    미정 = _좋은계획()
+    미정[0]["items"][0].update(kind=["x"], target={"a": 1})
+    assert validate_plan(미정, 2027)[0].code == "KIND" and all(i.code != "SHAPE" for i in validate_plan(미정, 2027))
+    assert (_행들(clean_plan(미정))[0]["kind"], _행들(clean_plan(미정))[0]["target"]) == ("", None)
+    assert _행들(clean_plan(_바꿈(좋은, 0, target=0.5)))[0]["target"] == 0.5
 
 
 @check

@@ -35,6 +35,10 @@ GRADES = ("S", "A", "B", "C", "D")
 TEXT_MAX = {"team": 200, "personal": 200, "action": 200, "formula": 200, "owner": 30, "unit": 10, **{g: 100 for g in GRADES}}
 SCHED_NAME_MAX = 40
 
+#: 돌려보내기 · 거절 · 수정 요청 사유의 글자 수 한도, 계획서 JSON 한 벌의 크기 한도 (UTF-8 바이트).
+REASON_MAX = 200
+PLAN_MAX_BYTES = 200 * 1024
+
 _LABEL = {
     "team": "팀목표", "personal": "개인목표", "action": "실행목표", "formula": "측정식", "owner": "담당자", "unit": "단위",
     **{g: f"{g} 달성 기준" for g in GRADES},
@@ -175,6 +179,26 @@ def validate_plan(goals: object, year: int) -> list[Issue]:
     if total != 100:
         issues.append(Issue("WEIGHT_SUM", f"가중치 합계가 100이어야 합니다 (지금 {total.normalize():f})"))
     return issues
+
+
+def clean_plan(goals: list[dict]) -> list[dict]:
+    """저장할 모습의 계획서 — 아는 칸만 남긴 새 목록 (모르는 칸은 버린다). validate_plan 이 SHAPE 를 내지 않은 계획서에만 쓴다.
+
+    rid · sid 는 있을 때만 남긴다. 정기 · 비정기가 아닌 줄은 모양 검사가 업무 종류 · 목표 숫자를 보지 않으므로,
+    업무 종류는 글자가 아니면 "" 로, 목표 숫자는 숫자가 아니면 None 으로 둔다 (제출 때 KIND 로 걸린다).
+    """
+    def ids(d: dict, key: str) -> dict:
+        return {key: d[key]} if d.get(key) is not None else {}
+
+    return [
+        {"team": g["team"], "personal": g["personal"], "items": [
+            {**ids(it, "rid"), "action": it["action"], "formula": it["formula"], "weight": it["weight"], "owner": it["owner"],
+             **{k: it[k] for k in GRADES}, "kind": it["kind"] if isinstance(it.get("kind"), str) else "",
+             "target": it["target"] if _num(it.get("target")) is not None else None, "unit": it["unit"],
+             "scheds": [{**ids(s, "sid"), "due": s["due"], "name": s["name"]} for s in it["scheds"]]}
+            for it in g["items"]]}
+        for g in goals
+    ]
 
 
 def _renumber(things: list[dict], key: str, used: set[int], keep) -> None:

@@ -670,6 +670,226 @@ def check_game(hr) -> None:
     ok(post(lead, "/api/game/gifts", {"to": 3}, headers={}).status_code == 403, "선물도 게임 화면에서만 (Origin)")
 
 
+def check_kpi_owner(hr) -> None:
+    """KPI 계획서 본인 쓰기 (2026-10-20): HR 이 연 작성 기간 안에서만 · 임시 저장 → 제출 → 취소 · 확정 뒤 수정 요청 · 기간 끝은 한국 자정 ·
+    서버가 순서대로 다시 본다 (KPI 작성 대상 403 → 작성 기간 403 → 상태 409 → 내용 400)."""
+    import kpi
+    print("KPI 계획서 (본인)")
+    emp, lead, anon = app.test_client(), app.test_client(), app.test_client()
+    login(emp, new_token("emp"))
+    login(lead, new_token("lead"))
+    was_kpi = q("SELECT writes_kpi FROM users WHERE id = 3")[0][0]
+    x("UPDATE users SET writes_kpi = 1 WHERE id = 3")  # 앞 검사가 꺼 두었다
+    today, year = auth._today(), kpi.plan_year()
+    day = lambda n: (today + timedelta(days=n)).isoformat()  # noqa: E731
+    me = lambda c: c.get("/api/kpi/me", base_url=BASE)  # noqa: E731
+    do = lambda c, what, body=None, headers=ORIGIN: c.post(f"/api/kpi/me/{what}", base_url=BASE, headers=headers, json=body or {})  # noqa: E731
+    draft = lambda c, plan: do(c, "draft", {"draft": plan})  # noqa: E731
+    row = lambda y=year: q("SELECT status, note, note_kind, change_reason, submitted_at IS NOT NULL FROM kpi_plans WHERE user_id = 3 AND year = ?", y)  # noqa: E731
+
+    def setyear(client, frm, to, start=None, y=year, headers=ORIGIN):
+        return client.post("/api/kpi/admin/year", base_url=BASE, headers=headers,
+                           json={"year": y, "editFrom": frm, "editTo": to, "evalStart": start})
+
+    def conflict(r, st):
+        return r.status_code == 409 and r.json == {"error": "지금 상태에서는 할 수 없습니다.", "status": st}
+
+    def good(y=year):
+        """정기 2 · 비정기 1, 가중치 40/30/30 (가상 글)."""
+        item = lambda name, w, kind, **more: {  # noqa: E731
+            "action": name, "formula": "가상 측정식", "weight": w, "owner": "가상3", "S": "가상 s", "A": "가상 a", "B": "가상 b", "C": "가상 c",
+            "D": "가상 d", "kind": kind, "target": None, "unit": "", "scheds": [], **more}
+        return [
+            {"team": "가상 팀목표 1", "personal": "가상 개인목표 1", "items": [item("가상 정기 업무 1", 40, "reg", target=12, unit="건"),
+                                                                     item("가상 정기 업무 2", 30, "reg")]},
+            {"team": "가상 팀목표 2", "personal": "가상 개인목표 2", "items": [item("가상 비정기 업무", 30, "irr", scheds=[
+                {"due": f"{y}-03-31", "name": "가상 초안"}, {"due": f"{y}-12-31", "name": "가상 마감"}])]},
+        ]
+
+    plan = good()
+
+    # 로그인 · 기간이 없을 때
+    ok(all(anon.get(p, base_url=BASE).status_code == 401 for p in ("/api/kpi/me", "/api/kpi/admin/year"))
+       and all(do(anon, w).status_code == 401 for w in ("draft", "submit", "cancel", "request-change"))
+       and anon.post("/api/kpi/admin/year", base_url=BASE, headers=ORIGIN, json={}).status_code == 401, "로그인 없이는 401 (KPI)")
+    r = me(emp)
+    ok(r.status_code == 200 and r.json == {"year": year, "writesKpi": True, "plan": None, "manager": {"id": 2, "name": "가상2"},
+                                           "window": {"from": None, "to": None, "evalStart": None, "open": False}},
+       "처음엔 계획서도 작성 기간도 없음 · 바로 위 관리자는 같은 팀 팀장")
+    ok(me(lead).json["manager"] is None, "가상 조직에는 팀장 위 본부장도 대표이사도 없음 → 관리자 null")
+    r = draft(emp, plan)
+    ok(r.status_code == 403 and r.json == {"error": "KPI 작성 기간이 아닙니다."} and not q("SELECT 1 FROM kpi_plans"),
+       "작성 기간이 없으면 임시 저장 403 (아무것도 안 만들어짐)")
+    ok(all(do(emp, w, {"reason": "가상 사유"}).status_code == 403 for w in ("submit", "cancel", "request-change")), "제출 · 취소 · 수정 요청도 기간 밖이면 403")
+
+    # HR 이 작성 기간을 연다
+    ok(setyear(lead, day(-1), day(7)).status_code == 403 and setyear(emp, None, None).status_code == 403
+       and emp.get("/api/kpi/admin/year", base_url=BASE).status_code == 403 and not q("SELECT 1 FROM kpi_years"),
+       "HR 이 아니면 작성 기간을 못 열고 못 봄 (403)")
+    ok(setyear(hr, day(-1), day(7), headers={}).status_code == 403, "작성 기간도 포털 화면에서만 (Origin)")
+    for bad in ({"year": year, "editFrom": "2026-13-01", "editTo": day(7)}, {"year": year, "editFrom": "abc", "editTo": "abc"},
+                {"year": year, "editFrom": "2026-2-3", "editTo": day(7)}, {"year": year, "editFrom": 20261020, "editTo": day(7)},
+                {"year": year, "editFrom": day(-1)}, {"year": year, "editTo": day(7)}, {"year": year, "editFrom": day(7), "editTo": day(-1)},
+                {"year": year, "editFrom": day(-1), "editTo": day(7), "evalStart": "내일"},
+                {"year": str(year), "editFrom": day(-1), "editTo": day(7)}, {"year": True, "editFrom": day(-1), "editTo": day(7)},
+                {"year": 2025, "editFrom": day(-1), "editTo": day(7)}, {"year": 2101, "editFrom": day(-1), "editTo": day(7)},
+                {"editFrom": day(-1), "editTo": day(7)}, []):
+        r = hr.post("/api/kpi/admin/year", base_url=BASE, headers=ORIGIN, json=bad)
+        ok(r.status_code == 400 and not q("SELECT 1 FROM kpi_years"), f"날짜 모양 · 기간 순서 · 해가 틀리면 400, 아무것도 안 남김 ({str(bad)[:60]})")
+    r = setyear(hr, day(-1), day(7), day(60))
+    ok(r.status_code == 200 and q("SELECT edit_from, edit_to, eval_start, updated_by FROM kpi_years WHERE year = ?", year)
+       == [(day(-1), day(7), day(60), 1)], "HR 이 오늘을 포함한 기간을 엶 (누가 했는지도 남음)")
+    ok(hr.get("/api/kpi/admin/year", base_url=BASE).json == {"year": year, "editFrom": day(-1), "editTo": day(7), "evalStart": day(60)}
+       and hr.get("/api/kpi/admin/year?year=2090", base_url=BASE).json == {"year": 2090, "editFrom": None, "editTo": None, "evalStart": None}
+       and all(hr.get(f"/api/kpi/admin/year?year={y}", base_url=BASE).status_code == 400 for y in ("abc", "2025", "")),
+       "기간 읽기: 해를 안 고르면 올해 · 정하지 않은 해는 빈 값 · 틀린 해는 400")
+
+    # 임시 저장
+    ok(draft(emp, plan).json == {"ok": True} and do(emp, "draft", {"draft": plan}, headers={}).status_code == 403,
+       "기간 안에서 임시 저장 200 (Origin 없으면 403)")
+    p = me(emp).json
+    ok(p["window"] == {"from": day(-1), "to": day(7), "evalStart": day(60), "open": True}
+       and p["plan"] == {"status": "DRAFT", "draft": plan, "note": None, "noteKind": None, "changeReason": None, "confirmed": None},
+       "읽으면 초안이 그대로, 상태 DRAFT, 기간은 열림")
+    ok(me(lead).json["plan"] is None, "다른 사람의 계획서는 안 보임")
+    dirty = good()
+    dirty[0]["junk"] = "버릴 칸"
+    dirty[0]["items"][0].update(rid=7, extra={"a": 1})
+    dirty[1]["items"][0]["scheds"][0].update(sid=5, extra=1)
+    kept = good()
+    kept[0]["items"][0]["rid"] = 7
+    kept[1]["items"][0]["scheds"][0]["sid"] = 5
+    ok(draft(emp, dirty).status_code == 200 and me(emp).json["plan"]["draft"] == kept, "모르는 칸은 버리고 rid · sid 는 보낸 대로 둠")
+    big = good()
+    big[0]["junk"] = ""
+    base = len(json.dumps(big, ensure_ascii=False).encode("utf-8"))
+    big[0]["junk"] = "a" * (200 * 1024 - base)
+    ok(draft(emp, big).status_code == 200 and me(emp).json["plan"]["draft"] == plan, "딱 200KB 는 저장됨 (모르는 칸은 버려짐)")
+    big[0]["junk"] += "a"
+    r = draft(emp, big)
+    ok(r.status_code == 400 and "너무 큽니다" in r.json["error"] and me(emp).json["plan"]["draft"] == plan, "200KB 를 넘으면 400 · 저장된 것은 그대로")
+    big[0]["junk"] = "가" * 70000
+    ok(draft(emp, big).status_code == 400, "큰 계획서는 막음 (한글은 한 글자 3바이트로 셈)")
+    ok(draft(emp, [{"team": "\ud800", "personal": "", "items": []}]).status_code == 400, "UTF-8 로 쓸 수 없는 글자는 400 (서버 오류가 아님)")
+    short = good()
+    short[0]["items"][0]["action"] = "가" * 201
+    wtype = good()
+    wtype[0]["items"][0]["weight"] = "40"
+    irr_target = good()
+    irr_target[1]["items"][0]["target"] = 5
+    for why, bad in (("목록이 아님", {"x": 1}), ("글자가 아닌 칸", wtype), ("비정기에 목표 숫자", irr_target), ("글자 한도", short), ("draft 칸 없음", None)):
+        r = draft(emp, bad) if bad is not None else do(emp, "draft", {"nope": 1})
+        ok(r.status_code == 400 and r.json["issues"] and me(emp).json["plan"]["draft"] == plan, f"모양 · 글자 한도가 틀린 초안은 400, 저장된 것은 그대로 ({why})")
+
+    # 제출
+    wrong = good()
+    wrong[0]["items"][0]["weight"] = 39  # 합 99
+    ok(draft(emp, []).status_code == 200 and draft(emp, wrong).status_code == 200, "가중치 합이 틀려도 · 빈 목록이어도 임시 저장은 됨 (나머지는 제출 때 본다)")
+    r = do(emp, "submit")
+    ok(r.status_code == 400 and any("가중치" in m for m in r.json["issues"]) and row() == [("DRAFT", None, None, None, 0)],
+       "틀린 계획서는 제출되지 않음 (400 + 가중치 문구) · 상태 그대로")
+    draft(emp, plan)
+    x("UPDATE kpi_plans SET note = '가상 돌려보냄 사유', note_kind = 'RETURNED' WHERE user_id = 3 AND year = ?", year)  # 관리자가 돌려보낸 뒤라고 치고
+    p = me(emp).json["plan"]
+    ok(p["note"] == "가상 돌려보냄 사유" and p["noteKind"] == "RETURNED", "돌려보낸 사유가 계획서와 함께 옴")
+    ok(do(emp, "submit").json == {"ok": True} and row() == [("SUBMITTED", None, None, None, 1)],
+       "좋은 계획서를 내면 SUBMITTED · 제출 시각 · 돌려보낸 사유는 지움")
+    ok(conflict(draft(emp, plan), "SUBMITTED") and conflict(do(emp, "submit"), "SUBMITTED")
+       and conflict(do(emp, "request-change", {"reason": "가상 사유"}), "SUBMITTED"), "제출한 뒤에는 임시 저장 · 다시 제출 · 수정 요청이 409 (지금 상태를 알려 줌)")
+    ok(conflict(draft(emp, "엉터리"), "SUBMITTED"), "상태 409 가 내용 400 보다 먼저")
+    x("UPDATE kpi_plans SET note = '가상 남은 사유', note_kind = 'REJECTED' WHERE user_id = 3 AND year = ?", year)
+    ok(do(emp, "cancel").json == {"ok": True} and row() == [("DRAFT", "가상 남은 사유", "REJECTED", None, 1)], "제출 취소 → DRAFT (상태만 바뀜)")
+    ok(conflict(do(emp, "cancel"), "DRAFT") and conflict(do(emp, "request-change", {"reason": "가상 사유"}), "DRAFT")
+       and conflict(do(emp, "request-change", {"reason": ""}), "DRAFT"), "작성 중일 때 취소 · 수정 요청은 409 (사유가 틀려도 상태 먼저)")
+    ok(conflict(do(lead, "submit"), "NONE") and conflict(do(lead, "cancel"), "NONE"), "계획서가 없으면 제출 · 취소는 409 (상태 NONE)")
+    x("UPDATE kpi_plans SET note = NULL, note_kind = NULL WHERE user_id = 3 AND year = ?", year)
+
+    # 기간 끝은 한국 자정 — 서버 시계(UTC) 14:59 가 한국 23:59, 15:10 은 다음 날 00:10
+    d = today - timedelta(days=1)
+    setyear(hr, (d - timedelta(days=5)).isoformat(), d.isoformat(), y=d.year)
+    real_now = auth._now
+    try:
+        auth._now = lambda: datetime(d.year, d.month, d.day, 14, 59, tzinfo=timezone.utc)
+        ok(draft(emp, good(d.year)).status_code == 200 and do(emp, "submit").status_code == 200 and row(d.year)[0][0] == "SUBMITTED",
+           "종료일 한국 시각 23:59 까지는 제출됨")
+        ok(do(emp, "cancel").status_code == 200, "(제출을 취소해 다시 DRAFT)")
+        auth._now = lambda: datetime(d.year, d.month, d.day, 15, 10, tzinfo=timezone.utc)
+        r = do(emp, "submit")
+        ok(r.status_code == 403 and r.json == {"error": "KPI 작성 기간이 아닙니다."} and row(d.year)[0][0] == "DRAFT",
+           "한국 자정이 지나면(UTC 15:10) 제출 403")
+    finally:
+        auth._now = real_now
+
+    # 확정 뒤 수정 요청 (확정은 다음 작업이 한다 — 여기서는 확정된 줄을 직접 넣는다)
+    setyear(hr, day(-1), day(7), day(60))
+    draft(emp, plan)
+    crowd = [app.test_client() for _ in range(5)]  # 같은 사람이 창을 여러 개 열어 놓고 동시에 제출을 누른다
+    for c in crowd:
+        login(c, new_token("emp"))
+    submitted = lambda: q("SELECT COUNT(*) FROM audit_logs WHERE action = 'KPI_SUBMITTED' AND entity_id = 3")[0][0]  # noqa: E731
+    before, codes = submitted(), []
+    threads = [threading.Thread(target=lambda c=c: codes.append(do(c, "submit").status_code)) for c in crowd]
+    for th in threads:
+        th.start()
+    for th in threads:
+        th.join()
+    ok(sorted(codes) == [200, 409, 409, 409, 409] and submitted() == before + 1, f"동시에 제출을 다섯 번 눌러도 한 번만 통과 ({codes})")
+    x("INSERT INTO kpi_versions (user_id, year, version, content, confirmed_at, confirmed_by) VALUES (3, ?, 1, ?, '2026-10-20T01:02:03Z', 2)",
+      year, json.dumps(plan, ensure_ascii=False))
+    x("UPDATE kpi_plans SET status = 'CONFIRMED', confirmed_version = 1 WHERE user_id = 3 AND year = ?", year)
+    p = me(emp).json["plan"]
+    ok(p["status"] == "CONFIRMED" and p["confirmed"] == {"version": 1, "content": plan, "at": "2026-10-20T01:02:03Z", "by": "가상2"},
+       "확정본: 판 · 내용 · 시각 · 확정한 사람의 이름")
+    ok(conflict(draft(emp, plan), "CONFIRMED") and conflict(do(emp, "submit"), "CONFIRMED") and conflict(do(emp, "cancel"), "CONFIRMED"),
+       "확정되면 임시 저장 · 제출 · 취소는 409")
+    for bad in (None, "", "   ", 5, ["x"], "가" * 201):
+        r = do(emp, "request-change", {"reason": bad} if bad is not None else {})
+        ok(r.status_code == 400 and row() == [("CONFIRMED", None, None, None, 1)], f"수정 요청 사유는 1~200자 글자 ({bad!r:.12})")
+    ok(do(emp, "request-change", {"reason": "가" * 200}).status_code == 200, "사유 200자는 됨")
+    x("UPDATE kpi_plans SET status = 'CONFIRMED', change_reason = NULL, note = '가상 남은 사유', note_kind = 'RETURNED' WHERE user_id = 3 AND year = ?", year)
+    ok(do(emp, "request-change", {"reason": "  가상 사유 문장  "}).json == {"ok": True}
+       and row() == [("CHANGE_REQUESTED", None, None, "가상 사유 문장", 1)], "확정 뒤 수정 요청 → CHANGE_REQUESTED · 사유(앞뒤 공백 뺌) · 남은 사유는 지움")
+    ok(me(emp).json["plan"]["changeReason"] == "가상 사유 문장" and conflict(draft(emp, plan), "CHANGE_REQUESTED")
+       and conflict(do(emp, "submit"), "CHANGE_REQUESTED") and conflict(do(emp, "cancel"), "CHANGE_REQUESTED"),
+       "수정 요청 중에는 임시 저장 · 제출 · 취소가 409 (풀어 주는 건 관리자)")
+
+    # 기간이 닫히면 수정 요청도 막힘 · 사람만의 기간 · 평가 시작일
+    x("UPDATE kpi_plans SET status = 'CONFIRMED', change_reason = NULL WHERE user_id = 3 AND year = ?", year)
+    r = setyear(hr, "", "", day(60))
+    ok(r.status_code == 200 and q("SELECT edit_from, edit_to FROM kpi_years WHERE year = ?", year) == [(None, None)]
+       and me(emp).json["window"] == {"from": None, "to": None, "evalStart": day(60), "open": False}, "기간 닫기 = 둘 다 비움")
+    ok(all(do(emp, w, {"reason": "가상 사유", "draft": plan}).status_code == 403 for w in ("draft", "submit", "cancel", "request-change"))
+       and row() == [("CONFIRMED", None, None, None, 1)], "기간 밖에서는 수정 요청까지 모두 403 · 기록은 그대로")
+    x("INSERT INTO kpi_windows (user_id, year, edit_from, edit_to, set_by, set_at) VALUES (3, ?, ?, ?, 1, '2026-10-20T00:00:00Z')", year, day(3), day(9))
+    ok(me(emp).json["window"] == {"from": day(3), "to": day(9), "evalStart": day(60), "open": False}, "그 사람만의 기간이 우선 (아직 안 열림)")
+    x("UPDATE kpi_windows SET edit_from = ?, edit_to = ? WHERE user_id = 3", day(-2), day(0))
+    ok(me(emp).json["window"]["open"] is True and do(emp, "request-change", {"reason": "가상 사유 2"}).status_code == 200,
+       "한 사람만 연 기간 안이면 그해 기간이 닫혀 있어도 씀")
+    x("DELETE FROM kpi_windows WHERE user_id = 3")
+    setyear(hr, day(-1), day(7), day(0))
+    ok(me(emp).json["window"]["open"] is False and do(emp, "cancel").status_code == 403, "평가 시작일부터는 작성 기간 안이어도 닫힘")
+
+    # KPI 작성이 꺼진 사람 — 읽기는 되고 쓰기는 모두 403 (기간이 닫혀 있어도 이 이유가 먼저)
+    x("UPDATE users SET writes_kpi = 0 WHERE id = 3")
+    for opened in (False, True):
+        setyear(hr, day(-1), day(7), day(60) if opened else day(0))
+        r = me(emp)
+        ok(r.status_code == 200 and r.json["writesKpi"] is False, f"KPI 작성이 꺼진 사람도 읽기는 200, writesKpi false (기간 {'열림' if opened else '닫힘'})")
+        ok(all((r := do(emp, w, {"reason": "가상 사유", "draft": plan})).status_code == 403 and r.json == {"error": "KPI 작성 대상이 아닙니다."}
+               for w in ("draft", "submit", "cancel", "request-change")), f"쓰기는 모두 403 (기간 {'열림' if opened else '닫힘'})")
+    x("UPDATE users SET writes_kpi = ? WHERE id = 3", was_kpi)
+
+    # 감사로그 — 행동 이름 · 대상 · 해만
+    acts = {r[0] for r in q("SELECT action FROM audit_logs WHERE action LIKE 'KPI_%'")}
+    ok(acts == {"KPI_YEAR_SET", "KPI_SUBMITTED", "KPI_CANCELLED", "KPI_CHANGE_REQUESTED"}, "감사로그: 기간 · 제출 · 취소 · 수정 요청 (임시 저장은 남기지 않음)")
+    ok(q("SELECT actor_user_id, entity_type, entity_id, after_data FROM audit_logs WHERE action = 'KPI_SUBMITTED' ORDER BY id LIMIT 1")
+       == [(3, "kpi_plan", 3, json.dumps({"year": year}))], "제출 감사로그: 누가 · 누구 계획서 · 해")
+    ok(q("SELECT actor_user_id, actor_is_hr, entity_id FROM audit_logs WHERE action = 'KPI_YEAR_SET' ORDER BY id LIMIT 1") == [(1, 1, year)],
+       "작성 기간 감사로그: HR · 해")
+    ok(q("SELECT COUNT(*) FROM audit_logs WHERE action LIKE 'KPI_%' AND (IFNULL(before_data, '') || IFNULL(after_data, '') || IFNULL(reason, '')) LIKE '%가상%'")
+       == [(0,)], "계획서 · 사유 문장은 감사로그에 없음")
+
+
 def main() -> int:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     seed()
@@ -906,6 +1126,7 @@ def main() -> int:
     check_news(hr)
     check_workspace(hr)
     check_game(hr)
+    check_kpi_owner(hr)
 
     acts = {r[0] for r in q("SELECT action FROM audit_logs")}
     ok({"LOGIN", "HR_BOOTSTRAP"} <= acts, "감사로그 LOGIN 이 남음")
