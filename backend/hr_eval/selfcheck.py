@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import copy
 import pathlib
 import sys
 import traceback
@@ -57,6 +58,7 @@ from hr_eval.domain.contract_rules import (
 )
 from hr_eval.domain.grading import Assignment, validate_and_assign_evaluation_grades
 from hr_eval.domain.kpi import KpiInput, validate_kpi_set
+from hr_eval.domain.kpi_plan import ACTIONS, assign_ids, next_status, validate_plan, window_open
 from hr_eval.domain.access import Act, Delegation, Pool, PoolRef, Target, can
 from hr_eval.domain.roster import (
     PortalDept,
@@ -1596,6 +1598,273 @@ def 직속팀_판별():
     _, d = _가상조직()
     by = {x.id: x for x in d}
     assert is_direct_team(by[20], d) and not is_direct_team(by[10], d) and not is_direct_team(by[30], d) and not is_direct_team(by[11], d)
+
+
+def _행(이름, 가중치, 종류, **바꿈):
+    """KPI 계획서의 실행목표 한 줄 (가상 글). 바꿈으로 칸을 덮어쓴다."""
+    r = {
+        "action": 이름, "formula": "가상 측정식", "weight": 가중치, "owner": "가상1",
+        "S": "가상 s", "A": "가상 a", "B": "가상 b", "C": "가상 c", "D": "가상 d",
+        "kind": 종류, "target": None, "unit": "", "scheds": [],
+    }
+    r.update(바꿈)
+    return r
+
+
+def _좋은계획():
+    """정기 2 (묶음 1) · 비정기 1 (묶음 2), 가중치 40/30/30, S~D 모두 채움 — 2027년 계획서."""
+    return [
+        {"team": "가상 팀목표 1", "personal": "가상 개인목표 1", "items": [
+            _행("가상 정기 업무 1", 40, "reg", target=12, unit="건"),
+            _행("가상 정기 업무 2", 30, "reg"),
+        ]},
+        {"team": "가상 팀목표 2", "personal": "가상 개인목표 2", "items": [
+            _행("가상 비정기 업무", 30, "irr", scheds=[
+                {"due": "2027-03-31", "name": "가상 초안"},
+                {"due": "2027-12-31", "name": "가상 마감"},
+            ]),
+        ]},
+    ]
+
+
+def _행들(goals):
+    """계획서 전체의 실행목표 줄 (묶음 순서대로)."""
+    return [it for g in goals for it in g["items"]]
+
+
+def _행빼기(goals, k):
+    """k번째(0부터) 실행목표 줄을 뺀 사본."""
+    g = copy.deepcopy(goals)
+    for 묶음 in g:
+        if k < len(묶음["items"]):
+            del 묶음["items"][k]
+            return g
+        k -= len(묶음["items"])
+    raise IndexError(k)
+
+
+def _가중치(goals, 값들):
+    g = copy.deepcopy(goals)
+    for it, w in zip(_행들(g), 값들):
+        it["weight"] = w
+    return g
+
+
+def _바꿈(goals, k, **바꿈):
+    """k번째(0부터) 실행목표 줄의 칸을 바꾼 사본."""
+    g = copy.deepcopy(goals)
+    _행들(g)[k].update(바꿈)
+    return g
+
+
+def _codes(goals, year=2027):
+    return {i.code for i in validate_plan(goals, year)}
+
+
+def _raises(exc, fn, *args):
+    try:
+        fn(*args)
+    except exc:
+        return
+    raise AssertionError(f"{exc.__name__} 이(가) 나야 하는데 나지 않았다: {args}")
+
+
+@check
+def 좋은_계획서는_문제가_없다():
+    assert validate_plan(_좋은계획(), 2027) == []
+
+
+@check
+def 실행목표는_세_개부터():
+    assert "ITEMS_MIN" in _codes(_행빼기(_좋은계획(), 1))  # 묶음이 둘이어도 계획서 전체로 센다
+    assert "ITEMS_MIN" in _codes([])
+    assert "ITEMS_MIN" not in _codes(_좋은계획())
+
+
+@check
+def 가중치_소수_합은_정확히_100():
+    assert validate_plan(_가중치(_좋은계획(), [33.33, 33.33, 33.34]), 2027) == []
+    assert "WEIGHT_SUM" in _codes(_가중치(_좋은계획(), [33.33, 33.33, 33.33]))
+    assert "WEIGHT_SUM" in _codes(_가중치(_좋은계획(), [40, 30, 31]))
+    assert validate_plan(_가중치(_좋은계획(), [64.9, 2.9, 32.2]), 2027) == []  # float 로 더하면 100.00000000000001 이 되는 값도 십진수로 더한다
+
+
+@check
+def 가중치는_모두_0보다_커야_한다():
+    assert "WEIGHT_POSITIVE" in _codes(_가중치(_좋은계획(), [70, 30, 0]))
+    codes = _codes(_가중치(_좋은계획(), [110, 30, -40]))  # 합은 100 이어도 음수는 안 된다
+    assert "WEIGHT_POSITIVE" in codes and "WEIGHT_SUM" not in codes
+
+
+@check
+def 달성기준은_모두_필요():
+    assert "GRADE_REQUIRED" in _codes(_바꿈(_좋은계획(), 1, C=""))
+    assert "GRADE_REQUIRED" in _codes(_바꿈(_좋은계획(), 0, S="  "))  # 공백만 있는 것도 빈 것
+
+
+@check
+def 비정기는_그해_안의_일정이_하나_이상():
+    좋은 = _좋은계획()
+    코드 = lambda scheds: _codes(_바꿈(좋은, 2, scheds=scheds))
+    assert "SCHED_MIN" in 코드([])
+    for due in ("2028-01-03", "2026-12-31", "2027-02-30", "2027-3-1", "20270301", ""):  # 그해 밖 · 없는 날 · 모양이 다름
+        assert "SCHED_DATE" in 코드([{"due": due, "name": ""}]), due
+    assert 코드([{"due": "2027-01-01", "name": ""}, {"due": "2027-12-31", "name": ""}]) == set()  # 그해의 처음과 끝 · 이름은 비어도 된다
+    일정 = lambda n: [{"due": "2027-05-05", "name": f"가상 {i}"} for i in range(n)]
+    assert 코드(일정(24)) == set() and "SCHED_MAX" in 코드(일정(25))
+
+
+@check
+def 정기의_목표_숫자는_양수거나_비움():
+    좋은 = _좋은계획()
+    for 값 in (0, -3, True, "12"):  # 불리언은 숫자가 아니다
+        assert "TARGET" in _codes(_바꿈(좋은, 0, target=값)), 값
+    assert _codes(_바꿈(좋은, 0, target=None)) == set() and _codes(_바꿈(좋은, 0, target=0.5)) == set()
+
+
+@check
+def 업무_종류는_정기_비정기_둘_중_하나():
+    좋은 = _좋은계획()
+    for 값 in ("", "regular", None, 1):
+        assert "KIND" in _codes(_바꿈(좋은, 0, kind=값)), 값
+    없음 = _좋은계획()
+    del 없음[0]["items"][0]["kind"]
+    assert "KIND" in _codes(없음)
+
+
+@check
+def 모양이_틀리면_SHAPE():
+    좋은 = _좋은계획()
+    for 틀림 in ({}, None, "x", [{"items": "x"}], [{"team": "t", "personal": "p"}], [{"team": 1, "personal": "p", "items": []}],
+               ["x"], [{"team": "t", "personal": "p", "items": ["x"]}]):
+        assert _codes(틀림) == {"SHAPE"}, 틀림
+    for 칸, 값 in (("weight", "40"), ("weight", True), ("weight", None), ("weight", float("nan")), ("action", 5), ("S", None),
+                  ("unit", 3), ("scheds", "x"), ("rid", 0), ("rid", "1"), ("rid", True)):
+        assert _codes(_바꿈(좋은, 0, **{칸: 값})) == {"SHAPE"}, (칸, 값)
+    # R1: 비정기는 목표 숫자 · 단위가 없고, 정기는 일정이 없다
+    assert _codes(_바꿈(좋은, 2, target=5)) == {"SHAPE"} and _codes(_바꿈(좋은, 2, unit="건")) == {"SHAPE"}
+    assert _codes(_바꿈(좋은, 0, scheds=[{"due": "2027-05-05", "name": ""}])) == {"SHAPE"}
+    assert validate_plan(_바꿈(좋은, 2, target=5), 2027)[0].target == "item:1.0"  # 묶음 1 의 줄 0
+    # 일정 한 칸의 모양
+    for 일정 in ("x", {"due": "2027-05-05"}, {"due": 20270505, "name": ""}, {"due": "2027-05-05", "name": "", "sid": 0}):
+        assert _codes(_바꿈(좋은, 2, scheds=[일정])) == {"SHAPE"}, 일정
+
+
+@check
+def 글자_수_한도를_넘으면_TEXT_LONG():
+    좋은 = _좋은계획()
+    한도 = {"action": 200, "formula": 200, "owner": 30, "unit": 10, "S": 100, "A": 100, "B": 100, "C": 100, "D": 100}
+    for 칸, n in 한도.items():
+        assert _codes(_바꿈(좋은, 0, **{칸: "가" * n})) == set(), 칸  # 한도 딱 맞는 건 된다
+        assert _codes(_바꿈(좋은, 0, **{칸: "가" * (n + 1)})) == {"TEXT_LONG"}, 칸
+    for 칸 in ("team", "personal"):
+        for n, 기대 in ((200, set()), (201, {"TEXT_LONG"})):
+            g = _좋은계획()
+            g[0][칸] = "가" * n
+            assert _codes(g) == 기대, (칸, n)
+    일정 = lambda n: _codes(_바꿈(좋은, 2, scheds=[{"due": "2027-05-05", "name": "가" * n}]))
+    assert 일정(40) == set() and 일정(41) == {"TEXT_LONG"}
+
+
+@check
+def 새_행에_번호를_주고_종류를_바꾸면_새_번호():
+    확정 = assign_ids(_좋은계획(), [])
+    assert [it["rid"] for it in _행들(확정)] == [1, 2, 3]
+    assert [s["sid"] for s in _행들(확정)[2]["scheds"]] == [1, 2]
+    # 확정본에 있던 행은 문장을 고쳐도 번호를 지키고, 새 행 · 새 일정은 쓴 적 없는 번호
+    고침 = copy.deepcopy(확정)
+    _행들(고침)[1]["action"] = "가상 고친 문장"
+    고침[0]["items"].append(_행("가상 새 업무", 0, "reg"))
+    고침[1]["items"][0]["scheds"].append({"due": "2027-09-09", "name": "가상 새 일정"})
+    결과 = assign_ids(고침, [확정])
+    assert [it["rid"] for it in _행들(결과)] == [1, 2, 4, 3]
+    assert [s["sid"] for s in _행들(결과)[3]["scheds"]] == [1, 2, 3]
+    # 마지막 확정본에서 rid 1 은 정기(reg) — 지금 rid 1 이 비정기(irr)면 다른 행이다
+    바뀜 = copy.deepcopy(확정)
+    _행들(바뀜)[0].update(kind="irr", target=None, unit="", scheds=[{"due": "2027-04-04", "name": "가상 일정"}])
+    결과 = assign_ids(바뀜, [확정])
+    assert [it["rid"] for it in _행들(결과)] == [4, 2, 3]
+    assert [s["sid"] for s in _행들(결과)[0]["scheds"]] == [3]
+    # 마지막 확정본만 본다 — 그 전 판에서 종류가 달랐어도 지금 판과 같으면 이어진다
+    옛 = copy.deepcopy(확정)
+    _행들(옛)[0].update(kind="irr", target=None, unit="", scheds=[{"sid": 9, "due": "2027-02-02", "name": "가상 옛 일정"}])
+    assert assign_ids(확정, [옛, 확정]) == 확정
+
+
+@check
+def 번호_부여는_원본을_안_건드리고_중복은_뒤에_새_번호():
+    원본 = _좋은계획()
+    복사 = copy.deepcopy(원본)
+    확정 = assign_ids(원본, [])
+    assert 원본 == 복사  # 입력은 그대로
+    assert assign_ids(확정, []) == 확정 and assign_ids(확정, [확정]) == 확정  # 다시 해도 같다
+    # 같은 번호가 둘이면 앞의 것이 지키고 뒤의 것이 새 번호 (일정 번호도 계획서 전체에서 하나뿐)
+    중복 = copy.deepcopy(확정)
+    _행들(중복)[1]["rid"] = 1
+    _행들(중복)[2]["scheds"][1]["sid"] = 1
+    결과 = assign_ids(중복, [])
+    assert [it["rid"] for it in _행들(결과)] == [1, 2, 3] and [s["sid"] for s in _행들(결과)[2]["scheds"]] == [1, 2]
+    결과 = assign_ids(중복, [확정])
+    assert [it["rid"] for it in _행들(결과)] == [1, 4, 3] and [s["sid"] for s in _행들(결과)[2]["scheds"]] == [1, 3]
+    # 지운 행의 번호는 다시 쓰지 않는다
+    지움 = _행빼기(확정, 2)
+    지움[0]["items"].append(_행("가상 새 업무", 30, "reg"))
+    assert [it["rid"] for it in _행들(assign_ids(지움, [확정]))] == [1, 2, 4]
+    # 앞에 있는 새 행이 뒤에 있는 기존 번호를 가로채지 않는다
+    앞에새행 = [{"team": "t", "personal": "p", "items": [
+        _행("가상 새 업무", 30, "reg"), _행("가상 옛 업무 1", 30, "reg", rid=1), _행("가상 옛 업무 2", 40, "reg", rid=2),
+    ]}]
+    assert [it["rid"] for it in _행들(assign_ids(앞에새행, []))] == [3, 1, 2]
+
+
+@check
+def 상태_흐름():
+    assert next_status("DRAFT", "submit") == "SUBMITTED" and next_status("SUBMITTED", "return") == "DRAFT"
+    assert next_status("CONFIRMED", "request_change") == "CHANGE_REQUESTED" and next_status("CHANGE_REQUESTED", "reject") == "CONFIRMED"
+    assert next_status("CHANGE_REQUESTED", "unlock") == "DRAFT"
+    for bad in (("CONFIRMED", "confirm"), ("DRAFT", "unlock"), ("SUBMITTED", "save"), ("CHANGE_REQUESTED", "return")):
+        _raises(StateConflictError, next_status, *bad)
+
+
+@check
+def 상태_흐름은_그림의_여덟_조합만_된다():
+    된다 = {
+        ("DRAFT", "save"): "DRAFT", ("DRAFT", "submit"): "SUBMITTED",
+        ("SUBMITTED", "cancel"): "DRAFT", ("SUBMITTED", "return"): "DRAFT", ("SUBMITTED", "confirm"): "CONFIRMED",
+        ("CONFIRMED", "request_change"): "CHANGE_REQUESTED",
+        ("CHANGE_REQUESTED", "unlock"): "DRAFT", ("CHANGE_REQUESTED", "reject"): "CONFIRMED",
+    }
+    assert {a for _, a in 된다} == set(ACTIONS)
+    for 상태 in ("DRAFT", "SUBMITTED", "CONFIRMED", "CHANGE_REQUESTED"):
+        for 행동 in ACTIONS:
+            if (상태, 행동) in 된다:
+                assert next_status(상태, 행동) == 된다[(상태, 행동)], (상태, 행동)
+            else:
+                _raises(StateConflictError, next_status, 상태, 행동)
+    _raises(StateConflictError, next_status, "NOPE", "save")
+    _raises(StateConflictError, next_status, "DRAFT", "nope")
+
+
+@check
+def 작성_기간_판정():
+    y = ("2027-01-04", "2027-01-22", "2027-12-01")
+    assert window_open(date(2027, 1, 22), y, None) and not window_open(date(2027, 1, 23), y, None)
+    assert window_open(date(2027, 3, 2), y, ("2027-03-02", "2027-03-10"))
+    assert not window_open(date(2027, 12, 1), ("2027-11-01", "2027-12-31", "2027-12-01"), None)
+    # 양 끝 날짜를 포함한다
+    assert window_open(date(2027, 1, 4), y, None) and not window_open(date(2027, 1, 3), y, None)
+    # 사람 기간이 우선 — 그해 기간 밖이어도 사람 기간 안이면 열리고, 그해 기간 안이어도 사람 기간 밖이면 닫힌다
+    사람 = ("2027-03-02", "2027-03-10")
+    assert window_open(date(2027, 3, 10), y, 사람) and not window_open(date(2027, 3, 11), y, 사람)
+    assert not window_open(date(2027, 1, 10), y, 사람)
+    # 평가 시작일부터는 사람 기간도 닫힌다
+    assert window_open(date(2027, 11, 30), y, ("2027-11-20", "2027-12-31"))
+    assert not window_open(date(2027, 12, 1), y, ("2027-11-20", "2027-12-31"))
+    # 기간이 없으면 닫혀 있다 · 평가 시작일이 없으면 기간만 본다 · 그해 줄이 없어도 사람 기간은 쓴다
+    assert not window_open(date(2027, 1, 10), None, None) and not window_open(date(2027, 1, 10), (None, None, None), None)
+    assert not window_open(date(2027, 1, 10), ("2027-01-04", None, None), None)
+    assert window_open(date(2027, 1, 10), ("2027-01-04", "2027-01-22", None), None)
+    assert window_open(date(2027, 3, 5), None, 사람)
 
 
 def main() -> int:
