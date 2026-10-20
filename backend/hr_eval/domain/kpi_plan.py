@@ -40,6 +40,7 @@ _LABEL = {
     **{g: f"{g} 달성 기준" for g in GRADES},
 }
 _ITEM_TEXTS = ("action", "formula", "owner", "unit", *GRADES)
+_REQUIRED = ("team", "personal", "action", "formula")   # 공백만 있어도 빈 것 (담당자 · 단위 · 일정 이름은 비워도 된다)
 
 
 def _num(x: object) -> Decimal | None:
@@ -55,7 +56,10 @@ def _is_id(x: object) -> bool:
 
 
 def _shape(goals: object) -> list[Issue]:
-    """JSON 모양이 틀린 곳 (R1: 비정기에 목표 숫자 · 단위, 정기에 일정이 있으면 이것도). 있으면 다른 규칙은 볼 수 없다."""
+    """JSON 모양이 틀린 곳. 있으면 다른 규칙은 볼 수 없다.
+
+    R1: 비정기에 목표 숫자 · 단위가 있거나 정기에 일정이 있으면 이것도. R12: 정기의 목표 숫자가 숫자(불리언 아님)도 null 도 아니면 이것도.
+    """
     bad: list[Issue] = []
 
     def no(msg: str, target: str | None = None) -> None:
@@ -87,8 +91,11 @@ def _shape(goals: object) -> list[Issue]:
                     wrong.append("target")
                 if it.get("unit") != "" and "unit" not in wrong:
                     wrong.append("unit")
-            elif kind == "reg" and scheds != [] and "scheds" not in wrong:
-                wrong.append("scheds")
+            elif kind == "reg":
+                if scheds != [] and "scheds" not in wrong:
+                    wrong.append("scheds")
+                if it.get("target") is not None and _num(it["target"]) is None:
+                    wrong.append("target")
             if wrong:
                 no(f"{where}에 모양이 틀린 칸이 있습니다 ({', '.join(wrong)})", f"item:{gi}.{ii}")
             for si, s in enumerate(scheds if isinstance(scheds, list) else []):
@@ -119,20 +126,23 @@ def validate_plan(goals: object, year: int) -> list[Issue]:
 
     issues: list[Issue] = []
 
-    def too_long(text: str, key: str, limit: int, where: str, target: str, label: str | None = None) -> None:
+    def check_text(text: str, key: str, limit: int, where: str, target: str, label: str | None = None) -> None:
+        label = label or _LABEL[key]
+        if key in _REQUIRED and not text.strip():
+            issues.append(Issue("TEXT_REQUIRED", f"{where} {label}: 비워 둘 수 없습니다", target=target))
         if len(text) > limit:
-            issues.append(Issue("TEXT_LONG", f"{where} {label or _LABEL[key]}: {limit}자까지 쓸 수 있습니다 (지금 {len(text)}자)", target=target))
+            issues.append(Issue("TEXT_LONG", f"{where} {label}: {limit}자까지 쓸 수 있습니다 (지금 {len(text)}자)", target=target))
 
     total = Decimal(0)
     n = 0   # 계획서 전체에서 몇 번째 실행목표인가 (메시지용)
     for gi, g in enumerate(goals):
         for key in ("team", "personal"):
-            too_long(g[key], key, TEXT_MAX[key], f"{gi + 1}번째 묶음", f"goal:{gi}")
+            check_text(g[key], key, TEXT_MAX[key], f"{gi + 1}번째 묶음", f"goal:{gi}")
         for ii, it in enumerate(g["items"]):
             n += 1
             where, t = f"실행목표 {n}번", f"item:{gi}.{ii}"
             for key in _ITEM_TEXTS:
-                too_long(it[key], key, TEXT_MAX[key], where, t)
+                check_text(it[key], key, TEXT_MAX[key], where, t)
             if any(not it[gr].strip() for gr in GRADES):
                 issues.append(Issue("GRADE_REQUIRED", f"{where}: S~D 달성 기준을 모두 써 주세요", target=t))
 
@@ -143,8 +153,8 @@ def validate_plan(goals: object, year: int) -> list[Issue]:
 
             kind = it.get("kind")
             if kind == "reg":
-                x = it.get("target")
-                if x is not None and not ((d := _num(x)) is not None and d > 0):
+                x = it.get("target")   # 모양 검사를 지났으니 null 이거나 숫자
+                if x is not None and _num(x) <= 0:
                     issues.append(Issue("TARGET", f"{where}: 목표 숫자는 0보다 큰 숫자이거나 비워야 합니다", target=t))
             elif kind == "irr":
                 scheds = it["scheds"]
@@ -156,7 +166,7 @@ def validate_plan(goals: object, year: int) -> list[Issue]:
                     st = f"sched:{gi}.{ii}.{si}"
                     if not _in_year(s["due"], year):
                         issues.append(Issue("SCHED_DATE", f"{where}: 예정 기한은 {year}년 안의 날짜여야 합니다 ({s['due']!r})", target=st))
-                    too_long(s["name"], "name", SCHED_NAME_MAX, f"{where} {si + 1}번째 일정", st, "이름")
+                    check_text(s["name"], "name", SCHED_NAME_MAX, f"{where} {si + 1}번째 일정", st, "이름")
             else:
                 issues.append(Issue("KIND", f"{where}: 업무 종류를 정기적 또는 비정기적으로 골라 주세요", target=t))
 
@@ -167,18 +177,17 @@ def validate_plan(goals: object, year: int) -> list[Issue]:
     return issues
 
 
-def _renumber(things: list[dict], key: str, used: set[int], clash=lambda thing: False) -> None:
-    """things 의 key 번호를 정리한다. 이미 있는 번호는 지키되, 중복(뒤의 것)이나 clash 인 것은 새 번호를 준다.
+def _renumber(things: list[dict], key: str, used: set[int], keep) -> None:
+    """things 의 key 번호를 새로 매긴다. keep(thing) 이 참이고 앞에 같은 번호가 없는 것만 번호를 지키고, 나머지는 새 번호.
 
-    새 번호 = used(이 계획서에서 쓴 적 있는 번호)와 지킨 번호에 없는 가장 작은 수부터.
-    지킨 번호를 다 정한 뒤에 새 번호를 준다 — 앞의 새 행이 뒤에 있는 기존 번호를 가로채지 않게.
+    새 번호 = used(이 계획서의 어느 확정본에서든 쓴 적 있는 번호)와 지킨 번호에 없는 가장 작은 양의 정수.
+    지킨 번호를 다 정한 뒤에 새 번호를 준다 — 앞의 새 행이 뒤에 있는 지킬 번호를 가로채지 않게.
     """
     kept: set[int] = set()
     fresh = []
     for thing in things:
-        n = thing.get(key)
-        if _is_id(n) and n not in kept and not clash(thing):
-            kept.add(n)
+        if keep(thing) and thing[key] not in kept:
+            kept.add(thing[key])
         else:
             fresh.append(thing)
     taken = used | kept
@@ -191,21 +200,30 @@ def _renumber(things: list[dict], key: str, used: set[int], clash=lambda thing: 
 
 
 def assign_ids(goals: list[dict], history: Sequence[list[dict]]) -> list[dict]:
-    """확정할 때 새 행(rid) · 새 일정(sid)에 번호를 붙인 새 계획서를 돌려준다 (goals 는 건드리지 않는다).
+    """확정할 때 행(rid) · 일정(sid)의 번호를 매긴 새 계획서를 돌려준다 (goals 는 건드리지 않는다).
 
-    history = 이 계획서의 지난 확정본들 (오래된 것부터). 번호는 계획서 전체에서 하나뿐이고,
-    한 번 쓴 번호는 지운 행의 것이라도 다시 쓰지 않는다 (옛 진행 기록이 새 행에 이어지지 않게).
-    같은 rid 가 마지막 확정본에서 업무 종류가 달랐다면 다른 행으로 보고 새 rid 를 준다.
+    history = 이 계획서의 지난 확정본들 (오래된 것부터). 화면이 보낸 번호는 믿지 않는다 (R13):
+    - 행의 rid 는 마지막 확정본에 같은 rid 가 있고 업무 종류도 같을 때만 지킨다 (종류를 바꾼 행은 새 행).
+    - 일정의 sid 는 마지막 확정본에서 같은 rid 의 행 밑에 있던 것만 지킨다 (다른 행으로 옮겼으면 새 일정).
+    - 같은 번호가 앞에 또 있으면 뒤의 것은 새 번호. 나머지는 모두 새 번호 —
+      어느 확정본에서든 쓴 적 없는 가장 작은 양의 정수 (지운 행의 번호도 다시 쓰지 않아 옛 진행 기록이 이어지지 않는다).
+    확정본이 없으면 행은 1, 2, … 일정도 1, 2, … 로 매긴다. goals 는 validate_plan 을 지난 것으로 본다.
     """
     out = copy.deepcopy(goals)
     rows = [it for g in out for it in g["items"]]
-    old = [it for version in history for g in version for it in g["items"]]
-    last = {it["rid"]: it["kind"] for g in (history[-1] if history else []) for it in g["items"]}
+    last_rows = [it for g in (history[-1] if history else []) for it in g["items"]]
+    every_rows = [it for version in history for g in version for it in g["items"]]
+    kind_of = {it["rid"]: it["kind"] for it in last_rows}                       # 마지막 확정본: rid -> 업무 종류
+    rid_of = {s["sid"]: it["rid"] for it in last_rows for s in it["scheds"]}     # 마지막 확정본: sid -> 그 일정이 있던 rid
     _renumber(
-        rows, "rid", {it["rid"] for it in old},
-        clash=lambda it: it.get("rid") in last and last[it["rid"]] != it.get("kind"),
+        rows, "rid", {it["rid"] for it in every_rows},
+        lambda it: _is_id(it.get("rid")) and it["rid"] in kind_of and kind_of[it["rid"]] == it.get("kind"),
     )
-    _renumber([s for it in rows for s in it["scheds"]], "sid", {s["sid"] for it in old for s in it["scheds"]})
+    parent = {id(s): it["rid"] for it in rows for s in it["scheds"]}            # 일정 -> 새로 정한 행 rid
+    _renumber(
+        [s for it in rows for s in it["scheds"]], "sid", {s["sid"] for it in every_rows for s in it["scheds"]},
+        lambda s: _is_id(s.get("sid")) and rid_of.get(s["sid"]) == parent[id(s)],
+    )
     return out
 
 

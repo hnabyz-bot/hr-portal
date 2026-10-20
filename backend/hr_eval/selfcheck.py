@@ -1703,6 +1703,23 @@ def 달성기준은_모두_필요():
 
 
 @check
+def 빈_목표와_측정식은_TEXT_REQUIRED():
+    좋은 = _좋은계획()
+    for 칸 in ("action", "formula"):
+        for 빈 in ("", "   "):
+            assert _codes(_바꿈(좋은, 0, **{칸: 빈})) == {"TEXT_REQUIRED"}, (칸, 빈)
+    assert validate_plan(_바꿈(좋은, 0, formula=" "), 2027)[0].target == "item:0.0"
+    for 칸 in ("team", "personal"):
+        g = _좋은계획()
+        g[1][칸] = " "
+        assert _codes(g) == {"TEXT_REQUIRED"}, 칸
+    # 담당자 · 단위 · 일정 이름은 비워도 된다 (S~D 는 GRADE_REQUIRED 가 따로 본다)
+    assert _codes(_바꿈(좋은, 0, owner="", unit="")) == set()
+    assert _codes(_바꿈(좋은, 2, scheds=[{"due": "2027-05-05", "name": " "}])) == set()
+    assert validate_plan(좋은, 2027) == []
+
+
+@check
 def 비정기는_그해_안의_일정이_하나_이상():
     좋은 = _좋은계획()
     코드 = lambda scheds: _codes(_바꿈(좋은, 2, scheds=scheds))
@@ -1717,8 +1734,10 @@ def 비정기는_그해_안의_일정이_하나_이상():
 @check
 def 정기의_목표_숫자는_양수거나_비움():
     좋은 = _좋은계획()
-    for 값 in (0, -3, True, "12"):  # 불리언은 숫자가 아니다
-        assert "TARGET" in _codes(_바꿈(좋은, 0, target=값)), 값
+    for 값 in (0, -3, -0.5):
+        assert _codes(_바꿈(좋은, 0, target=값)) == {"TARGET"}, 값
+    for 값 in ("12", True, False):  # 숫자가 아니면 모양이 틀린 것 (불리언은 숫자가 아니다)
+        assert _codes(_바꿈(좋은, 0, target=값)) == {"SHAPE"}, 값
     assert _codes(_바꿈(좋은, 0, target=None)) == set() and _codes(_바꿈(좋은, 0, target=0.5)) == set()
 
 
@@ -1739,7 +1758,7 @@ def 모양이_틀리면_SHAPE():
                ["x"], [{"team": "t", "personal": "p", "items": ["x"]}]):
         assert _codes(틀림) == {"SHAPE"}, 틀림
     for 칸, 값 in (("weight", "40"), ("weight", True), ("weight", None), ("weight", float("nan")), ("action", 5), ("S", None),
-                  ("unit", 3), ("scheds", "x"), ("rid", 0), ("rid", "1"), ("rid", True)):
+                  ("unit", 3), ("scheds", "x"), ("rid", 0), ("rid", "1"), ("rid", True), ("target", "5"), ("target", True)):
         assert _codes(_바꿈(좋은, 0, **{칸: 값})) == {"SHAPE"}, (칸, 값)
     # R1: 비정기는 목표 숫자 · 단위가 없고, 정기는 일정이 없다
     assert _codes(_바꿈(좋은, 2, target=5)) == {"SHAPE"} and _codes(_바꿈(좋은, 2, unit="건")) == {"SHAPE"}
@@ -1811,10 +1830,41 @@ def 번호_부여는_원본을_안_건드리고_중복은_뒤에_새_번호():
     지움[0]["items"].append(_행("가상 새 업무", 30, "reg"))
     assert [it["rid"] for it in _행들(assign_ids(지움, [확정]))] == [1, 2, 4]
     # 앞에 있는 새 행이 뒤에 있는 기존 번호를 가로채지 않는다
-    앞에새행 = [{"team": "t", "personal": "p", "items": [
-        _행("가상 새 업무", 30, "reg"), _행("가상 옛 업무 1", 30, "reg", rid=1), _행("가상 옛 업무 2", 40, "reg", rid=2),
-    ]}]
-    assert [it["rid"] for it in _행들(assign_ids(앞에새행, []))] == [3, 1, 2]
+    옛판 = assign_ids([{"team": "t", "personal": "p", "items": [_행("가상 옛 업무 1", 50, "reg"), _행("가상 옛 업무 2", 50, "reg")]}], [])
+    앞에새행 = copy.deepcopy(옛판)
+    앞에새행[0]["items"].insert(0, _행("가상 새 업무", 30, "reg"))
+    assert [it["rid"] for it in _행들(assign_ids(앞에새행, [옛판]))] == [3, 1, 2]
+
+
+@check
+def 번호는_마지막_확정본에_있는_것만_지킨다():
+    # 확정본이 없으면 클라이언트가 보낸 번호는 믿지 않는다 — 1 부터
+    한줄 = [{"team": "t", "personal": "p", "items": [_행("가상 업무", 100, "reg", rid=99)]}]
+    assert _행들(assign_ids(한줄, []))[0]["rid"] == 1
+    보냄 = _좋은계획()
+    _행들(보냄)[0]["rid"] = 99
+    _행들(보냄)[2]["scheds"][0]["sid"] = 77
+    결과 = _행들(assign_ids(보냄, []))
+    assert [it["rid"] for it in 결과] == [1, 2, 3] and [s["sid"] for s in 결과[2]["scheds"]] == [1, 2]
+    # 옛 판에만 있고 마지막 판에서 지운 rid 는 되살리지 못한다 — 쓴 적 없는 새 번호
+    v1 = assign_ids(_좋은계획(), [])  # rid 1 2 3
+    v2 = assign_ids(_행빼기(v1, 2), [v1])  # rid 3 을 지운 판
+    되살림 = copy.deepcopy(v2)
+    되살림[0]["items"].append(_행("가상 되살린 업무", 0, "reg", rid=3))
+    assert [it["rid"] for it in _행들(assign_ids(되살림, [v1, v2]))] == [1, 2, 4]
+    # 지운 행에 있던 일정의 sid 도 다시 쓰지 않는다 (v1 의 sid 1 2 는 v2 에서 사라졌다)
+    새비정기 = copy.deepcopy(v2)
+    새비정기[1]["items"].append(_행("가상 새 비정기 업무", 0, "irr", scheds=[{"due": "2027-09-09", "name": "가상 새 일정"}]))
+    결과 = _행들(assign_ids(새비정기, [v1, v2]))
+    assert 결과[2]["rid"] == 4 and [s["sid"] for s in 결과[2]["scheds"]] == [3]
+    # 일정이 마지막 판과 다른 행 밑으로 옮겨졌으면 새 sid, 그대로 있는 일정은 sid 를 지킨다
+    계획 = _좋은계획()
+    계획[1]["items"].append(_행("가상 비정기 업무 2", 0, "irr", scheds=[{"due": "2027-08-08", "name": "가상 셋째"}]))
+    v = assign_ids(계획, [])  # rid 1~4 · sid 1 2 (rid 3) · 3 (rid 4)
+    옮김 = copy.deepcopy(v)
+    옮김[1]["items"][1]["scheds"].append(옮김[1]["items"][0]["scheds"].pop(0))  # sid 1 이 rid 3 에서 rid 4 로
+    결과 = _행들(assign_ids(옮김, [v]))
+    assert [s["sid"] for s in 결과[2]["scheds"]] == [2] and [s["sid"] for s in 결과[3]["scheds"]] == [3, 4]
 
 
 @check
