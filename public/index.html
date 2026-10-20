@@ -5116,6 +5116,132 @@ function paySelfCheck(){   // 브라우저 콘솔에서 paySelfCheck() 실행
   return 'paySelfCheck 통과';
 }
 
+/* ----- 급여대장 읽기 (실제 명세서, 순수 로직 — psSelfCheck가 검증) -----
+   급여대장(엑셀)의 제목은 두 줄: 윗줄 = 사원코드·사원명… + "수당"·"공제" 묶음 + 차인지급액(세로로 합친 칸), 아랫줄 = 수당·공제 항목. 그 아래 사람 한 줄씩, 맨 아래 합계 줄.
+   금액 칸은 이름으로 읽는다(고정 자리 아님). 사람마다 항목 합 = 지급액계 · 공제 합 = 공제액계 · 지급액계 − 공제액계 = 차인지급액을 검사하고, 합계 줄은 사람들의 합과 견준다 */
+const PS_HEAD = [['no','사원코드',['사원코드','사번','사원번호']], ['name','사원명',['사원명','성명','이름']], ['dept','부서',['부서','부서명','소속']], ['title','직급',['직급','직위']], ['job','직종',['직종']]];   // 머리 칸 (rzGuess 모양)
+const PS_ALWAYS = ['기본급','국민연금','건강보험','고용보험','장기요양보험료','소득세','지방소득세'];   // 0원이어도 명세서에 보이는 항목 (인사담당자 결정)
+const PS_NET = /차인지급액|실지급액|실수령액/;
+function psIsNum(c){ return typeof c==='number' || /^[+-]?\d[\d,]*(\.\d+)?$/.test(rzNorm(c)); }   // 숫자로 적힌 칸인가 ('abc'·빈 칸은 아니다)
+function psRead(rows){   // 급여대장 → 사람별 지급·공제 + 합계 줄. err: HEAD = 사원명 칸을 못 찾음 · GROUP = 수당·공제 묶음을 못 찾음 (빈 명세서를 만들지 않는다)
+  const fail = err=>({ err, pay:[], ded:[], people:[], total:null, totalBad:[], skip:0 });
+  rows = Array.isArray(rows) ? rows : [];
+  const hits = r=>Array.isArray(r) ? PS_HEAD.filter(f=>r.some(c=>f[2].some(k=>rzNorm(c).includes(k)))).length : 0;
+  let top = 0; rows.slice(0, 15).forEach((r, i)=>{ if(hits(r) > hits(rows[top])) top = i; });   // 머리 칸 이름이 가장 많은 줄 (rzHead와 달리 아래 줄은 합치지 않는다)
+  const hm = rzGuess(Array.from(rows[top] || [], rzNorm), PS_HEAD);
+  if(hm.name < 0) return fail('HEAD');
+  const gr = Array.from(rows[top], rzNorm), it = Array.from(rows[top+1] || [], rzNorm), cells = it.filter(Boolean);
+  if(cells.filter(c=>!psIsNum(c)).length < 3 || rows[top+1].some(psIsNum)) return fail('GROUP');   // 다음 줄이 항목 이름 줄이 아니면 묶음이 없는 것
+  const pay = [], ded = [], sum = { pay:-1, ded:-1 }; let netCol = -1, grp = null;
+  for(let c = 0, w = Math.max(gr.length, it.length); c < w; c++){   // 왼쪽부터: 윗줄 글자만 있으면 세로로 합친 칸(묶음 끊김), 둘 다 있으면 묶음 시작, 아랫줄만 있으면 앞 묶음이 이어짐
+    const g = gr[c] || '', l = it[c] || '';
+    if(g && !l){ grp = null; if(PS_NET.test(g)) netCol = c; continue; }
+    if(!l) continue;
+    if(PS_NET.test(l)){ netCol = c; continue; }
+    if(g) grp = /공제/.test(g) ? 'ded' : /수당|지급/.test(g) ? 'pay' : null;
+    if(!grp) continue;
+    if(/(액계|합계|총액)$/.test(l)) sum[grp] = c; else (grp==='pay' ? pay : ded).push({ i:c, label:l });
+  }
+  if(!pay.length || !ded.length) return fail('GROUP');
+  const extra = [['gross', sum.pay], ['deduct', sum.ded], ['net', netCol]].filter(x=>x[1] >= 0).map(([k, i])=>[k, i, k==='net' ? (gr[i] || it[i]) : it[i]]);   // 지급액계·공제액계·차인지급액 칸
+  const read = r=>{   // 한 줄의 금액. 숫자가 아닌 칸은 0으로 두고 nan으로 알린다
+    let nan = false; const val = i=>{ const n = Math.round(rzNum(r[i])); if(Number.isFinite(n)) return n; nan = true; return 0; }, add = a=>a.reduce((s, x)=>s + x[1], 0);
+    const o = { pay:pay.map(x=>[x.label, val(x.i)]), ded:ded.map(x=>[x.label, val(x.i)]) };
+    extra.forEach(([k, i])=>{ o[k] = val(i); });
+    if(sum.pay < 0) o.gross = add(o.pay); if(sum.ded < 0) o.deduct = add(o.ded); if(netCol < 0) o.net = o.gross - o.deduct;
+    return { ...o, nan, add };
+  };
+  const text = (r, k)=>hm[k] >= 0 ? String(r[hm[k]] ?? '').trim() : '';
+  const flat = o=>[...o.pay, ...o.ded, ...extra.map(([k, , l])=>[l, o[k]])];   // 합계 줄과 견줄 (칸 이름, 금액) 목록
+  const people = []; let total = null, tf = null, skip = 0;
+  rows.slice(top+2).forEach(r=>{
+    r = Array.isArray(r) ? r : [];
+    const name = text(r, 'name');
+    if(name && !/^(합계|총계|소계|계)$/.test(rzNorm(name))){
+      const o = read(r), { add } = o;
+      const bad = o.nan ? '숫자가 아닌 칸이 있습니다' : add(o.pay)!==o.gross ? '지급 합계가 맞지 않습니다' : add(o.ded)!==o.deduct ? '공제 합계가 맞지 않습니다' : o.gross - o.deduct!==o.net ? '차인지급액이 맞지 않습니다' : '';
+      people.push({ head:{ code:text(r, 'no'), name, dept:text(r, 'dept'), title:text(r, 'title'), job:text(r, 'job') }, pay:o.pay, ded:o.ded, gross:o.gross, deduct:o.deduct, net:o.net, bad });
+    } else if(!total && pay.concat(ded).some(x=>psIsNum(r[x.i]))){ const o = read(r); tf = flat(o); total = Object.fromEntries(tf); }   // 사원명이 없고 숫자가 있는 첫 줄 = 합계 줄
+    else skip++;
+  });
+  const pf = people.map(flat);
+  return { err:'', pay, ded, people, total, totalBad:tf ? tf.filter(([, n], j)=>pf.reduce((s, f)=>s + f[j][1], 0)!==n).map(x=>x[0]) : [], skip };
+}
+function psYm(fileName){   // 파일 이름의 YYYYMM → 귀속 월 'YYYY-MM' (앞뒤가 숫자가 아닌 6자리, 월 01~12). 없으면 ''
+  const m = String(fileName ?? '').match(/(?:^|\D)(20\d{2})(0[1-9]|1[0-2])(?!\d)/);
+  return m ? m[1]+'-'+m[2] : '';
+}
+function psPayDate(ym){ const [y, m] = ym.split('-').map(Number); return ctYmd(payDayOf(y, m)); }   // 귀속 월 다음 달 20일(주말·공휴일이면 앞 평일). payDayOf의 월은 0부터라 귀속 월 숫자 그대로가 다음 달이다
+function psMatch(people, members){   // 급여대장 사람 → 포털 직원. 사원코드가 붙은 직원 → 이름이 하나뿐인 직원 → 같은 이름이면 부서로. 못 가리면 id:null + why (NONE 없음 · SAME 같은 이름 · CODE 다른 사원코드가 붙어 있음 · TWICE 앞 사람과 같은 직원)
+  const used = new Set(), cut = s=>rzDeptKey(RZ_DEPT[rzDeptKey(s)] || s);
+  return people.map(p=>{
+    const { code, name, dept } = p.head, byCode = code ? members.find(m=>String(m.no || '').trim()===code) : null;
+    let pick = byCode || null, why = '';
+    if(!pick){
+      const same = members.filter(m=>rzNorm(m.name)===rzNorm(name)), k = cut(dept);
+      const cand = same.length > 1 ? same.filter(m=>k && (rzDeptKey(m.team)===k || rzDeptKey(m.division)===k)) : same;
+      if(!same.length) why = 'NONE'; else if(cand.length!==1) why = 'SAME'; else if(code && cand[0].no) why = 'CODE'; else pick = cand[0];
+    }
+    if(pick && used.has(pick.id)){ pick = null; why = 'TWICE'; }
+    if(pick) used.add(pick.id);
+    return { id:pick ? pick.id : null, why };
+  });
+}
+function psShow(list){ return list.filter(([l, n])=>n!==0 || PS_ALWAYS.includes(rzNorm(l))); }   // 사람마다 0원인 항목은 감춘다 (PS_ALWAYS는 남김)
+function psSelfCheck(){   // 브라우저 콘솔에서 psSelfCheck() 실행
+  const ok = (c,msg)=>{ if(!c) throw new Error('psSelfCheck 실패: '+msg); };
+  const R = [
+    ['사원코드','사원명','부서','직급','직종','수당','','','','공제','','','차인지급액'],
+    ['','','','','','기본급','능력급','식대','지급액계','국민연금','학자금상환액','공제액계',''],
+    [10001,'가상하나','국내영업','프로','사무직',2000000,500000,200000,2700000,90000,0,90000,2610000],
+    [10002,'가상둘','CsI개발','리더','',2500000,0,200000,2700000,100000,50000,150000,2550000],
+    [10003,'가상셋','국내영업','프로','사무직',1000000,0,0,1000000,45000,0,45000,900000],
+    ['합계','','','','',5500000,500000,400000,6400000,235000,50000,285000,6060000],
+  ];
+  const cp = a=>a.map(r=>r.slice()), J = JSON.stringify, labels = a=>a.map(x=>x.label);
+  const r = psRead(R);
+  ok(r.err==='' && r.skip===0, '표본을 읽는다');
+  ok(J(labels(r.pay))===J(['기본급','능력급','식대']) && J(labels(r.ded))===J(['국민연금','학자금상환액']), '지급·공제 칸 이름 (세로로 합친 칸·합계 칸은 항목이 아니다)');
+  ok(r.pay.concat(r.ded).every(x=>x.i>=5 && x.i<=10 && x.i!==8), '항목 칸 자리');
+  const [a, b, c] = r.people;
+  ok(r.people.length===3 && J(a.head)===J({ code:'10001', name:'가상하나', dept:'국내영업', title:'프로', job:'사무직' }), '사람 셋 · 첫 사람 머리 칸');
+  ok(J(a.pay)===J([['기본급',2000000],['능력급',500000],['식대',200000]]) && J(a.ded)===J([['국민연금',90000],['학자금상환액',0]]), '첫 사람 지급·공제 (0원도 읽는다)');
+  ok(a.gross===2700000 && a.deduct===90000 && a.net===2610000, '첫 사람 합계');
+  ok(a.bad==='' && b.bad==='' && c.bad==='차인지급액이 맞지 않습니다', '1,000,000 − 45,000 ≠ 900,000');
+  ok(r.total && r.total['식대']===400000 && r.total['차인지급액']===6060000 && r.totalBad.length===0, '합계 줄 = 사람들의 합');
+  const t = cp(R); t[5][7] = 400001;
+  ok(J(psRead(t).totalBad)===J(['식대']), '합계 줄의 식대가 다르면 식대만');
+  const p1 = cp(R); p1[3][5] = 2500001;
+  ok(psRead(p1).people[1].bad==='지급 합계가 맞지 않습니다', '지급 항목 합 ≠ 지급액계');
+  const p2 = cp(R); p2[3][10] = 50001;
+  ok(psRead(p2).people[1].bad==='공제 합계가 맞지 않습니다', '공제 항목 합 ≠ 공제액계');
+  const p3 = cp(R); p3[3][6] = 'abc';
+  ok(psRead(p3).people[1].bad==='숫자가 아닌 칸이 있습니다', '금액 칸의 글자');
+  const one = [R[0].slice(0, 5).concat(R[1].slice(5, 12), ['차인지급액']), ...R.slice(2)];
+  ok(psRead(one).err==='GROUP', '윗줄(묶음) 없이 한 줄 제목 → GROUP');
+  const g0 = cp(R); g0[0][5] = ''; g0[0][9] = '';
+  ok(psRead(g0).err==='GROUP', '수당·공제 묶음 이름이 없으면 GROUP (빈 명세서를 만들지 않는다)');
+  const h0 = cp(R); h0[0][1] = '';
+  ok(psRead(h0).err==='HEAD' && psRead([]).err==='HEAD' && psRead([['가','나'],['다','라']]).err==='HEAD', '사원명 칸이 없으면 HEAD');
+  const top = psRead([['2026년 05월 급여대장'], ...R]);
+  ok(top.err==='' && J(top.people)===J(r.people) && J(top.total)===J(r.total) && top.skip===0, '제목 위에 글 한 줄이 더 있어도 같은 결과');
+  const blank = psRead([...R.slice(0, 5), [], ['', '', '', '', '', '', '', '', '', '', '', '', ''], R[5]]);
+  ok(blank.skip===2 && blank.people.length===3 && blank.totalBad.length===0, '완전히 빈 줄은 skip');
+  ok(psRead(R.slice(0, 5)).total===null, '합계 줄이 없으면 total은 null');
+  ok(psYm('주식회사 가상-202605_테스트.xlsx')==='2026-05' && psYm('급여.xlsx')==='' && psYm('201913.xlsx')==='', '파일 이름에서 귀속 월');
+  ok(psYm('급여_20260520.xlsx')==='', '8자리 날짜는 귀속 월이 아니다');
+  ok(psPayDate('2026-05')==='2026-06-19' && psPayDate('2026-08')==='2026-09-18' && psPayDate('2026-12')==='2027-01-20', '다음 달 20일 지급 (주말이면 앞 평일)');
+  const mem = [{ id:1, name:'가상하나', team:'국내영업팀', division:'전략마케팅본부', no:'' }, { id:2, name:'가상둘', team:'CsI팀', division:'솔루션사업본부', no:'' },
+    { id:3, name:'가상둘', team:'국내영업팀', division:'전략마케팅본부', no:'' }, { id:4, name:'가상넷', team:'', division:'', no:'10004' }, { id:5, name:'가상여섯', team:'', division:'', no:'99999' }];
+  const P = (code, name, dept)=>({ head:{ code, name, dept, title:'', job:'' } });
+  const m = psMatch([P('10001','가상하나','국내영업'), P('10002','가상둘','CsI개발'), P('10004','가상다른이름',''), P('10009','가상없음',''), P('10010','가상둘','지원'), P('10006','가상여섯',''), P('','가상하나','')], mem);
+  ok(J(m)===J([{ id:1, why:'' }, { id:2, why:'' }, { id:4, why:'' }, { id:null, why:'NONE' }, { id:null, why:'SAME' }, { id:null, why:'CODE' }, { id:null, why:'TWICE' }]),
+    '맞추기: 이름 하나뿐 · 부서로 가림(RZ_DEPT) · 사원코드 · 없음 · 같은 이름 · 다른 사원코드 · 두 번');
+  ok(J(psMatch([P('10003','가상셋','')], []))===J([{ id:null, why:'NONE' }]), '명단이 비어도 오류 없이');
+  ok(J(psShow([['기본급',0],['식대',0],['상여',100],['소득세',0]]))===J([['기본급',0],['상여',100],['소득세',0]]), '0원 감춤 (기본급·소득세 등은 남김)');
+  return 'psSelfCheck 통과';
+}
+
 /* ----- 시연 데이터: 지급일이 지난 최근 12개월 ----- */
 function paySlipsFor(key){
   paySlips = paySlips || {};
