@@ -13,9 +13,10 @@ app.py 가 register(app) 로 붙인다.
   POST /api/members/<id>/org      조직도에서 빼기 · 다시 보이기 (HR) — DB 에서 지우지 않는다
   POST /api/members/contacts      HR 이 넣는 사람 정보 (HR) — 비상연락망(직급·내선·연락처·메일)과 입사일·생일. 화면이 이름으로 맞춘 뒤 보낸다
   POST /api/members/<id>/privacy  그 사람의 생일 알림 끄기·켜기 (HR) — 포털을 아직 못 쓰는 직원이 부탁할 때
+  POST /api/members/mail-nos      하이웍스 메일 받는 사람 채우기용 회사 번호 (HR) — 하이웍스 로그인 브라우저에서 가져온 짝
   GET  /api/org                   조직도 명단 (로그인한 누구나) — 필요한 칸만, 비공개 휴대폰은 본인·HR 에게만
   POST /api/me/privacy            내 휴대폰 공개 · 생일 알림 (본인)
-  GET  /api/news                  홈 "이번 주 소식" (로그인한 누구나) — 이번 주에 보일 줄만. 생일·입사일 원본은 보내지 않는다
+  GET  /api/news                  홈 "이번 주 소식" (로그인한 누구나) — 지금 보일 줄만(생일은 오늘부터 7일). 생일·입사일 원본은 보내지 않는다
   POST /api/news/events           경사·조사 올리기 (HR)
   POST /api/news/events/<id>/remove  경사·조사 게시 내리기 (HR)
   GET  /api/workspace             내 워크스페이스(나의 업무 · 나의 일상) — 본인만. PC·휴대폰이 같은 내용
@@ -614,7 +615,7 @@ def org_list() -> Response:
     for r in conn.execute(
         "SELECT u.id, u.name, u.title, d.name, d.level, p.name, COALESCE(NULLIF(u.ext, ''), u.phone),"
         " COALESCE(NULLIF(u.hr_mobile, ''), u.mobile), COALESCE(NULLIF(u.hr_email, ''), u.email), u.mobile_public,"
-        " u.hiworks_user_no, (SELECT group_concat(role) FROM user_roles x WHERE x.user_id = u.id), u.birthday, u.birthday_public"
+        " u.hiworks_mail_no, (SELECT group_concat(role) FROM user_roles x WHERE x.user_id = u.id), u.birthday, u.birthday_public"
         " FROM users u JOIN departments d ON d.id = u.department_id LEFT JOIN departments p ON p.id = d.parent_id"
         " WHERE u.is_active = 1 AND u.org_hidden = 0 ORDER BY u.name"
     ):
@@ -625,7 +626,7 @@ def org_list() -> Response:
             "id": r[0], "name": r[1], "title": r[2] or "", "division": r[5] if team else r[3], "team": r[3] if team else "",
             "lead": LEAD.get(position_of(roles), ""), "ext": r[6] or "", "email": r[8] or "",
             "mobile": (r[7] or "") if show else None, "mobilePublic": bool(r[9]),
-            "userNo": r[10] if (r[10] or "").isdigit() else "", "me": me,
+            "mailNo": r[10] or "", "me": me,   # 하이웍스 메일 받는 사람 채우기 (회사 번호, 009)
         })
         if me:  # 생일은 본인 줄에만 — 다른 직원의 생일은 이번 주 소식(/api/news)으로만 보인다
             out[-1].update(birthday=r[12] or "", birthdayPublic=bool(r[13]))
@@ -672,6 +673,30 @@ def members_org(user_id: int) -> Response:
         return jsonify(error="명단에 없는 사람입니다."), 404
     _audit(conn, AuditEntry.by(g.actor, action="ORG_HIDDEN" if hidden else "ORG_SHOWN", entity_type="user", entity_id=user_id))
     return jsonify(ok=True)
+
+
+@bp.post("/api/members/mail-nos")
+def members_mail_nos() -> Response:
+    """{"pairs": {"통합 사용자 번호": "회사 번호", …}} — 하이웍스 메일 받는 사람 채우기용 (HR, 2026-10-20).
+    하이웍스 메일은 회사 번호로만 채운다. 공개 API 에는 없어 HR 이 하이웍스에 로그인한 브라우저에서 가져온다.
+    명단에 없는 통합 번호는 건너뛰고 숫자만 돌려준다. 한 짝이라도 모양이 틀리면 아무것도 저장하지 않는다."""
+    if (denied := _hr_only()) is not None:
+        return denied
+    pairs = (request.get_json(silent=True) or {}).get("pairs")
+    num = lambda v: isinstance(v, str) and v.isascii() and v.isdigit() and v[0] != "0" and len(v) <= 12  # noqa: E731
+    if not isinstance(pairs, dict) or not 0 < len(pairs) <= 3000 or not all(num(k) and num(v) for k, v in pairs.items()):
+        return jsonify(error="번호 짝의 모양이 올바르지 않습니다."), 400
+    conn = _db()
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        saved = sum(conn.execute("UPDATE users SET hiworks_mail_no = ? WHERE hiworks_user_no = ?", (v, k)).rowcount for k, v in pairs.items())
+        _audit(conn, AuditEntry.by(g.actor, action="MEMBER_MAIL_NOS", entity_type="user", entity_id=None, after_data={"people": saved}))
+        conn.execute("COMMIT")
+    except BaseException:
+        conn.execute("ROLLBACK")
+        raise
+    left = conn.execute("SELECT COUNT(*) FROM users WHERE is_active = 1 AND hiworks_mail_no IS NULL").fetchone()[0]
+    return jsonify(saved=saved, unknown=len(pairs) - saved, missing=left)
 
 
 @bp.post("/api/members/contacts")
@@ -737,10 +762,10 @@ def _today() -> date:
 
 
 def news_items(people: list[tuple], today: date) -> list[dict]:
-    """people = [(id, hire_date, birthday, birthday_public)] → 이번 주에 보일 줄. 화면 celebList 와 같은 규칙:
-    새 식구 = 입사 후 30일 · 생일 = 이번 주 월~일(평년에는 02-29 를 02-28 에), 생일 알림을 끈 사람은 빼고 ·
+    """people = [(id, hire_date, birthday, birthday_public)] → 지금 보일 줄. 화면 celebList 와 같은 규칙:
+    새 식구 = 입사 후 30일 · 생일 = 오늘부터 7일 안(2026-10-20 인사담당자 — 전에는 이번 주 월~일. 평년에는 02-29 를 02-28 에), 생일 알림을 끈 사람은 빼고 ·
     입사 N주년 = 이번 달, 1·3·5·10년 이후 5년마다. 순서는 새 식구 · 생일(날짜순) · 입사 기념."""
-    week = [today - timedelta(days=today.weekday() - i) for i in range(7)]
+    week = [today + timedelta(days=i) for i in range(7)]
     md = lambda m, d: f"{m}월 {d}일"  # noqa: E731
     welcome, birthday, anniv = [], [], []
     for uid, hire, bday, public in people:

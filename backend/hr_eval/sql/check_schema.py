@@ -609,6 +609,13 @@ def check_login_tables(conn: sqlite3.Connection) -> None:
         ok, _ = _rejects(conn, gf.format(u=user), args)
         _report(ok, f"선물 {why} 거부")
 
+    print("21. 메일 회사 번호 (009)")
+    conn.execute(f"UPDATE users SET hiworks_mail_no = '33094' WHERE id = {user}")
+    _report(True, "회사 번호 저장 (숫자)")
+    for bad in ("0123", "33a94", "", "1234567890123"):
+        ok, _ = _rejects(conn, f"UPDATE users SET hiworks_mail_no = '{bad}' WHERE id = {user}")
+        _report(ok, f"회사 번호 '{bad}' 거부")
+
 
 def main() -> int:
     print("=" * 62)
