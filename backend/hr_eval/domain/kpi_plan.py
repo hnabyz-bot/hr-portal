@@ -168,8 +168,9 @@ def validate_plan(goals: object, year: int) -> list[Issue]:
                     issues.append(Issue("SCHED_MAX", f"{where}: 예정 기한은 {MAX_SCHEDS}개까지 쓸 수 있습니다 (지금 {len(scheds)}개)", target=t))
                 for si, s in enumerate(scheds):
                     st = f"sched:{gi}.{ii}.{si}"
-                    if not _in_year(s["due"], year):
-                        issues.append(Issue("SCHED_DATE", f"{where}: 예정 기한은 {year}년 안의 날짜여야 합니다 ({s['due']!r})", target=st))
+                    if not _in_year(s["due"], year):  # 적은 값은 되풀이하지 않는다 (새 줄은 날짜가 비어 있다)
+                        why = "예정 기한 날짜를 골라 주세요" if not s["due"] else f"예정 기한은 {year}년 안의 날짜로 골라 주세요"
+                        issues.append(Issue("SCHED_DATE", f"{where} {si + 1}번째 일정: {why}", target=st))
                     check_text(s["name"], "name", SCHED_NAME_MAX, f"{where} {si + 1}번째 일정", st, "이름")
             else:
                 issues.append(Issue("KIND", f"{where}: 업무 종류를 정기적 또는 비정기적으로 골라 주세요", target=t))

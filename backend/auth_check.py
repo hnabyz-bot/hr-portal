@@ -15,7 +15,7 @@ import os
 import sys
 import tempfile
 import threading
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -670,6 +670,12 @@ def check_game(hr) -> None:
     ok(post(lead, "/api/game/gifts", {"to": 3}, headers={}).status_code == 403, "선물도 게임 화면에서만 (Origin)")
 
 
+def year_day(n: int) -> str:
+    """오늘 + n일을 올해(한국 날짜) 안으로 맞춘 날짜 — KPI 기간은 그해 날짜만 받으므로 1월 1일 · 12월 31일에도 검사가 그대로 돈다."""
+    t = auth._today()
+    return min(max(t + timedelta(days=n), date(t.year, 1, 1)), date(t.year, 12, 31)).isoformat()
+
+
 def check_kpi_owner(hr) -> None:
     """KPI 계획서 본인 쓰기 (2026-10-20): HR 이 연 작성 기간 안에서만 · 임시 저장 → 제출 → 취소 · 확정 뒤 수정 요청 · 기간 끝은 한국 자정 ·
     서버가 순서대로 다시 본다 (KPI 작성 대상 403 → 작성 기간 403 → 상태 409 → 내용 400)."""
@@ -681,7 +687,8 @@ def check_kpi_owner(hr) -> None:
     was_kpi = q("SELECT writes_kpi FROM users WHERE id = 3")[0][0]
     x("UPDATE users SET writes_kpi = 1 WHERE id = 3")  # 앞 검사가 꺼 두었다
     today, year = auth._today(), kpi.plan_year()
-    day = lambda n: (today + timedelta(days=n)).isoformat()  # noqa: E731
+    day = year_day
+    later = day(60) if day(60) > day(0) else None  # 평가 시작일 — 오늘 뒤 그해 안 (12월 31일이면 그런 날이 없어 비움)
     me = lambda c: c.get("/api/kpi/me", base_url=BASE)  # noqa: E731
     do = lambda c, what, body=None, headers=ORIGIN: c.post(f"/api/kpi/me/{what}", base_url=BASE, headers=headers, json=body or {})  # noqa: E731
     draft = lambda c, plan: do(c, "draft", {"draft": plan})  # noqa: E731
@@ -736,10 +743,17 @@ def check_kpi_owner(hr) -> None:
                 {"editFrom": day(-1), "editTo": day(7)}, []):
         r = hr.post("/api/kpi/admin/year", base_url=BASE, headers=ORIGIN, json=bad)
         ok(r.status_code == 400 and not q("SELECT 1 FROM kpi_years"), f"날짜 모양 · 기간 순서 · 해가 틀리면 400, 아무것도 안 남김 ({str(bad)[:60]})")
-    r = setyear(hr, day(-1), day(7), day(60))
+    out_of_year = f"{year}년 기간에는 {year}년 날짜만 넣을 수 있어요. {year + 1}년 기간은 {year + 1}년 1월 1일부터 정할 수 있어요."
+    for bad in ({"editFrom": f"{year + 1}-01-05", "editTo": f"{year + 1}-01-23"}, {"editFrom": f"{year - 1}-12-31", "editTo": day(0)},
+                {"editFrom": day(0), "editTo": f"{year + 1}-01-01"}, {"editFrom": day(0), "editTo": day(0), "evalStart": f"{year + 1}-01-01"},
+                {"editFrom": "", "editTo": "", "evalStart": f"{year - 1}-12-31"}):
+        r = hr.post("/api/kpi/admin/year", base_url=BASE, headers=ORIGIN, json={"year": year, **bad})
+        ok(r.status_code == 400 and r.json == {"error": out_of_year} and not q("SELECT 1 FROM kpi_years"),
+           f"그해 밖의 날짜는 400 — 그 해의 줄은 그해에만 읽히므로 ({str(bad)[:70]})")
+    r = setyear(hr, day(-1), day(7), later)
     ok(r.status_code == 200 and q("SELECT edit_from, edit_to, eval_start, updated_by FROM kpi_years WHERE year = ?", year)
-       == [(day(-1), day(7), day(60), 1)], "HR 이 오늘을 포함한 기간을 엶 (누가 했는지도 남음)")
-    ok(hr.get("/api/kpi/admin/year", base_url=BASE).json == {"year": year, "editFrom": day(-1), "editTo": day(7), "evalStart": day(60)}
+       == [(day(-1), day(7), later, 1)], "HR 이 오늘을 포함한 기간을 엶 (누가 했는지도 남음)")
+    ok(hr.get("/api/kpi/admin/year", base_url=BASE).json == {"year": year, "editFrom": day(-1), "editTo": day(7), "evalStart": later}
        and hr.get("/api/kpi/admin/year?year=2090", base_url=BASE).json == {"year": 2090, "editFrom": None, "editTo": None, "evalStart": None}
        and all(hr.get(f"/api/kpi/admin/year?year={y}", base_url=BASE).status_code == 400 for y in ("abc", "2025", "")),
        "기간 읽기: 해를 안 고르면 올해 · 정하지 않은 해는 빈 값 · 틀린 해는 400")
@@ -748,7 +762,7 @@ def check_kpi_owner(hr) -> None:
     ok(draft(emp, plan).json == {"ok": True} and do(emp, "draft", {"draft": plan}, headers={}).status_code == 403,
        "기간 안에서 임시 저장 200 (Origin 없으면 403)")
     p = me(emp).json
-    ok(p["window"] == {"from": day(-1), "to": day(7), "evalStart": day(60), "open": True}
+    ok(p["window"] == {"from": day(-1), "to": day(7), "evalStart": later, "open": True}
        and p["plan"] == {"status": "DRAFT", "draft": plan, "note": None, "noteKind": None, "changeReason": None, "confirmed": None},
        "읽으면 초안이 그대로, 상태 DRAFT, 기간은 열림")
     ok(me(lead).json["plan"] is None, "다른 사람의 계획서는 안 보임")
@@ -805,23 +819,25 @@ def check_kpi_owner(hr) -> None:
     x("UPDATE kpi_plans SET note = NULL, note_kind = NULL WHERE user_id = 3 AND year = ?", year)
 
     # 기간 끝은 한국 자정 — 서버 시계(UTC) 14:59 가 한국 23:59, 15:10 은 다음 날 00:10
-    d = today - timedelta(days=1)
-    setyear(hr, (d - timedelta(days=5)).isoformat(), d.isoformat(), y=d.year)
+    d = today - timedelta(days=1) if today.timetuple().tm_yday > 1 else today  # 1월 1일이면 어제는 작년 계획서 — 자정이 지나도 같은 해이게 오늘로
+    setyear(hr, max(d - timedelta(days=5), date(d.year, 1, 1)).isoformat(), d.isoformat(), y=d.year)
     real_now = auth._now
     try:
         auth._now = lambda: datetime(d.year, d.month, d.day, 14, 59, tzinfo=timezone.utc)
-        ok(draft(emp, good(d.year)).status_code == 200 and do(emp, "submit").status_code == 200 and row(d.year)[0][0] == "SUBMITTED",
+        late = app.test_client()  # 그 시각에 연 창 — 1월 1일에는 오늘 밤이 지금보다 뒤라, 미리 연 창은 그사이 오래 쉬어 로그인이 풀린다
+        login(late, new_token("emp"))
+        ok(draft(late, good(d.year)).status_code == 200 and do(late, "submit").status_code == 200 and row(d.year)[0][0] == "SUBMITTED",
            "종료일 한국 시각 23:59 까지는 제출됨")
-        ok(do(emp, "cancel").status_code == 200, "(제출을 취소해 다시 DRAFT)")
+        ok(do(late, "cancel").status_code == 200, "(제출을 취소해 다시 DRAFT)")
         auth._now = lambda: datetime(d.year, d.month, d.day, 15, 10, tzinfo=timezone.utc)
-        r = do(emp, "submit")
+        r = do(late, "submit")
         ok(r.status_code == 403 and r.json == {"error": "KPI 작성 기간이 아닙니다."} and row(d.year)[0][0] == "DRAFT",
            "한국 자정이 지나면(UTC 15:10) 제출 403")
     finally:
         auth._now = real_now
 
     # 확정 뒤 수정 요청 (확정은 다음 작업이 한다 — 여기서는 확정된 줄을 직접 넣는다)
-    setyear(hr, day(-1), day(7), day(60))
+    setyear(hr, day(-1), day(7), later)
     draft(emp, plan)
     crowd = [app.test_client() for _ in range(5)]  # 같은 사람이 창을 여러 개 열어 놓고 동시에 제출을 누른다
     for c in crowd:
@@ -855,13 +871,14 @@ def check_kpi_owner(hr) -> None:
 
     # 기간이 닫히면 수정 요청도 막힘 · 사람만의 기간 · 평가 시작일
     x("UPDATE kpi_plans SET status = 'CONFIRMED', change_reason = NULL WHERE user_id = 3 AND year = ?", year)
-    r = setyear(hr, "", "", day(60))
+    r = setyear(hr, "", "", later)
     ok(r.status_code == 200 and q("SELECT edit_from, edit_to FROM kpi_years WHERE year = ?", year) == [(None, None)]
-       and me(emp).json["window"] == {"from": None, "to": None, "evalStart": day(60), "open": False}, "기간 닫기 = 둘 다 비움")
+       and me(emp).json["window"] == {"from": None, "to": None, "evalStart": later, "open": False}, "기간 닫기 = 둘 다 비움")
     ok(all(do(emp, w, {"reason": "가상 사유", "draft": plan}).status_code == 403 for w in ("draft", "submit", "cancel", "request-change"))
        and row() == [("CONFIRMED", None, None, None, 1)], "기간 밖에서는 수정 요청까지 모두 403 · 기록은 그대로")
-    x("INSERT INTO kpi_windows (user_id, year, edit_from, edit_to, set_by, set_at) VALUES (3, ?, ?, ?, 1, '2026-10-20T00:00:00Z')", year, day(3), day(9))
-    ok(me(emp).json["window"] == {"from": day(3), "to": day(9), "evalStart": day(60), "open": False}, "그 사람만의 기간이 우선 (아직 안 열림)")
+    ahead = lambda n: (today + timedelta(days=n)).isoformat()  # noqa: E731  — SQL 로 바로 넣는 날짜라 그해 안으로 맞추지 않는다 (맞추면 12월 30 · 31일에 오늘이 들어간다)
+    x("INSERT INTO kpi_windows (user_id, year, edit_from, edit_to, set_by, set_at) VALUES (3, ?, ?, ?, 1, '2026-10-20T00:00:00Z')", year, ahead(3), ahead(9))
+    ok(me(emp).json["window"] == {"from": ahead(3), "to": ahead(9), "evalStart": later, "open": False}, "그 사람만의 기간이 우선 (아직 안 열림)")
     x("UPDATE kpi_windows SET edit_from = ?, edit_to = ? WHERE user_id = 3", day(-2), day(0))
     ok(me(emp).json["window"]["open"] is True and do(emp, "request-change", {"reason": "가상 사유 2"}).status_code == 200,
        "한 사람만 연 기간 안이면 그해 기간이 닫혀 있어도 씀")
@@ -872,7 +889,7 @@ def check_kpi_owner(hr) -> None:
     # KPI 작성이 꺼진 사람 — 읽기는 되고 쓰기는 모두 403 (기간이 닫혀 있어도 이 이유가 먼저)
     x("UPDATE users SET writes_kpi = 0 WHERE id = 3")
     for opened in (False, True):
-        setyear(hr, day(-1), day(7), day(60) if opened else day(0))
+        setyear(hr, day(-1), day(7), later if opened else day(0))
         r = me(emp)
         ok(r.status_code == 200 and r.json["writesKpi"] is False, f"KPI 작성이 꺼진 사람도 읽기는 200, writesKpi false (기간 {'열림' if opened else '닫힘'})")
         ok(all((r := do(emp, w, {"reason": "가상 사유", "draft": plan})).status_code == 403 and r.json == {"error": "KPI 작성 대상이 아닙니다."}
@@ -922,7 +939,7 @@ def check_kpi_manager(hr) -> None:
     x("UPDATE users SET writes_kpi = 1, title = NULL WHERE id = 1")
     x("UPDATE users SET title = '프로' WHERE id = 42")
     today, year = auth._today(), kpi.plan_year()
-    day = lambda n: (today + timedelta(days=n)).isoformat()  # noqa: E731
+    day = year_day
     me = lambda c: c.get("/api/kpi/me", base_url=BASE).json  # noqa: E731
     inbox = lambda c: c.get("/api/kpi/inbox", base_url=BASE).json  # noqa: E731
     who = lambda c: [(i["userId"], i["proxy"]) for i in inbox(c)["items"]]  # noqa: E731
@@ -1089,6 +1106,12 @@ def check_kpi_manager(hr) -> None:
                 {**good, "userId": 10 ** 30}, {**good, "year": 2025}, {**good, "year": str(year)}, {**good, "editTo": None}, {**good, "editFrom": "내일"},
                 {**good, "editFrom": ""}, {**good, "editFrom": day(5), "editTo": day(-1)}, {"userId": 43, "year": year}, {"userId": 43, "year": year, "clear": False}, []):
         ok(setwin(bad).status_code == 400 and not q("SELECT 1 FROM kpi_windows"), f"사람별 기간이 틀리면 400, 아무것도 안 남김 ({str(bad)[:70]})")
+    out_of_year = f"{year}년 기간에는 {year}년 날짜만 넣을 수 있어요. {year + 1}년 기간은 {year + 1}년 1월 1일부터 정할 수 있어요."
+    for bad in ({**good, "editTo": f"{year + 1}-01-23"}, {**good, "editFrom": f"{year + 1}-01-05", "editTo": f"{year + 1}-01-23"},
+                {**good, "editFrom": f"{year - 1}-12-31"}):
+        r = setwin(bad)
+        ok(r.status_code == 400 and r.json == {"error": out_of_year} and not q("SELECT 1 FROM kpi_windows"),
+           f"사람별 기간도 그해 밖의 날짜는 400 ({str(bad)[:70]})")
     ok(setwin(good).json == {"ok": True} and q("SELECT edit_from, edit_to, set_by FROM kpi_windows WHERE user_id = 43 AND year = ?", year) == [(day(-1), day(5), 1)],
        "HR 이 한 팀원에게만 오늘을 포함한 기간을 엶")
     ok(own(a2, "cancel").status_code == 200 and own(a2, "submit").status_code == 200 and row(43)[0][0] == "SUBMITTED",
@@ -1198,14 +1221,28 @@ def check_kpi_manager(hr) -> None:
     # ---- HR 한눈에 보기 ----
     r = hr.get("/api/kpi/admin", base_url=BASE)
     people = {p["userId"]: p for p in r.json["people"]}
-    ok(r.status_code == 200 and r.json["year"] == year and r.json["window"] == {"from": day(-1), "to": day(7), "evalStart": None},
-       "HR 목록: 해 · 올해 작성 기간")
+    ok(r.status_code == 200 and r.json["year"] == year and r.json["window"] == {"from": day(-1), "to": day(7), "evalStart": None, "open": True},
+       "HR 목록: 해 · 올해 작성 기간 · 열려 있는지 (서버가 정한다)")
+    hr.post("/api/kpi/admin/year", base_url=BASE, headers=ORIGIN, json={"year": year, "editFrom": day(-1), "editTo": day(7), "evalStart": day(0)})
+    ok(hr.get("/api/kpi/admin", base_url=BASE).json["window"] == {"from": day(-1), "to": day(7), "evalStart": day(0), "open": False},
+       "평가 시작일부터는 HR 목록에도 닫혀 있다고 나옴")
+    ok(setyear(day(-1), day(7)).status_code == 200, "(평가 시작일을 비우고 다시 엶)")
     ok(people[42] == {"userId": 42, "name": "가상팀원A1", "dept": "가상K팀A", "manager": {"id": 41, "name": "가상팀장A"},
-                      "status": "CONFIRMED", "confirmedVersion": 2, "window": None}
+                      "status": "CONFIRMED", "confirmedVersion": 2, "window": None, "canAct": True}
        and people[45]["status"] == "DRAFT" and people[45]["confirmedVersion"] == 1
        and people[41]["status"] == "NONE" and people[41]["confirmedVersion"] is None and people[41]["manager"] == {"id": 46, "name": "가상본부장"}
        and people[46]["manager"] == {"id": 47, "name": "가상대표"} and people[1]["status"] == "CONFIRMED",
        "사람마다 이름 · 부서 · 바로 위 관리자 · 상태 · 확정한 판")
+    ok(people[41]["canAct"] is True and people[1]["canAct"] is False and people[46]["canAct"] is False and people[50]["canAct"] is False,
+       "canAct: 보통 관리자 몫은 HR 이 대신 처리 · HR 본인 것 · 맡기지 않은 대표이사 몫은 못 함 (서버 decider 와 같게)")
+    can = lambda uid: {p["userId"]: p["canAct"] for p in hr.get("/api/kpi/admin", base_url=BASE).json["people"]}[uid]  # noqa: E731
+    delegate(True)
+    ok(can(46) is True and can(1) is False, "대표이사가 맡기면 그 몫은 canAct · HR 본인 것은 그래도 못 함")
+    delegate(False)
+    x("UPDATE users SET is_active = 0, deactivated_at = '2027-01-01T00:00:00Z' WHERE id = 47")
+    ok(can(50) is True and can(46) is True, "관리자가 없으면 HR 이 처리 (canAct)")
+    x("UPDATE users SET is_active = 1, deactivated_at = NULL WHERE id = 47")
+    ok(can(46) is False, "(대표이사를 되돌리면 다시 못 함)")
     ok(not {47, 5, 51, 52} & set(people) and all(p["window"] is None for p in people.values()), "KPI 를 안 쓰는 사람(대표이사 · 현장직) · 비활성인 사람은 빠짐 · 사람별 기간 없으면 null")
     setwin({"userId": 49, "year": year, "editFrom": day(-1), "editTo": day(3)})
     ok({p["userId"]: p["window"] for p in hr.get("/api/kpi/admin", base_url=BASE).json["people"] if p["window"]}
@@ -1215,7 +1252,7 @@ def check_kpi_manager(hr) -> None:
        == [json.dumps({**y, "editFrom": day(-1), "editTo": day(3)}), json.dumps({**y, "editFrom": None, "editTo": None})],
        "지우면서 날짜를 같이 보내도 감사로그의 날짜는 null")
     r = hr.get("/api/kpi/admin?year=2090", base_url=BASE)
-    ok(r.json["window"] == {"from": None, "to": None, "evalStart": None} and all(p["status"] == "NONE" and p["confirmedVersion"] is None for p in r.json["people"]),
+    ok(r.json["window"] == {"from": None, "to": None, "evalStart": None, "open": False} and all(p["status"] == "NONE" and p["confirmedVersion"] is None for p in r.json["people"]),
        "?year= 로 다른 해를 봄")
     ok(all(hr.get(f"/api/kpi/admin?year={v}", base_url=BASE).status_code == 400 for v in ("abc", "2025", ""))
        and lead.get("/api/kpi/admin", base_url=BASE).status_code == 403 and ceo.get("/api/kpi/admin", base_url=BASE).status_code == 403,

@@ -269,6 +269,13 @@ def _iso_date(v: object) -> str | None:
     return v
 
 
+def _out_of_year(year: int, *days: str | None) -> tuple[Response, int] | None:
+    """기간 날짜가 그해 밖이면 400 — 그 해의 줄은 그해(한국 날짜)에만 읽히므로 다른 해의 날짜는 영영 쓰이지 않는다."""
+    if all(d is None or d[:4] == str(year) for d in days):
+        return None
+    return jsonify(error=f"{year}년 기간에는 {year}년 날짜만 넣을 수 있어요. {year + 1}년 기간은 {year + 1}년 1월 1일부터 정할 수 있어요."), 400
+
+
 def _year_arg() -> int:
     """?year= (없으면 올해). 2026~2100 의 네 자리 해가 아니면 400."""
     raw = request.args.get("year")
@@ -288,7 +295,7 @@ def year_get() -> Response:
 
 @bp.post("/api/kpi/admin/year")
 def year_set() -> Response:
-    """{"year", "editFrom", "editTo", "evalStart"} — 날짜는 YYYY-MM-DD. editFrom · editTo 는 둘 다 쓰거나 둘 다 비운다(= 기간 닫기).
+    """{"year", "editFrom", "editTo", "evalStart"} — 날짜는 YYYY-MM-DD, 셋 다 그해 안. editFrom · editTo 는 둘 다 쓰거나 둘 다 비운다(= 기간 닫기).
     evalStart(평가 시작일)는 비워도 된다. 그 해의 줄을 통째로 바꾼다."""
     if (denied := auth._hr_only()) is not None:
         return denied
@@ -301,6 +308,8 @@ def year_set() -> Response:
         valid = False
     if not valid:
         return jsonify(error="해와 날짜(YYYY-MM-DD)를 확인해 주세요. 시작일과 종료일은 함께 쓰고, 종료일은 시작일 이후여야 합니다."), 400
+    if (denied := _out_of_year(year, start, end, ev)) is not None:
+        return denied
     conn = auth._db()
     with _txn(conn):
         before = _year_json(conn, year)
@@ -330,10 +339,14 @@ def decider(conn: sqlite3.Connection, actor: Actor, owner_id: int) -> tuple[bool
     관리자가 없으면 (True, None), 대표이사 몫은 대표이사가 맡김을 켰을 때만 (True, 대표이사), 그 밖에는 (True, 그 관리자).
     """
     people, depts = load_org(conn)
-    boss = manager_of(owner_id, people, depts)
+    return _decide(actor, owner_id, manager_of(owner_id, people, depts), _ceos(conn, people))
+
+
+def _decide(actor: Actor, owner_id: int, boss: int | None, ceos: dict[int, bool]) -> tuple[bool, int | None]:
+    """decider 의 판단 — 명단을 이미 읽은 HR 목록(canAct)도 같은 규칙을 쓴다."""
     if boss == actor.user_id:
         return True, None
-    if actor.is_hr and actor.user_id != owner_id and _ceos(conn, people).get(boss, True):
+    if actor.is_hr and actor.user_id != owner_id and ceos.get(boss, True):
         return True, boss
     return False, None
 
@@ -452,8 +465,10 @@ def inbox() -> Response:
 # ---------------- 사람별 작성 기간 · 전체 보기 (HR) ----------------
 @bp.get("/api/kpi/admin")
 def admin_list() -> Response:
-    """?year= (없으면 올해) → {"year", "window": {"from", "to", "evalStart"}, "people": […]} — KPI 작성이 켜진 활성 직원 전원.
-    사람마다 status ("NONE" = 계획서 없음) · confirmedVersion · manager {"id", "name"} | null · window (그 사람만의 기간이 있을 때만, 없으면 null)."""
+    """?year= (없으면 올해) → {"year", "window": {"from", "to", "evalStart", "open"}, "people": […]} — KPI 작성이 켜진 활성 직원 전원.
+    window.open = 그해 기간이 오늘(한국 날짜) 열려 있나 (평가 시작일부터는 닫힘).
+    사람마다 status ("NONE" = 계획서 없음) · confirmedVersion · manager {"id", "name"} | null · window (그 사람만의 기간이 있을 때만, 없으면 null) ·
+    canAct (이 HR 이 확정 · 돌려보내기 · 해제 · 거절할 수 있나 — 처리 요청의 decider 와 같은 판단. 본인 것 · 맡기지 않은 대표이사 몫은 false)."""
     if (denied := auth._hr_only()) is not None:
         return denied
     year = _year_arg()
@@ -461,6 +476,7 @@ def admin_list() -> Response:
     year_row = conn.execute("SELECT edit_from, edit_to, eval_start FROM kpi_years WHERE year = ?", (year,)).fetchone()
     own = {r[0]: r[1:] for r in conn.execute("SELECT user_id, edit_from, edit_to FROM kpi_windows WHERE year = ?", (year,))}
     people, depts = load_org(conn)
+    ceos = _ceos(conn, people)
     names = dict(conn.execute("SELECT id, name FROM users"))
     out = []
     for uid, name, dept, status, version in conn.execute(
@@ -470,14 +486,14 @@ def admin_list() -> Response:
         boss = manager_of(uid, people, depts)
         out.append({"userId": uid, "name": name, "dept": dept, "manager": {"id": boss, "name": names[boss]} if boss is not None else None,
                     "status": status or "NONE", "confirmedVersion": version,
-                    "window": _window_json(year_row, own[uid]) if uid in own else None})
+                    "window": _window_json(year_row, own[uid]) if uid in own else None, "canAct": _decide(g.actor, uid, boss, ceos)[0]})
     ys = year_row or (None, None, None)
-    return jsonify(year=year, window={"from": ys[0], "to": ys[1], "evalStart": ys[2]}, people=out)
+    return jsonify(year=year, window={"from": ys[0], "to": ys[1], "evalStart": ys[2], "open": window_open(auth._today(), year_row, None)}, people=out)
 
 
 @bp.post("/api/kpi/admin/window")
 def window_set() -> Response:
-    """{"userId", "year", "editFrom", "editTo"} 그 사람만의 작성 기간 (둘 다 YYYY-MM-DD, 종료일 >= 시작일) ·
+    """{"userId", "year", "editFrom", "editTo"} 그 사람만의 작성 기간 (둘 다 그해 안의 YYYY-MM-DD, 종료일 >= 시작일) ·
     {"userId", "year", "clear": true} 지우기. userId 는 있는 활성 직원. 감사로그 KPI_WINDOW_SET — 대상 번호 · 해 · 날짜 (지우면 날짜가 둘 다 null)."""
     if (denied := auth._hr_only()) is not None:
         return denied
@@ -492,6 +508,8 @@ def window_set() -> Response:
     conn = auth._db()
     if not valid or conn.execute("SELECT 1 FROM users WHERE id = ? AND is_active = 1", (uid,)).fetchone() is None:
         return jsonify(error="사람과 해, 날짜(YYYY-MM-DD)를 확인해 주세요. 종료일은 시작일 이후여야 합니다."), 400
+    if not clear and (denied := _out_of_year(year, start, end)) is not None:
+        return denied
     with _txn(conn):
         if clear:
             conn.execute("DELETE FROM kpi_windows WHERE user_id = ? AND year = ?", (uid, year))

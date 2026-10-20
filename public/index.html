@@ -1562,7 +1562,7 @@ function homeSince(hireDate, t){   // 입사 후 지난 [년, 개월, 일]. 입�
 function homePortalTasks(){   // 인사포털이 만든 일. n의 합 = 왼쪽 메뉴 숫자의 합
   const out = [], add = (n, title, nav, tab, badge)=>{ if(n) out.push({ n, title:n>1 ? `${title} ${n}건` : title, nav, tab, badge }); };
   add(TODO.p2(), '연봉계약서 서명', 'pay', 'p2', '서명 대기');
-  add(AUTH.live ? KPI_LIVE.inbox.length : kpiWaiting().length, '팀원 KPI 승인', 'perf', 'e1', AUTH.live ? '확정 대기' : '승인 대기');
+  add(AUTH.live ? KPI_LIVE.inbox.length : kpiWaiting().length, AUTH.live ? '처리할 KPI' : '팀원 KPI 승인', 'perf', 'e1', AUTH.live ? '확정 대기' : '승인 대기');   // 실제 로그인: 처리함 그대로 (HR이 대신 처리할 것 · 대표이사 차례의 본부장도 들어가 "팀원"이 아니다)
   add(AUTH.live ? kpiLiveBack() : kpiSheets[kpiRole]?.rejectNote ? 1 : 0, '반려된 KPI 다시 작성', 'perf', 'e1', AUTH.live ? '돌려받음' : '반려');
   add(AUTH.live ? 0 : kvMemoTodo(kvMe()), '확인 메모 확인', 'perf', 'e1', '확인 대기');   // 실제 로그인에는 확인 메모가 아직 없다 (TODO.e1 과 같게)
   add(TODO.e4(), '확인 메모에 새 답글', 'perf', 'e4', '새 답글');
@@ -1572,7 +1572,8 @@ function homePortalTasks(){   // 인사포털이 만든 일. n의 합 = 왼쪽 �
 }
 function homeDue(){   // 마감 임박 [오늘, 이번 주(7일 안)] — 끝내지 않은 개인 업무 + 열려 있는 KPI·평가 기간의 마지막 날
   const left = to=>Math.round((celebParse(to) - celebParse(kpiDay(0)))/864e5), days = wsTasks().filter(x=>x.state!=='완료' && x.due).map(x=>left(x.due));
-  if(kpiSheets[kpiRole] && kpiInPeriod(kpiPeriod.editFrom, kpiPeriod.editTo)) days.push(left(kpiPeriod.editTo));
+  const kpiTo = AUTH.live ? KPI_LIVE.me?.writesKpi && homeKpiTo() : kpiSheets[kpiRole] && kpiInPeriod(kpiPeriod.editFrom, kpiPeriod.editTo) && kpiPeriod.editTo;
+  if(kpiTo) days.push(left(kpiTo));
   if(evStarted() && TODO.e2()) days.push(left(kpiPeriod.evalTo));
   return [days.filter(d=>d<=0).length, days.filter(d=>d>0 && d<=7).length];
 }
@@ -1580,9 +1581,10 @@ function homeRate(){   // 이번 주 달성률 [종합, 업무, 루틴] %. 업�
   const today = kpiDay(0), a = rtPct(wsWeekStat(wsTasks(), today)), b = rtPct(rtSum(rtList(), ...wsWeek(today), today));
   return [a==null ? b : b==null ? a : Math.round((a+b)/2), a, b];
 }
+function homeKpiTo(){ if(!AUTH.live) return kpiPeriod.editTo; const w = KPI_LIVE.me?.window; return w && w.open ? w.to : ''; }   // 홈의 KPI 마감일 — 실제 로그인은 서버 작성 기간이 열려 있을 때 그 마지막 날만 (닫혀 있으면 '')
 function homeDates(y, m){   // 그 달의 급여일 + KPI·평가 기간 날짜 (달력 점, 주요 일정)
   return [ { ymd:ctYmd(payDayOf(y, m)), label:'급여일', color:'var(--accent)' },
-    { ymd:kpiPeriod.editTo, label:'KPI 작성·수정 마감', color:'#7A56C8' },
+    { ymd:homeKpiTo(), label:'KPI 작성·수정 마감', color:'#7A56C8' },
     { ymd:kpiPeriod.evalFrom, label:'평가 기간 시작', color:'var(--success)' },
     { ymd:kpiPeriod.selfTo, label:'자기평가 마감', color:'var(--success)' },
     { ymd:kpiPeriod.evalTo, label:'평가 기간 마감', color:'var(--success)' } ].filter(e=>e.ymd);
@@ -1717,7 +1719,17 @@ function homeCalendar(t){   // 날짜를 누르면 아래가 그날의 업무·�
     ${rows.join('') || '<div class="hm-empty">일정이 없습니다</div>'}
   </div>`;
 }
-function homeKpi(){   // KPI가 있는 직원에게만, 진행률만. 현장직은 같은 자리에 '나의 평가' 카드
+const KPI_HOME_ST = { NONE:'작성 전', DRAFT:'작성 중', RETURNED:'돌려받음', SUBMITTED:'제출함', CONFIRMED:'확정', CHANGE_REQUESTED:'수정 요청 중' };
+function homeKpiLive(me=KPI_LIVE.me){   // 실제 로그인: 서버 계획서의 상태 · 작성 기간만 (진행률은 2단계). 불러오기 전 · KPI를 쓰지 않는 분은 비움
+  if(!me || !me.writesKpi) return '';
+  const p = me.plan, st = !p ? 'NONE' : p.status==='DRAFT' && p.noteKind==='RETURNED' ? 'RETURNED' : p.status, w = me.window;
+  return `<div class="card" id="hmKpi">
+    <div class="card-title"><span>나의 KPI <span class="hm-dim">${+me.year}년</span> <span class="badge ${KPI_LIVE_ST[st][1]}">${KPI_HOME_ST[st]}</span></span><span class="more" onclick="goTo('perf','e1')">상세 보기 →</span></div>
+    <div class="list-sub" style="margin:0;">${w.open ? `작성 기간 ${kpiMd(w.from)} ~ ${kpiMd(w.to)}` : '작성 기간이 아니에요'}</div>
+  </div>`;
+}
+function homeKpi(){   // KPI가 있는 직원에게만, 진행률만. 현장직은 같은 자리에 '나의 평가' 카드. 실제 로그인은 상태만 (homeKpiLive)
+  if(AUTH.live) return homeKpiLive();
   const me = evMe(); if(me && evIsLine(me)) return evLineHomeCard(me);
   const s = kpiSheets[kpiRole]; if(!s) return '';
   const [label, cls] = kpiStatus(kpiRole);
@@ -3529,6 +3541,7 @@ function kpiNote(html, type){
   return `<div class="placeholder-note" style="margin:0 0 12px 0; ${c}">${html}</div>`;
 }
 function kpiTable(goals, o={}){   // o.edit 입력 모드 / o.own 내 확정본(진행률·늦어지는 이유 입력) / o.base 비교 기준. 증빙자료는 평가 진행 탭에서 올린다
+  const prog = !AUTH.live;   // 진행률 칸 — 실제 로그인에는 아직 없다 (2단계)
   const txt = (v, path)=> o.edit ? `<textarea class="kpi-in" rows="2"${AUTH.live ? ` maxlength="${KPI_TEXT_MAX[path.split('.').pop()]}"` : ''} oninput="kpiDraft()${path}=this.value">${escapeHtml(v)}</textarea>` : escapeHtml(v);
   const lastCol = (gi,ii)=>`<td><button class="btn sm" onclick="kpiDelItem(${gi},${ii})">행 삭제</button></td>`;
   let flat = 0;
@@ -3541,15 +3554,15 @@ function kpiTable(goals, o={}){   // o.edit 입력 모드 / o.own 내 확정본(
     const weight = o.edit ? `<input type="number" class="kpi-in" min="0" max="100" step="0.01" value="${it.weight||''}" oninput="kpiDraft()${p}.weight=+this.value; kpiRecalc()">` : it.weight;
     return `<tr class="${changed?'changed':''}">${head}<td>${txt(it.action,p+'.action')}</td><td>${txt(it.formula,p+'.formula')}</td><td style="text-align:center;">${weight}</td><td>${txt(it.owner,p+'.owner')}</td>`
       + KPI_GRADES.map(([gr])=>`<td>${txt(it[gr],p+'.'+gr)}</td>`).join('')
-      + `<td style="text-align:center;">${o.own ? `<input type="number" class="kpi-in" min="0" max="100" step="1" value="${it.progress||0}" oninput="kpiSetProgress(${gi},${ii},this.value)" title="본인이 보는 진행 정도(%). 언제든 수정 가능">` : (it.progress||0)+'%'}</td>`
+      + (prog ? `<td style="text-align:center;">${o.own ? `<input type="number" class="kpi-in" min="0" max="100" step="1" value="${it.progress||0}" oninput="kpiSetProgress(${gi},${ii},this.value)" title="본인이 보는 진행 정도(%). 언제든 수정 가능">` : (it.progress||0)+'%'}</td>` : '')
       + (o.own ? `<td><textarea class="kpi-in" rows="2" maxlength="100" placeholder="팀장·본부장·HR이 봅니다" aria-label="늦어지는 이유" oninput="kpiSetWhy(${gi},${ii},this.value)">${escapeHtml(it.why||'')}</textarea>${kvMuteCell(fi, it)}</td>` : '')
       + (o.edit ? lastCol(gi,ii) : '') + `</tr>`;
   }).join('')).join('');
   const total = kpiSum(goals.flatMap(g=>g.items));
   return `<div class="kpi-wrap"><table class="kpi-table">
-    <colgroup><col style="width:120px"><col style="width:130px"><col style="width:170px"><col style="width:140px"><col style="width:74px"><col style="width:84px">${'<col style="width:96px">'.repeat(5)}<col style="width:72px">${o.own?'<col style="width:190px">':''}${o.edit?'<col style="width:110px">':''}</colgroup>
-    <thead><tr><th>팀목표</th><th>개인목표</th><th>실행목표</th><th>측정식</th><th>가중치</th><th>담당자</th>${KPI_GRADES.map(([gr,pct])=>`<th>${gr}(${pct}%)</th>`).join('')}<th>진행률</th>${o.own?'<th>늦어지는 이유 (선택) · 알람</th>':''}${o.edit?'<th>관리</th>':''}</tr></thead>
-    <tbody>${rows}<tr><td colspan="4" style="text-align:center; font-weight:700;">합 계</td><td ${o.edit?'id="kpiTotal"':''} style="text-align:center; font-weight:700; color:var(--${total===100?'success':'danger'});">${total}</td><td colspan="${o.edit||o.own?8:7}"></td></tr></tbody>
+    <colgroup><col style="width:120px"><col style="width:130px"><col style="width:170px"><col style="width:140px"><col style="width:74px"><col style="width:84px">${'<col style="width:96px">'.repeat(5)}${prog ? '<col style="width:72px">' : ''}${o.own?'<col style="width:190px">':''}${o.edit?'<col style="width:110px">':''}</colgroup>
+    <thead><tr><th>팀목표</th><th>개인목표</th><th>실행목표</th><th>측정식</th><th>가중치</th><th>담당자</th>${KPI_GRADES.map(([gr,pct])=>`<th>${gr}(${pct}%)</th>`).join('')}${prog ? '<th>진행률</th>' : ''}${o.own?'<th>늦어지는 이유 (선택) · 알람</th>':''}${o.edit?'<th>관리</th>':''}</tr></thead>
+    <tbody>${rows}<tr><td colspan="4" style="text-align:center; font-weight:700;">합 계</td><td ${o.edit?'id="kpiTotal"':''} style="text-align:center; font-weight:700; color:var(--${total===100?'success':'danger'});">${total}</td><td colspan="${(o.edit||o.own?8:7) - !prog}"></td></tr></tbody>
   </table></div>`;
 }
 function kpiRecalc(){   // 입력 중에는 다시 그리지 않고(포커스 유지) 합계와 제출 버튼만 갱신
@@ -3734,6 +3747,7 @@ function kpiContent(){
    시안: 뉴디자인/KPI 진행 관리 시안 - 1. "확정되면 나의 업무에 …" 안내는 나의 업무 연동(2단계) 때 넣는다. */
 const KPI_LIVE = { state:'', me:null, inbox:[], team:null, admin:null, deleg:null, yr:null, busy:false, dirty:false, yrDirty:false };   // state: '' 아직 · loading · ok · err. deleg: 대표이사만 true/false. yr: HR 기간 칸에 적는 중인 날짜. dirty · yrDirty: 저장 안 한 내 초안 · 기간 칸 (R21)
 function kpiEdited(){ if(AUTH.live) KPI_LIVE.dirty = true; }   // 내 초안을 화면에서 고쳤다 — 저장하기 전에는 다시 불러도 지킨다 (R21)
+addEventListener('beforeunload', e=>{ if(AUTH.live && (KPI_LIVE.dirty || KPI_LIVE.yrDirty)){ e.preventDefault(); e.returnValue = ''; } });   // 저장 안 한 내 초안 · 기간 칸이 있으면 창을 닫거나 나가기 전에 브라우저가 묻는다 (없으면 아무것도 안 함)
 function kpiLiveBack(){ return KPI_LIVE.me?.plan?.noteKind==='RETURNED' ? 1 : 0; }   // 돌려보내진 내 계획서 = 다시 써서 낼 일 1건 (메뉴 숫자 · 홈 오늘의 업무 같은 규칙). 수정 요청 거절은 확정본이 그대로라 할 일이 아니다
 function kpiLiveKeep(me, admin){   // R21: 새로 받은 것(상태 · 사유 · 기간 · 처리함 …) + 아직 저장 안 한 내 초안 · HR 기간 칸 → { me, yr }
   const old = KPI_LIVE.me && KPI_LIVE.me.plan, w = admin && admin.window;
@@ -3866,15 +3880,20 @@ const KPI_TEAM_ST = { CONFIRMED:['확정','success'], SUBMITTED:['확인 대기'
 function kpiLiveSt(st, label=KPI_TEAM_ST[st][0]){ return `<span class="kl-st"><i>${st==='CONFIRMED' ? '✓' : '&#8203;'}</i><span class="badge ${KPI_TEAM_ST[st][1]}">${label}</span></span>`; }   // 상태 배지 — 앞의 ✓ 자리는 비어 있어도 둔다
 function kpiAt(iso){ const d = new Date(iso), p = n=>String(n).padStart(2,'0'); return iso ? `${d.getMonth()+1}월 ${d.getDate()}일 ${p(d.getHours())}:${p(d.getMinutes())}` : ''; }
 function kpiLiveWhose(uid){ const p = KPI_LIVE.admin && KPI_LIVE.admin.people.find(x=>x.userId===uid); return !p ? '' : p.manager ? ' · 대표이사가 맡김' : ' · 관리자 없음'; }   // HR: 누구 차례를 대신 하나
+function kpiLiveBtns(uid, status, can=true){   // 내용 보기 + 제출: 돌려보내기 · 확정 / 수정 요청: 거절 · 해제. can 이 거짓이면 내용 보기만 — 처리함 줄과 HR 전 직원 표가 같이 쓴다
+  const act = (a, label, cls='')=>`<button type="button" class="btn sm${cls}" onclick="kpiLiveAsk(${+uid},'${a}')">${label}</button>`;
+  return `<button type="button" class="btn sm" onclick="kpiLiveView(${+uid})">내용 보기</button>`
+    + (!can ? '' : status==='SUBMITTED' ? act('return', '돌려보내기') + act('confirm', '확정', ' primary') : status==='CHANGE_REQUESTED' ? act('reject', '거절') + act('unlock', '해제', ' coral') : '');
+}
 function kpiLiveInbox(items, proxy){   // 처리할 KPI — 제출: 내용 보기 · 돌려보내기 · 확정 / 수정 요청: 내용 보기 · 거절 · 해제. proxy = HR 관리 화면의 "대신 처리할 KPI"
   const win = KPI_LIVE.me && KPI_LIVE.me.window, left = win && win.open ? kpiLeft(win.to) : 0;
   const band = !win ? '' : win.open ? `<span class="badge info">작성 기간 ${kpiMd(win.from)} ~ ${kpiMd(win.to)} · ${left>0 ? left+'일 남음' : '오늘까지'}</span>` : '<span class="badge neutral">작성 기간이 아니에요</span>';
   const row = it=>{
-    const sub = it.status==='SUBMITTED', act = (a, label, cls='')=>`<button type="button" class="btn sm${cls}" onclick="kpiLiveAsk(${+it.userId},'${a}')">${label}</button>`;
+    const sub = it.status==='SUBMITTED';
     return `<div class="kl-ib">${kpiLiveSt(it.status, sub ? '제출' : '수정 요청')}
       <div><span class="kl-who"><b>${escapeHtml(it.name)}</b>${it.title ? ' '+escapeHtml(it.title) : ''}</span>${it.proxy ? ` <span class="badge neutral">대신 처리${kpiLiveWhose(it.userId)}</span>` : ''} · KPI ${it.items}개 · 정기 ${it.reg} · 비정기 ${it.irr} (예정 기한 ${it.scheds}개)
         <small>${escapeHtml(it.dept)} · ${kpiAt(it.at)} ${sub ? '제출' : '수정 요청'}</small>${sub ? '' : `<div class="why">"${escapeHtml(it.reason || '')}"</div>`}</div>
-      <div class="kl-ib-btns"><button type="button" class="btn sm" onclick="kpiLiveView(${+it.userId})">내용 보기</button>${sub ? act('return', '돌려보내기') + act('confirm', '확정', ' primary') : act('reject', '거절') + act('unlock', '해제', ' coral')}</div></div>`;
+      <div class="kl-ib-btns">${kpiLiveBtns(it.userId, it.status)}</div></div>`;
   };
   return `<div class="card" id="kpiInbox" style="margin-bottom:14px;"><div class="card-title"><span>${proxy ? '대신 처리할 KPI' : '처리할 KPI'} <span style="color:var(--coral-text);">${items.length}건</span></span>${band}</div>
     ${items.map(row).join('') || '<div class="list-sub" style="margin:0;">지금 처리할 KPI가 없어요.</div>'}
@@ -3888,9 +3907,9 @@ async function kpiLiveView(uid){   // 내용 보기 — 제출한 것은 초안,
   let p;
   try { const r = await fetch('/api/kpi/plans/'+uid); p = await r.json(); if(!r.ok) return wsNotice(p.error || '불러오지 못했어요.'); }
   catch(e){ return wsNotice('불러오지 못했어요. 잠시 뒤 다시 해 주세요.'); }
-  const cr = p.status==='CHANGE_REQUESTED', goals = cr && p.confirmed ? p.confirmed.content : p.draft;
+  const cr = p.status==='CHANGE_REQUESTED', old = p.status!=='SUBMITTED' && p.confirmed, goals = old ? p.confirmed.content : p.draft;   // HR 표에서는 다시 쓰는 중(DRAFT)인 사람도 연다 — 그때도 확정본
   orgModal(`<div class="kl-view"><div class="card-title"><span>${KPI_LIVE.me.year}년 KPI 계획서 <span style="font-weight:500; color:var(--text-secondary);">[${escapeHtml(p.owner.dept)}_${escapeHtml(p.owner.name)}]</span></span><button type="button" class="x-btn" aria-label="닫기" onclick="orgCloseModal()">${icon('x')}</button></div>
-    ${cr ? kpiNote(`수정 요청 이유: ${escapeHtml(p.changeReason || '')}<br>아래는 지금 확정된 KPI예요.`, 'warning') : ''}
+    ${cr ? kpiNote(`수정 요청 이유: ${escapeHtml(p.changeReason || '')}<br>아래는 지금 확정된 KPI예요.`, 'warning') : old && p.status==='DRAFT' ? kpiNote('다시 고쳐 쓰고 있어요. 아래는 지금 확정된 KPI예요.', 'warning') : ''}
     ${kpiTable(goals)}${kpiKindSection(goals, false)}</div>`);
 }
 const KPI_ACT = {   // [단추, 안내(이름은 escape 한 것), 이유를 받나, 끝난 뒤 알림, 이유 예시] — 관리자 처리 넷 + 내 계획서 수정 요청(change)
@@ -3900,11 +3919,16 @@ const KPI_ACT = {   // [단추, 안내(이름은 escape 한 것), 이유를 받�
   reject:['거절', n=>`${n}님의 수정 요청을 거절해요. 확정된 KPI는 그대로예요. 이유는 ${n}님 화면에 보여요.`, true, '수정 요청을 거절했어요.'],
   change:['수정 요청', ()=>`확정된 KPI를 고치고 싶은 이유를 적어 주세요. ${kpiBoss()}${kpiGa(kpiBoss())} 해제하면 다시 고쳐서 제출해요.`, true, KPI_LIVE_DONE['request-change'], '예: 하반기 행사 예산이 줄어 웨비나 목표를 4회에서 3회로 줄이고 싶어요'],
 };
+const KPI_ACT_DO = { confirm:'확정해요', return:'돌려보내요', unlock:'해제해요', reject:'거절해요' };
+function kpiLiveBehalf(uid, act){   // HR이 다른 관리자 차례를 처리하면 확인 창 맨 앞 안내 — 관리자가 없거나 내가 그 관리자면 ''
+  const p = uid!=null && KPI_LIVE.admin?.people.find(x=>x.userId===uid), b = p && p.manager;
+  return b && b.id!==AUTH.me?.user_id ? `<b>${kpiBoss({ manager:b })} 대신 ${KPI_ACT_DO[act]}.</b> 기록에는 원래 관리자가 함께 남아요.<br>` : '';
+}
 function kpiLiveAsk(uid, act){   // 확정 · 해제는 확인 창, 돌려보내기 · 거절 · 수정 요청(uid null)은 이유 창(필수, 200자, 글자 수). 창은 서버가 받은 뒤에 닫힌다
-  const it = uid==null ? null : KPI_LIVE.inbox.find(i=>i.userId===uid), [label, say, why, , hint] = KPI_ACT[act];
+  const it = uid==null ? null : KPI_LIVE.inbox.find(i=>i.userId===uid) || KPI_LIVE.admin?.people.find(p=>p.userId===uid), [label, say, why, , hint] = KPI_ACT[act];   // HR 전 직원 표의 줄은 처리함에 없을 수 있다
   if(uid!=null && !it){ wsNotice('처리할 목록이 바뀌었어요. 다시 확인해 주세요.'); return renderContent(); }   // 다시 불러온 사이에 없어진 줄
   orgModal(`<div class="card-title"><span>${label}</span><button type="button" class="x-btn" aria-label="닫기" onclick="orgCloseModal()">${icon('x')}</button></div>
-    <div class="list-sub" style="margin-bottom:12px;">${say(it ? escapeHtml(it.name) : '')}</div>
+    <div class="list-sub" style="margin-bottom:12px;">${kpiLiveBehalf(uid, act)}${say(it ? escapeHtml(it.name) : '')}</div>
     ${why ? `<div class="field" style="margin:0;"><label for="kpiActWhy">이유 (필수)</label><textarea id="kpiActWhy" rows="3" maxlength="200"${hint ? ` placeholder="${hint}"` : ''} oninput="document.getElementById('kpiActCnt').textContent=this.value.length"></textarea><div class="kl-cnt"><span id="kpiActCnt">0</span>/200</div></div>` : ''}
     <div class="kl-err" id="kpiActErr"></div>
     <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:12px;"><button type="button" class="btn" onclick="orgCloseModal()">취소</button><button type="button" class="btn ${act==='unlock' ? 'coral' : 'primary'}" onclick="kpiLiveActGo(${uid},'${act}')">${label}</button></div>`);
@@ -3917,18 +3941,19 @@ function kpiLiveActGo(uid, act){
   else kpiLiveDo(`/api/kpi/plans/${uid}/${act}`, el ? { note } : {}, KPI_ACT[act][3]);
 }
 function kpiLiveHr(a=KPI_LIVE.admin){   // HR 관리 화면: 그해 작성 기간(시작 · 종료 · 평가 시작일) + 전 직원 표 (사람별 기간 열기 · 지우기)
-  const w = a.window, f = KPI_LIVE.yr || { from:w.from || '', to:w.to || '', ev:w.evalStart || '' }, y = a.year, open = kpiInPeriod(w.from, w.to);
-  const d = (k, label)=>`<div class="field"><label>${label}</label><input type="date" value="${escapeHtml(f[k])}" aria-label="${label}" oninput="KPI_LIVE.yr.${k}=this.value; KPI_LIVE.yrDirty=true"></div>`;
+  const w = a.window, f = KPI_LIVE.yr || { from:w.from || '', to:w.to || '', ev:w.evalStart || '' }, y = +a.year, open = w.open;   // 열렸는지는 서버가 (한국 날짜 · 평가 시작일)
+  const d = (k, label)=>`<div class="field"><label>${label}</label><input type="date" min="${y}-01-01" max="${y}-12-31" value="${escapeHtml(f[k])}" aria-label="${label}" oninput="KPI_LIVE.yr.${k}=this.value; KPI_LIVE.yrDirty=true"></div>`;
   const win = p=>p.window ? `${kpiMd(p.window.from)} ~ ${kpiMd(p.window.to)} <button type="button" class="btn sm" onclick="kpiLiveDo('/api/kpi/admin/window', { userId:${+p.userId}, year:${+y}, clear:true }, '사람별 작성 기간을 지웠어요.')">지우기</button>`
     : `<button type="button" class="btn sm" onclick="kpiLiveWinAsk(${+p.userId})">열기</button>`;
-  const rows = a.people.map(p=>`<tr${p.manager ? '' : ' class="noboss"'}><td class="nw"><b>${escapeHtml(p.name)}</b></td><td>${escapeHtml(p.dept)}</td><td class="nw">${p.manager ? escapeHtml(p.manager.name) : '관리자가 없음'}</td><td>${kpiLiveSt(p.status)}</td><td class="nw">${win(p)}</td></tr>`).join('');
+  const acts = p=>p.status==='SUBMITTED' || p.status==='CHANGE_REQUESTED' || p.confirmedVersion ? `<div class="kl-ib-btns">${kpiLiveBtns(p.userId, p.status, p.canAct)}</div>` : '';   // 대신 처리 단추는 서버가 된다고 한 줄만 (canAct — HR 본인 · 맡기지 않은 대표이사 몫은 없음)
+  const rows = a.people.map(p=>`<tr${p.manager ? '' : ' class="noboss"'}><td class="nw"><b>${escapeHtml(p.name)}</b></td><td>${escapeHtml(p.dept)}</td><td class="nw">${p.manager ? escapeHtml(p.manager.name) : '관리자가 없음'}</td><td>${kpiLiveSt(p.status)}</td><td class="nw kl-act">${acts(p)}</td><td class="nw">${win(p)}</td></tr>`).join('');
   return `<div class="card" id="kpiLivePeriod" style="margin-bottom:14px;">
     <div class="card-title"><span>${y}년 KPI 작성 기간 (HR)</span><span class="badge ${open ? 'success' : 'neutral'}">${open ? '열려 있어요' : '닫혀 있어요'}</span></div>
     <div style="display:grid; grid-template-columns:repeat(3, 200px); gap:14px;">${d('from', '시작')}${d('to', '종료')}${d('ev', '평가 시작일')}</div>
     <div class="kl-btns"><button type="button" class="btn primary" onclick="kpiLiveYear(false)">저장</button><button type="button" class="btn" onclick="kpiLiveYear(true)">기간 닫기</button><span class="note">이 기간에만 직원이 쓰고 제출해요. 관리자의 확정 · 해제도 이 기간에만 돼요. 평가 시작일은 비워도 돼요.</span></div></div>
   <div class="card" style="margin-bottom:14px;"><div class="card-title"><span>전 직원 KPI 상태 <span style="font-weight:500; color:var(--text-secondary);">${a.people.length}명</span></span></div>
-    <div class="list-sub" style="margin:-4px 0 8px;">사람별 기간을 열면 그분은 전체 기간 대신 그 기간에 써요. 관리자가 없는 분은 붉은 글씨예요 — HR이 대신 처리해요.</div>
-    <div class="kpi-wrap"><table class="kl-tbl"><thead><tr><th>이름</th><th>부서</th><th>관리자</th><th>상태</th><th>사람별 기간</th></tr></thead><tbody>${rows || '<tr><td colspan="5">KPI를 쓰는 직원이 없어요.</td></tr>'}</tbody></table></div></div>`;
+    <div class="list-sub" style="margin:-4px 0 8px;">사람별 기간을 열면 그분은 전체 기간 대신 그 기간에 써요. 관리자가 없는 분은 붉은 글씨예요 — HR이 대신 처리해요. 관리자가 자리에 없으면 제출 · 수정 요청 줄을 여기서 대신 처리해요. 기록에는 원래 관리자가 함께 남아요.</div>
+    <div class="kpi-wrap"><table class="kl-tbl"><thead><tr><th>이름</th><th>부서</th><th>관리자</th><th>상태</th><th>처리</th><th>사람별 기간</th></tr></thead><tbody>${rows || '<tr><td colspan="6">KPI를 쓰는 직원이 없어요.</td></tr>'}</tbody></table></div></div>`;
 }
 function kpiLiveYear(close){   // 저장 · 기간 닫기(시작 · 종료를 비운다). 날짜 규칙은 서버가 본다
   const f = KPI_LIVE.yr;
@@ -3938,7 +3963,7 @@ function kpiLiveWinAsk(uid){   // 사람별 작성 기간 열기 — 두 날짜
   const p = KPI_LIVE.admin.people.find(x=>x.userId===uid);
   orgModal(`<div class="card-title"><span>${escapeHtml(p.name)}님 작성 기간</span><button type="button" class="x-btn" aria-label="닫기" onclick="orgCloseModal()">${icon('x')}</button></div>
     <div class="list-sub" style="margin-bottom:12px;">이분만 따로 쓰는 기간이에요. 열면 전체 기간 대신 이 기간에 쓰고, 관리자도 이 기간에 확정해요.</div>
-    <div class="field-row" style="margin-bottom:0;"><div class="field"><label for="kpiWinFrom">시작</label><input type="date" id="kpiWinFrom"></div><div class="field"><label for="kpiWinTo">종료</label><input type="date" id="kpiWinTo"></div></div>
+    <div class="field-row" style="margin-bottom:0;">${[['kpiWinFrom', '시작'], ['kpiWinTo', '종료']].map(([id, l])=>`<div class="field"><label for="${id}">${l}</label><input type="date" id="${id}" min="${+KPI_LIVE.admin.year}-01-01" max="${+KPI_LIVE.admin.year}-12-31"></div>`).join('')}</div>
     <div class="kl-err" id="kpiActErr"></div>
     <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:12px;"><button type="button" class="btn" onclick="orgCloseModal()">취소</button><button type="button" class="btn primary" onclick="kpiLiveWinSave(${uid})">열기</button></div>`);
   document.getElementById('kpiWinFrom').focus();
@@ -3986,19 +4011,55 @@ function kpiLiveSelfCheck(){   // 브라우저 콘솔에서 kpiLiveSelfCheck() �
   ok(r1.querySelector('.kl-st i') && r2.querySelector('.kl-st i'), '처리함 상태 글자 앞 아이콘 자리는 늘 있다');
   ok(!r1.querySelector('.kl-who i') && r1.textContent.includes('가상<i>3') && r2.querySelector('.why').textContent.includes('가상 사유'), '이름 · 사유는 글자 그대로');
   ok([...dom(kpiLiveTeam({ NONE:1, DRAFT:2, SUBMITTED:3, CONFIRMED:4, CHANGE_REQUESTED:5 })).querySelectorAll('.kl-team .badge')].map(b=>b.textContent).join()==='확정 4명,확인 대기 3명,수정 요청 5명,작성 중 2명,아직 안 씀 1명', '우리 팀 KPI 상태 배지 다섯 개 (R18)');
-  const [h1, h2] = dom(kpiLiveHr({ year:2026, window:{ from:null, to:null, evalStart:null }, people:[
-    { userId:1, name:'가상1', dept:'가상팀', manager:null, status:'CONFIRMED', confirmedVersion:1, window:null },
-    { userId:2, name:'가상2', dept:'가상팀', manager:{ id:1, name:'가상1' }, status:'NONE', confirmedVersion:null, window:{ from:'2026-10-21', to:'2026-10-24', evalStart:null, open:false } }] })).querySelectorAll('.kl-tbl tbody tr');
+  const hp = (userId, status, x)=>({ userId, name:'가상'+userId, dept:'가상팀', manager:{ id:2, name:'가상팀장' }, status, confirmedVersion:null, window:null, canAct:true, ...x });
+  const hrDom = (win, people)=>dom(kpiLiveHr({ year:2026, window:{ evalStart:null, ...win }, people }));
+  const hpl = [hp(1, 'CONFIRMED', { manager:null, confirmedVersion:1, canAct:false }), hp(2, 'NONE', { window:{ from:'2026-10-21', to:'2026-10-24', evalStart:null, open:false } }),
+    hp(3, 'SUBMITTED'), hp(4, 'CHANGE_REQUESTED', { confirmedVersion:1 }), hp(5, 'SUBMITTED', { canAct:false }), hp(6, 'DRAFT'), hp(7, 'DRAFT', { confirmedVersion:2 })];
+  const [h1, h2, h3, h4, h5, h6, h7] = hrDom({ from:null, to:null, open:false }, hpl).querySelectorAll('.kl-tbl tbody tr'), acts = r=>names(r.querySelector('.kl-act'));
   ok(h1.classList.contains('noboss') && h1.textContent.includes('관리자가 없음') && !h2.classList.contains('noboss'), '관리자가 없는 줄은 붉은 글씨');
-  ok(names(h1)==='열기' && names(h2)==='지우기' && h2.textContent.includes('10/21 ~ 10/24'), '사람별 기간: 없으면 열기 · 있으면 날짜와 지우기 (R16)');
+  ok(names(h1.lastElementChild)==='열기' && names(h2.lastElementChild)==='지우기' && h2.textContent.includes('10/21 ~ 10/24'), '사람별 기간: 없으면 열기 · 있으면 날짜와 지우기 (R16)');
+  ok(acts(h3)==='내용 보기,돌려보내기,확정' && acts(h4)==='내용 보기,거절,해제', 'HR 전 직원 표: 제출 줄 = 내용 보기 · 돌려보내기 · 확정, 수정 요청 줄 = 내용 보기 · 거절 · 해제 (관리자 대신, I-1)');
+  ok(acts(h5)==='내용 보기' && acts(h1)==='내용 보기' && acts(h7)==='내용 보기' && acts(h6)==='' && acts(h2)==='', '서버가 안 된다고 한 줄(canAct 거짓 — HR 본인 · 맡기지 않은 대표이사 몫)과 확정본만 있는 줄은 내용 보기만, 볼 것이 없으면 단추 없음');
+  ok(h3.querySelector('.kl-act button:last-child').getAttribute('onclick')==="kpiLiveAsk(3,'confirm')" && h3.querySelector('.kl-act button').getAttribute('onclick')==='kpiLiveView(3)', '처리함과 같은 창 (kpiLiveAsk · kpiLiveView)');
+  const badge = win=>hrDom(win, []).querySelector('#kpiLivePeriod .badge').textContent;
+  ok(badge({ from:'2000-01-01', to:'2000-01-02', open:true })==='열려 있어요' && badge({ from:'2000-01-01', to:'2099-12-31', open:false })==='닫혀 있어요', 'HR 기간 배지는 서버 답(window.open)대로 — 평가 시작일도 서버가 본다 (I-2)');
+  ok([...hrDom({ open:false }, []).querySelectorAll('#kpiLivePeriod input[type=date]')].every(i=>i.min==='2026-01-01' && i.max==='2026-12-31'), '기간 날짜 칸은 그해 안 (min · max, I-2)');
   ok(h1.querySelector('.kl-st i').textContent==='✓' && h2.querySelector('.kl-st i'), 'HR 표 상태 칸 아이콘 자리');
   ok(dom(kpiLiveDeleg(true)).querySelector('button').textContent==='맡기기 끄기' && dom(kpiLiveDeleg(false)).querySelector('button').textContent==='HR에 맡기기', '대표이사 HR에 맡기기 단추');
   ok(dom(kpiLiveSheet(me(true, 'DRAFT'))).querySelector('#kpiMine[oninput="kpiEdited()"]') && !dom(kpiLiveSheet(me(true, 'SUBMITTED'))).querySelector('#kpiMine[oninput]'), '작성 중일 때만 고친 것을 표시한다 (R21)');
-  const keep = { live:AUTH.live, inbox:KPI_LIVE.inbox, me:KPI_LIVE.me, dirty:KPI_LIVE.dirty, yrDirty:KPI_LIVE.yrDirty, yr:KPI_LIVE.yr };
+  const keep = { live:AUTH.live, authMe:AUTH.me, inbox:KPI_LIVE.inbox, me:KPI_LIVE.me, admin:KPI_LIVE.admin, dirty:KPI_LIVE.dirty, yrDirty:KPI_LIVE.yrDirty, yr:KPI_LIVE.yr };
   try {
     AUTH.live = true; KPI_LIVE.inbox = [ib('SUBMITTED', false), ib('CHANGE_REQUESTED', false)]; KPI_LIVE.me = me(true, 'DRAFT');
-    const task = ()=>homePortalTasks().find(p=>p.title.startsWith('팀원 KPI 승인'));
-    ok(TODO.e1()===2 && task().n===2 && task().badge==='확정 대기', '실제 로그인: TODO.e1 · 홈 팀원 KPI 승인 = 처리함 건수');
+    const task = ()=>homePortalTasks().find(p=>p.title.startsWith('처리할 KPI'));
+    ok(TODO.e1()===2 && task().n===2 && task().title==='처리할 KPI 2건' && task().badge==='확정 대기', '실제 로그인: TODO.e1 · 홈 처리할 KPI = 처리함 건수 (대신 처리할 것도 있어 "팀원"이라 하지 않는다, M-3)');
+    // HR 전 직원 표의 줄 — 처리함에 없어도 같은 확인 창 · 원래 관리자 대신이라는 안내 (I-1)
+    AUTH.me = { ...(AUTH.me || {}), user_id:77 }; KPI_LIVE.admin = { year:2026, people:[hp(3, 'SUBMITTED'), hp(8, 'SUBMITTED', { manager:null }), hp(9, 'SUBMITTED', { manager:{ id:77, name:'나' } }), hp(10, 'SUBMITTED', { manager:{ id:4, name:'<i>가상' } })] };
+    ok(kpiLiveBehalf(3, 'confirm').includes('가상팀장') && kpiLiveBehalf(3, 'confirm').includes('대신 확정해요.') && kpiLiveBehalf(3, 'return').includes('대신 돌려보내요.')
+      && kpiLiveBehalf(3, 'confirm').includes('기록에는 원래 관리자가 함께 남아요.'), 'HR이 대신 하면 원래 관리자 이름과 "대신" 안내');
+    ok(kpiLiveBehalf(8, 'confirm')==='' && kpiLiveBehalf(9, 'confirm')==='' && kpiLiveBehalf(null, 'change')==='', '관리자가 없거나 내가 그 관리자 · 내 수정 요청이면 "대신" 안내 없음');
+    ok(!dom(kpiLiveBehalf(10, 'confirm')).querySelector('i') && dom(kpiLiveBehalf(10, 'confirm')).textContent.includes('<i>가상'), '원래 관리자 이름은 글자 그대로');
+    kpiLiveAsk(3, 'confirm'); const mt = document.getElementById('orgModal')?.textContent || ''; orgCloseModal();
+    ok(mt.includes('가상팀장') && mt.includes('대신 확정해요.') && mt.includes('확정하면 가상3님은'), '처리함에 없는 HR 표 줄도 확인 창이 열림 (이름은 전 직원 표에서)');
+    // 홈 KPI 카드 · 달력 (I-3) · 진행률 칸 (M-1) · 나가기 확인 (M-4)
+    KPI_LIVE.me = me(true, 'SUBMITTED');
+    const card = dom(homeKpi());
+    ok(card.querySelector('.badge').textContent==='제출함' && card.textContent.includes('2026년') && card.textContent.includes('작성 기간 10/13 ~ 10/27') && card.textContent.includes('상세 보기')
+      && !card.textContent.includes('%') && !card.querySelector('.hm-kpi'), '홈 KPI 카드(실제 로그인): 해 · 상태 · 작성 기간 · 상세 보기만, 진행률 숫자 없음');
+    ok(homeDates(2026, 9).some(e=>e.ymd==='2026-10-27' && e.label.startsWith('KPI')), '달력 KPI 마감 = 서버 작성 기간의 마지막 날 (열려 있을 때)');
+    KPI_LIVE.me = me(false, 'CONFIRMED');
+    ok(dom(homeKpi()).querySelector('.badge').textContent==='확정' && dom(homeKpi()).textContent.includes('작성 기간이 아니에요') && !homeDates(2026, 9).some(e=>e.label.startsWith('KPI')), '기간이 닫혀 있으면 "작성 기간이 아니에요" · 달력에 KPI 마감 없음');
+    const st = (status, x)=>dom(homeKpiLive({ ...me(true, status), ...x })).querySelector('.badge').textContent;
+    ok(st('DRAFT', { plan:null })==='작성 전' && st('DRAFT')==='작성 중' && st('CHANGE_REQUESTED')==='수정 요청 중', '홈 KPI 상태 글자: 작성 전 · 작성 중 · 수정 요청 중');
+    ok(homeKpiLive({ ...me(true, 'DRAFT'), writesKpi:false })==='' && homeKpiLive(null)==='', 'KPI를 쓰지 않는 분 · 불러오기 전에는 홈 KPI 카드 없음');
+    const cols = t=>t.querySelectorAll('col').length===t.querySelectorAll('thead th').length;
+    ok([false, true].every(edit=>{ const t = dom(kpiTable(goals, { edit })); return ![...t.querySelectorAll('th')].some(h=>h.textContent==='진행률') && ![...t.querySelectorAll('td')].some(c=>c.textContent==='0%') && cols(t); }), '실제 로그인 표에는 진행률 칸이 없음 (M-1)');
+    AUTH.live = false; ok([...dom(kpiTable(goals)).querySelectorAll('th')].some(h=>h.textContent==='진행률') && cols(dom(kpiTable(goals))), '시연 표에는 진행률 칸 그대로'); AUTH.live = true;
+    const leave = ()=>{ const e = new Event('beforeunload', { cancelable:true }); dispatchEvent(e); return e.defaultPrevented; };
+    KPI_LIVE.dirty = true; KPI_LIVE.yrDirty = false; ok(leave(), '저장 안 한 초안이 있으면 나가기 전에 묻는다 (M-4)');
+    KPI_LIVE.dirty = false; KPI_LIVE.yrDirty = true; ok(leave(), '적던 기간 칸도');
+    KPI_LIVE.yrDirty = false; ok(!leave(), '없으면 묻지 않는다');
+    KPI_LIVE.dirty = true; AUTH.live = false; ok(!leave(), '시연에서는 묻지 않는다'); AUTH.live = true; KPI_LIVE.dirty = false;
+    KPI_LIVE.me = me(true, 'DRAFT');
     Object.assign(KPI_LIVE.me.plan, { note:'가상', noteKind:'RETURNED' });
     ok(TODO.e1()===3 && homePortalTasks().some(p=>p.title==='반려된 KPI 다시 작성'), '돌려받은 내 계획서는 +1');
     KPI_LIVE.me.plan.noteKind = 'REJECTED';
@@ -4014,7 +4075,7 @@ function kpiLiveSelfCheck(){   // 브라우저 콘솔에서 kpiLiveSelfCheck() �
     Object.assign(KPI_LIVE, { yr:{ from:'2026-10-01', to:'', ev:'' }, yrDirty:true });
     ok(kpiLiveKeep(fresh('DRAFT'), adm).yr.from==='2026-10-01', 'HR 기간 칸에 적던 날짜도 다시 불러도 그대로');
     KPI_LIVE.yrDirty = false; ok(kpiLiveKeep(fresh('DRAFT'), adm).yr.from==='2026-10-13', '기간을 저장한 뒤에는 서버 기간');
-  } finally { Object.assign(KPI_LIVE, { inbox:keep.inbox, me:keep.me, dirty:keep.dirty, yrDirty:keep.yrDirty, yr:keep.yr }); AUTH.live = keep.live; }
+  } finally { Object.assign(KPI_LIVE, { inbox:keep.inbox, me:keep.me, admin:keep.admin, dirty:keep.dirty, yrDirty:keep.yrDirty, yr:keep.yr }); AUTH.live = keep.live; AUTH.me = keep.authMe; }
   return 'kpiLiveSelfCheck 통과';
 }
 
