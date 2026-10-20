@@ -422,7 +422,8 @@ def plan_get(uid: int) -> Response:
 @bp.get("/api/kpi/inbox")
 def inbox() -> Response:
     """{"items": [내가 처리할 계획서], "team": {상태: 수}}. items = 내가 바로 위 관리자인 제출 · 수정 요청 (오래된 것부터).
-    HR 이면 관리자가 없거나 대표이사가 맡긴 것도 proxy: true 로 (HR 본인 것은 빼고). team = 내가 바로 위 관리자인 KPI 작성자들의 상태 수 (HR 대신 몫은 안 센다)."""
+    HR 이면 관리자가 없거나 대표이사가 맡긴 것도 proxy: true 로 (HR 본인 것은 빼고). 주인이 활성이고 KPI 작성이 켜진 것만 —
+    team · HR 목록과 같은 기준. team = 내가 바로 위 관리자인 KPI 작성자들의 상태 수 (HR 대신 몫은 안 센다)."""
     conn, year, mine = auth._db(), plan_year(), g.actor.user_id
     people, depts = load_org(conn)
     ceos = _ceos(conn, people)
@@ -430,7 +431,7 @@ def inbox() -> Response:
     for uid, name, dept, title, status, submitted, updated, reason, draft in conn.execute(
             "SELECT p.user_id, u.name, d.name, COALESCE(u.title, ''), p.status, p.submitted_at, p.updated_at, p.change_reason, p.draft"
             " FROM kpi_plans p JOIN users u ON u.id = p.user_id JOIN departments d ON d.id = u.department_id"
-            " WHERE p.year = ? AND p.status IN ('SUBMITTED', 'CHANGE_REQUESTED')", (year,)):
+            " WHERE p.year = ? AND p.status IN ('SUBMITTED', 'CHANGE_REQUESTED') AND u.is_active = 1 AND u.writes_kpi = 1", (year,)):
         boss = manager_of(uid, people, depts)
         if boss != mine and not (g.actor.is_hr and uid != mine and (boss is None or ceos.get(boss, False))):
             continue
@@ -477,7 +478,7 @@ def admin_list() -> Response:
 @bp.post("/api/kpi/admin/window")
 def window_set() -> Response:
     """{"userId", "year", "editFrom", "editTo"} 그 사람만의 작성 기간 (둘 다 YYYY-MM-DD, 종료일 >= 시작일) ·
-    {"userId", "year", "clear": true} 지우기. userId 는 있는 활성 직원. 감사로그 KPI_WINDOW_SET — 대상 번호와 해만."""
+    {"userId", "year", "clear": true} 지우기. userId 는 있는 활성 직원. 감사로그 KPI_WINDOW_SET — 대상 번호 · 해 · 날짜 (지우면 날짜가 둘 다 null)."""
     if (denied := auth._hr_only()) is not None:
         return denied
     b = _body()
@@ -500,7 +501,8 @@ def window_set() -> Response:
                 " ON CONFLICT (user_id, year) DO UPDATE SET edit_from = excluded.edit_from, edit_to = excluded.edit_to,"
                 " set_by = excluded.set_by, set_at = excluded.set_at",
                 (uid, year, start, end, g.actor.user_id, auth._iso(auth._now())))
-        auth._audit(conn, AuditEntry.by(g.actor, action="KPI_WINDOW_SET", entity_type="kpi_window", entity_id=uid, after_data={"year": year}))
+        auth._audit(conn, AuditEntry.by(g.actor, action="KPI_WINDOW_SET", entity_type="kpi_window", entity_id=uid,
+                                        after_data={"year": year, "editFrom": None if clear else start, "editTo": None if clear else end}))
     return jsonify(ok=True)
 
 

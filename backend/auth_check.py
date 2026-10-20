@@ -965,6 +965,12 @@ def check_kpi_manager(hr) -> None:
             "items": 3, "reg": 2, "irr": 1, "scheds": 2, "proxy": False}
     ok(inbox(lead) == {"items": [item], "team": {**zero, "NONE": 2, "SUBMITTED": 1}},
        "팀장 처리함에 1건 (직급 · 제출 시각 · 행 수) · 우리 팀 상태: 제출 1 · 아직 안 씀 2")
+    x("UPDATE users SET writes_kpi = 0 WHERE id = 42")
+    ok(inbox(lead)["items"] == [], "KPI 를 안 쓰게 된 사람의 제출은 처리함에서 빠짐")
+    x("UPDATE users SET writes_kpi = 1, is_active = 0, deactivated_at = '2027-01-01T00:00:00Z' WHERE id = 42")
+    ok(inbox(lead)["items"] == [], "비활성이 된 사람의 제출도 빠짐")
+    x("UPDATE users SET is_active = 1, deactivated_at = NULL WHERE id = 42")
+    ok(inbox(lead)["items"] == [item], "(되돌리면 다시 처리함에 보임)")
     ok(inbox(a2) == {"items": [], "team": zero} and inbox(b1) == {"items": [], "team": zero}
        and inbox(leadb) == {"items": [], "team": {**zero, "NONE": 2}} and inbox(hr) == {"items": [], "team": zero},
        "다른 팀원 · 다른 팀장 · HR 처리함에는 없음 (HR 은 바로 위 관리자가 아니면 안 옴)")
@@ -1091,8 +1097,10 @@ def check_kpi_manager(hr) -> None:
        "다른 팀원은 403 (전체 기간이 닫혀 있음)")
     ok(act(lead, 43, "confirm").status_code == 200 and versions(43) == [(1, 41, None)], "관리자 처리도 그 팀원의 기간으로 봄: 전체 기간이 닫혀 있어도 확정")
     ok(setwin({"userId": 43, "year": year, "clear": True}).json == {"ok": True} and not q("SELECT 1 FROM kpi_windows")
-       and [r[3:] for r in audit("KPI_WINDOW_SET", 43)] == [("kpi_window", json.dumps(y))] * 2 and audit("KPI_WINDOW_SET", 43)[0][:3] == (1, 1, None),
-       "기간 지우기 (clear) · 감사로그 KPI_WINDOW_SET 은 둘 다 대상 번호와 해만")
+       and [r[3:] for r in audit("KPI_WINDOW_SET", 43)] == [("kpi_window", json.dumps({**y, "editFrom": day(-1), "editTo": day(5)})),
+                                                            ("kpi_window", json.dumps({**y, "editFrom": None, "editTo": None}))]
+       and audit("KPI_WINDOW_SET", 43)[0][:3] == (1, 1, None),
+       "기간 지우기 (clear) · 감사로그 KPI_WINDOW_SET 은 대상 번호 · 해 · 날짜 (지우면 날짜가 둘 다 null 이라 켠 것과 구분됨)")
     ok(setyear(day(-1), day(7)).status_code == 200, "(작성 기간을 다시 엶)")
 
     # ---- 동시에 두 번 누르기 ----
@@ -1153,6 +1161,10 @@ def check_kpi_manager(hr) -> None:
        and audit("CEO_DELEGATION_ON", 47) == [(47, 0, None, "ceo_delegation", None)], "켜기는 여러 번 해도 같음 · 감사로그 CEO_DELEGATION_ON 은 한 번")
     ok(who(hr) == [(46, True)] and set(who(ceo)) == {(46, False), (1, False)},
        "맡기면 HR 처리함에 '대신'으로 옴 (HR 본인 것은 빼고) · 대표이사 처리함은 그대로")
+    x("UPDATE users SET writes_kpi = 0 WHERE id = 46")
+    ok(who(hr) == [] and who(ceo) == [(1, False)], "KPI 를 안 쓰게 된 사람의 것은 대신 처리함에서도 대표이사 처리함에서도 빠짐")
+    x("UPDATE users SET writes_kpi = 1 WHERE id = 46")
+    ok(who(hr) == [(46, True)], "(되돌리면 다시 보임)")
     ok(act(hr, 1, "confirm").status_code == 403, "맡겨도 HR 은 본인 것을 못 함")
     ok(act(hr, 46, "confirm").status_code == 200 and versions(46) == [(1, 1, 47)]
        and audit("KPI_CONFIRMED", 46) == [(1, 1, 47, "kpi_plan", json.dumps({**y, "version": 1}))], "맡기면 HR 이 대신 확정: on_behalf_of = 대표이사")
@@ -1198,7 +1210,10 @@ def check_kpi_manager(hr) -> None:
     setwin({"userId": 49, "year": year, "editFrom": day(-1), "editTo": day(3)})
     ok({p["userId"]: p["window"] for p in hr.get("/api/kpi/admin", base_url=BASE).json["people"] if p["window"]}
        == {49: {"from": day(-1), "to": day(3), "evalStart": None, "open": True}}, "사람별 기간이 있으면 그 사람 줄에 (열려 있는지도)")
-    setwin({"userId": 49, "year": year, "clear": True})
+    setwin({"userId": 49, "year": year, "clear": True, "editFrom": day(-1), "editTo": day(3)})  # 지우면서 날짜를 같이 보내도 기록은 null
+    ok(not q("SELECT 1 FROM kpi_windows WHERE user_id = 49") and [r[4] for r in audit("KPI_WINDOW_SET", 49)]
+       == [json.dumps({**y, "editFrom": day(-1), "editTo": day(3)}), json.dumps({**y, "editFrom": None, "editTo": None})],
+       "지우면서 날짜를 같이 보내도 감사로그의 날짜는 null")
     r = hr.get("/api/kpi/admin?year=2090", base_url=BASE)
     ok(r.json["window"] == {"from": None, "to": None, "evalStart": None} and all(p["status"] == "NONE" and p["confirmedVersion"] is None for p in r.json["people"]),
        "?year= 로 다른 해를 봄")
