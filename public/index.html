@@ -1061,6 +1061,43 @@
     .pay-hero{ padding:16px 14px 12px; }
     .pay-kv{ grid-template-columns:72px minmax(0,1fr); }
   }
+  /* 급여명세서 — HR 올리기 · 확인 · 공개 (ps*). 상태 칸은 폭을 고정해 줄마다 같은 자리에서 시작한다 */
+  .ps-tools{ display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end; }
+  .ps-row{ display:grid; grid-template-columns:120px 76px 52px 176px minmax(0,1fr); gap:10px; align-items:center; padding:10px 0; border-top:1px solid var(--border); }
+  .ps-row.head{ border-top:0; padding:0 0 6px; font-size:var(--fs-xs); font-weight:600; color:var(--text-muted); }
+  .ps-st{ display:flex; gap:6px; align-items:center; }
+  .ps-pill{ display:inline-block; width:104px; padding:4px 0; border-radius:999px; text-align:center; font-size:var(--fs-xs); font-weight:700; white-space:nowrap; }
+  .ps-pill.draft{ background:#FFF4DE; color:#8A5A00; }
+  .ps-pill.open{ background:var(--bg-success); color:var(--success); }
+  .ps-act{ display:flex; gap:6px; justify-content:flex-end; flex-wrap:wrap; }
+  .org-modal .card:has(.ps-cf){ max-width:640px; }
+  .org-modal .card:has(.ps-prev){ max-width:820px; }
+  .ps-chk > div.bad{ background:var(--bg-danger); } .ps-chk > div.bad small, .ps-chk > div.bad b{ color:var(--danger); }
+  .ps-tot{ margin-top:10px; padding:10px 12px; border:1px solid var(--border); border-radius:var(--radius-sm); }
+  .ps-sums{ display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; }
+  .ps-sums small{ display:block; font-size:11px; color:var(--text-muted); } .ps-sums b{ font-size:var(--fs-md); white-space:nowrap; }
+  .ps-totmsg{ display:flex; align-items:center; gap:4px; margin-top:8px; padding-top:8px; border-top:1px dashed var(--border); font-size:var(--fs-xs); font-weight:600; }
+  .ps-totmsg svg{ width:14px; height:14px; } .ps-totmsg.ok{ color:var(--success); } .ps-totmsg.bad{ color:var(--danger); } .ps-totmsg.warn{ color:#8A5A00; }
+  .ps-chips{ display:flex; flex-wrap:wrap; align-items:center; gap:4px; margin-top:8px; font-size:11px; }
+  .ps-chips b{ width:64px; font-size:var(--fs-xs); }
+  .ps-chips span{ padding:2px 8px; border-radius:999px; border:1px solid var(--border); background:var(--bg-page); color:var(--text-secondary); }
+  .ps-bad{ margin-top:12px; padding:10px 12px; border-radius:var(--radius-sm); background:var(--bg-danger); color:var(--danger); font-size:var(--fs-xs); line-height:1.7; }
+  .ps-ums{ margin-top:14px; }
+  .ps-ums-t{ display:flex; gap:8px; align-items:baseline; margin-bottom:4px; } .ps-ums-t small{ font-size:var(--fs-xs); color:var(--text-muted); }
+  .ps-um{ display:grid; grid-template-columns:minmax(0,1fr) 136px 200px; gap:8px; align-items:center; padding:7px 0; border-top:1px solid var(--border); }
+  .ps-um small, .ps-bad small{ font-size:11px; opacity:.8; }
+  .ps-why{ font-size:var(--fs-xs); color:var(--danger); }
+  .ps-um select{ min-width:0; height:32px; padding:0 6px; border:1px solid var(--border); border-radius:var(--radius-sm); background:var(--surface); color:var(--text-primary); font:inherit; font-size:var(--fs-xs); }
+  .ps-um select.need{ border-color:var(--danger); background:var(--bg-danger); }
+  .ps-foot{ display:flex; flex-wrap:wrap; gap:8px; align-items:center; justify-content:flex-end; margin-top:14px; }
+  .ps-block{ flex:1 1 200px; font-size:var(--fs-xs); color:var(--danger); }
+  .ps-ask{ font-size:var(--fs-md); line-height:1.6; margin-bottom:4px; }
+  .org-modal .ps-prev .pay-slip{ max-width:none; max-height:none; overflow:visible; box-shadow:none; border:0; padding:0; } .ps-prev .pay-slip .card-title .btn{ display:none; }   /* 미리 보기 창 안: 카드 테두리 · 인쇄 단추 없음 */
+  @media (max-width:768px){
+    .ps-row{ grid-template-columns:minmax(0,1fr) 166px; } .ps-row > span:nth-child(2), .ps-row > span:nth-child(3), .ps-row.head{ display:none; } .ps-act{ grid-column:1 / -1; justify-content:flex-start; }
+    .ps-sums{ grid-template-columns:1fr; }
+    .ps-um{ grid-template-columns:minmax(0,1fr) auto; } .ps-um select{ grid-column:1 / -1; min-height:44px; }
+  }
 
   /* ---------- 원천징수영수증 ---------- */
   .wh-hero{ display:grid; grid-template-columns:minmax(0,1fr) 120px; gap:12px; align-items:center; border-radius:var(--radius-lg); padding:18px 22px; margin-bottom:12px; }
@@ -2170,7 +2207,7 @@ function wsNotice(msg){   // 아래쪽 알림(되돌리기 알림과 같은 자�
   d.innerHTML = `<span>${escapeHtml(msg)}</span><button type="button" onclick="this.parentNode.remove()">닫기</button>`;
   document.body.appendChild(d); setTimeout(()=>d.remove(), 8000);
 }
-document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='visible' && AUTH.live) wsPull(false); });
+document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='visible' && AUTH.live){ wsPull(false); payWake(); } });   // 다른 기기에서 고친 업무 · 그사이 공개된 급여명세서
 function wsSyncSelfCheck(){   // 브라우저 콘솔에서 wsSyncSelfCheck() 실행
   const ok = (c, msg)=>{ if(!c) throw new Error('wsSyncSelfCheck 실패: '+msg); };
   const srv = [{ id:1, title:'보고', due:'2026-10-20' }, { id:2, title:'회의', due:'' }];
@@ -4866,6 +4903,7 @@ async function rzLoad(kind, file, pw){   // 암호가 걸린 파일이면 암호
     let buf = await file.arrayBuffer();
     if(rzLocked(buf)){ if(pw==null) return rzAskPw(kind, file); buf = await rzUnlockBuf(buf, pw); }
     if(kind==='contact'){ const c = await rzXlsx(buf); rz.lock = null; return msCtConfirm(file.name, c.rows); }   // 비상연락망 (구성원 설정)
+    if(kind==='slip'){ const c = await rzXlsx(buf); rz.lock = null; return psStage(file.name, c.rows, pw!=null); }   // 급여대장 (급여명세서 올리기, HR) — 암호는 넘기지 않고 풀었는지만
     const x = await rzXlsx(buf), fields = kind==='pay' ? RZ_PAY : RZ_GRADE, h = rzHead(x.rows, fields);
     rz.lock = null; rz.pick = { kind, file:file.name, sheet:x.sheet, rows:x.rows, at:h.at, head:h.head, map:rzGuess(h.head, fields) }; rzConfirm();
   }catch(e){
@@ -4873,7 +4911,7 @@ async function rzLoad(kind, file, pw){   // 암호가 걸린 파일이면 암호
     rz.lock = null; orgCloseModal();
     kpiFlash({ OLD:'옛 형식(.xls) 파일이라 읽지 못했습니다. 엑셀에서 열어 <b>.xlsx로 다시 저장</b>한 뒤 골라 주세요.',
       ENC:'이 파일에 걸린 암호 방식은 읽지 못합니다. 엑셀에서 열어 <b>파일 → 정보 → 통합 문서 보호 → 암호 설정</b>으로 암호를 다시 걸어 저장해 주세요.',
-      BIG:'파일이 너무 커서 읽지 못했습니다. 필요 없는 시트를 지우고 다시 저장해 주세요.' }[e.message] || (kind==='contact' ? '엑셀 파일(.xlsx)을 읽지 못했습니다. 비상연락망 파일이 맞는지 확인해 주세요.' : '엑셀 파일(.xlsx)을 읽지 못했습니다. 급여 프로그램에서 내려받은 파일이 맞는지 확인해 주세요.'), 'danger');
+      BIG:'파일이 너무 커서 읽지 못했습니다. 필요 없는 시트를 지우고 다시 저장해 주세요.' }[e.message] || (kind==='contact' ? '엑셀 파일(.xlsx)을 읽지 못했습니다. 비상연락망 파일이 맞는지 확인해 주세요.' : kind==='slip' ? '엑셀 파일(.xlsx)을 읽지 못했습니다. 급여 프로그램에서 내려받은 급여대장이 맞는지 확인해 주세요.' : '엑셀 파일(.xlsx)을 읽지 못했습니다. 급여 프로그램에서 내려받은 파일이 맞는지 확인해 주세요.'), 'danger');
   }
 }
 function rzAskPw(kind, file, err){   // 암호를 묻는 창. 틀리면 err와 함께 다시 뜬다
@@ -5307,13 +5345,14 @@ function psSelfCheck(){   // 브라우저 콘솔에서 psSelfCheck() 실행
   return 'psSelfCheck 통과';
 }
 
-/* ----- 시연 데이터: 지급일이 지난 최근 12개월 ----- */
+/* ----- 시연 데이터: 지급일이 지난 최근 24개월 + HR이 올려 공개한 달(ps.mem — 같은 달 시연 값을 덮는다). ps.mem이 바뀌면 paySlips = null ----- */
 function paySlipsFor(key){
   paySlips = paySlips || {};
   if(!paySlips[key]){
     const today = ctYmd(new Date()), list = [];
     for(let i=1; list.length<24 && i<27; i++){ const d = new Date(); d.setDate(1); d.setMonth(d.getMonth()-i); const s = paySlip(PAY_PEOPLE[key], d.getFullYear(), d.getMonth()); if(s.payday<=today) list.push(s); }
-    paySlips[key] = list;
+    const mem = Object.values(ps.mem.months).filter(m=>m.status==='OPEN' && ps.mem.slips[m.ym][key]).map(m=>({ ...ps.mem.slips[m.ym][key], revised:m.revised }));
+    paySlips[key] = [...mem, ...list.filter(s=>!mem.some(x=>x.ym===s.ym))].sort((a, b)=>b.ym.localeCompare(a.ym));
   }
   return paySlips[key];
 }
@@ -5466,13 +5505,13 @@ function payPickerLive(key){   // 실제 로그인 HR: 볼 직원 (맨 위 '나'
 }
 function payContent(){
   const role = kpiRole, live = AUTH.live;
-  let picker = '', head = roleSwitcher();
-  if(live){   // 실제 로그인: 시연용 역할 전환 줄은 없다 (이 화면은 실제 자료)
-    head = '';
+  let picker = '', head = (live ? '' : roleSwitcher()) + paySwitch() + (kpiIsHr(role) && kpiMsg ? kpiNote(kpiMsg.msg, kpiMsg.type) : '');   // 실제 로그인에는 시연용 역할 전환 줄이 없다 (이 화면은 실제 자료). HR은 두 화면을 오간다
+  if(kpiIsHr(role) && ps.view==='admin') return head + psAdmin();
+  if(live){
     if(typeof payViewKey!=='number' || !kpiIsHr(role)) payViewKey = null;   // 시연 열쇠(원천징수영수증 화면이 넣는다)나 직원이 남의 번호를 가진 경우는 본인으로
     if(kpiIsHr(role)){ if(!MS_LIVE.state) msLoad(); picker = payPickerLive(payViewKey); }
     if(!PAY_LIVE.state || PAY_LIVE.who!==payViewKey) payLoad(payViewKey);
-    if(PAY_LIVE.state!=='ok') return `${picker}${kpiNote(PAY_LIVE.state==='err' ? '명세서를 불러오지 못했습니다. 잠시 뒤 새로 고쳐 주세요.' : '명세서를 불러오는 중입니다…', PAY_LIVE.state==='err' ? 'danger' : 'info')}`;
+    if(PAY_LIVE.state!=='ok') return `${head}${picker}${kpiNote(PAY_LIVE.state==='err' ? '명세서를 불러오지 못했습니다. 잠시 뒤 새로 고쳐 주세요.' : '명세서를 불러오는 중입니다…', PAY_LIVE.state==='err' ? 'danger' : 'info')}`;
   } else {
     if(!payViewKey || !payCanView(role, payViewKey)) payViewKey = role;
     if(!PAY_PEOPLE[payViewKey]) return `${head}<div class="card"><div class="placeholder-note" style="margin:0;">아직 등록된 급여명세서가 없습니다.</div></div>`;   // 급여 명단에 없는 역할(대표이사)
@@ -5496,10 +5535,252 @@ function payContent(){
     <div class="card" style="margin-bottom:14px;">
       <div class="card-title"><span>급여명세서 <span style="font-weight:500; color:var(--text-secondary);">${escapeHtml(slips[0].head.name)}</span></span><span class="pay-years" role="group" aria-label="연도 선택">${yearBtns}</span></div>
       <div class="pay-mgrid">${monthBtns}</div>
-      <div class="list-sub">${live ? '월을 누르면 아래에 명세서가 열립니다. 금액은 급여대장 그대로이고, 0원인 항목은 감춥니다.' + (payViewKey===null ? '' : ' 다른 직원의 명세서를 열면 기록이 남고, 공개 전인 달도 보입니다.') : '월을 누르면 아래에 명세서가 열립니다. 시연용 가상 금액이며, 실제 명세서는 위하고 자료를 올리면 표시됩니다.'}</div>
+      <div class="list-sub">${live ? '월을 누르면 아래에 명세서가 열립니다. 금액은 급여대장 그대로이고, 0원인 항목은 감춥니다.' + (payViewKey===null ? '' : ' 다른 직원을 고르면 열람 기록이 남고, 공개 전인 달도 보입니다.') : '월을 누르면 아래에 명세서가 열립니다. 시연용 가상 금액이며, 실제 명세서는 위하고 자료를 올리면 표시됩니다.'}</div>
     </div>
     <div class="card" style="margin-bottom:14px;"><div class="card-title">${payYear}년 급여 수령 현황</div>${payYearChart(slips, payYear)}</div>
     ${open ? payDetail(open) : ''}`;
+}
+async function payWake(){   // 실제 로그인: 화면을 다시 볼 때 — 그사이 HR이 공개한 달을 메뉴 숫자와 열려 있는 내 명세서 화면에 (오래 열어 둔 휴대폰·PC)
+  const key = ()=>JSON.stringify(PAY_LIVE.mine.map(s=>[s.ym, s.revised, s.seen])), was = key();
+  await payLoadMine();
+  if(key()===was) return;   // 바뀐 것이 없으면 다시 그리지 않는다
+  renderSidebar();
+  if(PAY_LIVE.who!==null) return;
+  PAY_LIVE.state = '';   // 내 명세서 화면은 새로 받는다
+  if(currentTab.id==='p1' && !document.activeElement?.matches('input, textarea')) renderContent();   // 적는 중에는 다시 그리지 않는다
+}
+
+/* ----- HR: 급여대장 올리기 · 확인 · 공개 (2026-10-20 인사담당자 — 급여명세서 실제화) -----
+   HR이 고른 급여대장(암호 엑셀)을 이 PC 화면 안에서 읽어(psRead) 직원과 맞추고(psMatch) 사람별 숫자만 서버에 올린다 — 파일과 암호는 보내지 않는다.
+   올린 달은 "공개"를 눌러야 직원에게 보이고, 공개 중인 달은 내린 뒤에만 다시 올린다(서버도 409). 시연(서버 없음)은 ps.mem에만 둔다 — 새로 고치면 사라진다 */
+const ps = { view:'me', months:[], ready:true, state:'', pick:null, mem:{ months:{}, slips:{} }, prev:null };   // view: HR 화면 'me' 내 급여명세서 · 'admin' 올리기·공개 / months·ready·state: 실제 달 목록(MS_LIVE와 같은 방식) / pick: 확인 창의 급여대장 / mem: 시연 기억 — months[ym] · slips[ym][시연 열쇠] = 명세서 / prev: 미리 보기 창
+const PS_ERR = {   // psRead의 err → 확인 창 대신 띄우는 문구
+  HEAD:'급여대장에서 사원명 칸을 찾지 못했습니다. 급여 프로그램에서 내려받은 급여대장이 맞는지 확인해 주세요.',
+  GROUP:'급여대장 제목 윗줄에서 "수당"·"공제" 묶음을 찾지 못했습니다. 급여 프로그램에서 내려받은 급여대장이 맞는지 확인해 주세요.',
+  TOTAL:'급여대장에서 지급액계·공제액계·차인지급액 칸을 찾지 못했습니다. 급여 프로그램에서 내려받은 급여대장이 맞는지 확인해 주세요.' };
+const PS_WHY = { NONE:'명단에 같은 이름 없음', CODE:'사원코드가 다름', TWICE:'다른 줄과 같은 직원' };   // psMatch의 why (SAME은 같은 이름이 몇 명인지 센다)
+function psMon(ym){ return `${+ym.slice(5)}월분`; }
+function psYmName(ym){ return `${ym.slice(0, 4)}년 ${psMon(ym)}`; }
+function psMonths(){ return AUTH.live ? ps.months : Object.values(ps.mem.months).sort((a, b)=>b.ym.localeCompare(a.ym)); }   // 최근 달부터
+function psMembers(){   // 맞출 명단 — 실제는 구성원 설정 명단(비활성 포함: 달 중간에 퇴사한 사람도 그달 명세서는 받는다), 시연은 시연 인물
+  return AUTH.live ? MS_LIVE.list : Object.keys(PAY_PEOPLE).map(k=>({ id:k, name:KPI_USERS[k].name, team:PAY_PEOPLE[k].dept, division:'', no:PAY_PEOPLE[k].code }));
+}
+async function psLoad(){   // 실제 로그인 HR: 올린 달 목록 + 서버에 잠금 열쇠가 있는지
+  ps.state = 'loading';
+  try {
+    const r = await fetch('/api/payslips/months');
+    if(!r.ok) throw new Error(r.status);
+    const j = await r.json(); ps.months = j.months; ps.ready = j.ready; ps.state = 'ok';
+  } catch(e){ ps.state = 'err'; }
+  if(currentTab.id==='p1') renderContent();
+}
+async function psLiveDone(){ ps.state = ''; PAY_LIVE.state = ''; await payLoadMine(); renderSidebar(); }   // 실제: 올리기·공개·내리기 뒤 — 달 목록 · HR이 고른 직원 화면 · 내 메뉴 숫자를 새로
+function paySwitch(){   // HR에게만: 내 급여명세서 / 명세서 올리기 · 공개 (평가·성과의 hrSwitch와 같은 모양)
+  if(!kpiIsHr()) return '';
+  const btn = (v, label)=>`<button type="button" class="${ps.view===v ? 'on' : ''}" onclick="ps.view='${v}'; kpiFlash(null)" aria-pressed="${ps.view===v}">${label}</button>`;
+  return `<div class="hr-seg" id="paySeg" role="group" aria-label="화면 고르기">${btn('me', '내 급여명세서')}${btn('admin', '명세서 올리기 · 공개')}
+    <span class="list-sub" style="margin:0 0 0 6px;">${ps.view==='me' ? '내 명세서와 직원별 명세서를 보는 화면입니다.' : '급여대장을 올리고 직원에게 공개하는 화면입니다.'}</span></div>`;
+}
+function psAdmin(){   // HR "명세서 올리기 · 공개" — 올린 달마다 한 줄 (귀속 월 · 지급일 · 인원 · 상태 · 단추)
+  const live = AUTH.live;
+  if(live){
+    if(!ps.state) psLoad();
+    if(!MS_LIVE.state) msLoad();   // 미리 보기의 직원 고르기
+    if(ps.state!=='ok') return kpiNote(ps.state==='err' ? '명세서 현황을 불러오지 못했습니다. 잠시 뒤 새로 고쳐 주세요.' : '명세서 현황을 불러오는 중입니다…', ps.state==='err' ? 'danger' : 'info');
+  }
+  const ready = !live || ps.ready, pd = s=>`${+s.slice(5, 7)}/${+s.slice(8, 10)}`, od = s=>{ const d = new Date(s); return `${d.getMonth()+1}/${d.getDate()}`; };
+  const rows = psMonths().map(m=>{ const open = m.status==='OPEN';
+    return `<div class="ps-row"><b>${psYmName(m.ym)}</b><span>${pd(m.payDate)}</span><span>${m.people}명</span>
+      <span class="ps-st"><span class="ps-pill ${open ? 'open' : 'draft'}">${open ? `공개됨 · ${od(m.openedAt)}` : '공개 전'}</span>${m.revised ? '<span class="badge warning">수정됨</span>' : ''}</span>
+      <span class="ps-act"><button type="button" class="btn sm" onclick="psPreview('${m.ym}')">미리 보기</button>${open ? `<button type="button" class="btn sm" onclick="psOpenAsk('${m.ym}', false)">공개 내리기</button>`
+        : `${ready ? `<button type="button" class="btn sm" onclick="rzPick('slip')">다시 올리기</button>` : ''}<button type="button" class="btn sm coral" onclick="psOpenAsk('${m.ym}', true)">공개</button>`}</span></div>`; }).join('');
+  const tools = (live ? '' : '<button type="button" class="btn sm" onclick="psDemo()">시연: 예시 자료로 올려 보기</button>') + (ready ? `<button type="button" class="btn sm coral" id="psUp" onclick="rzPick('slip')">${icon('clip')} 명세서 올리기</button>` : '');
+  return `${ready ? '' : kpiNote('서버에 명세서 잠금 열쇠가 없어 아직 올릴 수 없습니다. 개발본부장께 서버 설정(HR_PAY_KEY)을 부탁해 주세요.', 'warning')}
+    <div class="card" id="psMonths"><div class="card-title"><span>명세서 현황</span><span class="ps-tools">${tools}</span></div>
+      <div class="list-sub" style="margin:-4px 0 12px;">올린 명세서는 "공개"를 눌러야 직원에게 보입니다.</div>
+      ${rows ? `<div class="ps-row head"><span>귀속 월</span><span>지급일</span><span>인원</span><span>상태</span><span></span></div>${rows}` : '<div class="placeholder-note" style="margin:0;">아직 올린 명세서가 없습니다.</div>'}
+    </div>`;
+}
+async function psStage(fileName, rows, locked){   // 급여대장 줄 → 확인 창. 파일 고르기(rzLoad 'slip')·시연·검사가 부른다. locked = 암호를 풀어 읽었나(암호 자체는 받지 않는다)
+  const r = psRead(rows);
+  if(r.err){ ps.pick = null; orgCloseModal(); return kpiFlash(PS_ERR[r.err], 'danger'); }
+  if(AUTH.live){   // 맞출 명단 · 그 달이 이미 올라가 있는지
+    if(MS_LIVE.state!=='ok') await msLoad();
+    if(ps.state!=='ok') await psLoad();
+    if(MS_LIVE.state!=='ok' || ps.state!=='ok'){ ps.pick = null; orgCloseModal(); return kpiFlash('직원 명단이나 명세서 현황을 불러오지 못했습니다. 잠시 뒤 다시 해 주세요.', 'danger'); }
+  }
+  const members = psMembers(), auto = psMatch(r.people, members), ym = psYm(fileName);
+  ps.pick = { file:fileName, locked:!!locked, ym, payDate:psPayDate(ym), r, auto, to:auto.map(x=>x.id), members };   // to: 줄마다 올릴 직원 — 직원 번호(시연은 열쇠) · null 아직 · 'skip' 이번 달에서 빼기
+  psConfirm();
+}
+function psBlock(){   // 올릴 수 없는 이유 하나 (빈 글자 = 올릴 수 있다). 확인 창의 단추와 안내가 이것만 본다
+  const k = ps.pick;
+  if(!k) return '고른 급여대장이 없습니다.';
+  if(!psPayDate(k.ym)) return '귀속 월을 골라 주세요.';
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(k.payDate)) return '지급일을 골라 주세요.';
+  if(psMonths().some(m=>m.ym===k.ym && m.status==='OPEN')) return `${psYmName(k.ym)}은 공개 중인 달이라 올릴 수 없습니다. 현황에서 "공개 내리기"를 한 뒤 다시 올려 주세요.`;
+  const bad = k.r.people.filter(p=>p.bad).length;
+  if(bad) return `금액이 맞지 않는 사람이 ${bad}명 있어 올릴 수 없습니다. 급여대장을 고친 뒤 다시 골라 주세요.`;
+  if(k.to.includes(null)) return '못 맞춘 사람은 직원을 고르거나 "이번 달에서 빼기"를 골라 주세요.';
+  if(k.to.every(t=>t==='skip')) return '올릴 사람이 없습니다.';
+  return '';
+}
+function psPick(i, v){   // 못 맞춘 줄의 고르기: '' 아직 · 'skip' 이번 달에서 빼기 · 직원 번호(시연은 열쇠)
+  const k = ps.pick, m = k.members.find(x=>String(x.id)===v);
+  k.to[i] = m ? m.id : v==='skip' ? 'skip' : null;
+  psConfirm();
+}
+function psConfirm(){   // 확인 창 (스펙 7 · 시안). 고르기·날짜를 바꿀 때만 다시 그린다 — 스크롤 자리와 초점은 지킨다
+  const k = ps.pick, r = k.r, won = n=>n.toLocaleString('ko-KR')+'원', sum = f=>r.people.reduce((t, p)=>t + p[f], 0);
+  const month = psMonths().find(m=>m.ym===k.ym), block = psBlock(), miss = k.to.filter(t=>t===null).length, skip = k.to.filter(t=>t==='skip').length;
+  const who = p=>`<b>${escapeHtml(p.head.name)}</b> <small>${escapeHtml([p.head.code, p.head.dept].filter(Boolean).join(' · '))}</small>`;
+  const tot = !r.total ? `<div class="ps-totmsg warn">합계 줄이 없습니다 — 급여 프로그램 합계와 직접 맞춰 보세요</div>`
+    : r.totalBad.length ? `<div class="ps-totmsg bad">합계 줄과 다른 칸: ${escapeHtml(r.totalBad.join(', '))}</div>` : `<div class="ps-totmsg ok">${icon('check')}급여대장 합계 줄과 같습니다</div>`;
+  const chips = (label, list)=>`<div class="ps-chips"><b>${label} ${list.length}칸</b>${list.map(x=>`<span>${escapeHtml(x.label)}</span>`).join('')}</div>`;
+  const bad = r.people.filter(p=>p.bad);
+  const taken = new Set(k.to.filter(t=>t!==null && t!=='skip').map(String)), byName = (a, b)=>a.name.localeCompare(b.name, 'ko');
+  const opts = i=>{ const cur = String(k.to[i]), free = k.members.filter(m=>String(m.id)===cur || !taken.has(String(m.id))).sort(byName);   // 다른 줄이 가져간 직원은 빼고
+    return `<option value="">직원 고르기</option>${free.map(m=>`<option value="${escapeHtml(String(m.id))}" ${String(m.id)===cur ? 'selected' : ''}>${escapeHtml(m.name)} · ${escapeHtml(m.team || m.division || '')}${m.active===false ? ' (비활성)' : ''}</option>`).join('')}<option value="skip" ${cur==='skip' ? 'selected' : ''}>이번 달에서 빼기</option>`; };
+  const why = (x, p)=>x.why==='SAME' ? `같은 이름 ${k.members.filter(m=>rzNorm(m.name)===rzNorm(p.head.name)).length}명` : PS_WHY[x.why];
+  const um = k.auto.map((x, i)=>[x, i]).filter(([x])=>x.id===null).map(([x, i])=>{ const p = r.people[i];
+    return `<div class="ps-um"><div>${who(p)}</div><span class="ps-why">${why(x, p)}</span><select id="psSel${i}" class="${k.to[i]===null ? 'need' : ''}" aria-label="${escapeHtml(p.head.name)} — 맞출 직원" onchange="psPick(${i}, this.value)">${opts(i)}</select></div>`; }).join('');
+  const html = `<div class="ps-cf"><div class="card-title"><span>급여명세서 올리기 — 읽은 내용 확인</span><button type="button" class="x-btn" onclick="ps.pick=null; orgCloseModal()" aria-label="닫기">${icon('x')}</button></div>
+    <div class="list-sub rz-file" style="margin:0 0 12px;">${icon('clip')} <b>${escapeHtml(k.file)}</b> · ${k.locked ? '암호를 풀어 ' : ''}이 PC 화면 안에서만 읽었습니다</div>
+    <div class="field-row"><div class="field"><label for="psYm">귀속 월</label><input id="psYm" type="month" value="${escapeHtml(k.ym)}" onchange="ps.pick.ym=this.value; ps.pick.payDate=psPayDate(this.value); psConfirm()"></div>
+      <div class="field"><label for="psPay">지급일</label><input id="psPay" type="date" value="${escapeHtml(k.payDate)}" onchange="ps.pick.payDate=this.value; psConfirm()"></div></div>
+    ${!month ? '' : month.status==='OPEN' ? kpiNote(`<b>${psYmName(k.ym)}은 지금 공개 중인 달입니다.</b> 직원이 보고 있어 바로 바꿀 수 없습니다. 현황에서 "공개 내리기"를 한 뒤 다시 올려 주세요.`, 'danger') : kpiNote('이미 올린 달입니다. 올리면 바뀝니다.', 'warning')}
+    <div class="rz-chk ps-chk"><div><small>읽은 사람</small><b>${r.people.length}명</b></div><div><small>직원과 맞춤</small><b>${k.to.length - miss - skip}명</b></div><div class="${miss ? 'bad' : ''}"><small>못 맞춘 사람</small><b>${miss}명</b></div></div>
+    <div class="ps-tot"><div class="ps-sums"><div><small>지급액 계</small><b>${won(sum('gross'))}</b></div><div><small>공제액 계</small><b>${won(sum('deduct'))}</b></div><div><small>실지급액 계</small><b>${won(sum('net'))}</b></div></div>${tot}</div>
+    ${chips('지급', r.pay)}${chips('공제', r.ded)}
+    ${bad.length ? `<div class="ps-bad"><b>금액이 맞지 않는 사람 ${bad.length}명 — 올릴 수 없습니다</b>${bad.map(p=>`<div>${who(p)} — ${escapeHtml(p.bad)}</div>`).join('')}</div>` : ''}
+    ${um ? `<div class="ps-ums"><div class="ps-ums-t"><b>못 맞춘 사람</b><small>직원을 고르거나 이번 달에서 뺍니다${skip ? ` · 뺀 사람 ${skip}명` : ''}</small></div>${um}</div>` : ''}
+    ${r.skip ? `<div class="list-sub" style="margin-top:8px;">건너뛴 줄 ${r.skip}개 (빈 줄 · 사원명이 없는 줄)</div>` : ''}
+    <div class="ps-foot"><span class="ps-block">${escapeHtml(block)}</span><button type="button" class="btn" onclick="ps.pick=null; orgCloseModal(); rzPick('slip')">다른 파일 고르기</button><button type="button" class="btn coral" id="psGo" ${block ? 'disabled' : ''} onclick="psUpload()">올리기 (공개 전)</button></div></div>`;
+  const old = document.querySelector('#orgModal .ps-cf') && document.querySelector('#orgModal .card'), top = old ? old.scrollTop : 0, fid = document.activeElement?.id;
+  orgModal(html);
+  if(old){ if(fid) document.getElementById(fid)?.focus({ preventScroll:true }); document.querySelector('#orgModal .card').scrollTop = top; }
+}
+async function psUpload(){   // 확인 창의 "올리기 (공개 전)". 실제 = 서버에 사람별 숫자만, 시연 = ps.mem
+  const k = ps.pick; if(!k || psBlock()) return;
+  const list = k.r.people.map((p, i)=>({ userId:k.to[i], code:p.head.code, head:p.head, pay:p.pay, ded:p.ded, gross:p.gross, deduct:p.deduct, net:p.net })).filter(s=>s.userId!=='skip');
+  if(AUTH.live){
+    const go = document.getElementById('psGo'); if(go){ go.disabled = true; go.textContent = '올리는 중…'; }
+    let r = null, j = {};
+    try { r = await fetch('/api/payslips/'+k.ym, { method:'POST', headers:{ 'Content-Type':'application/json' }, body:JSON.stringify({ payDate:k.payDate, slips:list }) }); j = await r.json().catch(()=>({})); } catch(e){}
+    ps.pick = null; orgCloseModal();
+    if(!r || !r.ok) return kpiFlash(escapeHtml(j.error || '올리지 못했습니다. 인터넷 연결을 확인하고 잠시 뒤 다시 해 주세요.'), 'danger');
+    MS_LIVE.state = '';   // 사원코드가 비어 있던 직원에게 서버가 이번 사원코드를 기억했다
+    await psLiveDone();
+  } else {
+    const m = ps.mem.months[k.ym];
+    ps.mem.months[k.ym] = { ym:k.ym, payDate:k.payDate, status:'DRAFT', people:list.length, revised:!!(m && m.openedAt), uploadedAt:new Date().toISOString(), openedAt:m ? m.openedAt : null };   // 공개했던 적이 있는 달을 다시 올리면 수정됨 (서버와 같은 규칙)
+    ps.mem.slips[k.ym] = Object.fromEntries(list.map(s=>[s.userId, payNorm({ ym:k.ym, payDate:k.payDate, head:s.head, pay:s.pay, ded:s.ded, gross:s.gross, deduct:s.deduct, net:s.net })]));
+    paySlips = null; ps.pick = null; orgCloseModal();
+  }
+  kpiFlash(`${psMon(k.ym)} ${list.length}명 명세서를 올렸습니다. 아직 공개 전입니다.`);
+}
+function psOpenAsk(ym, open){   // 공개 · 내리기 확인 창 (바꾸는 것은 psSetOpen)
+  const m = psMonths().find(x=>x.ym===ym); if(!m) return;
+  orgModal(`<div class="card-title"><span>${psYmName(ym)} 명세서 ${open ? '공개' : '공개 내리기'}</span><button type="button" class="x-btn" onclick="orgCloseModal()" aria-label="닫기">${icon('x')}</button></div>
+    <div class="ps-ask">${open ? `${psMon(ym)} 명세서를 공개할까요?<br><b>${m.people}명</b>에게 바로 보입니다. 각자 본인 것만 볼 수 있습니다.` : `${psMon(ym)} 명세서 공개를 내릴까요?`}</div>
+    <div class="list-sub" style="margin:0 0 12px;">지급일 ${m.payDate.replace(/-/g, '.')}${m.revised ? ' · 다시 올린 달이라 직원 화면에 "수정됨"으로 보입니다' : ''}</div>
+    ${open ? '' : kpiNote('직원 화면에서 사라집니다. 고친 파일을 다시 올린 뒤 공개하면 "수정됨"으로 보입니다.', 'warning')}
+    <div style="display:flex; gap:8px; justify-content:flex-end;"><button type="button" class="btn" onclick="orgCloseModal()">취소</button><button type="button" class="btn coral" onclick="psSetOpen('${ym}', ${open})">${open ? '공개' : '공개 내리기'}</button></div>`);
+}
+async function psSetOpen(ym, open){   // 공개(직원 본인에게 보임) · 내리기 — 확인 없이 바로 바꾼다
+  orgCloseModal();
+  if(AUTH.live){
+    let r = null, j = {};
+    try { r = await fetch(`/api/payslips/${ym}/${open ? 'open' : 'close'}`, { method:'POST' }); j = await r.json().catch(()=>({})); } catch(e){}
+    if(!r || !r.ok) return kpiFlash(escapeHtml(j.error || '바꾸지 못했습니다. 잠시 뒤 다시 해 주세요.'), 'danger');
+    await psLiveDone();
+  } else {
+    const m = ps.mem.months[ym]; if(!m) return;
+    m.status = open ? 'OPEN' : 'DRAFT'; if(open) m.openedAt = new Date().toISOString();
+    paySlips = null;
+  }
+  kpiFlash(open ? `${psMon(ym)} 명세서를 공개했습니다. 직원 화면에 보입니다.` : `${psMon(ym)} 명세서 공개를 내렸습니다. 직원 화면에서 사라졌습니다.`);
+}
+async function psPreview(ym){   // 미리 보기: 직원을 고르면 그 사람의 그 달 명세서 (실제는 GET ?user= — 서버가 열람 기록을 남긴다)
+  if(AUTH.live && MS_LIVE.state!=='ok') await msLoad();
+  ps.prev = { ym, who:'', state:'', slip:null }; psPrevDraw();
+}
+async function psPrevPick(v){
+  const p = ps.prev, m = psMembers().find(x=>String(x.id)===v);
+  Object.assign(p, { who:v, slip:null, state:m ? 'loading' : '' });
+  if(m && !AUTH.live){ const s = (ps.mem.slips[p.ym] || {})[m.id], mon = ps.mem.months[p.ym]; p.slip = s ? { ...s, status:mon.status, revised:mon.revised } : null; p.state = 'ok'; }
+  psPrevDraw();
+  if(!m || !AUTH.live) return;
+  try {
+    const r = await fetch('/api/payslips?user='+m.id); if(!r.ok) throw new Error(r.status);
+    const s = (await r.json()).slips.find(x=>x.ym===p.ym);
+    if(ps.prev!==p || p.who!==v) return;   // 기다리는 사이 다른 직원을 골랐다
+    p.slip = s ? payNorm(s) : null; p.state = 'ok';
+  } catch(e){ if(ps.prev!==p || p.who!==v) return; p.state = 'err'; }
+  psPrevDraw();
+}
+function psPrevDraw(){
+  const p = ps.prev, list = (AUTH.live ? MS_LIVE.list : psMembers().filter(m=>(ps.mem.slips[p.ym] || {})[m.id])).slice().sort((a, b)=>a.name.localeCompare(b.name, 'ko'));
+  const body = !p.who ? '' : p.state==='loading' ? kpiNote('불러오는 중입니다…', 'info') : p.state==='err' ? kpiNote('불러오지 못했습니다. 잠시 뒤 다시 해 주세요.', 'danger')
+    : p.slip ? payDetail(p.slip) : '<div class="placeholder-note" style="margin:0;">이 직원의 이 달 명세서가 없습니다.</div>';
+  orgModal(`<div class="ps-prev"><div class="card-title"><span>${psYmName(p.ym)} 미리 보기</span><button type="button" class="x-btn" onclick="orgCloseModal()" aria-label="닫기">${icon('x')}</button></div>
+    <div class="field" style="max-width:320px; margin-bottom:6px;"><label for="psPrevWho">볼 직원</label><select id="psPrevWho" onchange="psPrevPick(this.value)"><option value="">직원 고르기</option>${list.map(m=>`<option value="${escapeHtml(String(m.id))}" ${String(m.id)===p.who ? 'selected' : ''}>${escapeHtml(m.name)} · ${escapeHtml(m.team || m.division || '')}${m.active===false ? ' (비활성)' : ''}</option>`).join('')}</select></div>
+    <div class="list-sub" style="margin:0 0 12px;">공개 전인 달도 HR은 볼 수 있습니다.${AUTH.live ? ' 직원을 고르면 열람 기록이 남습니다.' : ''}</div>${body}</div>`);
+  document.getElementById('psPrevWho').focus();
+}
+function psDemo(){   // 시연: 시연 인물들의 지난달 명세서로 급여대장(제목 두 줄 · 사람 줄 · 합계 줄)을 만들어 확인 창까지 — 읽기(psRead)부터 실제와 같은 길로 간다
+  const d = new Date(); d.setDate(1);
+  do d.setMonth(d.getMonth()-1); while(ctYmd(payDayOf(d.getFullYear(), d.getMonth()+1)) > ctYmd(new Date()));   // 지급일이 지난 가장 최근 달
+  const slips = Object.keys(PAY_PEOPLE).map(k=>paySlip(PAY_PEOPLE[k], d.getFullYear(), d.getMonth()));
+  const names = f=>[...new Set(slips.flatMap(s=>s[f].map(x=>x[0])))], pay = names('pay'), ded = names('ded'), val = (s, f, l)=>(s[f].find(x=>x[0]===l) || ['', 0])[1];
+  const people = slips.map(s=>[+s.head.code, s.head.name, s.head.dept, s.head.title, s.head.job, ...pay.map(l=>val(s, 'pay', l)), s.gross, ...ded.map(l=>val(s, 'ded', l)), s.deduct, s.net]);
+  const group = (name, n)=>[name, ...Array(n).fill('')];   // 묶음 이름은 첫 칸에만 (가로로 합친 칸)
+  return psStage(`예시 급여대장 (가상 값) ${slips[0].ym.replace('-', '')}.xlsx`, [
+    ['사원코드','사원명','부서','직급','직종', ...group('수당', pay.length), ...group('공제', ded.length), '차인지급액'],
+    ['','','','','', ...pay, '지급액계', ...ded, '공제액계', ''],
+    ...people, ['합계','','','','', ...people[0].slice(5).map((_, i)=>people.reduce((t, r)=>t + r[5+i], 0))]]);
+}
+
+async function psFlowCheck(){   // 브라우저 콘솔에서 await psFlowCheck() 실행 — 시연 모드로 올리기 · 공개 · 내리기 · 다시 올리기를 끝까지 (끝나면 시연 기억을 되돌린다)
+  const ok = (c,msg)=>{ if(!c) throw new Error('psFlowCheck 실패: '+msg); };
+  const keep = [AUTH.live, ps.mem, ps.pick, paySlips, kpiMsg], J = JSON.stringify, cp = a=>a.map(r=>r.slice());
+  try {
+    AUTH.live = false; ps.mem = { months:{}, slips:{} }; paySlips = null;
+    const E = PAY_PEOPLE.emp, L = PAY_PEOPLE.lead, demo = paySlipsFor('emp')[0], ym = demo.ym, file = `가상-${ym.replace('-', '')}.xlsx`;
+    const R = [   // Task 3 표본을 시연 사람 둘로 (사원코드는 엑셀처럼 숫자)
+      ['사원코드','사원명','부서','직급','직종','수당','','','','공제','','','차인지급액'],
+      ['','','','','','기본급','능력급','식대','지급액계','국민연금','학자금상환액','공제액계',''],
+      [+E.code, KPI_USERS.emp.name, E.dept, '프로', '사무직', 2000000, 500000, 200000, 2700000, 90000, 0, 90000, 2610000],
+      [+L.code, KPI_USERS.lead.name, L.dept, '리더', '', 2500000, 0, 200000, 2700000, 100000, 50000, 150000, 2550000],
+      ['합계','','','','', 4500000, 500000, 400000, 5400000, 190000, 50000, 240000, 5160000],
+    ];
+    const slip = ()=>paySlipsFor('emp').find(s=>s.ym===ym);
+    await psStage(file, R);
+    ok(ps.pick.ym===ym && ps.pick.payDate===demo.payDate, '파일 이름의 YYYYMM → 귀속 월 · 다음 달 20일 지급');
+    ok(J(ps.pick.to)===J(['emp', 'lead']) && !psBlock(), '둘 다 맞춤 → 올릴 수 있다');
+    ok(ps.pick.r.totalBad.length===0 && document.querySelector('#orgModal .ps-cf'), '확인 창 · 합계 줄 일치');
+    const W = cp(R); W[2][5] = 2000001;
+    await psStage(file, W); ok(psBlock().includes('금액이 맞지 않는 사람'), '금액이 틀린 사람이 있으면 올릴 수 없다');
+    const U = cp(R); U[3][0] = 99999; U[3][1] = '가상없는사람';
+    await psStage(file, U); ok(psBlock().includes('직원을 고르거나'), '못 맞춘 사람이 있으면 올릴 수 없다');
+    psPick(1, 'lead'); ok(!psBlock() && ps.pick.to[1]==='lead', '직원을 고르면 풀린다');
+    psPick(1, 'skip'); ok(!psBlock(), '이번 달에서 빼도 풀린다');
+    psPick(1, ''); ok(psBlock().includes('직원을 고르거나'), '고르기를 되돌리면 다시 막힌다');
+    await psStage(file, R); await psUpload();
+    ok(ps.mem.months[ym].status==='DRAFT' && ps.mem.months[ym].people===2 && ps.mem.months[ym].revised===false, '올리면 공개 전');
+    ok(slip().gross===demo.gross && slip().gross!==2700000, '공개 전에는 직원 화면이 그대로');
+    await psSetOpen(ym, true);
+    ok(slip().gross===2700000 && slip().head.name===KPI_USERS.emp.name, '공개하면 올린 명세서가 보인다');
+    await psStage(file, R); ok(psBlock().includes('공개 중인 달'), '공개 중인 달은 다시 올릴 수 없다');
+    await psSetOpen(ym, false); ok(slip().gross===demo.gross, '공개를 내리면 직원 화면에서 사라진다');
+    await psStage(file, R); await psUpload(); await psSetOpen(ym, true);
+    ok(ps.mem.months[ym].revised===true && slip().revised===true, '내린 뒤 다시 올려 공개하면 수정됨');
+    ps.mem = { months:{}, slips:{} }; await psDemo();   // 위에서 공개한 달과 같은 달이라 기억을 비우고
+    ok(ps.pick.r.err==='' && ps.pick.r.people.length===Object.keys(PAY_PEOPLE).length && ps.pick.to.every(Boolean) && !ps.pick.r.totalBad.length && !psBlock(), '시연 예시 자료: 급여대장 모양 → 읽기 · 맞추기 · 합계 줄');
+  } finally {
+    orgCloseModal(); [AUTH.live, ps.mem, ps.pick, paySlips, kpiMsg] = keep; renderContent();
+  }
+  return 'psFlowCheck 통과';
 }
 
 /* ---------------- 원천징수영수증 (연말정산) ----------------
@@ -7393,6 +7674,8 @@ const TOURS = {   // 단계: el = 가리킬 곳(여러 개면 묶어서, 배열�
     { el:['[onclick="expVoucherCopy()"]', '#expVoucherWrap .card'], title:'표 복사 (엑셀 없이 바로 붙여넣기)', body:'경비를 계산해 <b>전표에 담기</b>를 누르면 여기에 쌓입니다. <b>표 복사</b>를 누른 다음 ERP 전표 입력창 첫 줄의 <b>계정과목 칸</b>을 누르고 붙여넣기(Ctrl+V) 하세요. 계정과목·금액 줄이 자동으로 채워집니다.' },
   ]},
   pay:{ label:'급여명세서 보는 법', tab:'p1', steps:()=>[
+    { el:'#psUp', title:'명세서 올리기 (HR)', body:'급여 프로그램에서 내려받은 <b>급여대장 엑셀</b>을 고릅니다. 암호가 걸린 파일은 암호를 묻고, 파일은 이 PC 화면 안에서만 읽습니다. 확인 창에서 인원 · 합계 · 직원 맞추기를 본 뒤 <b>올리기 (공개 전)</b>를 누릅니다.' },
+    { el:'#psMonths [onclick^="psOpenAsk"]', one:true, title:'공개 (HR)', body:'올린 달은 아직 직원에게 보이지 않습니다. <b>미리 보기</b>로 확인한 뒤 <b>공개</b>를 누르면 각자 본인 것만 볼 수 있습니다. 고칠 것이 있으면 <b>공개 내리기</b> → 다시 올리기 → 공개 순서로 하고, 직원 화면에는 "수정됨"으로 보입니다.' },
     { el:'select[onchange^="payViewKey"]', title:'볼 직원 고르기 (HR)', body:'HR은 직원을 골라 그 사람의 명세서를 볼 수 있습니다. 직원은 본인 것만 봅니다.' },
     { el:'.pay-pick', title:'캐릭터 고르기', body:'처음 한 번, 급여일까지 함께 걸어갈 캐릭터를 고릅니다. 고르면 급여일까지의 진행 그림이 나오고, 바꾸고 싶으면 그림 아래 <b>캐릭터 바꾸기</b>를 누릅니다.' },
     { el:'.pay-eye', title:'금액 보기', body:'금액은 가려져 있습니다. <b>눈 모양</b>을 누르면 보이고, 다시 누르면 가려집니다.' },
