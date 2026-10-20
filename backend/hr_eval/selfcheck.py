@@ -58,7 +58,7 @@ from hr_eval.domain.contract_rules import (
 )
 from hr_eval.domain.grading import Assignment, validate_and_assign_evaluation_grades
 from hr_eval.domain.kpi import KpiInput, validate_kpi_set
-from hr_eval.domain.kpi_plan import ACTIONS, assign_ids, clean_plan, next_status, validate_plan, window_open
+from hr_eval.domain.kpi_plan import ACTIONS, assign_ids, clean_plan, next_status, validate_plan, window_open, window_span
 from hr_eval.domain.access import Act, Delegation, Pool, PoolRef, Target, can
 from hr_eval.domain.roster import (
     PortalDept,
@@ -1937,6 +1937,9 @@ def 작성_기간_판정():
     assert not window_open(date(2027, 1, 10), ("2027-01-04", None, None), None)
     assert window_open(date(2027, 1, 10), ("2027-01-04", "2027-01-22", None), None)
     assert window_open(date(2027, 3, 5), None, 사람)
+    # 어느 기간이 적용되는지는 한 곳에서 가린다: 사람 기간 > 그해 기간 > 없음
+    assert window_span(y, 사람) == 사람 and window_span(y, None) == ("2027-01-04", "2027-01-22") and window_span(None, 사람) == 사람
+    assert window_span(None, None) == (None, None) and window_span((None, None, None), None) == (None, None)
 
 
 def main() -> int:

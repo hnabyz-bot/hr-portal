@@ -890,6 +890,330 @@ def check_kpi_owner(hr) -> None:
        == [(0,)], "계획서 · 사유 문장은 감사로그에 없음")
 
 
+def check_kpi_manager(hr) -> None:
+    """KPI 계획서 관리자 쓰기 (2026-10-20): 바로 위 관리자가 확정 · 돌려보내기 · 해제 · 거절 — 그 사람의 작성 기간 안에서만 ·
+    HR 은 대신 할 수 있고 원래 관리자가 남음 · 대표이사 몫은 맡겼을 때만 · 처리함 · 사람별 기간 ·
+    서버가 순서대로 다시 본다 (권한 403 → 작성 기간 403 → 상태 409 → 사유 400)."""
+    import kpi
+    print("KPI 계획서 (관리자)")
+    # 이 검사만의 가상 조직 — 앞 검사가 바꿔 놓은 것에 기대지 않는다.
+    # 본부(31) 밑 팀 A(32) · B(33), 본부장이 없는 본부(35) 밑 팀 C(34), 본부장 · 대표이사
+    for dept in ((31, "K31", "가상K본부", "DIVISION", None), (32, "K32", "가상K팀A", "TEAM", 31), (33, "K33", "가상K팀B", "TEAM", 31),
+                 (35, "K35", "가상K본부2", "DIVISION", None), (34, "K34", "가상K팀C", "TEAM", 35)):
+        x("INSERT INTO departments (id, code, name, level, parent_id) VALUES (?, ?, ?, ?, ?)", *dept)
+    cast = {41: ("가상팀장A", 32, "TEAM_LEADER"), 42: ("가상팀원A1", 32, None), 43: ("가상팀원A2", 32, None), 48: ("가상팀원A3", 32, None),
+            44: ("가상팀장B", 33, "TEAM_LEADER"), 45: ("가상팀원B1", 33, None), 49: ("가상팀원B2", 33, None),
+            46: ("가상본부장", 31, "DIVISION_HEAD"), 47: ("가상대표", 31, "CEO"), 50: ("가상팀장C", 34, "TEAM_LEADER")}
+    for uid, (name, dept, role) in cast.items():
+        x("INSERT INTO users (id, name, email, department_id, hiworks_user_no, portal_enabled, is_active, writes_kpi) VALUES (?, ?, ?, ?, ?, 1, 1, ?)",
+          uid, name, f"k{uid}@example.invalid", dept, f"HW-{uid}", int(role != "CEO"))  # 대표이사는 KPI 를 쓰지 않는다
+        if role:
+            x("INSERT INTO user_roles (user_id, role) VALUES (?, ?)", uid, role)
+    # 팀 A 에 있어도 우리 팀 상태 · HR 목록에 안 세는 사람: 퇴사자, KPI 를 안 쓰는 현장직
+    x("INSERT INTO users (id, name, email, department_id, hiworks_user_no, portal_enabled, is_active, deactivated_at, writes_kpi)"
+      " VALUES (51, '가상퇴사자', 'k51@example.invalid', 32, 'HW-51', 1, 0, '2027-01-01T00:00:00Z', 1)")
+    x("INSERT INTO users (id, name, email, department_id, hiworks_user_no, portal_enabled, is_active, writes_kpi)"
+      " VALUES (52, '가상현장직', 'k52@example.invalid', 32, 'HW-52', 1, 1, 0)")
+    cl = {uid: app.test_client() for uid in cast}
+    for uid, c in cl.items():
+        login(c, new_token(f"HW-{uid}"))
+    lead, a1, a2, a3, leadb, b1, b2, head, ceo, leadc = (cl[i] for i in (41, 42, 43, 48, 44, 45, 49, 46, 47, 50))
+    anon = app.test_client()
+    x("UPDATE users SET writes_kpi = 1, title = NULL WHERE id = 1")
+    x("UPDATE users SET title = '프로' WHERE id = 42")
+    today, year = auth._today(), kpi.plan_year()
+    day = lambda n: (today + timedelta(days=n)).isoformat()  # noqa: E731
+    me = lambda c: c.get("/api/kpi/me", base_url=BASE).json  # noqa: E731
+    inbox = lambda c: c.get("/api/kpi/inbox", base_url=BASE).json  # noqa: E731
+    who = lambda c: [(i["userId"], i["proxy"]) for i in inbox(c)["items"]]  # noqa: E731
+    act = lambda c, uid, what, body=None, headers=ORIGIN: c.post(f"/api/kpi/plans/{uid}/{what}", base_url=BASE, headers=headers, json=body or {})  # noqa: E731
+    own = lambda c, what, body=None: c.post(f"/api/kpi/me/{what}", base_url=BASE, headers=ORIGIN, json=body or {})  # noqa: E731
+    setyear = lambda frm, to: hr.post("/api/kpi/admin/year", base_url=BASE, headers=ORIGIN, json={"year": year, "editFrom": frm, "editTo": to})  # noqa: E731
+    setwin = lambda body, c=hr, headers=ORIGIN: c.post("/api/kpi/admin/window", base_url=BASE, headers=headers, json=body)  # noqa: E731
+    delegate = lambda on, c=ceo, headers=ORIGIN: c.post("/api/kpi/delegation", base_url=BASE, headers=headers, json={"on": on})  # noqa: E731
+    row = lambda uid: q("SELECT status, note, note_kind, change_reason, confirmed_version FROM kpi_plans WHERE user_id = ? AND year = ?", uid, year)  # noqa: E731
+    versions = lambda uid: q("SELECT version, confirmed_by, on_behalf_of FROM kpi_versions WHERE user_id = ? AND year = ? ORDER BY version", uid, year)  # noqa: E731
+    audit = lambda action, uid: q("SELECT actor_user_id, actor_is_hr, on_behalf_of, entity_type, after_data FROM audit_logs"  # noqa: E731
+                                  " WHERE action = ? AND entity_id = ? ORDER BY id", action, uid)
+    conflict = lambda r, st: r.status_code == 409 and r.json == {"error": "지금 상태에서는 할 수 없습니다.", "status": st}  # noqa: E731
+    no_auth, no_window = {"error": "이 KPI를 처리할 권한이 없습니다."}, {"error": "KPI 작성 기간이 아닙니다."}
+    zero = {"NONE": 0, "DRAFT": 0, "SUBMITTED": 0, "CONFIRMED": 0, "CHANGE_REQUESTED": 0}
+    y = {"year": year}
+
+    def mk(tag="가상"):
+        """정기 2 · 비정기 1 (일정 2), 가중치 40/30/30."""
+        item = lambda name, w, kind, **more: {  # noqa: E731
+            "action": name, "formula": "가상 측정식", "weight": w, "owner": "가상", "S": "가상 s", "A": "가상 a", "B": "가상 b", "C": "가상 c",
+            "D": "가상 d", "kind": kind, "target": None, "unit": "", "scheds": [], **more}
+        return [{"team": f"{tag} 팀목표", "personal": f"{tag} 개인목표", "items": [
+            item(f"{tag} 정기 1", 40, "reg"), item(f"{tag} 정기 2", 30, "reg"),
+            item(f"{tag} 비정기", 30, "irr", scheds=[{"due": f"{year}-03-31", "name": "가상 초안"}, {"due": f"{year}-12-31", "name": "가상 마감"}])]}]
+
+    def send(c, plan=None):
+        """초안을 저장하고 제출한다."""
+        return own(c, "draft", {"draft": plan or mk()}).status_code == 200 and own(c, "submit").status_code == 200
+
+    ok(all(anon.get(p, base_url=BASE).status_code == 401 for p in ("/api/kpi/inbox", "/api/kpi/admin", "/api/kpi/delegation", "/api/kpi/plans/42"))
+       and all(anon.post(f"/api/kpi/{p}", base_url=BASE, headers=ORIGIN, json={}).status_code == 401
+               for p in ("plans/42/confirm", "plans/42/return", "plans/42/unlock", "plans/42/reject", "admin/window", "delegation")),
+       "로그인 없이는 401 (관리자 쪽 KPI)")
+
+    # ---- 제출 → 처리함 ----
+    ok(setyear(day(-1), day(7)).status_code == 200 and send(a1), "작성 기간을 열고 팀원이 제출")
+    at = q("SELECT submitted_at FROM kpi_plans WHERE user_id = 42 AND year = ?", year)[0][0]
+    item = {"userId": 42, "name": "가상팀원A1", "dept": "가상K팀A", "title": "프로", "status": "SUBMITTED", "at": at, "reason": None,
+            "items": 3, "reg": 2, "irr": 1, "scheds": 2, "proxy": False}
+    ok(inbox(lead) == {"items": [item], "team": {**zero, "NONE": 2, "SUBMITTED": 1}},
+       "팀장 처리함에 1건 (직급 · 제출 시각 · 행 수) · 우리 팀 상태: 제출 1 · 아직 안 씀 2")
+    ok(inbox(a2) == {"items": [], "team": zero} and inbox(b1) == {"items": [], "team": zero}
+       and inbox(leadb) == {"items": [], "team": {**zero, "NONE": 2}} and inbox(hr) == {"items": [], "team": zero},
+       "다른 팀원 · 다른 팀장 · HR 처리함에는 없음 (HR 은 바로 위 관리자가 아니면 안 옴)")
+
+    ok(all((r := act(c, 42, "confirm")).status_code == 403 and r.json == no_auth for c in (a2, a1, leadb, head, ceo, leadc))
+       and all(act(a2, 42, w, {"note": "가상 사유"}).status_code == 403 for w in ("return", "unlock", "reject"))
+       and act(lead, 42, "confirm", headers={}).status_code == 403
+       and row(42) == [("SUBMITTED", None, None, None, None)] and not versions(42),
+       "관리자가_아니면_처리_못_한다: 같은 팀 다른 팀원 · 본인 · 다른 팀장 · 본부장 · 대표이사 403 (Origin 없어도 403) · 아무것도 안 바뀜")
+
+    # ---- 계획서 보기 ----
+    mine, owner = me(a1)["plan"], {"id": 42, "name": "가상팀원A1", "dept": "가상K팀A"}
+    ok(hr.get("/api/kpi/plans/42", base_url=BASE).json == {**mine, "owner": owner}
+       and lead.get("/api/kpi/plans/42", base_url=BASE).json == {**mine, "owner": owner} and a1.get("/api/kpi/plans/42", base_url=BASE).status_code == 200,
+       "HR · 관리자 · 주인은 계획서를 봄: 본인 화면의 plan 과 같은 모양 + owner")
+    ok(all((r := c.get("/api/kpi/plans/42", base_url=BASE)).status_code == 403 and r.json == {"error": "이 KPI를 볼 권한이 없습니다."}
+           for c in (a2, leadb, head, ceo)), "남의_계획서는_못_본다: 같은 팀 다른 팀원 · 다른 팀장 · 본부장 · 대표이사 403")
+    ok(lead.get("/api/kpi/plans/43", base_url=BASE).json == {"error": "아직 작성한 KPI가 없습니다."}
+       and lead.get("/api/kpi/plans/43", base_url=BASE).status_code == 404 and a2.get("/api/kpi/plans/43", base_url=BASE).status_code == 404
+       and hr.get("/api/kpi/plans/999", base_url=BASE).status_code == 404 and leadb.get("/api/kpi/plans/43", base_url=BASE).status_code == 403
+       and hr.get("/api/kpi/plans/99999999999999999999", base_url=BASE).status_code == 404 and act(hr, 99999999999999999999, "confirm").status_code == 404,
+       "계획서가 없으면 404 (볼 권한을 먼저 봄) · 너무 큰 번호도 서버 오류가 아님")
+
+    # ---- 돌려보내기 ----
+    for bad in (None, "", "   ", 5, ["x"], "가" * 201, "\ud800"):
+        r = act(lead, 42, "return", {"note": bad} if bad is not None else {})
+        ok(r.status_code == 400 and r.json.get("error") and row(42)[0][0] == "SUBMITTED",
+           f"돌려보내는 이유는 1~200자 글자 (UTF-8 로 쓸 수 있는 글자) — 아니면 400 ({bad!r:.12})")
+    r = act(lead, 42, "return", {"note": "  가상 돌려보냄 사유  "})
+    ok(r.status_code == 200 and r.json == {"ok": True} and row(42) == [("DRAFT", "가상 돌려보냄 사유", "RETURNED", None, None)],
+       "돌려보내기 → DRAFT · 사유(앞뒤 공백 뺌) · RETURNED")
+    p = me(a1)["plan"]
+    ok(p["status"] == "DRAFT" and p["note"] == "가상 돌려보냄 사유" and p["noteKind"] == "RETURNED", "본인 화면에 돌려보낸 사유가 옴")
+    ok(audit("KPI_RETURNED", 42) == [(41, 0, None, "kpi_plan", json.dumps(y))] and inbox(lead)["items"] == [],
+       "감사로그 KPI_RETURNED (사유 문장 없음) · 처리함에서 사라짐")
+    ok(conflict(act(lead, 42, "return", {"note": "가상 사유"}), "DRAFT") and conflict(act(lead, 42, "confirm"), "DRAFT")
+       and conflict(act(lead, 42, "return", {}), "DRAFT"), "작성 중인 것은 409 (사유가 틀려도 상태 먼저)")
+    ok(send(a1) and row(42) == [("SUBMITTED", None, None, None, None)], "고쳐서 다시 내면 사유가 지워짐")
+
+    # ---- 확정 ----
+    r = act(lead, 42, "confirm")
+    ok(r.status_code == 200 and r.json == {"ok": True}, "팀장이 확정")
+    p = me(a1)["plan"]
+    rows_ = [it for g_ in p["confirmed"]["content"] for it in g_["items"]]
+    ok(p["status"] == "CONFIRMED" and p["confirmed"]["version"] == 1 and p["confirmed"]["by"] == "가상팀장A"
+       and sorted(it["rid"] for it in rows_) == [1, 2, 3] and sorted(s["sid"] for it in rows_ for s in it["scheds"]) == [1, 2],
+       "확정 → 판 1 · 확정한 사람 이름 · 각 행에 rid · 각 일정에 sid")
+    v1 = p["confirmed"]["content"]
+    ok(p["draft"] == v1 and p["note"] is None and p["noteKind"] is None and row(42) == [("CONFIRMED", None, None, None, 1)],
+       "초안도 확정본과 같아지고(rid · sid 포함) 사유는 비움")
+    ok(versions(42) == [(1, 41, None)] and audit("KPI_CONFIRMED", 42) == [(41, 0, None, "kpi_plan", json.dumps({**y, "version": 1}))],
+       "판 1: 누른 사람 = 팀장 · 대신한 사람 없음 · 감사로그 KPI_CONFIRMED (판 번호)")
+    r = inbox(lead)
+    ok(r["items"] == [] and r["team"] == {**zero, "NONE": 2, "CONFIRMED": 1}, "처리함에서 사라지고 우리 팀 상태는 확정 1")
+
+    # ---- 이미 처리된 것은 409 ----
+    ok(all(conflict(act(lead, 42, w, b), "CONFIRMED") for w, b in (("confirm", None), ("unlock", None), ("return", {"note": "가상 사유"}),
+                                                                ("reject", {"note": "가상 사유"}), ("return", {}), ("reject", {})))
+       and versions(42) == [(1, 41, None)], "이미_처리된_것은_409: 같은 확정 두 번째 · 돌려보내기 · 해제 · 거절 모두 409 (판은 그대로)")
+    ok(conflict(act(lead, 43, "confirm"), "NONE") and not q("SELECT 1 FROM kpi_plans WHERE user_id = 43"), "계획서가 없으면 409 (상태 NONE) — 아무것도 안 만들어짐")
+
+    # ---- 수정 요청 → 해제 → 새 판 · 거절 ----
+    ok(own(a1, "request-change", {"reason": "\ud800"}).status_code == 400 and row(42)[0][0] == "CONFIRMED", "수정 요청 사유에 쓸 수 없는 글자(짝 없는 서로게이트)가 있으면 400 (서버 오류가 아님)")
+    ok(own(a1, "request-change", {"reason": "가상 수정 사유"}).status_code == 200, "팀원이 수정 요청")
+    at_cr = q("SELECT updated_at FROM kpi_plans WHERE user_id = 42 AND year = ?", year)[0][0]
+    r = inbox(lead)
+    ok(r["items"] == [{**item, "status": "CHANGE_REQUESTED", "at": at_cr, "reason": "가상 수정 사유"}] and r["team"]["CHANGE_REQUESTED"] == 1,
+       "수정 요청도 처리함에 (사유 · 시각 · 행 수는 확정본 기준)")
+    ok(conflict(act(lead, 42, "confirm"), "CHANGE_REQUESTED") and conflict(act(lead, 42, "return", {"note": "가상 사유"}), "CHANGE_REQUESTED"),
+       "수정 요청 중에는 확정 · 돌려보내기가 409")
+    x("UPDATE kpi_plans SET draft = '[]' WHERE user_id = 42 AND year = ?", year)  # 옛 자료처럼 초안이 확정본과 달라져 있어도
+    ok(act(lead, 42, "unlock").json == {"ok": True}, "팀장이 수정을 풀어 줌")
+    p = me(a1)["plan"]
+    ok(p["status"] == "DRAFT" and p["draft"] == v1 and p["changeReason"] is None and p["note"] is None and p["noteKind"] is None
+       and p["confirmed"]["version"] == 1 and p["confirmed"]["content"] == v1 and versions(42) == [(1, 41, None)]
+       and row(42) == [("DRAFT", None, None, None, 1)] and audit("KPI_UNLOCKED", 42) == [(41, 0, None, "kpi_plan", json.dumps(y))],
+       "해제 → 작성 중 · 초안 = 확정본 내용 · 확정본은 판 1 그대로 · 감사로그 KPI_UNLOCKED")
+    edited = json.loads(json.dumps(v1))
+    edited[0]["items"][0]["action"] = "가상 정기 1 (고침)"
+    edited[0]["items"].reverse()  # 순서를 바꿔도 번호는 행을 따라감
+    ok(send(a1, edited) and act(lead, 42, "confirm").status_code == 200, "고쳐서 다시 제출 · 확정")
+    p = me(a1)["plan"]
+    rows_ = [it for g_ in p["confirmed"]["content"] for it in g_["items"]]
+    ok(p["confirmed"]["version"] == 2 and p["confirmed"]["content"] == edited
+       and {it["action"]: it["rid"] for it in rows_} == {"가상 정기 1 (고침)": 1, "가상 정기 2": 2, "가상 비정기": 3}
+       and versions(42) == [(1, 41, None), (2, 41, None)] and json.loads(q("SELECT content FROM kpi_versions WHERE user_id = 42 AND version = 1")[0][0]) == v1,
+       "새 판은 판 2 (행 순서를 바꿔도 번호는 행을 따라 이어짐) · 판 1 은 그대로")
+    ok(own(a1, "request-change", {"reason": "가상 두 번째 수정 사유"}).status_code == 200, "다시 수정 요청")
+    for bad in (None, "", "   ", 5, "가" * 201, "\ud800"):
+        r = act(lead, 42, "reject", {"note": bad} if bad is not None else {})
+        ok(r.status_code == 400 and row(42)[0][0] == "CHANGE_REQUESTED", f"거절 이유도 1~200자 글자 — 아니면 400 ({bad!r:.12})")
+    ok(act(lead, 42, "reject", {"note": "가상 거절 사유"}).json == {"ok": True}
+       and row(42) == [("CONFIRMED", "가상 거절 사유", "REJECTED", None, 2)], "거절 → 확정 상태로 돌아감 · 사유 · REJECTED · 수정 요청 사유는 비움")
+    p = me(a1)["plan"]
+    ok(p["status"] == "CONFIRMED" and p["noteKind"] == "REJECTED" and p["note"] == "가상 거절 사유" and p["changeReason"] is None
+       and p["confirmed"]["version"] == 2 and p["draft"] == p["confirmed"]["content"] and audit("KPI_REJECTED", 42) == [(41, 0, None, "kpi_plan", json.dumps(y))],
+       "본인 화면: 거절 사유 · 확정본 판 2 그대로 · 감사로그 KPI_REJECTED")
+
+    # ---- 작성 기간 (계획서 주인 기준) ----
+    ok(send(a2) and who(lead) == [(43, False)], "(팀원 2 제출)")
+    ok(setyear("", "").status_code == 200, "HR 이 작성 기간을 닫음")
+    ok(act(lead, 43, "confirm").status_code == 403 and act(lead, 43, "confirm").json == no_window
+       and act(hr, 43, "confirm").json == no_window and act(hr, 43, "confirm").status_code == 403
+       and all(act(lead, 43, w, {"note": "가상 사유"}).json == no_window for w in ("return", "unlock", "reject"))
+       and row(43) == [("SUBMITTED", None, None, None, None)] and not versions(43),
+       "기간_밖에서는_관리자도_못_한다: 팀장도 HR 도 확정 · 돌려보내기 · 해제 · 거절 403 · 아무것도 안 바뀜")
+    ok(act(a1, 43, "confirm").json == no_auth and act(lead, 42, "unlock").json == no_window and act(lead, 42, "unlock").status_code == 403,
+       "권한 403 이 기간 403 보다 먼저 · 기간 403 이 상태 409 보다 먼저")
+
+    # ---- 사람별 기간 (HR) ----
+    good = {"userId": 43, "year": year, "editFrom": day(-1), "editTo": day(5)}
+    ok(not q("SELECT 1 FROM kpi_windows") and setwin(good, lead).status_code == 403 and setwin(good, a2).status_code == 403
+       and setwin(good, headers={}).status_code == 403 and setwin(good, anon).status_code == 401 and not q("SELECT 1 FROM kpi_windows"),
+       "사람별 기간은 HR 만 · 포털 화면에서만")
+    for bad in ({**good, "userId": 999}, {**good, "userId": 5}, {**good, "userId": "43"}, {**good, "userId": True}, {**good, "userId": 0},
+                {**good, "userId": 10 ** 30}, {**good, "year": 2025}, {**good, "year": str(year)}, {**good, "editTo": None}, {**good, "editFrom": "내일"},
+                {**good, "editFrom": ""}, {**good, "editFrom": day(5), "editTo": day(-1)}, {"userId": 43, "year": year}, {"userId": 43, "year": year, "clear": False}, []):
+        ok(setwin(bad).status_code == 400 and not q("SELECT 1 FROM kpi_windows"), f"사람별 기간이 틀리면 400, 아무것도 안 남김 ({str(bad)[:70]})")
+    ok(setwin(good).json == {"ok": True} and q("SELECT edit_from, edit_to, set_by FROM kpi_windows WHERE user_id = 43 AND year = ?", year) == [(day(-1), day(5), 1)],
+       "HR 이 한 팀원에게만 오늘을 포함한 기간을 엶")
+    ok(own(a2, "cancel").status_code == 200 and own(a2, "submit").status_code == 200 and row(43)[0][0] == "SUBMITTED",
+       "사람별_기간이_우선이다: 전체 기간이 닫혀 있어도 그 팀원은 제출 200")
+    ok(own(a1, "request-change", {"reason": "가상 사유"}).status_code == 403 and own(b1, "submit").status_code == 403 and own(a3, "draft", {"draft": mk()}).status_code == 403,
+       "다른 팀원은 403 (전체 기간이 닫혀 있음)")
+    ok(act(lead, 43, "confirm").status_code == 200 and versions(43) == [(1, 41, None)], "관리자 처리도 그 팀원의 기간으로 봄: 전체 기간이 닫혀 있어도 확정")
+    ok(setwin({"userId": 43, "year": year, "clear": True}).json == {"ok": True} and not q("SELECT 1 FROM kpi_windows")
+       and [r[3:] for r in audit("KPI_WINDOW_SET", 43)] == [("kpi_window", json.dumps(y))] * 2 and audit("KPI_WINDOW_SET", 43)[0][:3] == (1, 1, None),
+       "기간 지우기 (clear) · 감사로그 KPI_WINDOW_SET 은 둘 다 대상 번호와 해만")
+    ok(setyear(day(-1), day(7)).status_code == 200, "(작성 기간을 다시 엶)")
+
+    # ---- 동시에 두 번 누르기 ----
+    ok(own(a2, "request-change", {"reason": "가상 사유"}).status_code == 200 and act(lead, 43, "unlock").status_code == 200 and own(a2, "submit").status_code == 200,
+       "(수정 요청 → 해제 → 다시 제출)")
+    crowd = [app.test_client() for _ in range(5)]  # 같은 팀장이 창을 여러 개 열어 놓고 동시에 확정을 누른다
+    for c in crowd:
+        login(c, new_token("HW-41"))
+    codes = []
+    threads = [threading.Thread(target=lambda c=c: codes.append(act(c, 43, "confirm").status_code)) for c in crowd]
+    for th in threads:
+        th.start()
+    for th in threads:
+        th.join()
+    ok(sorted(codes) == [200, 409, 409, 409, 409] and versions(43) == [(1, 41, None), (2, 41, None)] and len(audit("KPI_CONFIRMED", 43)) == 2,
+       f"동시에 확정을 다섯 번 눌러도 한 번만 통과 — 판도 하나만 ({codes})")
+
+    # ---- HR 이 대신 ----
+    ok(send(b1) and who(hr) == [], "(팀장 B 의 팀원 제출) HR 은 바로 위 관리자가 아니라서 처리함에 안 옴")
+    ok(act(hr, 45, "confirm").status_code == 200 and versions(45) == [(1, 1, 44)] and me(b1)["plan"]["confirmed"]["by"] == "가상1"
+       and audit("KPI_CONFIRMED", 45) == [(1, 1, 44, "kpi_plan", json.dumps({**y, "version": 1}))],
+       "HR이_대신_확정하면_원래_관리자가_남는다: 판 · 감사로그에 on_behalf_of = 팀장 · 확정한 사람 이름은 HR")
+    ok(own(b1, "request-change", {"reason": "가상 사유"}).status_code == 200 and act(hr, 45, "reject", {"note": "가상 거절"}).status_code == 200
+       and own(b1, "request-change", {"reason": "가상 사유"}).status_code == 200 and act(hr, 45, "unlock").status_code == 200
+       and own(b1, "submit").status_code == 200 and act(hr, 45, "return", {"note": "가상 돌려보냄"}).status_code == 200
+       and row(45) == [("DRAFT", "가상 돌려보냄", "RETURNED", None, 1)], "HR 이 거절 · 해제 · 돌려보내기도 대신 함")
+    ok(all(audit(a, 45)[-1][:3] == (1, 1, 44) for a in ("KPI_REJECTED", "KPI_UNLOCKED", "KPI_RETURNED")), "그 감사로그에도 on_behalf_of = 팀장")
+
+    # ---- 관리자 본인이 HR 이기도 하면 관리자로 ----
+    x("INSERT INTO user_roles (user_id, role) VALUES (44, 'HR_ADMIN')")
+    ok(send(b2) and act(leadb, 49, "confirm").status_code == 200 and versions(49) == [(1, 44, None)]
+       and audit("KPI_CONFIRMED", 49) == [(44, 1, None, "kpi_plan", json.dumps({**y, "version": 1}))],
+       "HR 권한이 있는 팀장이 자기 팀원을 확정하면 관리자로 처리 (on_behalf_of 없음)")
+    x("DELETE FROM user_roles WHERE user_id = 44 AND role = 'HR_ADMIN'")
+
+    # ---- 대표이사 몫 · 맡기기 ----
+    ok(send(head) and me(head)["manager"] == {"id": 47, "name": "가상대표"} and me(hr)["manager"] == {"id": 47, "name": "가상대표"},
+       "(본부장 제출) 본부장 · HR 의 바로 위 관리자는 대표이사")
+    ok(act(hr, 46, "confirm").status_code == 403 and act(hr, 46, "confirm").json == no_auth and who(hr) == [] and row(46)[0][0] == "SUBMITTED",
+       "대표이사_몫은_맡겨야_대신한다: 맡기기 전에는 HR 도 403 · HR 처리함에도 안 옴")
+    ok(send(hr), "(HR 도 본인 계획서를 제출)")
+    ok(set(who(ceo)) == {(46, False), (1, False)}, "대표이사 처리함에는 본부장 · HR 의 계획서")
+    x("UPDATE kpi_plans SET submitted_at = '2000-01-01T00:00:00Z' WHERE user_id = 46 AND year = ?", year)
+    ok(who(ceo) == [(46, False), (1, False)], "처리함은 오래된 제출부터")
+    x("UPDATE kpi_plans SET submitted_at = '1999-01-01T00:00:00Z' WHERE user_id = 1 AND year = ?", year)
+    ok(who(ceo) == [(1, False), (46, False)], "(제출 시각이 바뀌면 순서도 바뀜)")
+    ok(act(hr, 1, "confirm").status_code == 403 and act(hr, 1, "confirm").json == no_auth, "HR은_본인_것을_대신_못_한다")
+
+    ok(all(c.get("/api/kpi/delegation", base_url=BASE).status_code == 403 and delegate(True, c).status_code == 403 for c in (hr, head, lead, a1))
+       and not q("SELECT 1 FROM ceo_delegation"), "대표이사가 아니면 맡길 수 없음 (HR 이 스스로 켤 수도 없음)")
+    ok(ceo.get("/api/kpi/delegation", base_url=BASE).json == {"on": False}, "처음엔 꺼짐")
+    ok(all(ceo.post("/api/kpi/delegation", base_url=BASE, headers=ORIGIN, json=b).status_code == 400 for b in ({}, {"on": "true"}, {"on": 1}, {"on": [True]}))
+       and delegate(True, headers={}).status_code == 403 and not q("SELECT 1 FROM ceo_delegation"), "on 은 true / false 만 · Origin 없으면 403")
+    ok(delegate(True).json == {"ok": True, "on": True} and ceo.get("/api/kpi/delegation", base_url=BASE).json == {"on": True}, "대표이사가 맡김을 켬")
+    since = q("SELECT ceo_user_id, since FROM ceo_delegation")
+    ok(len(since) == 1 and since[0][0] == 47 and len(since[0][1]) == 20 and since[0][1].endswith("Z"), "맡긴 시각이 남음")
+    ok(delegate(True).status_code == 200 and q("SELECT ceo_user_id, since FROM ceo_delegation") == since
+       and audit("CEO_DELEGATION_ON", 47) == [(47, 0, None, "ceo_delegation", None)], "켜기는 여러 번 해도 같음 · 감사로그 CEO_DELEGATION_ON 은 한 번")
+    ok(who(hr) == [(46, True)] and set(who(ceo)) == {(46, False), (1, False)},
+       "맡기면 HR 처리함에 '대신'으로 옴 (HR 본인 것은 빼고) · 대표이사 처리함은 그대로")
+    ok(act(hr, 1, "confirm").status_code == 403, "맡겨도 HR 은 본인 것을 못 함")
+    ok(act(hr, 46, "confirm").status_code == 200 and versions(46) == [(1, 1, 47)]
+       and audit("KPI_CONFIRMED", 46) == [(1, 1, 47, "kpi_plan", json.dumps({**y, "version": 1}))], "맡기면 HR 이 대신 확정: on_behalf_of = 대표이사")
+    ok(act(ceo, 1, "confirm").status_code == 200 and versions(1) == [(1, 47, None)], "대표이사 본인은 맡겨도 직접 확정할 수 있음 (on_behalf_of 없음)")
+    ok(own(head, "request-change", {"reason": "가상 사유"}).status_code == 200 and who(hr) == [(46, True)] and inbox(hr)["items"][0]["status"] == "CHANGE_REQUESTED",
+       "(수정 요청도 대신 처리함에)")
+    ok(delegate(False).json == {"ok": True, "on": False} and not q("SELECT 1 FROM ceo_delegation") and delegate(False).status_code == 200
+       and audit("CEO_DELEGATION_OFF", 47) == [(47, 0, None, "ceo_delegation", None)], "끄기 · 감사로그 CEO_DELEGATION_OFF")
+    ok(act(hr, 46, "unlock").json == no_auth and act(hr, 46, "unlock").status_code == 403 and who(hr) == [], "끄면 다시 HR 이 못 함 · 처리함에서도 사라짐")
+    ok(act(ceo, 46, "unlock").status_code == 200 and audit("KPI_UNLOCKED", 46) == [(47, 0, None, "kpi_plan", json.dumps(y))], "대표이사가 직접 풀어 줌")
+
+    # ---- 바로 위 관리자가 없으면 HR ----
+    ok(send(leadc) and me(leadc)["manager"] == {"id": 47, "name": "가상대표"}, "(본부장이 없는 본부의 팀장 제출 — 바로 위는 대표이사)")
+    x("UPDATE users SET is_active = 0, deactivated_at = '2027-01-01T00:00:00Z' WHERE id = 47")
+    ok(me(leadc)["manager"] is None and who(hr) == [(50, True)], "대표이사가 없으면 바로 위 관리자가 없음 → HR 처리함에 '대신'")
+    ok(act(hr, 50, "confirm").status_code == 200 and versions(50) == [(1, 1, None)] and audit("KPI_CONFIRMED", 50)[0][:3] == (1, 1, None),
+       "관리자가 없는 것은 HR 이 확정 (on_behalf_of 없음)")
+    x("UPDATE users SET is_active = 1, deactivated_at = NULL WHERE id = 47")
+
+    # ---- 팀을 옮기면 ----
+    ok(send(a3) and who(lead) == [(48, False)], "(팀원 3 제출)")
+    x("UPDATE users SET department_id = 33 WHERE id = 48")
+    r = inbox(lead)
+    ok(act(lead, 48, "confirm").status_code == 403 and act(lead, 48, "confirm").json == no_auth and r["items"] == [] and r["team"] == {**zero, "CONFIRMED": 2},
+       "팀을_옮기면_새_관리자가_처리한다: 옛 팀장은 403 · 처리함에서도 사라짐")
+    r = inbox(leadb)
+    ok([(i["userId"], i["dept"]) for i in r["items"]] == [(48, "가상K팀B")] and r["team"] == {**zero, "DRAFT": 1, "CONFIRMED": 1, "SUBMITTED": 1},
+       "새 팀장 처리함에 1건")
+    ok(act(leadb, 48, "confirm").status_code == 200 and versions(48) == [(1, 44, None)], "새 팀장이 확정")
+
+    # ---- HR 한눈에 보기 ----
+    r = hr.get("/api/kpi/admin", base_url=BASE)
+    people = {p["userId"]: p for p in r.json["people"]}
+    ok(r.status_code == 200 and r.json["year"] == year and r.json["window"] == {"from": day(-1), "to": day(7), "evalStart": None},
+       "HR 목록: 해 · 올해 작성 기간")
+    ok(people[42] == {"userId": 42, "name": "가상팀원A1", "dept": "가상K팀A", "manager": {"id": 41, "name": "가상팀장A"},
+                      "status": "CONFIRMED", "confirmedVersion": 2, "window": None}
+       and people[45]["status"] == "DRAFT" and people[45]["confirmedVersion"] == 1
+       and people[41]["status"] == "NONE" and people[41]["confirmedVersion"] is None and people[41]["manager"] == {"id": 46, "name": "가상본부장"}
+       and people[46]["manager"] == {"id": 47, "name": "가상대표"} and people[1]["status"] == "CONFIRMED",
+       "사람마다 이름 · 부서 · 바로 위 관리자 · 상태 · 확정한 판")
+    ok(not {47, 5, 51, 52} & set(people) and all(p["window"] is None for p in people.values()), "KPI 를 안 쓰는 사람(대표이사 · 현장직) · 비활성인 사람은 빠짐 · 사람별 기간 없으면 null")
+    setwin({"userId": 49, "year": year, "editFrom": day(-1), "editTo": day(3)})
+    ok({p["userId"]: p["window"] for p in hr.get("/api/kpi/admin", base_url=BASE).json["people"] if p["window"]}
+       == {49: {"from": day(-1), "to": day(3), "evalStart": None, "open": True}}, "사람별 기간이 있으면 그 사람 줄에 (열려 있는지도)")
+    setwin({"userId": 49, "year": year, "clear": True})
+    r = hr.get("/api/kpi/admin?year=2090", base_url=BASE)
+    ok(r.json["window"] == {"from": None, "to": None, "evalStart": None} and all(p["status"] == "NONE" and p["confirmedVersion"] is None for p in r.json["people"]),
+       "?year= 로 다른 해를 봄")
+    ok(all(hr.get(f"/api/kpi/admin?year={v}", base_url=BASE).status_code == 400 for v in ("abc", "2025", ""))
+       and lead.get("/api/kpi/admin", base_url=BASE).status_code == 403 and ceo.get("/api/kpi/admin", base_url=BASE).status_code == 403,
+       "틀린 해는 400 · HR 이 아니면 403")
+
+    # ---- 감사로그 ----
+    acts = {r[0] for r in q("SELECT action FROM audit_logs WHERE action LIKE 'KPI_%' OR action LIKE 'CEO_%'")}
+    ok({"KPI_CONFIRMED", "KPI_RETURNED", "KPI_UNLOCKED", "KPI_REJECTED", "KPI_WINDOW_SET", "CEO_DELEGATION_ON", "CEO_DELEGATION_OFF"} <= acts,
+       "감사로그 행동 이름: 확정 · 돌려보내기 · 해제 · 거절 · 사람별 기간 · 맡기기 켜기 / 끄기")
+    ok(q("SELECT COUNT(*) FROM audit_logs WHERE (action LIKE 'KPI_%' OR action LIKE 'CEO_%')"
+         " AND (IFNULL(before_data, '') || IFNULL(after_data, '') || IFNULL(reason, '')) LIKE '%가상%'") == [(0,)], "계획서 · 사유 문장은 감사로그에 없음")
+
+
 def main() -> int:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     seed()
@@ -1127,6 +1451,7 @@ def main() -> int:
     check_workspace(hr)
     check_game(hr)
     check_kpi_owner(hr)
+    check_kpi_manager(hr)
 
     acts = {r[0] for r in q("SELECT action FROM audit_logs")}
     ok({"LOGIN", "HR_BOOTSTRAP"} <= acts, "감사로그 LOGIN 이 남음")

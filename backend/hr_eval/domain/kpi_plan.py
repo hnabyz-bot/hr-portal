@@ -274,6 +274,14 @@ def next_status(status: str, action: str) -> str:
         raise StateConflictError(f"지금 상태({status})에서는 {action}을(를) 할 수 없습니다") from None
 
 
+def window_span(
+    year_row: tuple[str | None, str | None, str | None] | None,
+    person_row: tuple[str, str] | None,
+) -> tuple[str | None, str | None]:
+    """지금 적용되는 (edit_from, edit_to) — 그 사람만의 기간이 있으면 그것이 우선한다. 없으면 그해 기간, 그것도 없으면 (None, None)."""
+    return person_row or (year_row[:2] if year_row else (None, None))
+
+
 def window_open(
     today: date,
     year_row: tuple[str | None, str | None, str | None] | None,
@@ -286,5 +294,5 @@ def window_open(
     """
     if year_row and year_row[2] and today >= date.fromisoformat(year_row[2]):
         return False
-    start, end = person_row or (year_row[:2] if year_row else (None, None))
+    start, end = window_span(year_row, person_row)
     return bool(start and end) and date.fromisoformat(start) <= today <= date.fromisoformat(end)
