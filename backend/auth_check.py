@@ -482,6 +482,80 @@ def check_workspace(hr) -> None:
     ok(not q("SELECT 1 FROM audit_logs WHERE after_data LIKE '%주간 보고%' OR after_data LIKE '%휴대폰에서%'"), "내용은 감사로그에 남기지 않음")
 
 
+def check_game(hr) -> None:
+    """X-ray 특공대 (2026-10-20): 게임 기록은 본인만 · 판 번호 · 이번 주 최고점 · 랭킹(나 빼고·비활성 없음) · 동료 선물 규칙."""
+    import game
+    print("게임")
+    emp, emp_phone, lead = app.test_client(), app.test_client(), app.test_client()
+    login(emp, new_token("emp"))
+    login(emp_phone, new_token("emp"))  # 같은 사람의 휴대폰
+    login(lead, new_token("lead"))
+    get = lambda c, p: c.get(p, base_url=BASE)  # noqa: E731
+    post = lambda c, p, body, headers=ORIGIN: c.post(p, base_url=BASE, headers=headers, json=body)  # noqa: E731
+
+    ok(all(app.test_client().get(p, base_url=BASE).status_code == 401 for p in ("/api/game/save", "/api/game/rank", "/api/game/gifts")),
+       "로그인 없이는 401 (게임 기록·랭킹·선물)")
+    ok(get(emp, "/api/game/save").json == {"data": None, "version": 0}, "처음엔 서버에 기록 없음 (판 0)")
+    save = {"best": "900", "tix": '{"n":3,"t":0}', "titles": '["combo"]'}
+    ok(post(emp, "/api/game/save", {"data": save, "version": 0}).json == {"version": 1}, "기록 저장 → 판 1")
+    ok(get(emp_phone, "/api/game/save").json == {"data": save, "version": 1}, "휴대폰에서 같은 기록 (출동권·칭호·최고점)")
+    ok(get(lead, "/api/game/save").json["data"] is None, "다른 사람에게는 안 보임")
+    r = post(emp, "/api/game/save", {"data": {"best": "1"}, "version": 0})
+    ok(r.status_code == 409 and r.json["version"] == 1 and r.json["data"] == save, "옛 판으로 저장하면 409 + 서버 것")
+    for bad, why in (([], "객체가 아님"), ({"tix": 3}, "값이 글자가 아님"), ({"x y": "1"}, "칸 이름"), ({"a": "가" * 210_000}, "너무 큼")):
+        ok(post(emp, "/api/game/save", {"data": bad, "version": 1}).status_code == 400, f"틀린 기록은 저장 안 함 ({why})")
+    ok(post(emp, "/api/game/save", {"data": save, "version": 1}, headers={}).status_code == 403, "게임 화면에서만 (Origin)")
+
+    score = lambda c, s: post(c, "/api/game/score", {"score": s})  # noqa: E731
+    week = game._week(auth._today())
+    for s in (500, 300, 900):
+        score(emp, s)
+    ok(q("SELECT score FROM game_scores WHERE user_id = 3 AND week = ?", week) == [(900,)], "이번 주 최고점만 남음 (500 → 300 무시 → 900)")
+    ok(all(score(emp, s).status_code == 400 for s in (0, -5, "9", 1.5, 100_000_001)), "점수 모양·범위")
+    score(lead, 400)
+    last = game._week(auth._today() - timedelta(days=7))
+    x("INSERT INTO game_scores (user_id, week, score, at) VALUES (3, ?, 700, '2026-01-01T00:00:09Z'), (2, ?, 700, '2026-01-01T00:00:01Z'),"
+      " (5, ?, 99999, '2026-01-01T00:00:00Z')", last, last, last)
+    me = get(emp, "/api/game/rank").json
+    ok([(p["name"], p["dept"], p["score"]) for p in me["week"]] == [("가상2", "가상팀", 400)], "이번 주: 다른 직원만 (나는 화면이 붙임)")
+    ok(me["me"] == {"week": 900, "best": 900} and me["thisWeek"] == week, "내 이번 주 · 역대 최고")
+    ok([(d["name"], d["score"], d["n"], d["me"]) for d in me["dept"]] == [("가상팀", 1300, 2, True)], "부서 대항전: 부서원 이번 주 점수 합 · 내 부서 표시")
+    ok([(h["week"], h["name"], h["me"]) for h in me["hof"]] == [(last, "가상2", False)], "명예의 전당: 같은 점수면 먼저 낸 사람 · 비활성 직원 빼고")
+    ok(me["last"] == {"week": last, "rank": 2}, "주간 보상용 지난번 내 순위 (비활성 직원은 세지 않음)")
+    ok([p["name"] for p in get(lead, "/api/game/rank").json["all"]] == ["가상3"], "역대 최고: 비활성 직원 없음")
+
+    for uid in (10, 11, 12):
+        x("INSERT INTO users (id, name, email, department_id, hiworks_user_no, portal_enabled) VALUES (?, ?, ?, 2, ?, 1)",
+          uid, f"가상{uid}", f"u{uid}@example.invalid", f"HW-{uid}")
+    x("UPDATE users SET portal_enabled = 1 WHERE id IN (1, 2)")
+    x("UPDATE users SET portal_enabled = 0 WHERE id = 4")  # 앞 검사가 켜 두었을 수 있다
+    send = lambda c, to: post(c, "/api/game/gifts", {"to": to})  # noqa: E731
+    mates = [m["id"] for m in get(emp, "/api/game/gifts").json["mates"]]
+    ok(3 not in mates and 4 not in mates and 5 not in mates and 2 in mates, "보낼 동료: 나·포털 못 쓰는 사람·비활성 빼고")
+    ok(send(emp, 2).json == {"ok": True}, "선물 보내기")
+    r = send(emp, 2)
+    ok(r.status_code == 409 and r.json["msg"] == "오늘은 이미 보냈어요", "한 사람에게 하루 한 장")
+    ok(all(send(emp, t).status_code == 400 for t in (3, 4, 5, 999, "2")), "나 · 포털 못 쓰는 사람 · 비활성 · 없는 사람에게는 못 보냄")
+    ok(send(emp, 10).status_code == 200 and send(emp, 11).status_code == 200, "하루 3명까지")
+    r = send(emp, 12)
+    ok(r.status_code == 409 and r.json["msg"] == "오늘은 3명에게 다 보냈어요" and sorted(get(emp, "/api/game/gifts").json["sent"]) == [2, 10, 11],
+       "넷째 사람은 거절 · 오늘 보낸 사람 목록")
+    box = get(lead, "/api/game/gifts").json["inbox"]
+    ok([(b["name"], b["dept"]) for b in box] == [("가상3", "가상팀")] and box[0]["at"] > 0, "받은 선물함 (보낸 사람 · 부서 · 시각)")
+    claim = lambda c, ids: post(c, "/api/game/gifts/claim", {"ids": ids})  # noqa: E731
+    ok(claim(lead, [box[0]["id"]]).json == {"ids": [box[0]["id"]]} and claim(lead, [box[0]["id"]]).json == {"ids": []}, "받기 (두 번은 안 됨)")
+    today, old = auth._today(), (auth._today() - timedelta(days=7)).isoformat()
+    for frm, day in ((1, today.isoformat()), (10, today.isoformat()), (11, today.isoformat()), (12, today.isoformat()),
+                     (10, (today - timedelta(days=1)).isoformat()), (11, old)):
+        x("INSERT INTO game_gifts (from_user, to_user, day, created_at) VALUES (?, 2, ?, '2026-01-01T00:00:00Z')", frm, day)
+    box = [b["id"] for b in get(lead, "/api/game/gifts").json["inbox"]]
+    ok(len(box) == 5, "7일 지난 선물은 선물함에 없음")
+    ok(len(claim(lead, box).json["ids"]) == 4 and len(get(lead, "/api/game/gifts").json["inbox"]) == 1, "받기는 하루 5장까지 (남은 건 선물함에)")
+    ok(claim(emp, box).json == {"ids": []}, "남의 선물은 못 받음")
+    ok(all(claim(lead, b).status_code == 400 for b in ([], "1", ["1"], list(range(51)))), "받을 선물 모양")
+    ok(post(lead, "/api/game/gifts", {"to": 3}, headers={}).status_code == 403, "선물도 게임 화면에서만 (Origin)")
+
+
 def main() -> int:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     seed()
@@ -716,6 +790,7 @@ def main() -> int:
     check_org(hr, save)
     check_news(hr)
     check_workspace(hr)
+    check_game(hr)
 
     acts = {r[0] for r in q("SELECT action FROM audit_logs")}
     ok({"LOGIN", "HR_BOOTSTRAP"} <= acts, "감사로그 LOGIN 이 남음")

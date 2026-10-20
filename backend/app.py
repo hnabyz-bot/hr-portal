@@ -17,6 +17,7 @@ from flask import Flask, Response, jsonify, request
 
 import auth
 import export_utils
+import game
 from services import opinet_api
 from services.calculator import (
     VOUCHER_HEADERS,
@@ -45,6 +46,7 @@ auth.refuse_unsafe_config()
 app = Flask(__name__)
 # 하이웍스 로그인 + 모든 /api/* 세션 검사. 세션 없이 열린 곳은 /api/health 와 로그인 받는 곳뿐 (로그인 설계 §3)
 auth.register(app)
+app.register_blueprint(game.bp)  # X-ray 특공대 기록·랭킹·선물 (로그인한 사람만 — 위 세션 검사)
 # 규정 11개를 장·조·표로 나누는 데 30초쯤 걸린다(요청 제한 30초). 서버가 요청을 받기 전에 한 번 읽어 둔다 —
 # gunicorn --preload라 이 결과를 작업 프로세스들이 함께 쓴다. 이후 규정 파일이 바뀌면 그 파일만 다시 읽는다(수 초).
 rules_search.list_rules()

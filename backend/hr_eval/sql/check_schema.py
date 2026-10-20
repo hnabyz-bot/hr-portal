@@ -87,6 +87,9 @@ def apply_schema(path: str) -> sqlite3.Connection | None:
         "phone_codes",
         "celeb_events",
         "workspace_data",
+        "game_saves",
+        "game_scores",
+        "game_gifts",
     }
     missing = expected - tables
     _report(not missing, f"테이블 {len(expected)}개 생성", f"누락: {sorted(missing)}")
@@ -576,6 +579,35 @@ def check_login_tables(conn: sqlite3.Connection) -> None:
         _report(ok, f"워크스페이스 {why} 거부")
     ok, _ = _rejects(conn, ws.format(u=9999), ("routines", "[]", 1))
     _report(ok, "없는 직원의 워크스페이스 거부")
+
+    print("20. 게임 (008)")
+    sv = "INSERT INTO game_saves (user_id, data, version, updated_at) VALUES ({u}, ?, ?, '2027-03-02T09:00:00Z')"
+    conn.execute(sv.format(u=user), ('{"best": "900"}', 1))
+    _report(True, "게임 기록 저장 (JSON 객체)")
+    for args, why in ((('{}', 1), "같은 사람 두 줄"),):
+        ok, _ = _rejects(conn, sv.format(u=user), args)
+        _report(ok, f"게임 기록 {why} 거부")
+    conn.execute(f"DELETE FROM game_saves WHERE user_id = {user}")
+    for args, why in ((("[]", 1), "객체가 아닌 JSON"), (("{", 1), "깨진 JSON"), (("{}", 0), "판 0")):
+        ok, _ = _rejects(conn, sv.format(u=user), args)
+        _report(ok, f"게임 기록 {why} 거부")
+    sc = "INSERT INTO game_scores (user_id, week, score, at) VALUES ({u}, ?, ?, '2027-03-02T09:00:00Z')"
+    conn.execute(sc.format(u=user), ("2027-03-01", 900))
+    _report(True, "주간 점수 저장 (월요일)")
+    for args, why in ((("2027-03-01", 950), "같은 사람 같은 주 두 줄"), (("2027-03-02", 900), "월요일이 아닌 날"), (("2027-02-30", 900), "없는 날"),
+                      (("2027-03-08", 0), "점수 0"), (("2027-03-08", 100000001), "점수 범위")):
+        ok, _ = _rejects(conn, sc.format(u=user), args)
+        _report(ok, f"주간 점수 {why} 거부")
+    gf = "INSERT INTO game_gifts (from_user, to_user, day, created_at) VALUES ({u}, ?, ?, '2027-03-02T09:00:00Z')"
+    me = conn.execute(f"SELECT {user}").fetchone()[0]
+    other = conn.execute(
+        f"INSERT INTO users (employee_no, name, email, department_id) VALUES ('T020', '가상동료', 't020@example.invalid', {div}) RETURNING id"
+    ).fetchone()[0]
+    conn.execute(gf.format(u=user), (other, "2027-03-02"))
+    _report(True, "선물 한 장 저장")
+    for args, why in (((other, "2027-03-02"), "같은 날 같은 사람에게 두 장"), ((me, "2027-03-03"), "나에게"), ((other, "2027-3-3"), "날짜 모양"), ((9999, "2027-03-03"), "없는 직원에게")):
+        ok, _ = _rejects(conn, gf.format(u=user), args)
+        _report(ok, f"선물 {why} 거부")
 
 
 def main() -> int:
