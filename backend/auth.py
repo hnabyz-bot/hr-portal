@@ -21,6 +21,7 @@ app.py 가 register(app) 로 붙인다.
   POST /api/news/events/<id>/remove  경사·조사 게시 내리기 (HR)
   GET  /api/workspace             내 워크스페이스(나의 업무 · 나의 일상) — 본인만. PC·휴대폰이 같은 내용
   POST /api/workspace/<kind>      저장 (tasks · routines). 판 번호가 다르면 409 + 서버 것 (다른 기기가 먼저 고침)
+  GET  /api/payslips · POST /api/payslips/<ym>[/open|/close|/seen]  급여명세서 — 잠가 저장, 본인(공개된 달)·HR 만. payslip.py 맨 위 참고
   POST /api/phone/code            PC 에서 "휴대폰 등록" → QR 에 담을 1회용 값(3분) — §13.1
   POST /api/phone/register        휴대폰이 QR 주소(/#d=값)를 열면 화면이 보낸다 → 휴대폰 세션(30일)
   GET  /api/phone                 내 등록된 휴대폰 (PC 창이 "등록됐는지"를 볼 때도 쓴다)
@@ -493,7 +494,7 @@ def members_list() -> Response:
         "         AND a.action IN ('MEMBER_UPDATED', 'MEMBER_ACTIVE')),"
         " (SELECT s.device || ' · 마지막 사용 ' || substr(s.last_seen_at, 6, 5) FROM sessions s WHERE s.user_id = u.id"
         "  AND s.kind = 'phone' AND s.revoked_at IS NULL AND s.last_seen_at > ? ORDER BY s.created_at DESC LIMIT 1),"
-        " u.title, u.org_hidden, u.hire_date, u.birthday, u.birthday_public"
+        " u.title, u.org_hidden, u.hire_date, u.birthday, u.birthday_public, u.employee_no"
         " FROM users u JOIN departments d ON d.id = u.department_id LEFT JOIN departments p ON p.id = d.parent_id"
         " ORDER BY u.name",
         (_iso(_now() - PHONE_IDLE),),
@@ -510,7 +511,7 @@ def members_list() -> Response:
             "me": r[0] == g.actor.user_id,
             "phone": r[12] or "",  # 등록된 휴대폰 (§13.1) — "갤럭시 · 마지막 사용 10-19"
             "title": r[13] or "", "orgHidden": bool(r[14]), "hireDate": r[15] or "",
-            "birthday": r[16] or "", "birthdayPublic": bool(r[17]),
+            "birthday": r[16] or "", "birthdayPublic": bool(r[17]), "no": r[18] or "",  # no = 사원코드 (급여명세서를 올릴 때 기억됨)
         })
     return jsonify(members=out)
 
@@ -919,7 +920,7 @@ def _guard() -> Response | None:
 
 
 def _no_store(resp: Response) -> Response:
-    if request.path.startswith(("/api/auth/", "/api/phone")) or request.path == "/api/me":
+    if request.path.startswith(("/api/auth/", "/api/phone", "/api/payslips")) or request.path == "/api/me":
         resp.headers["Referrer-Policy"] = "no-referrer"
         resp.headers["Cache-Control"] = "no-store"
     if g.get("phone_cookie") and resp.status_code < 400:

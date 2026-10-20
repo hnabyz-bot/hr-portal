@@ -563,6 +563,217 @@ def check_game(hr) -> None:
     ok(post(lead, "/api/game/gifts", {"to": 3}, headers={}).status_code == 403, "선물도 게임 화면에서만 (Origin)")
 
 
+def check_payslips(hr) -> None:
+    """급여명세서 (2026-10-20): 잠가 저장 · HR 올리기·공개·내리기 · 본인은 공개된 것만 · 열쇠가 없으면 503. 사람·금액은 전부 가짜."""
+    import base64
+    import copy
+
+    print("급여명세서")
+    emp, lead = app.test_client(), app.test_client()
+    login(emp, new_token("emp"))
+    login(lead, new_token("lead"))
+    raw_key = bytes(range(32))
+    key, had = base64.b64encode(raw_key).decode(), os.environ.pop("HR_PAY_KEY", None)  # 열쇠는 글자로 적지 않고 여기서 만든다
+    get = lambda c, p="/api/payslips": c.get(p, base_url=BASE)  # noqa: E731
+    post = lambda c, p, body=None, headers=ORIGIN: c.post(p, base_url=BASE, headers=headers, json=body)  # noqa: E731
+    up = lambda c, ym, slips, pay_date="2026-06-20": post(c, f"/api/payslips/{ym}", {"payDate": pay_date, "slips": slips})  # noqa: E731
+    months = lambda c=hr: get(c, "/api/payslips/months")  # noqa: E731
+    snap = lambda: (q("SELECT * FROM payslip_months ORDER BY ym"), q("SELECT ym, user_id, data, seen_at FROM payslips ORDER BY ym, user_id"),  # noqa: E731
+                    q("SELECT id, employee_no FROM users ORDER BY id"), q("SELECT COUNT(*) FROM audit_logs"))
+    body_of = lambda s: {k: s[k] for k in ("head", "pay", "ded", "gross", "deduct", "net")}  # noqa: E731  # 올린 것에서 userId · code 를 뺀 모양
+    shown = lambda r: {k: r[k] for k in ("head", "pay", "ded", "gross", "deduct", "net")}  # noqa: E731  # 응답 한 장에서 같은 칸만
+
+    def slip(uid, code, pay=(("기본급", 2500000), ("식대", 200000)), ded=(("국민연금", 121500), ("소득세", 30000))):
+        gross, deduct = sum(v for _, v in pay), sum(v for _, v in ded)
+        return {"userId": uid, "code": code, "head": {"code": code, "name": f"가상{uid}", "dept": "가상팀", "title": "프로", "job": "연구"},
+                "pay": [list(p) for p in pay], "ded": [list(d) for d in ded], "gross": gross, "deduct": deduct, "net": gross - deduct}
+
+    one = slip(3, "A001")
+    two = slip(10, "A002", pay=(("기본급", 3000000), ("연장수당", 123456)), ded=(("소득세", 50000), ("정산 환급", -20000)))  # 환급은 음수
+    try:
+        ok(app.test_client().get("/api/payslips", base_url=BASE).status_code == 401, "로그인 없이는 401")
+        ok(get(emp, "/api/payslips/months").status_code == 403, "직원은 달 목록을 못 봄 (403)")
+        ok(get(emp, "/api/payslips?user=3").status_code == 403 and get(emp, "/api/payslips?user=10").status_code == 403,
+           "직원이 ?user= 를 붙이면 403 (본인 번호여도)")
+        ok(up(emp, "2026-05", [one, two]).status_code == 403, "직원은 올리기 403 (열쇠 검사보다 먼저)")
+
+        print("  - 서버에 열쇠가 없을 때")
+        r = months()
+        ok(r.status_code == 200 and r.json == {"ready": False, "months": []}, "달 목록 ready 거짓")
+        r = up(hr, "2026-05", [one, two])
+        ok(r.status_code == 503 and "HR_PAY_KEY" in r.json["error"] and not q("SELECT 1 FROM payslip_months"), "올리기 503 + 설정 안내 (아무것도 저장 안 됨)")
+        ok(get(emp).status_code == 200 and get(emp).json == {"slips": []}, "직원 목록은 빈 목록 (오류 아님)")
+        os.environ["HR_PAY_KEY"] = base64.b64encode(bytes(range(31))).decode()
+        ok(months().json["ready"] is False and up(hr, "2026-05", [one, two]).status_code == 503, "32바이트가 아닌 열쇠는 없는 것과 같음")
+        os.environ["HR_PAY_KEY"] = key
+
+        print("  - 올리기 · 잠금")
+        r = up(hr, "2026-05", [one, two])
+        ok(r.status_code == 200 and r.json == {"saved": 2}, "HR 이 두 사람 올림 → saved 2")
+        m = months().json
+        ok(m["ready"] is True and len(m["months"]) == 1 and m["months"][0]["uploadedAt"]
+           and {k: m["months"][0][k] for k in ("ym", "payDate", "status", "people", "revised", "openedAt")}
+           == {"ym": "2026-05", "payDate": "2026-06-20", "status": "DRAFT", "people": 2, "revised": False, "openedAt": None},
+           "달 목록: DRAFT · 2명 · 지급일 · 수정 아님")
+        blobs = [b[0] for b in q("SELECT data FROM payslips WHERE ym = '2026-05' ORDER BY user_id")]
+        ok(len(blobs) == 2 and all(len(b) > 28 and "가상".encode() not in b and b"2500000" not in b and b"3123456" not in b
+                                   and "기본급".encode() not in b for b in blobs), "DB 에는 잠긴 글만 (이름·항목·금액이 그대로 없음)")
+        import payslip
+        from cryptography.exceptions import InvalidTag
+
+        def opens(ym, uid):
+            try:
+                return payslip.unseal(raw_key, ym, uid, blobs[0]) == body_of(one)
+            except InvalidTag:
+                return False
+
+        ok(opens("2026-05", 3) and not opens("2026-05", 10) and not opens("2026-06", 3), "열쇠로 풀리고, 다른 직원·다른 달 자리로 옮기면 안 풀림 (aad)")
+        x("UPDATE payslips SET data = ? WHERE ym = '2026-05' AND user_id = 10", blobs[0])  # 한 사람의 줄을 다른 사람 자리에 붙여 본다
+        ok(get(hr, "/api/payslips?user=10").json == {"slips": []}, "옮겨 붙인 줄은 보여 주지 않음 (건너뜀)")
+        x("UPDATE payslips SET data = ? WHERE ym = '2026-05' AND user_id = 10", blobs[1])
+        os.environ["HR_PAY_KEY"] = base64.b64encode(bytes(range(1, 33))).decode()
+        ok(get(hr, "/api/payslips?user=3").json == {"slips": []}, "열쇠가 바뀌어 안 풀리는 줄도 건너뜀 (오류 아님)")
+        os.environ["HR_PAY_KEY"] = key
+        q_views = lambda: q("SELECT actor_user_id, entity_type, entity_id, after_data FROM audit_logs WHERE action = 'PAYSLIP_VIEW' ORDER BY id")  # noqa: E731
+
+        print("  - 공개 전")
+        ok(get(emp).json == {"slips": []}, "직원 목록은 빈 목록 (올린 것은 HR 만 봄)")
+        ok(post(emp, "/api/payslips/2026-05/seen").status_code == 404, "공개 전 '봤음'은 404")
+        n_views = len(q_views())
+        r = get(hr, "/api/payslips?user=3")
+        ok(r.status_code == 200 and len(r.json["slips"]) == 1 and r.json["slips"][0]["status"] == "DRAFT"
+           and r.json["slips"][0]["ym"] == "2026-05" and shown(r.json["slips"][0]) == body_of(one), "HR 은 ?user= 로 공개 전(DRAFT) 한 장을 봄")
+        views = q_views()[n_views:]
+        ok(len(views) == 1 and views[0][:3] == (1, "user", 3) and not any(w in str(views[0]) for w in ("2500000", "2548500", "가상")),
+           "남의 것을 보면 감사로그 PAYSLIP_VIEW 한 줄 (금액·이름 없음)")
+
+        print("  - 공개")
+        r = post(hr, "/api/payslips/2026-05/open")
+        ok(r.status_code == 200 and r.json == {"status": "OPEN"}
+           and q("SELECT status, opened_by, opened_at IS NOT NULL FROM payslip_months WHERE ym = '2026-05'") == [("OPEN", 1, 1)], "공개 → OPEN (누가 언제)")
+        mine = get(emp).json["slips"]
+        ok(len(mine) == 1 and (mine[0]["ym"], mine[0]["payDate"], mine[0]["revised"], mine[0]["seen"]) == ("2026-05", "2026-06-20", False, False)
+           and shown(mine[0]) == body_of(one) and "status" not in mine[0], "직원 목록에 한 장 · 내용이 올린 것과 같음 · 아직 안 봄")
+        ok(get(lead).json == {"slips": []}, "명세서가 없는 직원은 빈 목록 (남의 것은 안 보임)")
+        ok(post(emp, "/api/payslips/2026-05/seen").json == {"ok": True} and get(emp).json["slips"][0]["seen"] is True, "'봤음' → seen 참")
+        ok(post(emp, "/api/payslips/2026-05/seen").json == {"ok": True}, "두 번 눌러도 됨")
+        ok(post(lead, "/api/payslips/2026-05/seen").status_code == 404 and post(emp, "/api/payslips/2026-04/seen").status_code == 404
+           and post(emp, "/api/payslips/abc/seen").status_code == 404, "본인 명세서가 아니거나 없는 달의 '봤음'은 404")
+        ok(get(hr, "/api/payslips?user=3").json["slips"][0]["status"] == "OPEN", "HR 이 보는 남의 줄에는 status")
+
+        print("  - 공개 중 다시 올리기 · 내리기")
+        before = snap()
+        r = up(hr, "2026-05", [one, two])
+        ok(r.status_code == 409 and "공개를 내린 뒤" in r.json["error"] and snap() == before, "공개 중인 달은 다시 올릴 수 없음 (409, 아무것도 안 바뀜)")
+        r = post(hr, "/api/payslips/2026-05/close")
+        ok(r.status_code == 200 and r.json == {"status": "DRAFT"} and get(emp).json == {"slips": []}, "공개 내리기 → 직원 목록은 다시 빔")
+        one_b = slip(3, "A001", pay=(("기본급", 2600000), ("식대", 200000)))
+        ok(up(hr, "2026-05", [one_b, two]).json == {"saved": 2}
+           and months().json["months"][0]["revised"] is True and months().json["months"][0]["status"] == "DRAFT", "내린 뒤 다시 올리면 수정됨(revised) 표시")
+        ok(get(emp).json == {"slips": []}, "다시 올린 것도 공개 전에는 직원에게 안 보임")
+        post(hr, "/api/payslips/2026-05/open")
+        mine = get(emp).json["slips"][0]
+        ok(mine["revised"] is True and mine["seen"] is False and shown(mine) == body_of(one_b), "다시 공개: 수정됨 참 · '봤음' 다시 거짓 · 새 내용")
+        ok(post(hr, "/api/payslips/2099-01/open").status_code == 404 and post(hr, "/api/payslips/2099-01/close").status_code == 404, "없는 달 공개·내리기는 404")
+        ok(post(emp, "/api/payslips/2026-05/close").status_code == 403 and post(emp, "/api/payslips/2026-05/open").status_code == 403, "직원은 공개·내리기 403")
+
+        print("  - 사원코드")
+        no = {mb["id"]: mb["no"] for mb in get(hr, "/api/members").json["members"]}
+        ok(no[3] == "A001" and no[10] == "A002" and no[2] == "", "비어 있던 직원에게 사원코드가 기억됨 (/api/members 의 no)")
+        ok(up(hr, "2026-07", [one, two], "2026-08-20").json == {"saved": 2} and q("SELECT employee_no FROM users WHERE id = 3") == [("A001",)],
+           "이미 붙은 자기 코드로 올리는 건 그대로 됨")
+
+        print("  - 모양이 틀리면 400 · 아무것도 안 바뀜")
+        def mut(f):  # 첫 사람의 명세서만 f 로 틀리게 고친 두 장
+            s = copy.deepcopy(one)
+            f(s)
+            return [s, two]
+
+        def too_many(s):
+            s.update(pay=[[f"항목{i}", 1] for i in range(41)], gross=41, net=41 - s["deduct"])
+
+        def too_big(s):
+            s.update(pay=[["기본급", 1000000001]], gross=1000000001, net=1000000001 - s["deduct"])
+
+        cases = [
+            ("지급 항목 합 ≠ 지급액계", "2026-07", "2026-08-20", mut(lambda s: s.update(gross=s["gross"] + 1, net=s["net"] + 1))),
+            ("공제 항목 합 ≠ 공제액계", "2026-07", "2026-08-20", mut(lambda s: s.update(deduct=s["deduct"] + 1, net=s["net"] - 1))),
+            ("지급액계 − 공제액계 ≠ 차인지급액", "2026-07", "2026-08-20", mut(lambda s: s.update(net=s["net"] + 1))),
+            ("금액이 글자", "2026-07", "2026-08-20", mut(lambda s: s["pay"][0].__setitem__(1, "2500000"))),
+            ("금액이 실수", "2026-07", "2026-08-20", mut(lambda s: s["pay"][0].__setitem__(1, 2500000.0))),
+            ("금액이 참/거짓", "2026-07", "2026-08-20", mut(lambda s: s["ded"][0].__setitem__(1, True))),
+            ("금액이 너무 큼", "2026-07", "2026-08-20", mut(too_big)),
+            ("항목 41개", "2026-07", "2026-08-20", mut(too_many)),
+            ("항목 이름 31자", "2026-07", "2026-08-20", mut(lambda s: s["pay"][0].__setitem__(0, "가" * 31))),
+            ("같은 직원 두 번", "2026-07", "2026-08-20", [one, copy.deepcopy(one)]),
+            ("없는 직원 번호", "2026-07", "2026-08-20", mut(lambda s: s.update(userId=999))),
+            ("머리 칸 빠짐", "2026-07", "2026-08-20", mut(lambda s: s["head"].pop("job"))),
+            ("머리 글자 41자", "2026-07", "2026-08-20", mut(lambda s: s["head"].update(dept="가" * 41))),
+            ("사원코드 모양", "2026-07", "2026-08-20", mut(lambda s: s.update(code="A 1"))),
+            ("사원코드 21자", "2026-07", "2026-08-20", mut(lambda s: s.update(code="A" * 21))),
+            ("0장", "2026-07", "2026-08-20", []),
+            ("2001장", "2026-07", "2026-08-20", [one] * 2001),
+            ("귀속 월 2026-13", "2026-13", "2026-08-20", [one, two]),
+            ("귀속 월 모양", "2026-5", "2026-08-20", [one, two]),
+            ("지급일 2026-02-30", "2026-07", "2026-02-30", [one, two]),
+            ("지급일 모양", "2026-07", "2026-8-20", [one, two]),
+            ("지급일 없음", "2026-07", None, [one, two]),
+            ("없는 달에 틀린 내용", "2026-09", "2026-10-20", mut(lambda s: s.update(net=0))),
+        ]
+        before = snap()
+        for label, ym, pd, slips in cases:
+            r = post(hr, f"/api/payslips/{ym}", {"payDate": pd, "slips": slips})
+            ok(r.status_code == 400 and r.json["error"].startswith("명세서 내용의 모양이 올바르지 않습니다: ") and snap() == before, f"400 · 안 바뀜 ({label})")
+        r = post(hr, "/api/payslips/2026-07", {"payDate": "2026-08-20", "slips": [one], "pad": "가" * 700000})
+        ok(r.status_code == 400 and snap() == before, "400 · 안 바뀜 (본문 2MB 넘음)")
+        r = post(hr, "/api/payslips/2026-07", {"payDate": "2026-08-20", "slips": mut(lambda s: s.update(net=s["net"] + 1))})
+        ok("가상3" in r.json["error"], "문구에 어느 직원인지 이름이 들어감 (HR 에게만 돌려줌)")
+        ok(post(hr, "/api/payslips/2026-07", [1, 2]).status_code == 400 and snap() == before, "400 · 안 바뀜 (객체가 아닌 본문)")
+
+        print("  - 사원코드가 다른 직원에게 붙어 있을 때")
+        for label, slips in (("남의 코드를 다른 사람으로", [slip(11, "A011"), one, slip(10, "A001")]),
+                             ("같은 코드를 두 직원에게", [slip(11, "A011"), slip(12, "A011")])):
+            r = post(hr, "/api/payslips/2026-07", {"payDate": "2026-08-20", "slips": slips})
+            ok(r.status_code == 400 and ("A001" if "남의" in label else "A011") in r.json["error"] and "이미 다른 직원에게" in r.json["error"]
+               and snap() == before, f"400 · 그 달 그대로 · 앞사람의 코드 기억도 취소 ({label})")
+        r = post(hr, "/api/payslips/2026-08", {"payDate": "2026-09-20", "slips": [slip(10, "A001")]})
+        ok(r.status_code == 400 and snap() == before and not q("SELECT 1 FROM payslip_months WHERE ym = '2026-08'"), "새 달도 만들어지지 않음")
+
+        print("  - 그 밖")
+        ok(up(hr, "2026-07", [one, two], "2026-08-20").json == {"saved": 2} and q("SELECT people, revised FROM payslip_months WHERE ym = '2026-07'") == [(2, 0)],
+           "공개한 적 없는 달을 다시 올려도 수정됨 아님")
+        before = snap()
+        ok(post(hr, "/api/payslips/2026-07", {"payDate": "2026-08-20", "slips": [one, two]}, headers={}).status_code == 403 and snap() == before,
+           "다른 곳에서 온 요청(Origin 없음)은 올리기 403")
+        ok(post(hr, "/api/payslips/2026-07/open", headers={}).status_code == 403 and post(emp, "/api/payslips/2026-05/seen", headers={}).status_code == 403,
+           "공개·'봤음'도 Origin 없으면 403")
+        ok(all(get(hr, p).status_code == 404 for p in ("/api/payslips?user=abc", "/api/payslips?user=", "/api/payslips?user=999", "/api/payslips?user=-1",
+                                                     "/api/payslips?user=" + "9" * 5000)), "?user= 가 숫자가 아니거나 없는 직원이면 404")
+        n_views = len(q_views())
+        ok(up(hr, "2026-06", [slip(1, "A100"), slip(3, "A001")], "2026-07-20").json == {"saved": 2}
+           and get(hr, "/api/payslips?user=1").json == {"slips": []} == get(hr).json, "HR 본인의 공개 전 명세서는 ?user= 로도 안 보임 (OPEN 만)")
+        post(hr, "/api/payslips/2026-06/open")
+        mine, same = get(hr).json, get(hr, "/api/payslips?user=1").json
+        ok(mine == same and len(mine["slips"]) == 1 and "status" not in mine["slips"][0] and len(q_views()) == n_views, "HR 본인 번호의 ?user= 는 ?user= 없는 것과 같음 (감사로그 없음)")
+        ok(get(hr, "/api/payslips?user=2").json == {"slips": []} and len(q_views()) == n_views + 1, "명세서가 없는 직원을 봐도 감사로그")
+        ok([mb["ym"] for mb in months().json["months"]] == ["2026-07", "2026-06", "2026-05"], "달 목록은 최근 달이 위")
+        ok([s["ym"] for s in get(emp).json["slips"]] == ["2026-06", "2026-05"], "직원 목록도 최근 달이 위 (공개된 달만)")
+
+        for p in ("/api/payslips", "/api/payslips/months", "/api/payslips?user=3"):
+            ok(get(hr, p).headers.get("Cache-Control") == "no-store", f"Cache-Control: no-store ({p})")
+        ok(get(emp).headers.get("Cache-Control") == "no-store" and get(emp, "/api/payslips/months").headers.get("Cache-Control") == "no-store"
+           and post(emp, "/api/payslips/2026-05/seen").headers.get("Cache-Control") == "no-store", "직원 응답·거절 응답도 no-store")
+
+        logs = q("SELECT action, entity_type, entity_id, after_data FROM audit_logs WHERE action LIKE 'PAYSLIP%' ORDER BY id")
+        ok({"PAYSLIP_UPLOAD", "PAYSLIP_OPEN", "PAYSLIP_CLOSE", "PAYSLIP_VIEW"} <= {a[0] for a in logs}, "감사로그 PAYSLIP_UPLOAD · OPEN · CLOSE · VIEW")
+        ok(all(set(json.loads(a[3])) == {"ym", "people"} for a in logs if a[0] != "PAYSLIP_VIEW"), "올리기·공개·내리기 감사로그에는 달과 인원 수만")
+        ok(not any(w in str(logs) for w in ("가상", "2500000", "3123456", "기본급", "A001", "A002")), "감사로그에 금액·이름·사원코드 없음")
+    finally:
+        os.environ.pop("HR_PAY_KEY", None)
+        if had is not None:
+            os.environ["HR_PAY_KEY"] = had
+
+
 def main() -> int:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     seed()
@@ -798,6 +1009,7 @@ def main() -> int:
     check_news(hr)
     check_workspace(hr)
     check_game(hr)
+    check_payslips(hr)
 
     acts = {r[0] for r in q("SELECT action FROM audit_logs")}
     ok({"LOGIN", "HR_BOOTSTRAP"} <= acts, "감사로그 LOGIN 이 남음")
