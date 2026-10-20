@@ -3294,7 +3294,7 @@ function orgModal(html){
   d.innerHTML = `<div class="card" role="dialog" aria-modal="true">${html}</div>`; document.body.appendChild(d);
   const f = d.querySelector('input, select, button, a[href]'); if(f) f.focus();
 }
-function orgCloseModal(keepFocus){ const d = document.getElementById('orgModal'); if(d) d.remove(); if(!keepFocus && orgReturnFocus){ orgReturnFocus.focus(); orgReturnFocus = null; } }
+function orgCloseModal(keepFocus){ const d = document.getElementById('orgModal'); if(d){ if(!keepFocus && d.querySelector('.ps-cf')) ps.pick = null; d.remove(); } if(!keepFocus && orgReturnFocus){ orgReturnFocus.focus(); orgReturnFocus = null; } }   // 급여대장 확인 창을 닫으면(X · 바깥 · Esc) 읽은 자료도 버린다 — 창을 바꿔 그릴 때(keepFocus)는 남긴다
 function orgCopy(text, btn){ if(!navigator.clipboard) return; navigator.clipboard.writeText(text).then(()=>{ btn.textContent='복사됨'; setTimeout(()=>btn.textContent='복사', 1200); }); }
 function orgShow(id){
   const m = orgFind(id), c = orgVisibleContacts(m);
@@ -4903,7 +4903,7 @@ async function rzLoad(kind, file, pw){   // 암호가 걸린 파일이면 암호
     let buf = await file.arrayBuffer();
     if(rzLocked(buf)){ if(pw==null) return rzAskPw(kind, file); buf = await rzUnlockBuf(buf, pw); }
     if(kind==='contact'){ const c = await rzXlsx(buf); rz.lock = null; return msCtConfirm(file.name, c.rows); }   // 비상연락망 (구성원 설정)
-    if(kind==='slip'){ const c = await rzXlsx(buf); rz.lock = null; return psStage(file.name, c.rows, pw!=null); }   // 급여대장 (급여명세서 올리기, HR) — 암호는 넘기지 않고 풀었는지만
+    if(kind==='slip'){ const c = await rzXlsx(buf); rz.lock = null; return await psStage(file.name, c.rows, pw!=null); }   // 급여대장 (급여명세서 올리기, HR) — 암호는 넘기지 않고 풀었는지만
     const x = await rzXlsx(buf), fields = kind==='pay' ? RZ_PAY : RZ_GRADE, h = rzHead(x.rows, fields);
     rz.lock = null; rz.pick = { kind, file:file.name, sheet:x.sheet, rows:x.rows, at:h.at, head:h.head, map:rzGuess(h.head, fields) }; rzConfirm();
   }catch(e){
@@ -5613,14 +5613,24 @@ async function psStage(fileName, rows, locked){   // 급여대장 줄 → 확인
   ps.pick = { file:fileName, locked:!!locked, ym, payDate:psPayDate(ym), r, auto, to:auto.map(x=>x.id), members };   // to: 줄마다 올릴 직원 — 직원 번호(시연은 열쇠) · null 아직 · 'skip' 이번 달에서 빼기
   psConfirm();
 }
-function psBlock(){   // 올릴 수 없는 이유 하나 (빈 글자 = 올릴 수 있다). 확인 창의 단추와 안내가 이것만 본다
+const PS_YM = /^20\d\d-(0[1-9]|1[0-2])$/, PS_CODE = /^[0-9A-Za-z-]{1,20}$/;   // 서버(payslip.py)와 같은 모양
+function psRealDay(s){ const m = /^(20\d\d)-(\d\d)-(\d\d)$/.exec(s || ''), d = m && new Date(+m[1], m[2]-1, +m[3]); return !!m && d.getMonth()===m[2]-1 && d.getDate()===+m[3]; }   // 2026-02-30 같은 없는 날은 거짓
+function psBlock(){   // 올릴 수 없는 이유 하나 (빈 글자 = 올릴 수 있다). 확인 창의 단추와 안내가 이것만 본다. 서버가 거절할 모양(사원코드 · 글자 수 · 칸 수 · 금액)도 미리 막는다
   const k = ps.pick;
   if(!k) return '고른 급여대장이 없습니다.';
-  if(!psPayDate(k.ym)) return '귀속 월을 골라 주세요.';
-  if(!/^\d{4}-\d{2}-\d{2}$/.test(k.payDate)) return '지급일을 골라 주세요.';
+  if(!PS_YM.test(k.ym)) return '귀속 월을 골라 주세요.';
+  if(!psRealDay(k.payDate)) return '지급일을 골라 주세요.';
   if(psMonths().some(m=>m.ym===k.ym && m.status==='OPEN')) return `${psYmName(k.ym)}은 공개 중인 달이라 올릴 수 없습니다. 현황에서 "공개 내리기"를 한 뒤 다시 올려 주세요.`;
   const bad = k.r.people.filter(p=>p.bad).length;
   if(bad) return `금액이 맞지 않는 사람이 ${bad}명 있어 올릴 수 없습니다. 급여대장을 고친 뒤 다시 골라 주세요.`;
+  const sent = k.r.people.filter((p, i)=>k.to[i]!=='skip'), won = n=>Number.isInteger(n) && Math.abs(n)<=1e9;   // 이번 달에서 뺀 줄은 보지 않는다
+  const who = a=>a.slice(0, 3).map(p=>p.head.name).join(', ') + (a.length>3 ? ` 외 ${a.length-3}명` : '');
+  const shape = [[p=>!PS_CODE.test(p.head.code), '사원코드가 없거나 모양이 다른 사람'], [p=>Object.values(p.head).some(v=>String(v).length>40), '사원명·부서·직급·직종이 40자를 넘는 사람'],
+    [p=>![...p.pay, ...p.ded].every(x=>won(x[1])) || ![p.gross, p.deduct, p.net].every(won), '금액이 10억 원을 넘는 칸이 있는 사람']].map(([f, l])=>[sent.filter(f), l]).find(([a])=>a.length);
+  if(shape) return `${shape[1]}(${who(shape[0])})이 있어 올릴 수 없습니다. 급여대장을 고치거나 그 사람을 이번 달에서 빼 주세요.`;
+  const long = [...k.r.pay, ...k.r.ded].filter(x=>x.label.length>30).map(x=>x.label);
+  if(long.length) return `항목 이름이 30자를 넘는 칸(${long.join(', ')})이 있어 올릴 수 없습니다.`;
+  if(k.r.pay.length>40 || k.r.ded.length>40) return `지급·공제 항목은 각각 40칸까지 올릴 수 있습니다 (지금 지급 ${k.r.pay.length}칸 · 공제 ${k.r.ded.length}칸).`;
   if(k.to.includes(null)) return '못 맞춘 사람은 직원을 고르거나 "이번 달에서 빼기"를 골라 주세요.';
   if(k.to.every(t=>t==='skip')) return '올릴 사람이 없습니다.';
   return '';
@@ -5630,9 +5640,21 @@ function psPick(i, v){   // 못 맞춘 줄의 고르기: '' 아직 · 'skip' 이
   k.to[i] = m ? m.id : v==='skip' ? 'skip' : null;
   psConfirm();
 }
-function psConfirm(){   // 확인 창 (스펙 7 · 시안). 고르기·날짜를 바꿀 때만 다시 그린다 — 스크롤 자리와 초점은 지킨다
+function psNote(){   // 확인 창: 고른 귀속 월이 이미 올라가 있으면 (공개 중 = 막음 · 공개 전 = 바뀜)
+  const k = ps.pick, m = psMonths().find(x=>x.ym===k.ym);
+  return !m ? '' : m.status==='OPEN' ? kpiNote(`<b>${psYmName(k.ym)}은 지금 공개 중인 달입니다.</b> 직원이 보고 있어 바로 바꿀 수 없습니다. 현황에서 "공개 내리기"를 한 뒤 다시 올려 주세요.`, 'danger') : kpiNote('이미 올린 달입니다. 올리면 바뀝니다.', 'warning');
+}
+function psSync(){   // 날짜 칸을 고친 뒤: 창을 다시 그리지 않고 바뀌는 곳만 (크롬은 날짜 칸에 숫자 하나 적을 때마다 change를 보낸다 — 다시 그리면 적던 자리가 처음으로 돌아간다)
+  const b = psBlock();
+  document.getElementById('psNote').innerHTML = psNote();
+  document.getElementById('psBlockMsg').textContent = b;
+  document.getElementById('psGo').disabled = !!b;
+}
+function psSetYm(v){ const k = ps.pick; k.ym = v; if(PS_YM.test(v)){ k.payDate = psPayDate(v); document.getElementById('psPay').value = k.payDate; } psSync(); }   // 귀속 월을 바꾸면 지급일도 다음 달 20일로 (적는 중의 덜 된 값이면 지급일은 그대로)
+function psSetPay(v){ ps.pick.payDate = v; psSync(); }
+function psConfirm(){   // 확인 창 (스펙 7 · 시안). 고르기를 바꾸거나 서버 답을 보일 때만 다시 그린다 — 스크롤 자리와 초점은 지킨다
   const k = ps.pick, r = k.r, won = n=>n.toLocaleString('ko-KR')+'원', sum = f=>r.people.reduce((t, p)=>t + p[f], 0);
-  const month = psMonths().find(m=>m.ym===k.ym), block = psBlock(), miss = k.to.filter(t=>t===null).length, skip = k.to.filter(t=>t==='skip').length;
+  const block = psBlock(), miss = k.to.filter(t=>t===null).length, skip = k.to.filter(t=>t==='skip').length;
   const who = p=>`<b>${escapeHtml(p.head.name)}</b> <small>${escapeHtml([p.head.code, p.head.dept].filter(Boolean).join(' · '))}</small>`;
   const tot = !r.total ? `<div class="ps-totmsg warn">합계 줄이 없습니다 — 급여 프로그램 합계와 직접 맞춰 보세요</div>`
     : r.totalBad.length ? `<div class="ps-totmsg bad">합계 줄과 다른 칸: ${escapeHtml(r.totalBad.join(', '))}</div>` : `<div class="ps-totmsg ok">${icon('check')}급여대장 합계 줄과 같습니다</div>`;
@@ -5646,29 +5668,39 @@ function psConfirm(){   // 확인 창 (스펙 7 · 시안). 고르기·날짜를
     return `<div class="ps-um"><div>${who(p)}</div><span class="ps-why">${why(x, p)}</span><select id="psSel${i}" class="${k.to[i]===null ? 'need' : ''}" aria-label="${escapeHtml(p.head.name)} — 맞출 직원" onchange="psPick(${i}, this.value)">${opts(i)}</select></div>`; }).join('');
   const html = `<div class="ps-cf"><div class="card-title"><span>급여명세서 올리기 — 읽은 내용 확인</span><button type="button" class="x-btn" onclick="ps.pick=null; orgCloseModal()" aria-label="닫기">${icon('x')}</button></div>
     <div class="list-sub rz-file" style="margin:0 0 12px;">${icon('clip')} <b>${escapeHtml(k.file)}</b> · ${k.locked ? '암호를 풀어 ' : ''}이 PC 화면 안에서만 읽었습니다</div>
-    <div class="field-row"><div class="field"><label for="psYm">귀속 월</label><input id="psYm" type="month" value="${escapeHtml(k.ym)}" onchange="ps.pick.ym=this.value; ps.pick.payDate=psPayDate(this.value); psConfirm()"></div>
-      <div class="field"><label for="psPay">지급일</label><input id="psPay" type="date" value="${escapeHtml(k.payDate)}" onchange="ps.pick.payDate=this.value; psConfirm()"></div></div>
-    ${!month ? '' : month.status==='OPEN' ? kpiNote(`<b>${psYmName(k.ym)}은 지금 공개 중인 달입니다.</b> 직원이 보고 있어 바로 바꿀 수 없습니다. 현황에서 "공개 내리기"를 한 뒤 다시 올려 주세요.`, 'danger') : kpiNote('이미 올린 달입니다. 올리면 바뀝니다.', 'warning')}
+    <div class="field-row"><div class="field"><label for="psYm">귀속 월</label><input id="psYm" type="month" value="${escapeHtml(k.ym)}" onchange="psSetYm(this.value)"></div>
+      <div class="field"><label for="psPay">지급일</label><input id="psPay" type="date" value="${escapeHtml(k.payDate)}" onchange="psSetPay(this.value)"></div></div>
+    <div id="psNote">${psNote()}</div>
     <div class="rz-chk ps-chk"><div><small>읽은 사람</small><b>${r.people.length}명</b></div><div><small>직원과 맞춤</small><b>${k.to.length - miss - skip}명</b></div><div class="${miss ? 'bad' : ''}"><small>못 맞춘 사람</small><b>${miss}명</b></div></div>
     <div class="ps-tot"><div class="ps-sums"><div><small>지급액 계</small><b>${won(sum('gross'))}</b></div><div><small>공제액 계</small><b>${won(sum('deduct'))}</b></div><div><small>실지급액 계</small><b>${won(sum('net'))}</b></div></div>${tot}</div>
     ${chips('지급', r.pay)}${chips('공제', r.ded)}
     ${bad.length ? `<div class="ps-bad"><b>금액이 맞지 않는 사람 ${bad.length}명 — 올릴 수 없습니다</b>${bad.map(p=>`<div>${who(p)} — ${escapeHtml(p.bad)}</div>`).join('')}</div>` : ''}
     ${um ? `<div class="ps-ums"><div class="ps-ums-t"><b>못 맞춘 사람</b><small>직원을 고르거나 이번 달에서 뺍니다${skip ? ` · 뺀 사람 ${skip}명` : ''}</small></div>${um}</div>` : ''}
     ${r.skip ? `<div class="list-sub" style="margin-top:8px;">건너뛴 줄 ${r.skip}개 (빈 줄 · 사원명이 없는 줄)</div>` : ''}
-    <div class="ps-foot"><span class="ps-block">${escapeHtml(block)}</span><button type="button" class="btn" onclick="ps.pick=null; orgCloseModal(); rzPick('slip')">다른 파일 고르기</button><button type="button" class="btn coral" id="psGo" ${block ? 'disabled' : ''} onclick="psUpload()">올리기 (공개 전)</button></div></div>`;
+    ${k.err ? `<div style="margin-top:12px;">${kpiNote(escapeHtml(k.err), 'danger')}</div>` : ''}
+    <div class="ps-foot"><span class="ps-block" id="psBlockMsg">${escapeHtml(block)}</span><button type="button" class="btn" onclick="ps.pick=null; orgCloseModal(); rzPick('slip')">다른 파일 고르기</button><button type="button" class="btn coral" id="psGo" ${block ? 'disabled' : ''} onclick="psUpload()">올리기 (공개 전)</button></div></div>`;
   const old = document.querySelector('#orgModal .ps-cf') && document.querySelector('#orgModal .card'), top = old ? old.scrollTop : 0, fid = document.activeElement?.id;
   orgModal(html);
   if(old){ if(fid) document.getElementById(fid)?.focus({ preventScroll:true }); document.querySelector('#orgModal .card').scrollTop = top; }
 }
 async function psUpload(){   // 확인 창의 "올리기 (공개 전)". 실제 = 서버에 사람별 숫자만, 시연 = ps.mem
-  const k = ps.pick; if(!k || psBlock()) return;
+  const k = ps.pick; if(!k || k.busy || psBlock()) return;
   const list = k.r.people.map((p, i)=>({ userId:k.to[i], code:p.head.code, head:p.head, pay:p.pay, ded:p.ded, gross:p.gross, deduct:p.deduct, net:p.net })).filter(s=>s.userId!=='skip');
   if(AUTH.live){
-    const go = document.getElementById('psGo'); if(go){ go.disabled = true; go.textContent = '올리는 중…'; }
+    k.busy = true; k.err = '';
+    document.querySelectorAll('#orgModal .ps-cf :is(input, select, .ps-foot button)').forEach(e=>{ e.disabled = true; });   // 기다리는 동안 고치지 못하게 (닫기 X는 둔다)
+    const go = document.getElementById('psGo'); if(go) go.textContent = '올리는 중…';
     let r = null, j = {};
     try { r = await fetch('/api/payslips/'+k.ym, { method:'POST', headers:{ 'Content-Type':'application/json' }, body:JSON.stringify({ payDate:k.payDate, slips:list }) }); j = await r.json().catch(()=>({})); } catch(e){}
-    ps.pick = null; orgCloseModal();
-    if(!r || !r.ok) return kpiFlash(escapeHtml(j.error || '올리지 못했습니다. 인터넷 연결을 확인하고 잠시 뒤 다시 해 주세요.'), 'danger');
+    k.busy = false;
+    const ours = ()=>ps.pick===k && !!document.querySelector('#orgModal .ps-cf');   // 기다리는 사이 창을 닫았거나 다른 파일을 골랐으면 그 창은 건드리지 않는다
+    if(!r || !r.ok){
+      const msg = j.error || '올리지 못했습니다. 인터넷 연결을 확인하고 잠시 뒤 다시 해 주세요.';
+      ps.state = ''; await psLoad();   // 그사이 공개된 달일 수 있다 — 현황과 창의 안내를 새로
+      if(!ours()) return kpiFlash(escapeHtml(msg), 'danger');
+      k.err = msg; return psConfirm();   // 창은 그대로 — 파일을 다시 고르고 암호를 다시 넣지 않아도 되게
+    }
+    if(ours()){ ps.pick = null; orgCloseModal(); }
     MS_LIVE.state = '';   // 사원코드가 비어 있던 직원에게 서버가 이번 사원코드를 기억했다
     await psLiveDone();
   } else {
@@ -5692,7 +5724,7 @@ async function psSetOpen(ym, open){   // 공개(직원 본인에게 보임) · �
   if(AUTH.live){
     let r = null, j = {};
     try { r = await fetch(`/api/payslips/${ym}/${open ? 'open' : 'close'}`, { method:'POST' }); j = await r.json().catch(()=>({})); } catch(e){}
-    if(!r || !r.ok) return kpiFlash(escapeHtml(j.error || '바꾸지 못했습니다. 잠시 뒤 다시 해 주세요.'), 'danger');
+    if(!r || !r.ok){ ps.state = ''; return kpiFlash(escapeHtml(j.error || '바꾸지 못했습니다. 잠시 뒤 다시 해 주세요.'), 'danger'); }   // 현황은 새로 받는다
     await psLiveDone();
   } else {
     const m = ps.mem.months[ym]; if(!m) return;
@@ -5722,7 +5754,7 @@ async function psPrevPick(v){
 function psPrevDraw(){
   const p = ps.prev, list = (AUTH.live ? MS_LIVE.list : psMembers().filter(m=>(ps.mem.slips[p.ym] || {})[m.id])).slice().sort((a, b)=>a.name.localeCompare(b.name, 'ko'));
   const body = !p.who ? '' : p.state==='loading' ? kpiNote('불러오는 중입니다…', 'info') : p.state==='err' ? kpiNote('불러오지 못했습니다. 잠시 뒤 다시 해 주세요.', 'danger')
-    : p.slip ? payDetail(p.slip) : '<div class="placeholder-note" style="margin:0;">이 직원의 이 달 명세서가 없습니다.</div>';
+    : p.slip ? payDetail(p.slip) : `<div class="placeholder-note" style="margin:0;">${AUTH.live && MS_LIVE.list.some(m=>m.me && String(m.id)===p.who) ? '본인 명세서는 공개한 뒤 "내 급여명세서"에서 볼 수 있습니다.' : '이 직원의 이 달 명세서가 없습니다.'}</div>`;   // 서버는 본인 번호를 "나"로 보고 공개된 달만 준다
   orgModal(`<div class="ps-prev"><div class="card-title"><span>${psYmName(p.ym)} 미리 보기</span><button type="button" class="x-btn" onclick="orgCloseModal()" aria-label="닫기">${icon('x')}</button></div>
     <div class="field" style="max-width:320px; margin-bottom:6px;"><label for="psPrevWho">볼 직원</label><select id="psPrevWho" onchange="psPrevPick(this.value)"><option value="">직원 고르기</option>${list.map(m=>`<option value="${escapeHtml(String(m.id))}" ${String(m.id)===p.who ? 'selected' : ''}>${escapeHtml(m.name)} · ${escapeHtml(m.team || m.division || '')}${m.active===false ? ' (비활성)' : ''}</option>`).join('')}</select></div>
     <div class="list-sub" style="margin:0 0 12px;">공개 전인 달도 HR은 볼 수 있습니다.${AUTH.live ? ' 직원을 고르면 열람 기록이 남습니다.' : ''}</div>${body}</div>`);
@@ -5766,6 +5798,35 @@ async function psFlowCheck(){   // 브라우저 콘솔에서 await psFlowCheck()
     psPick(1, 'lead'); ok(!psBlock() && ps.pick.to[1]==='lead', '직원을 고르면 풀린다');
     psPick(1, 'skip'); ok(!psBlock(), '이번 달에서 빼도 풀린다');
     psPick(1, ''); ok(psBlock().includes('직원을 고르거나'), '고르기를 되돌리면 다시 막힌다');
+    psPick(1, 'skip'); await psUpload();
+    ok(ps.mem.months[ym].people===1 && Object.keys(ps.mem.slips[ym]).join()==='emp' && !ps.pick && !document.getElementById('orgModal'), '이번 달에서 뺀 사람은 올리지 않는다');
+    const S = cp(R); S[3][0] = '10 142'; S[3][1] = '가상없는사람';   // 사원코드 모양이 서버와 다르다
+    await psStage(file, S); psPick(1, 'lead'); ok(psBlock().includes('사원코드가 없거나 모양이 다른 사람(가상없는사람)'), '서버가 거절할 사원코드는 미리 막는다');
+    psPick(1, 'skip'); ok(!psBlock(), '그 사람을 빼면 사원코드는 보지 않는다');
+    const H = cp(R); H[2][2] = '가'.repeat(41);
+    await psStage(file, H); ok(psBlock().includes('40자를 넘는 사람'), '40자를 넘는 위쪽 칸');
+    const T = cp(R); T[1][6] = '가'.repeat(31);
+    await psStage(file, T); ok(psBlock().includes('30자를 넘는 칸'), '30자를 넘는 항목 이름');
+    const B = cp(R); B[2][5] = 2e9; B[2][8] = 2e9 + 700000; B[2][12] = 2e9 + 610000;
+    await psStage(file, B); ok(psBlock().includes('10억 원을 넘는 칸'), '10억 원을 넘는 금액');
+    await psStage(file, R);
+    ok(document.querySelector('#psNote').textContent.includes('이미 올린 달입니다'), '공개 전으로 올라간 달이면 바뀐다고 알린다');
+    for(const [k, v, want] of [['ym','0001-01','귀속 월'], ['ym','2026-5','귀속 월'], ['payDate','0009-10-01','지급일'], ['payDate','2026-02-30','지급일'], ['payDate','','지급일']]){
+      const was = ps.pick[k]; ps.pick[k] = v; ok(psBlock().includes(want), `${k} ${v || '빈 값'}은 올릴 수 없다`); ps.pick[k] = was;
+    }
+    const yEl = document.getElementById('psYm'), pEl = document.getElementById('psPay'), other = `${+ym.slice(0, 4)-1}${ym.slice(4)}`;
+    const typeIn = (el, v)=>{ el.value = v; el.dispatchEvent(new Event('change')); };
+    typeIn(yEl, other);
+    ok(document.getElementById('psYm')===yEl && ps.pick.ym===other && pEl.value===psPayDate(other) && ps.pick.payDate===psPayDate(other) && !document.querySelector('#psNote').textContent && !psBlock() && !document.getElementById('psGo').disabled,
+      '귀속 월을 바꾸면 창을 다시 그리지 않고 지급일 · 안내 · 단추만 바뀐다');
+    typeIn(pEl, `${other.slice(0, 4)}-02-27`);
+    ok(document.getElementById('psPay')===pEl && ps.pick.payDate===`${other.slice(0, 4)}-02-27`, '지급일을 바꿔도 창을 다시 그리지 않는다');
+    ps.pick.payDate = `${other.slice(0, 4)}-02-30`; psSync();
+    ok(document.getElementById('psGo').disabled && document.getElementById('psBlockMsg').textContent.includes('지급일'), '없는 날이면 단추가 꺼지고 이유가 보인다');
+    typeIn(yEl, ym);
+    ok(ps.pick.payDate===demo.payDate && document.querySelector('#psNote').textContent.includes('이미 올린 달입니다') && !document.getElementById('psGo').disabled, '귀속 월을 되돌리면 지급일도 다시');
+    document.getElementById('orgModal').click();
+    ok(!ps.pick && !document.getElementById('orgModal'), '바깥을 눌러 닫으면 읽은 자료도 버린다');
     await psStage(file, R); await psUpload();
     ok(ps.mem.months[ym].status==='DRAFT' && ps.mem.months[ym].people===2 && ps.mem.months[ym].revised===false, '올리면 공개 전');
     ok(slip().gross===demo.gross && slip().gross!==2700000, '공개 전에는 직원 화면이 그대로');
