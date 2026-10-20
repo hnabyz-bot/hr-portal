@@ -13,6 +13,7 @@ from typing import Collection, Mapping, Sequence
 
 from hr_eval.domain.errors import Issue, ValidationError
 from hr_eval.domain.models import POSITIONS, AuditEntry, Role
+from hr_eval.domain.org import NO_COL, Dept, is_direct_team
 
 # 미등록과 비활성은 같은 문구다 — 등록 여부를 구분해 알려 주지 않는다 (§3 ④)
 MSG_DENIED = "인사포털에 등록되지 않은 사용자입니다. 인사팀에 문의하세요"
@@ -35,6 +36,7 @@ class Member:
     writes_kpi: bool = True
     in_evaluation: bool = True
     has_contract: bool = True
+    led_department_id: int | None = None  # 맡은 부서 (팀장 · 본부장). 없으면 본인 소속 부서
 
     def roles(self) -> frozenset[Role]:
         """user_roles 에 저장할 줄들."""
@@ -149,15 +151,18 @@ def validate_members(
     *,
     before: Sequence[Member] = (),
     kpi_locked: Collection[int] = (),
+    depts: Sequence[Dept] = (),
 ) -> None:
     """구성원 설정 저장 전 검사 (§6 규칙, §4 마지막 HR 보호). 문제를 전부 모아 ValidationError.
 
     after: 저장하려는 전체 명단. before: 지금 저장된 명단 (KPI 작성 잠금 비교용).
     kpi_locked: 평가가 시작돼 KPI 작성을 바꿀 수 없는 사람 id.
+    depts: 부서 목록. 주면 팀장 · 본부장의 맡은 부서가 알맞은 종류인지도 본다 (바뀐 사람만 — 옛 자료가 남의 저장을 막지 않게).
     명단 동기화의 비활성 표시는 이 검사를 거치지 않는다 — HR 이 0명이 되면 첫 HR 규칙이 다시 작동한다.
     """
     issues: list[Issue] = []
     active = [m for m in after if m.is_active]
+    was = {m.id: m for m in before}
 
     for m in after:
         t = f"user:{m.id}"
@@ -170,8 +175,30 @@ def validate_members(
         if m.position is Role.CEO and m.writes_kpi:
             issues.append(Issue("CEO_NO_KPI", f"{m.name}: 대표이사는 KPI를 작성하지 않습니다", target=t))
 
-    # 팀장은 팀에 한 명, 본부장은 본부에 한 명, 대표이사는 한 명 (비활성인 사람은 세지 않는다)
-    per_dept = Counter((m.position, m.department_id) for m in active if m.position in (Role.TEAM_LEADER, Role.DIVISION_HEAD))
+    # 팀장의 맡은 부서는 팀(또는 직속 팀), 본부장의 맡은 부서는 본부. 맡은 부서를 안 고르면 본인 소속이 맡은 부서다
+    by = {d.id: d for d in depts}
+    for m in after:
+        if m.position not in (Role.TEAM_LEADER, Role.DIVISION_HEAD) or not depts:
+            continue
+        led = m.led_department_id or m.department_id
+        b = was.get(m.id)
+        if b and b.position is m.position and (b.led_department_id or b.department_id) == led:
+            continue
+        d = by.get(led)
+        if m.position is Role.TEAM_LEADER:
+            good = d is not None and (d.parent_id is not None or is_direct_team(d, depts))
+        else:
+            good = d is not None and d.parent_id is None and d.name not in NO_COL and not is_direct_team(d, depts)
+        if not good:
+            what = "팀(또는 직속 팀)" if m.position is Role.TEAM_LEADER else "본부"
+            issues.append(Issue("LED_DEPT_INVALID", f"{m.name}: 맡은 부서가 {what}이어야 합니다", target=f"user:{m.id}"))
+
+    # 팀장은 팀에 한 명, 본부장은 본부에 한 명, 대표이사는 한 명 (비활성인 사람은 세지 않는다). 부서는 맡은 부서 기준
+    per_dept = Counter(
+        (m.position, m.led_department_id or m.department_id)
+        for m in active
+        if m.position in (Role.TEAM_LEADER, Role.DIVISION_HEAD)
+    )
     for (pos, dept), n in per_dept.items():
         if n > 1:
             what = "팀장은 팀에" if pos is Role.TEAM_LEADER else "본부장은 본부에"
@@ -184,7 +211,6 @@ def validate_members(
             Issue("LAST_HR", "HR 권한이 있고 포털을 쓰는 사람이 한 명은 있어야 합니다. 다른 HR을 먼저 지정하세요")
         )
 
-    was = {m.id: m for m in before}
     for m in after:
         if m.id in kpi_locked and m.id in was and was[m.id].writes_kpi != m.writes_kpi:
             issues.append(Issue("KPI_LOCKED", f"{m.name}: 평가가 시작돼 KPI 작성을 바꿀 수 없습니다", target=f"user:{m.id}"))

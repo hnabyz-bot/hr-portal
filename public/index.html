@@ -464,7 +464,8 @@
   .ms-data b{ display:block; font-size:var(--fs-md); margin-bottom:2px; }
   .ms-data span{ font-size:var(--fs-xs); color:var(--text-muted); line-height:1.6; }
   .ms-hire{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:10px; }
-  .ms-hire input{ height:32px; border:1px solid var(--border); border-radius:var(--radius-sm); padding:0 8px; font:inherit; font-size:var(--fs-sm); }
+  .ms-hire input, .ms-hire select{ height:32px; border:1px solid var(--border); border-radius:var(--radius-sm); padding:0 8px; font:inherit; font-size:var(--fs-sm); }
+  .ms-hire select{ background:var(--surface); color:var(--text-primary); max-width:100%; }
   .ms-ct-lead{ display:flex; gap:10px; align-items:flex-start; margin:10px 0; padding:10px 12px; border:1px solid var(--border); border-radius:var(--radius-sm); font-size:var(--fs-sm); cursor:pointer; }
   .ms-ct-lead input{ margin-top:3px; }
   .ms-ct-lead small{ display:block; margin-top:3px; color:var(--text-muted); font-size:var(--fs-xs); line-height:1.6; }
@@ -6448,7 +6449,7 @@ const MS_NEW = { use:false, hr:false, kpi:true, ev:true, ct:true, isNew:true }; 
 const MS_LAST_HR = 'HR 권한이 있는 사람이 한 명뿐입니다. 다른 HR을 먼저 지정해 주세요.';
 const msDraft = {}, msSel = new Set();
 let msFilter = 'all', msDiv = '', msQuery = '';
-const MS_LIVE = { list:[], state:'' };   // 실제 로그인일 때의 명단 (GET /api/members). state: '' 아직 · loading · ok · err
+const MS_LIVE = { list:[], depts:[], state:'' };   // 실제 로그인일 때의 명단 (GET /api/members). depts = 부서 목록(맡은 부서 고르기용). state: '' 아직 · loading · ok · err
 function msList(){ return AUTH.live ? MS_LIVE.list : orgMembers; }   // 시연이면 조직도 명단, 실제면 서버 명단(하이웍스에서 가져온 사람)
 
 /* ----- 규칙 (순수 로직, msSelfCheck가 검증) ----- */
@@ -6468,11 +6469,25 @@ function msLockWhy(m, k, members, evp){   // 이 칸을 바꿀 수 없는 이유
   if((k==='hr' || k==='use') && msLastHr(members, m.id)) return MS_LAST_HR;
   return '';
 }
+/* 맡은 부서 (2026-10-20) — 팀장 · 본부장이 실제로 이끄는 부서. 안 정했으면 본인 소속. 하이웍스에서 본부장이 '임원' 부서에 있어도 HR 이 맡은 본부를 따로 정한다.
+   실제 명단에서는 직책 규칙을 "맡은 부서" 기준으로 따진다 — 부서 종류(팀장 = 팀, 본부장 = 본부)는 서버가 저장할 때 본다. */
+function msLedId(m){ return m.ledDept || m.dept; }
+function msDeptName(id){ return (MS_LIVE.depts.find(d=>d.id===id) || {}).name || '(알 수 없는 부서)'; }
+function msLedOpts(m){ return MS_LIVE.depts.filter(d=>m.lead==='TEAM' ? d.kind==='TEAM' || d.kind==='DIRECT' : m.lead==='DIVISION' && d.kind==='DIVISION'); }   // 팀장 = 팀 · 직속 팀 / 본부장 = 본부
+function msLiveLeadErrs(m, members){   // orgLeadErrs 의 실제 명단 판: 같은 부서를 맡은 사람이 이미 있나 (비활성인 사람은 세지 않음)
+  const led = msLedId(m), same = members.filter(o=>o.id!==m.id && o.active!==false && o.lead===m.lead);
+  if((m.lead==='TEAM' || m.lead==='DIVISION') && !msLedOpts(m).some(d=>d.id===led)) return [];   // 맡을 수 있는 부서가 아직 아니면(예: 임원 부서 소속) 맡은 부서를 고를 때 따진다 — 서버가 받아 줄 선택을 막지 않는다
+  if(m.lead==='TEAM' && same.some(o=>msLedId(o)===led)) return ['이 팀에는 이미 팀장이 있습니다.'];
+  if(m.lead==='DIVISION' && same.some(o=>msLedId(o)===led)) return ['이 본부에는 이미 본부장이 있습니다.'];
+  if(m.lead==='CEO' && same.length) return ['대표이사는 이미 있습니다.'];
+  return [];
+}
 function msSet(members, draft, id, k, v, evp){   // 초안에 담는다. 바꿀 수 없으면 이유를 돌려주고 아무것도 바꾸지 않는다
   const eff = msApply(members, draft), m = eff.find(o=>o.id===id), base = members.find(o=>o.id===id);
   if(m[k]===v) return '';
   let why = msLockWhy(m, k, eff, evp);
-  if(!why && k==='lead') why = orgLeadErrs({ ...m, lead:v }, eff)[0] || (v==='CEO' && m.kpi ? msLockWhy({ ...m, lead:'' }, 'kpi', eff, evp) : '');   // 팀장은 팀에 한 명, 본부장은 본부에 한 명, 대표이사는 한 명
+  if(!why && k==='lead') why = (AUTH.live ? msLiveLeadErrs : orgLeadErrs)({ ...m, lead:v }, eff)[0] || (v==='CEO' && m.kpi ? msLockWhy({ ...m, lead:'' }, 'kpi', eff, evp) : '');   // 팀장은 팀에 한 명, 본부장은 본부에 한 명, 대표이사는 한 명
+  if(!why && k==='ledDept' && AUTH.live) why = msLiveLeadErrs({ ...m, ledDept:v }, eff)[0] || '';
   if(why) return why;
   const d = { ...draft[id], [k]:v };
   if(k==='lead' && v==='CEO') d.kpi = d.ev = d.ct = false;
@@ -6483,7 +6498,8 @@ function msSet(members, draft, id, k, v, evp){   // 초안에 담는다. 바꿀 
 }
 function msDiffs(members, draft){   // 저장 전 확인에 보여 줄 바뀐 칸
   const txt = (k, v)=>k==='lead' ? MS_LEAD[v] : (v ? '켜짐' : '꺼짐');
-  return members.flatMap(m=>MS_FIELDS.filter(([k])=>draft[m.id] && k in draft[m.id]).map(([k, label])=>({ m, label, from:txt(k, m[k]), to:txt(k, draft[m.id][k]) })));
+  const led = m=>draft[m.id] && 'ledDept' in draft[m.id] ? [{ m, label:'맡은 부서', from:escapeHtml(msDeptName(msLedId(m))), to:escapeHtml(msDeptName(msLedId({ ...m, ...draft[m.id] }))) }] : [];   // 실제 명단에만 생긴다
+  return members.flatMap(m=>[...MS_FIELDS.filter(([k])=>draft[m.id] && k in draft[m.id]).map(([k, label])=>({ m, label, from:txt(k, m[k]), to:txt(k, draft[m.id][k]) })), ...led(m)]);
 }
 function msClear(draft){ Object.keys(draft).forEach(id=>delete draft[id]); }
 function msSave(members, draft, evp){   // 초안을 명단에 반영한다. 돌려주는 값 = 바뀐 칸 수
@@ -6579,6 +6595,23 @@ function msSelfCheck(){   // 브라우저 콘솔에서 msSelfCheck() 실행
   const hd = [mk(1,{ hr:true }), mk(2)], dd = {};
   ok(msSet(hd, dd, 2, 'lead', 'DIVISION', [])==='' && dd[2].ev===false && dd[2].ct===false && msSave(hd, dd, [])===3 && msSet(hd, {}, 2, 'ev', true, [])!=='' && msSet(hd, {}, 2, 'ct', true, [])!=='', '본부장으로 바꾸면 평가 대상·연봉계약서가 꺼지고 다시 켤 수 없다');
   ok(see({ lead:'DIVISION', ev:false, ct:false }, 2).includes('팀장 평가') && !see({ lead:'DIVISION', ev:false, ct:false }, 2).includes('자기평가') && see({ lead:'DIVISION', ev:false, ct:false }, 1).indexOf('서명')<0 && see({ lead:'CEO', kpi:false, ev:false }, 2).includes('등급 확인'), '본부장은 평가받지 않고 팀장을 평가한다 · 대표이사는 등급을 확인한다');
+  const was = AUTH.live, wasD = MS_LIVE.depts;   // 실제 명단 규칙 (맡은 부서)
+  try {
+    AUTH.live = true;
+    MS_LIVE.depts = [{ id:1, name:'가본부', parent:null, kind:'DIVISION' }, { id:2, name:'가팀', parent:1, kind:'TEAM' }, { id:3, name:'지원팀', parent:null, kind:'DIRECT' }, { id:4, name:'임원', parent:null, kind:'NOCOL' }];
+    const lv = (id, o)=>({ ...mk(id, o), dept:o.dept ?? 2, ledDept:null, active:true });
+    const L = [lv(1, { hr:true }), lv(2, { lead:'TEAM' }), lv(3, {}), lv(4, { dept:4 })], D = {};
+    ok(msSet(L, D, 3, 'lead', 'TEAM', [])!=='', '실제 명단: 같은 팀에 팀장이 있으면 막는다');
+    ok(msSet(L, D, 4, 'lead', 'DIVISION', [])==='' && msSet(L, D, 4, 'lead', 'TEAM', [])==='', '실제 명단: 임원 부서 사람도 직책은 정할 수 있다 (맡은 부서는 서버가 본다)');
+    ok(msSet(L, D, 4, 'ledDept', 1, [])==='' && D[4].ledDept===1 && msLedId({ ...L[3], ...D[4] })===1, '실제 명단: 맡은 부서를 담는다');
+    ok(msSet(L, D, 4, 'lead', 'DIVISION', [])==='' && msSet(L, D, 3, 'lead', 'DIVISION', [])==='' && msSet(L, D, 3, 'ledDept', 1, [])!=='', '실제 명단: 같은 본부를 맡은 본부장이 둘이면 막는다');
+    ok(msSet(L, D, 3, 'ledDept', 3, [])==='' && D[3].ledDept===3, '실제 명단: 다른 부서를 맡으면 허용');
+    const df = msDiffs(L, D).filter(x=>x.label==='맡은 부서');
+    ok(df.length===2 && df.find(x=>x.m.id===4).from==='임원' && df.find(x=>x.m.id===4).to==='가본부', '실제 명단: 맡은 부서 바뀐 것도 저장 전 확인에 나온다');
+    ok(msSet([lv(5, { dept:4, lead:'DIVISION' }), lv(6, { dept:4 })], {}, 6, 'lead', 'DIVISION', [])==='', '실제 명단: 임원 부서 사람이 여럿이어도 맡은 부서를 고르기 전에는 직책을 막지 않는다');
+    ok(msLedOpts({ lead:'TEAM' }).map(d=>d.id).join()==='2,3' && msLedOpts({ lead:'DIVISION' }).map(d=>d.id).join()==='1' && !msLedOpts({ lead:'' }).length, '맡은 부서 고르기: 팀장 = 팀 · 직속 팀, 본부장 = 본부');
+    ok(msLed({ ...L[3], lead:'TEAM', ledDept:null }).includes('골라') && msLed({ ...L[1], ledDept:3, dept:2 }).includes('맡은 부서: 지원팀') && msLed({ ...L[1], ledDept:null }) === '' && msLed({ ...L[2], lead:'' })==='', '표: 소속과 다를 때만 맡은 부서, 알맞지 않으면 고르라는 안내');
+  } finally { AUTH.live = was; MS_LIVE.depts = wasD; }
   return 'msSelfCheck 통과';
 }
 
@@ -6608,7 +6641,7 @@ function msTable(){   // 선택 막대 + 표. 이름 검색은 이것만 다시 
       rows += `<tr class="grp"><td class="c"><input class="ms-ck" type="checkbox" ${ids.every(id=>msSel.has(id))?'checked':''} aria-label="${escapeHtml(m.team||m.division)} 모두 선택" onchange="msPick([${ids}], this.checked)"></td><td colspan="7">${escapeHtml(m.division)} · ${escapeHtml(m.team||'본부 직속')}<span>${ids.length}명</span></td></tr>`;
     }
     rows += `<tr class="${msDraft[m.id]?'chg':''} ${e.use?'':'off'}"><td class="c"><input class="ms-ck" type="checkbox" ${msSel.has(m.id)?'checked':''} aria-label="${escapeHtml(m.name)} 선택" onchange="msPick([${m.id}], this.checked)"></td>
-      <td><div class="ms-name"><button type="button" onclick="msSee(${m.id})">${escapeHtml(m.name)}</button><i>${escapeHtml(m.title)}</i>${m.isNew?'<span class="ms-tag">새로 들어옴</span>':''}${m.active===false?'<span class="ms-tag gray">비활성</span>':''}${m.orgHidden?'<span class="ms-tag gray">조직도에서 뺌</span>':''}${isMe(m)?'<span class="ms-tag gray">나</span>':''}${!live && msNeed(m) ? `<button type="button" class="ms-need" onclick="orgEdit(${m.id})" title="${msNeed(m)}이 없습니다 — 눌러서 입력">정보 입력</button>` : ''}</div>${msDates(m)}</td>
+      <td><div class="ms-name"><button type="button" onclick="msSee(${m.id})">${escapeHtml(m.name)}</button><i>${escapeHtml(m.title)}</i>${m.isNew?'<span class="ms-tag">새로 들어옴</span>':''}${m.active===false?'<span class="ms-tag gray">비활성</span>':''}${m.orgHidden?'<span class="ms-tag gray">조직도에서 뺌</span>':''}${isMe(m)?'<span class="ms-tag gray">나</span>':''}${!live && msNeed(m) ? `<button type="button" class="ms-need" onclick="orgEdit(${m.id})" title="${msNeed(m)}이 없습니다 — 눌러서 입력">정보 입력</button>` : ''}</div>${msDates(m)}${msLed(e)}</td>
       ${MS_FIELDS.map(([k])=>`<td class="c">${msCell(m, e, k, eff)}</td>`).join('')}</tr>`;
   });
   const bulk = (k, label)=>`<span class="g">${label}<button type="button" onclick="msBulk('${k}',true)">켜기</button><button type="button" onclick="msBulk('${k}',false)">끄기</button></span>`;
@@ -6696,7 +6729,8 @@ async function msLoad(){   // 실제 로그인: 서버 명단을 불러온다 (H
   try {
     const r = await fetch('/api/members');
     if(!r.ok) throw new Error(r.status);
-    MS_LIVE.list = (await r.json()).members.map(m=>({ ...m, title:'' }));
+    const j = await r.json();
+    MS_LIVE.list = j.members.map(m=>({ ...m, title:'' })); MS_LIVE.depts = j.depts || [];
     MS_LIVE.state = 'ok';
   } catch(e){ MS_LIVE.state = 'err'; }
   renderContent();
@@ -6839,6 +6873,23 @@ function msDates(m){   // 이름 아래 작은 글씨 — 입사일 · 생일이
   const no = t=>`<span class="no">${t} 없음</span>`;
   return `<div class="ms-dates">${m.hireDate ? '입사 ' + m.hireDate.replace(/-/g, '.') : no('입사일')} · ${m.birthday ? `생일 ${+m.birthday.slice(0,2)}월 ${+m.birthday.slice(3)}일` : no('생일')}</div>`;
 }
+function msLed(m){   // 이름 아래 작은 글씨 — 맡은 부서가 소속과 다를 때만 (2026-10-20). 팀장 · 본부장인데 맡은 부서가 알맞지 않으면 붉은 글씨. m = 초안을 얹은 값
+  if(!AUTH.live || (m.lead!=='TEAM' && m.lead!=='DIVISION')) return '';
+  if(!msLedOpts(m).some(d=>d.id===msLedId(m))) return `<div class="ms-dates"><span class="no">맡은 부서를 골라 주세요 · 이름을 누르세요</span></div>`;
+  return m.ledDept && m.ledDept!==m.dept ? `<div class="ms-dates">맡은 부서: ${escapeHtml(msDeptName(m.ledDept))}</div>` : '';
+}
+function msLedRow(m){   // 이름 창의 "맡은 부서" 고르기 (실제 로그인 · 직책이 팀장 · 본부장일 때). 기본 = 본인 소속
+  const cur = msLedId(m), opts = msLedOpts(m), fit = opts.some(d=>d.id===cur);
+  return `<div class="ms-hire"><label for="msLed" class="list-sub" style="margin:0;">맡은 부서</label>
+    <select id="msLed" onchange="msLedPick(${m.id}, this.value)">${fit ? '' : '<option value="" selected>고르세요</option>'}${opts.map(d=>`<option value="${d.id}" ${d.id===cur?'selected':''}>${escapeHtml(d.name)}${d.parent ? ' (' + escapeHtml(msDeptName(d.parent)) + ')' : ''}</option>`).join('')}</select>
+    <span class="list-sub" style="margin:0;">${m.lead==='TEAM' ? '팀장으로 이끄는 팀' : '본부장으로 이끄는 본부'}${fit && cur===m.dept ? ' — 지금은 소속 부서' : ''}</span></div>`;
+}
+function msLedPick(id, v){   // 이름 창에서 맡은 부서를 고르면 초안에 담는다. 소속과 같게 고르면 "소속을 따름"(null)
+  if(!v) return;
+  const m = msList().find(o=>o.id===id), why = msSet(msList(), msDraft, id, 'ledDept', +v===m.dept ? null : +v, evPeople);
+  renderContent(); msSee(id, why);   // 뒤의 표와 저장 막대도 다시 그린다
+  const el = document.getElementById('msLed'); if(el) el.focus();
+}
 function msDataAsk(){   // 실제 로그인: 구성원 설정에 넣는 자료 고르기 — 걸러 보기 줄이 1280px에서 한 줄이게 단추 하나로 모았다
   const opt = (fn, title, sub)=>`<button type="button" class="ms-data" onclick="orgCloseModal(true); ${fn}"><b>${title}</b><span>${sub}</span></button>`;
   orgModal(`<div class="card-title"><span>자료 넣기</span><button type="button" class="x-btn" onclick="orgCloseModal()" aria-label="닫기">${icon('x')}</button></div>
@@ -6897,12 +6948,14 @@ async function msPasteDo(){
   const n = msApplyPaste(orgMembers, r.rows);
   orgCloseModal(); kpiFlash(`${n}명의 ${msPasteBirth ? '생일' : '직급·입사일'}을 반영했습니다.${more.length ? ' ' + more.join(' / ') : ''}`, more.length ? 'warning' : 'success');
 }
-function msSee(id){
+function msSee(id, err){   // err = 맡은 부서를 고르다 막힌 이유 (없으면 생략)
   const m = msApply(msList(), msDraft).find(o=>o.id===id);
   const pills = [[m.use, '포털 사용 '+(m.use?'켜짐':'꺼짐')], [m.lead, '직책 '+MS_LEAD[m.lead]], [m.hr, 'HR 권한 '+(m.hr?'있음':'없음')], [m.kpi, 'KPI 작성 '+(m.kpi?'함':'안 함')], [m.ev, m.ev?'평가 대상':'평가 대상 아님'], [m.ct, m.ct?'연봉계약서 대상':'연봉계약서 대상 아님']];
   orgModal(`<div class="card-title"><span>${escapeHtml(m.name)} ${escapeHtml(m.title)} <span style="font-weight:500; color:var(--text-secondary); font-size:var(--fs-xs); margin-left:4px;">${escapeHtml(m.team || m.division)}</span></span><button type="button" class="x-btn" onclick="orgCloseModal()" aria-label="닫기">${icon('x')}</button></div>
     <div class="ms-pills">${pills.map(([on, t])=>`<span class="badge ${on?'info':'neutral'}">${t}</span>`).join('')}</div>
     ${msDraft[id] ? kpiNote('아직 저장하지 않은 변경이 들어 있습니다.', 'warning') : ''}
+    ${err ? kpiNote(escapeHtml(err), 'danger') : ''}
+    ${AUTH.live && (m.lead==='TEAM' || m.lead==='DIVISION') ? msLedRow(m) : ''}
     <div class="list-sub" style="margin:0 0 6px;">이 설정으로 이 사람에게 보이는 화면</div>
     ${m.active===false ? kpiNote('비활성이라 <b>들어올 수 없습니다.</b> 하이웍스에서 메뉴를 누르면 "등록되지 않은 사용자" 안내가 나옵니다.')
       : m.use ? `<ul class="ms-see">${msSeeList(m).map(([a, b])=>`<li class="${b?'':'no'}"><b>${a}</b><span>${b || '보이는 것이 없음'}</span></li>`).join('')}</ul>`

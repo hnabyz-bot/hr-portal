@@ -348,6 +348,113 @@ def check_org(hr, save) -> None:
     ok("hire_date" not in person(emp, 3) and "hireDate" not in person(emp, 3), "조직도 명단에는 입사일이 없음")
 
 
+def check_led_dept(hr) -> None:
+    """맡은 부서 (2026-10-20): 하이웍스에서 본부장이 '임원' 부서에 있어도 맡은 본부를 HR 이 정한다."""
+    print("맡은 부서")
+    # 앞 검사가 바꿔 놓은 것에 기대지 않는다 — 필요한 부서를 더하고 3 · 4 번 사람의 직책을 비운다
+    for dept in ((3, "D3", "가상본부2", "DIVISION", None), (6, "D6", "가상팀2", "TEAM", 3), (4, "D4", "가상지원팀", "DIVISION", None),
+                 (5, "D5", "임원", "DIVISION", None)):
+        x("INSERT INTO departments (id, code, name, level, parent_id) VALUES (?, ?, ?, ?, ?)", *dept)
+    orig = q("SELECT id, department_id, writes_kpi, in_evaluation, has_contract FROM users WHERE id IN (3, 4) ORDER BY id")
+    x("DELETE FROM user_roles WHERE user_id IN (3, 4) AND role IN ('TEAM_LEADER', 'DIVISION_HEAD', 'CEO')")
+    x("UPDATE users SET led_department_id = NULL, in_evaluation = 1, has_contract = 1 WHERE id IN (3, 4)")
+    x("UPDATE users SET department_id = 2 WHERE id = 3")
+    x("UPDATE users SET department_id = 5 WHERE id = 4")  # 4 는 '임원' 부서 소속
+    lead = app.test_client()
+    login(lead, new_token("lead"))
+
+    def save(client, changes, headers=ORIGIN):
+        return client.post("/api/members", base_url=BASE, headers=headers, json={"changes": changes})
+
+    def listing():
+        return hr.get("/api/members", base_url=BASE).json
+
+    def row(uid):
+        return next(m for m in listing()["members"] if m["id"] == uid)
+
+    def led(uid):
+        return q("SELECT led_department_id FROM users WHERE id = ?", uid)
+
+    def actor(uid):
+        c = connect(os.environ["HR_DB_PATH"])
+        try:
+            return auth.actor_of(c, uid)
+        finally:
+            c.close()
+
+    kinds = {d["id"]: d for d in listing()["depts"]}
+    ok(kinds[2] == {"id": 2, "name": "가상팀", "parent": 1, "kind": "TEAM"} and kinds[1]["kind"] == kinds[3]["kind"] == "DIVISION"
+       and kinds[4]["kind"] == "DIRECT" and kinds[5]["kind"] == "NOCOL", "/api/members 에 부서 목록 (본부 · 팀 · 직속 팀 · 임원)")
+    ok(row(4)["ledDept"] is None and row(4)["dept"] == 5, "처음엔 맡은 부서가 없음 (null) · 본인 소속 부서 번호가 같이 옴")
+
+    r = save(hr, {"4": {"lead": "DIVISION", "ledDept": 1}})
+    ok(r.status_code == 200 and led(4) == [(1,)] and row(4)["ledDept"] == 1 and row(4)["lead"] == "DIVISION",
+       "본부장으로 지정하며 맡은 본부를 고름 → 저장되고 다시 읽어도 남음 (소속은 '임원' 그대로)")
+    ok(q("SELECT department_id, in_evaluation, has_contract FROM users WHERE id = 4") == [(5, 0, 0)], "본부장은 평가 · 계약서가 꺼짐 (기존 규칙 그대로)")
+    audit = q("SELECT before_data, after_data FROM audit_logs WHERE action = 'MEMBER_UPDATED' AND entity_id = 4 ORDER BY id DESC LIMIT 1")[0]
+    ok('"led_department_id": null' in audit[0] and '"led_department_id": 1' in audit[1], "감사로그에 맡은 부서 id (바뀌기 전 · 후)")
+
+    r = save(hr, {"4": {"ledDept": 2}})
+    ok(r.status_code == 400 and any("맡은 부서" in i for i in r.json["issues"]) and led(4) == [(1,)], "본부장의 맡은 부서가 팀이면 400 · 안 바뀜")
+    ok(all(save(hr, {"4": {"ledDept": d}}).status_code == 400 for d in (4, 5, 999)) and led(4) == [(1,)],
+       "직속 팀 · 임원 · 없는 부서도 본부장은 400")
+    for bad in ("1", True, 1.5, [1], -1, 0):
+        ok(save(hr, {"4": {"ledDept": bad}}).status_code == 400 and led(4) == [(1,)], f"맡은 부서 모양이 틀리면 400 ({bad!r})")
+
+    ok(save(hr, {"3": {"lead": "DIVISION"}}).status_code == 400 and led(3) == [(None,)],
+       "소속(팀)이 본부가 아닌데 맡은 부서를 안 고르면 본부장이 될 수 없음")
+    r = save(hr, {"3": {"lead": "DIVISION", "ledDept": 1}})
+    ok(r.status_code == 400 and any("본부에 한 명" in i for i in r.json["issues"]) and led(3) == [(None,)],
+       "한 본부에 본부장 둘 → 맡은 부서 기준으로 400")
+    ok(save(hr, {"3": {"lead": "DIVISION", "ledDept": 3}}).status_code == 200 and led(3) == [(3,)], "소속(팀)과 다른 본부의 본부장은 됨")
+    ok(save(hr, {"3": {"ledDept": 1}}).status_code == 400 and led(3) == [(3,)], "이미 본부장이 있는 본부로 바꿔 맡으면 400")
+    ok(save(hr, {"3": {"lead": ""}}).status_code == 200 and led(3) == [(None,)], "정리: 직책을 없애면 맡은 부서도 비워짐")
+
+    r = save(hr, {"4": {"lead": "TEAM", "ledDept": 2}})
+    ok(r.status_code == 400 and any("팀에 한 명" in i for i in r.json["issues"]), "팀장이 이미 있는 팀(2번 사람의 팀)을 맡으면 400")
+    ok(save(hr, {"4": {"lead": "TEAM", "ledDept": 6}}).status_code == 200 and led(4) == [(6,)] and row(4)["lead"] == "TEAM",
+       "임원 부서 사람을 팀장으로 바꾸고 다른 팀을 맡김")
+    ok(save(hr, {"4": {"ledDept": 4}}).status_code == 200 and led(4) == [(4,)], "팀장은 직속 팀도 맡을 수 있음")
+    ok(save(hr, {"4": {"ledDept": 1}}).status_code == 400 and save(hr, {"4": {"ledDept": 5}}).status_code == 400 and led(4) == [(4,)],
+       "팀장의 맡은 부서가 본부 · 임원이면 400 · 안 바뀜")
+
+    ok(save(hr, {"4": {"lead": "DIVISION", "ledDept": 1}}).status_code == 200, "다시 본부장")
+    ok(actor(4).led_division_id == 1 and actor(4).led_team_id is None, "actor_of: 본부장이 이끄는 본부는 맡은 부서 (소속이 '임원'이어도)")
+    save(hr, {"4": {"lead": "TEAM", "ledDept": 4}})
+    ok(actor(4).led_team_id == 4 and actor(4).led_division_id is None, "actor_of: 팀장이 이끄는 팀도 맡은 부서")
+    ok(save(hr, {"4": {"lead": ""}}).status_code == 200 and led(4) == [(None,)] and row(4)["ledDept"] is None and row(4)["lead"] == "",
+       "직책을 없애면 맡은 부서도 서버가 비움")
+    ok(save(hr, {"4": {"ledDept": 6}}).status_code == 200 and led(4) == [(None,)], "직책이 없는 사람에게 맡은 부서를 보내도 비어 있음")
+    ok(save(hr, {"4": {"lead": "TEAM", "ledDept": None}}).status_code == 400 and led(4) == [(None,)],
+       "팀장으로 지정하며 맡은 부서를 비우면 소속('임원')이라 400")
+
+    ok(save(hr, {"3": {"lead": "TEAM", "ledDept": 6}}).status_code == 200 and led(3) == [(6,)], "소속과 다른 팀의 팀장")
+    ok(save(hr, {"3": {"ledDept": None}}).status_code == 400 and led(3) == [(6,)],
+       "맡은 부서를 비우면 소속(2번 팀, 팀장이 있음)으로 돌아가므로 한 팀 한 명 규칙에 걸림")
+    x("UPDATE users SET department_id = 6 WHERE id = 3")
+    ok(save(hr, {"3": {"ledDept": 6}}).status_code == 200 and led(3) == [(None,)] and row(3)["ledDept"] is None,
+       "맡은 부서를 소속과 같게 고르면 비움으로 저장 (나중에 소속이 옮겨져도 따라감)")
+    ok(save(hr, {"3": {"lead": ""}}).status_code == 200, "정리")
+    x("UPDATE users SET department_id = 2 WHERE id = 3")
+
+    ok(save(lead, {"4": {"lead": "DIVISION", "ledDept": 1}}).status_code == 403 and led(4) == [(None,)], "HR 이 아니면 403")
+    ok(lead.get("/api/members", base_url=BASE).status_code == 403, "HR 이 아니면 명단 · 부서 목록도 403")
+    ok(save(hr, {"4": {"lead": "DIVISION", "ledDept": 1}}, headers={}).status_code == 403 and led(4) == [(None,)], "포털 화면에서만 (Origin)")
+
+    # 옛 자료가 남의 저장을 막지 않는다: 소속이 '임원'인 본부장이 맡은 부서 없이 이미 있어도 다른 사람 저장은 된다
+    x("INSERT INTO user_roles (user_id, role) VALUES (4, 'DIVISION_HEAD')")
+    x("UPDATE users SET in_evaluation = 0, has_contract = 0 WHERE id = 4")
+    ok(save(hr, {"3": {"ev": False}}).status_code == 200, "맡은 부서를 안 정한 옛 본부장이 있어도 다른 사람 저장은 됨")
+    ok(save(hr, {"4": {"kpi": False}}).status_code == 200 and q("SELECT writes_kpi FROM users WHERE id = 4") == [(0,)],
+       "그 옛 본부장 본인의 다른 칸 저장도 됨 (직책 · 맡은 부서를 안 바꿨으니 다시 묻지 않음)")
+
+    # 뒷정리 — 뒤 검사가 알던 모습으로
+    x("DELETE FROM user_roles WHERE user_id IN (3, 4) AND role IN ('TEAM_LEADER', 'DIVISION_HEAD')")
+    x("UPDATE users SET led_department_id = NULL WHERE id IN (3, 4)")
+    for uid, dept, kpi, ev, ct in orig:
+        x("UPDATE users SET department_id = ?, writes_kpi = ?, in_evaluation = ?, has_contract = ? WHERE id = ?", dept, kpi, ev, ct, uid)
+
+
 def check_news(hr) -> None:
     """홈 이번 주 소식 (2026-10-19): 생일(월-일) · 생일 알림 · 새 식구·입사 기념 · 경사·조사."""
     print("이번 주 소식 — 규칙 (날짜 고정)")
@@ -795,6 +902,7 @@ def main() -> int:
 
     check_phone(hr, save)
     check_org(hr, save)
+    check_led_dept(hr)
     check_news(hr)
     check_workspace(hr)
     check_game(hr)

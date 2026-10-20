@@ -1205,6 +1205,57 @@ def 구성원_설정_규칙을_모아서_알려준다():
     assert len(_오류코드(lambda: validate_members(여럿))) >= 2
 
 
+def _맡은부서_명단(*사람: Member) -> list[Member]:
+    """_가상조직() 의 부서(본부 10 · 팀 11·12 · 직속 팀 20 · 임원 30)에 놓는 명단. HR 한 명이 늘 있다."""
+    return [Member(42, "가상HR", 20, portal_enabled=True, is_hr=True), *사람]
+
+
+def _맡은본부장(id, 소속, 맡은=None):
+    return Member(id, f"가상본부장{id}", 소속, portal_enabled=True, position=Role.DIVISION_HEAD,
+                  in_evaluation=False, has_contract=False, led_department_id=맡은)
+
+
+def _맡은팀장(id, 소속, 맡은=None):
+    return Member(id, f"가상팀장{id}", 소속, portal_enabled=True, position=Role.TEAM_LEADER, led_department_id=맡은)
+
+
+@check
+def 맡은_부서가_본부가_아니면_본부장이_될_수_없다():
+    _, 부서 = _가상조직()
+    코드 = lambda 명단, **kw: _오류코드(lambda: validate_members(명단, depts=부서, **kw))  # noqa: E731
+    # 하이웍스에서 '임원' 부서에 있어도 본부를 맡으면 본부장이다
+    validate_members(_맡은부서_명단(_맡은본부장(2, 30, 맡은=10)), depts=부서)
+    for 잘못 in (11, 20, 30):  # 팀 · 직속 팀 · 임원
+        assert "LED_DEPT_INVALID" in 코드(_맡은부서_명단(_맡은본부장(2, 30, 맡은=잘못))), 잘못
+    assert "LED_DEPT_INVALID" in 코드(_맡은부서_명단(_맡은본부장(2, 30)))  # 맡은 부서를 안 고르면 소속(임원)이 맡은 부서
+    assert "LED_DEPT_INVALID" in 코드(_맡은부서_명단(_맡은본부장(2, 10, 맡은=999)))  # 없는 부서
+    # 팀장은 팀이나 직속 팀
+    validate_members(_맡은부서_명단(_맡은팀장(3, 30, 맡은=11), _맡은팀장(4, 30, 맡은=20)), depts=부서)
+    for 잘못 in (10, 30):
+        assert "LED_DEPT_INVALID" in 코드(_맡은부서_명단(_맡은팀장(3, 11, 맡은=잘못))), 잘못
+    # 이미 저장된 사람은 바뀐 게 없으면 다시 묻지 않는다 (옛 자료 때문에 남의 저장이 막히면 안 된다)
+    옛 = _맡은부서_명단(_맡은본부장(2, 30))
+    validate_members(옛, before=옛, depts=부서)
+    assert "LED_DEPT_INVALID" in 코드(_맡은부서_명단(_맡은본부장(2, 30, 맡은=11)), before=옛)
+    # depts 를 안 주면 이 검사는 하지 않는다 (옛 호출)
+    validate_members(_맡은부서_명단(_맡은본부장(2, 30, 맡은=11)))
+
+
+@check
+def 한_본부의_본부장은_맡은_부서_기준으로_한_명():
+    _, 부서 = _가상조직()
+    # 소속은 다르고 맡은 부서가 둘 다 10
+    assert "POSITION_TAKEN" in _오류코드(
+        lambda: validate_members(_맡은부서_명단(_맡은본부장(2, 30, 맡은=10), _맡은본부장(3, 10)), depts=부서))
+    # 소속이 같아도 맡은 부서가 다르면 한 명씩이다
+    validate_members(_맡은부서_명단(_맡은팀장(3, 20, 맡은=11), _맡은팀장(4, 20, 맡은=12)), depts=부서)
+    # 다른 팀에서 맡은 부서를 옮겨 와 같은 팀에 둘이 되면 막는다
+    assert "POSITION_TAKEN" in _오류코드(
+        lambda: validate_members(_맡은부서_명단(_맡은팀장(3, 11), _맡은팀장(4, 12, 맡은=11)), depts=부서))
+    # 비활성인 사람은 세지 않는다
+    validate_members(_맡은부서_명단(_맡은본부장(2, 30, 맡은=10), replace(_맡은본부장(3, 10), is_active=False)), depts=부서)
+
+
 @check
 def 감사로그에_직책과_HR_권한이_두_칸으로_남는다():
     e = AuditEntry.by(_HR팀장, action="X", entity_type="t", entity_id=1)
