@@ -1562,9 +1562,8 @@ function homeSince(hireDate, t){   // 입사 후 지난 [년, 개월, 일]. 입�
 function homePortalTasks(){   // 인사포털이 만든 일. n의 합 = 왼쪽 메뉴 숫자의 합
   const out = [], add = (n, title, nav, tab, badge)=>{ if(n) out.push({ n, title:n>1 ? `${title} ${n}건` : title, nav, tab, badge }); };
   add(TODO.p2(), '연봉계약서 서명', 'pay', 'p2', '서명 대기');
-  const back = AUTH.live ? KPI_LIVE.me?.plan?.noteKind : null;   // 실제 로그인: 내 계획서가 돌려보내짐(RETURNED) · 수정 요청 거절(REJECTED)
   add(AUTH.live ? KPI_LIVE.inbox.length : kpiWaiting().length, '팀원 KPI 승인', 'perf', 'e1', AUTH.live ? '확정 대기' : '승인 대기');
-  add(AUTH.live ? (back ? 1 : 0) : kpiSheets[kpiRole]?.rejectNote ? 1 : 0, '반려된 KPI 다시 작성', 'perf', 'e1', back==='REJECTED' ? '거절' : back ? '돌려받음' : '반려');
+  add(AUTH.live ? (KPI_LIVE.me?.plan?.noteKind==='RETURNED' ? 1 : 0) : kpiSheets[kpiRole]?.rejectNote ? 1 : 0, '반려된 KPI 다시 작성', 'perf', 'e1', AUTH.live ? '돌려받음' : '반려');   // 실제 로그인: 돌려보내진 것만 — 수정 요청 거절은 확정본이 그대로라 할 일이 아니다 (TODO.e1 과 같게)
   add(AUTH.live ? 0 : kvMemoTodo(kvMe()), '확인 메모 확인', 'perf', 'e1', '확인 대기');   // 실제 로그인에는 확인 메모가 아직 없다 (TODO.e1 과 같게)
   add(TODO.e4(), '확인 메모에 새 답글', 'perf', 'e4', '새 답글');
   add(TODO.e2(), '평가 진행', 'perf', 'e2', '평가 중');
@@ -3998,6 +3997,8 @@ function kpiLiveSelfCheck(){   // 브라우저 콘솔에서 kpiLiveSelfCheck() �
     ok(TODO.e1()===2 && task().n===2 && task().badge==='확정 대기', '실제 로그인: TODO.e1 · 홈 팀원 KPI 승인 = 처리함 건수');
     Object.assign(KPI_LIVE.me.plan, { note:'가상', noteKind:'RETURNED' });
     ok(TODO.e1()===3 && homePortalTasks().some(p=>p.title==='반려된 KPI 다시 작성'), '돌려받은 내 계획서는 +1');
+    KPI_LIVE.me.plan.noteKind = 'REJECTED';
+    ok(TODO.e1()===2 && !homePortalTasks().some(p=>p.title==='반려된 KPI 다시 작성'), '수정 요청 거절은 할 일이 아니다 (확정본이 그대로)');
   } finally { Object.assign(KPI_LIVE, { inbox:keep.inbox, me:keep.me }); AUTH.live = keep.live; }
   return 'kpiLiveSelfCheck 통과';
 }
@@ -7313,7 +7314,7 @@ const NAV = [
       {id:'p4', label:'연봉 인상 계산', render:rzContent, show:()=>kpiIsHr()},   // HR에게만 보인다
   ]},
   { id:'perf', label:'평가·성과', icon:'target', tabs:[
-      {id:'e1', label:()=>kpiRole==='ceo' ? 'KPI 승인 · 경영계획' : '목표설정 (KPI)', render:kpiContent},
+      {id:'e1', label:()=>kpiRole==='ceo' ? (AUTH.live ? 'KPI 승인' : 'KPI 승인 · 경영계획') : '목표설정 (KPI)', render:kpiContent},   // 실제 로그인 대표이사: 처리할 KPI · 우리 팀 · HR에 맡기기 (경영계획 칸은 아직 없다)
       {id:'e4', label:'KPI 현황', render:kvContent, show:()=>kvCanUse()},   // 팀장·본부장·대표이사·HR에게만 보인다
       {id:'e2', label:'평가 진행', render:evContent},
       {id:'e3', label:'평가 결과', render:evResultContent},
