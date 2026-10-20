@@ -6474,12 +6474,12 @@ function msLockWhy(m, k, members, evp){   // 이 칸을 바꿀 수 없는 이유
 function msLedId(m){ return m.ledDept || m.dept; }
 function msDeptName(id){ return (MS_LIVE.depts.find(d=>d.id===id) || {}).name || '(알 수 없는 부서)'; }
 function msLedOpts(m){ return MS_LIVE.depts.filter(d=>m.lead==='TEAM' ? d.kind==='TEAM' || d.kind==='DIRECT' : m.lead==='DIVISION' && d.kind==='DIVISION'); }   // 팀장 = 팀 · 직속 팀 / 본부장 = 본부
-function msLiveLeadErrs(m, members){   // orgLeadErrs 의 실제 명단 판: 같은 부서를 맡은 사람이 이미 있나 (비활성인 사람은 세지 않음)
+function msLiveLeadErrs(m, members, byLed){   // orgLeadErrs 의 실제 명단 판 (비활성인 사람은 세지 않음). 직책을 고를 때는 대표이사 한 명만 따진다 — 팀장 · 본부장은 맡은 부서를 고르기 전이라 서버가 받아 줄 선택(소속 팀에 팀장이 있어도 다른 팀을 맡는 것)을 막지 않는다. byLed = 맡은 부서를 고를 때: 같은 부서를 맡은 사람이 이미 있나
   const led = msLedId(m), same = members.filter(o=>o.id!==m.id && o.active!==false && o.lead===m.lead);
-  if((m.lead==='TEAM' || m.lead==='DIVISION') && !msLedOpts(m).some(d=>d.id===led)) return [];   // 맡을 수 있는 부서가 아직 아니면(예: 임원 부서 소속) 맡은 부서를 고를 때 따진다 — 서버가 받아 줄 선택을 막지 않는다
+  if(m.lead==='CEO' && same.length) return ['대표이사는 이미 있습니다.'];
+  if(!byLed) return [];
   if(m.lead==='TEAM' && same.some(o=>msLedId(o)===led)) return ['이 팀에는 이미 팀장이 있습니다.'];
   if(m.lead==='DIVISION' && same.some(o=>msLedId(o)===led)) return ['이 본부에는 이미 본부장이 있습니다.'];
-  if(m.lead==='CEO' && same.length) return ['대표이사는 이미 있습니다.'];
   return [];
 }
 function msSet(members, draft, id, k, v, evp){   // 초안에 담는다. 바꿀 수 없으면 이유를 돌려주고 아무것도 바꾸지 않는다
@@ -6487,7 +6487,7 @@ function msSet(members, draft, id, k, v, evp){   // 초안에 담는다. 바꿀 
   if(m[k]===v) return '';
   let why = msLockWhy(m, k, eff, evp);
   if(!why && k==='lead') why = (AUTH.live ? msLiveLeadErrs : orgLeadErrs)({ ...m, lead:v }, eff)[0] || (v==='CEO' && m.kpi ? msLockWhy({ ...m, lead:'' }, 'kpi', eff, evp) : '');   // 팀장은 팀에 한 명, 본부장은 본부에 한 명, 대표이사는 한 명
-  if(!why && k==='ledDept' && AUTH.live) why = msLiveLeadErrs({ ...m, ledDept:v }, eff)[0] || '';
+  if(!why && k==='ledDept' && AUTH.live) why = msLiveLeadErrs({ ...m, ledDept:v }, eff, true)[0] || '';
   if(why) return why;
   const d = { ...draft[id], [k]:v };
   if(k==='lead' && v==='CEO') d.kpi = d.ev = d.ct = false;
@@ -6601,7 +6601,9 @@ function msSelfCheck(){   // 브라우저 콘솔에서 msSelfCheck() 실행
     MS_LIVE.depts = [{ id:1, name:'가본부', parent:null, kind:'DIVISION' }, { id:2, name:'가팀', parent:1, kind:'TEAM' }, { id:3, name:'지원팀', parent:null, kind:'DIRECT' }, { id:4, name:'임원', parent:null, kind:'NOCOL' }];
     const lv = (id, o)=>({ ...mk(id, o), dept:o.dept ?? 2, ledDept:null, active:true });
     const L = [lv(1, { hr:true }), lv(2, { lead:'TEAM' }), lv(3, {}), lv(4, { dept:4 })], D = {};
-    ok(msSet(L, D, 3, 'lead', 'TEAM', [])!=='', '실제 명단: 같은 팀에 팀장이 있으면 막는다');
+    const D2 = {};
+    ok(msSet(L, D2, 3, 'lead', 'TEAM', [])==='' && msSet(L, D2, 3, 'ledDept', 2, [])!=='' && msSet(L, D2, 3, 'ledDept', 3, [])==='' && D2[3].ledDept===3, '실제 명단: 소속 팀에 팀장이 있어도 직책은 정할 수 있고(다른 팀을 맡으려고), 이미 팀장이 있는 팀을 맡으려 할 때 막는다');
+    ok(msSet(L, {}, 4, 'lead', 'CEO', [])==='' && msSet([...L, lv(7, { lead:'CEO' })], {}, 4, 'lead', 'CEO', [])!=='', '실제 명단: 대표이사는 직책을 고를 때 막는다');
     ok(msSet(L, D, 4, 'lead', 'DIVISION', [])==='' && msSet(L, D, 4, 'lead', 'TEAM', [])==='', '실제 명단: 임원 부서 사람도 직책은 정할 수 있다 (맡은 부서는 서버가 본다)');
     ok(msSet(L, D, 4, 'ledDept', 1, [])==='' && D[4].ledDept===1 && msLedId({ ...L[3], ...D[4] })===1, '실제 명단: 맡은 부서를 담는다');
     ok(msSet(L, D, 4, 'lead', 'DIVISION', [])==='' && msSet(L, D, 3, 'lead', 'DIVISION', [])==='' && msSet(L, D, 3, 'ledDept', 1, [])!=='', '실제 명단: 같은 본부를 맡은 본부장이 둘이면 막는다');
