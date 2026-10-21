@@ -45,6 +45,19 @@ def _rejects(conn: sqlite3.Connection, sql: str, params: tuple = ()) -> tuple[bo
     return False, ""
 
 
+def check_file_numbers() -> None:
+    """스키마 파일 번호가 001 부터 빠짐·겹침 없이 이어지는가. init_db 는 DB 판 번호 이하의 파일을 건너뛰므로
+    운영 DB(판 N)에 나중에 들어온 빠진 번호는 영영 적용되지 않는다 — merge 순서를 문서가 아니라 검사로 막는다."""
+    print("0. 스키마 파일 번호 (001부터 빠짐·겹침 없이)")
+    nums = [int(f.name[:3]) for f in SQL_DIR.glob("[0-9][0-9][0-9]_*.sql")]
+    missing = sorted(set(range(1, max(nums, default=0) + 1)) - set(nums))
+    dup = sorted({n for n in nums if nums.count(n) > 1})
+    _report(not missing and not dup, f"스키마 파일 번호가 001부터 빠짐·겹침 없이 이어짐 ({len(nums)}개)",
+            f"빠진 번호 {missing} · 겹친 번호 {dup} — 서버의 init_db 는 DB 판 번호보다 작거나 같은 번호의 파일을 건너뜁니다."
+            " 빠진 번호의 파일이 나중에 merge 되면 운영 DB 에는 영영 적용되지 않고, 겹친 번호는 뒤 파일이 건너뛰어집니다."
+            " 빠진 번호를 가진 브랜치를 먼저 merge 하거나 이 브랜치의 파일 번호를 바꿔 주세요.")
+
+
 def apply_schema(path: str) -> sqlite3.Connection | None:
     """서버와 같은 길(init_db)로 스키마를 넣고, 검사에 쓸 연결을 돌려준다."""
     print("1. 스키마 적용")
@@ -675,6 +688,7 @@ def main() -> int:
     print("=" * 62)
     print("SQLite 스키마 적용 + 제약조건 동작 검사")
     print("=" * 62)
+    check_file_numbers()
     with tempfile.TemporaryDirectory() as tmp:
         conn = apply_schema(str(Path(tmp) / "schema-check.db"))
         if conn is None:
