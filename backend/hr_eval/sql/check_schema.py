@@ -728,7 +728,68 @@ def check_login_tables(conn: sqlite3.Connection) -> None:
     ok, msg = _rejects(conn, cd.format(u=9999))
     _report(ok and "FOREIGN KEY" in msg, "없는 직원의 맡기기 거부", msg)
 
-    print("23. KPI 진행 기록 (011)")
+
+def check_payslip_tables(conn: sqlite3.Connection) -> None:
+    """급여명세서 표 (011). 금액·이름은 전부 가상 — data 는 잠근 글(nonce 12 + 내용 + 태그 16바이트)을 흉내 낸 아무 바이트."""
+    print("23. 급여명세서 (011)")
+    up = conn.execute("SELECT id FROM users WHERE employee_no='T001'").fetchone()[0]
+    emp = conn.execute(
+        "INSERT INTO users (employee_no, name, email, department_id)"
+        " VALUES ('T031', '가상명세직원', 't031@example.invalid', (SELECT id FROM departments WHERE code='DIV1')) RETURNING id"
+    ).fetchone()[0]
+    ver = conn.execute("PRAGMA user_version").fetchone()[0]
+    _report(ver >= 11, f"판 번호가 11 이상 — {ver}", f"실제 {ver}")
+
+    mo = "INSERT INTO payslip_months (ym, pay_date, status, people, uploaded_at, uploaded_by) VALUES (?, ?, ?, ?, '2027-03-02T09:00:00Z', ?)"
+    conn.execute(mo, ("2026-05", "2026-06-19", "DRAFT", 2, up))
+    _report(True, "급여명세서 달 한 건 저장 (올려 둠)")
+    for args, why in ((("2026-13", "2026-06-19", "DRAFT", 2, up), "13월"), (("2026-00", "2026-06-19", "DRAFT", 2, up), "0월"),
+                      (("26-05", "2026-06-19", "DRAFT", 2, up), "귀속 월 연도 두 자리"), ((None, "2026-06-19", "DRAFT", 2, up), "귀속 월 비어 있음(NULL)"), (("2026-5", "2026-06-19", "DRAFT", 2, up), "귀속 월 월 한 자리"),
+                      (("2026-05", "2026-06-19", "DRAFT", 2, up), "같은 달 두 번"), (("2026-06", "2026-6-19", "DRAFT", 2, up), "지급일 모양"),
+                      (("2026-06", "2026-02-30", "DRAFT", 2, up), "없는 지급일(2월 30일)"), (("2026-06", "2026-19-39", "DRAFT", 2, up), "없는 지급일(19월 39일)"),
+                      (("2026-06", "2026-06-19", "SENT", 2, up), "상태 SENT"), (("2026-06", "2026-06-19", "DRAFT", 0, up), "0명"), (("2026-06", "2026-06-19", "DRAFT", 1.5, up), "1.5명(정수 아님)"),
+                      (("2026-06", "2026-06-19", "DRAFT", 2, 9999), "없는 올린 사람")):
+        ok, _ = _rejects(conn, mo, args)
+        _report(ok, f"급여명세서 달 {why} 거부")
+    ok, msg = _rejects(conn, "INSERT INTO payslip_months (ym, pay_date, status, people, uploaded_at, uploaded_by, opened_at, opened_by)"
+                             f" VALUES ('2026-06', '2026-07-20', 'OPEN', 2, '2027-03-02T09:00:00Z', {up}, NULL, {up})")
+    _report(ok and "payslip_open_chk" in msg, "공개(OPEN)인데 공개한 때가 없으면 거부", msg)
+    conn.execute("INSERT INTO payslip_months (ym, pay_date, status, people, revised, uploaded_at, uploaded_by, opened_at, opened_by)"
+                 f" VALUES ('2026-06', '2026-07-20', 'OPEN', 2, 1, '2027-03-02T09:00:00Z', {up}, '2027-03-02T10:00:00Z', {up})")
+    conn.execute("INSERT INTO payslip_months (ym, pay_date, status, people, uploaded_at, uploaded_by, opened_at, opened_by)"
+                 f" VALUES ('2026-07', '2026-08-20', 'DRAFT', 1, '2027-03-02T09:00:00Z', {up}, '2027-03-02T10:00:00Z', {up})")
+    _report(True, "공개 중(OPEN) · 내렸던 달(DRAFT 이면서 공개한 때 있음) 저장")
+    ok, _ = _rejects(conn, "UPDATE payslip_months SET revised = 2 WHERE ym = '2026-05'")
+    _report(ok, "수정됨 표시는 0·1 만")
+
+    ps = "INSERT INTO payslips (ym, user_id, data) VALUES (?, ?, ?)"
+    conn.execute(ps, ("2026-05", up, bytes(29)))
+    conn.execute(ps, ("2026-05", emp, bytes(range(60))))
+    _report(True, "잠근 명세서 두 건 저장 (29바이트 이상 BLOB)")
+    seen = conn.execute("SELECT seen_at FROM payslips WHERE ym='2026-05' AND user_id = ?", (up,)).fetchone()[0]
+    _report(seen is None, "처음엔 아직 안 봄 (seen_at 비어 있음)", f"실제 {seen}")
+    for args, why in ((("2026-05", up, bytes(29)), "같은 달 같은 사람 두 줄"), (("2026-05", 9999, bytes(29)), "없는 직원"),
+                      (("2027-01", up, bytes(29)), "없는 달"), (("2026-06", up, "abc"), "BLOB 이 아닌 글자"), (("2026-06", up, "x" * 40), "BLOB 이 아닌 긴 글자(길이는 충분)"),
+                      (("2026-06", up, bytes(28)), "28바이트(내용 없음)"), (("2026-06", up, None), "빈 값")):
+        ok, _ = _rejects(conn, ps, args)
+        _report(ok, f"잠근 명세서 {why} 거부")
+    ok, _ = _rejects(conn, "DELETE FROM users WHERE id = ?", (emp,))
+    _report(ok, "명세서가 있는 직원은 지울 수 없음 (RESTRICT)")
+    idx = conn.execute("SELECT 1 FROM pragma_index_info('idx_payslips_user') WHERE name = 'user_id'").fetchone()
+    _report(idx is not None, "직원별 찾기 색인 (idx_payslips_user)")
+
+    conn.execute("DELETE FROM payslip_months WHERE ym = '2026-05'")
+    left = conn.execute("SELECT count(*) FROM payslips WHERE ym = '2026-05'").fetchone()[0]
+    _report(left == 0, "달을 지우면 그 달 명세서도 함께 지워짐 (CASCADE)", f"남은 {left}")
+
+
+def check_kpi_progress_tables(conn: sqlite3.Connection) -> None:
+    """KPI 진행 기록 표 (012 — main #165 급여명세서가 011 을 먼저 써서 판 12). 계획서는 22 절(check_login_tables)이 만든 것을 쓴다."""
+    print("24. KPI 진행 기록 (012)")
+    user = "(SELECT id FROM users WHERE employee_no='T001')"
+    boss = conn.execute("SELECT id FROM users WHERE employee_no='T020'").fetchone()[0]
+    ver = conn.execute("PRAGMA user_version").fetchone()[0]
+    _report(ver >= 12, f"판 번호가 12 이상 — {ver}", f"실제 {ver}")
     # 계획서는 22 절에서 만든 것을 쓴다: 2027 확정 · 2029 제출 · 2030 수정 요청 / 2028 · 2031 은 계획서가 없다.
     T = "'2027-03-02T09:00:00Z'"
     ln = lambda n: "가" * n  # 글자 수 맞춘 가상 문장
@@ -814,60 +875,6 @@ def check_login_tables(conn: sqlite3.Connection) -> None:
         conn.execute(f"DELETE FROM {tbl} WHERE user_id = {user} AND year = 2029")
 
 
-def check_payslip_tables(conn: sqlite3.Connection) -> None:
-    """급여명세서 표 (011). 금액·이름은 전부 가상 — data 는 잠근 글(nonce 12 + 내용 + 태그 16바이트)을 흉내 낸 아무 바이트."""
-    print("23. 급여명세서 (011)")
-    up = conn.execute("SELECT id FROM users WHERE employee_no='T001'").fetchone()[0]
-    emp = conn.execute(
-        "INSERT INTO users (employee_no, name, email, department_id)"
-        " VALUES ('T031', '가상명세직원', 't031@example.invalid', (SELECT id FROM departments WHERE code='DIV1')) RETURNING id"
-    ).fetchone()[0]
-    ver = conn.execute("PRAGMA user_version").fetchone()[0]
-    _report(ver >= 11, f"판 번호가 11 이상 — {ver}", f"실제 {ver}")
-
-    mo = "INSERT INTO payslip_months (ym, pay_date, status, people, uploaded_at, uploaded_by) VALUES (?, ?, ?, ?, '2027-03-02T09:00:00Z', ?)"
-    conn.execute(mo, ("2026-05", "2026-06-19", "DRAFT", 2, up))
-    _report(True, "급여명세서 달 한 건 저장 (올려 둠)")
-    for args, why in ((("2026-13", "2026-06-19", "DRAFT", 2, up), "13월"), (("2026-00", "2026-06-19", "DRAFT", 2, up), "0월"),
-                      (("26-05", "2026-06-19", "DRAFT", 2, up), "귀속 월 연도 두 자리"), ((None, "2026-06-19", "DRAFT", 2, up), "귀속 월 비어 있음(NULL)"), (("2026-5", "2026-06-19", "DRAFT", 2, up), "귀속 월 월 한 자리"),
-                      (("2026-05", "2026-06-19", "DRAFT", 2, up), "같은 달 두 번"), (("2026-06", "2026-6-19", "DRAFT", 2, up), "지급일 모양"),
-                      (("2026-06", "2026-02-30", "DRAFT", 2, up), "없는 지급일(2월 30일)"), (("2026-06", "2026-19-39", "DRAFT", 2, up), "없는 지급일(19월 39일)"),
-                      (("2026-06", "2026-06-19", "SENT", 2, up), "상태 SENT"), (("2026-06", "2026-06-19", "DRAFT", 0, up), "0명"), (("2026-06", "2026-06-19", "DRAFT", 1.5, up), "1.5명(정수 아님)"),
-                      (("2026-06", "2026-06-19", "DRAFT", 2, 9999), "없는 올린 사람")):
-        ok, _ = _rejects(conn, mo, args)
-        _report(ok, f"급여명세서 달 {why} 거부")
-    ok, msg = _rejects(conn, "INSERT INTO payslip_months (ym, pay_date, status, people, uploaded_at, uploaded_by, opened_at, opened_by)"
-                             f" VALUES ('2026-06', '2026-07-20', 'OPEN', 2, '2027-03-02T09:00:00Z', {up}, NULL, {up})")
-    _report(ok and "payslip_open_chk" in msg, "공개(OPEN)인데 공개한 때가 없으면 거부", msg)
-    conn.execute("INSERT INTO payslip_months (ym, pay_date, status, people, revised, uploaded_at, uploaded_by, opened_at, opened_by)"
-                 f" VALUES ('2026-06', '2026-07-20', 'OPEN', 2, 1, '2027-03-02T09:00:00Z', {up}, '2027-03-02T10:00:00Z', {up})")
-    conn.execute("INSERT INTO payslip_months (ym, pay_date, status, people, uploaded_at, uploaded_by, opened_at, opened_by)"
-                 f" VALUES ('2026-07', '2026-08-20', 'DRAFT', 1, '2027-03-02T09:00:00Z', {up}, '2027-03-02T10:00:00Z', {up})")
-    _report(True, "공개 중(OPEN) · 내렸던 달(DRAFT 이면서 공개한 때 있음) 저장")
-    ok, _ = _rejects(conn, "UPDATE payslip_months SET revised = 2 WHERE ym = '2026-05'")
-    _report(ok, "수정됨 표시는 0·1 만")
-
-    ps = "INSERT INTO payslips (ym, user_id, data) VALUES (?, ?, ?)"
-    conn.execute(ps, ("2026-05", up, bytes(29)))
-    conn.execute(ps, ("2026-05", emp, bytes(range(60))))
-    _report(True, "잠근 명세서 두 건 저장 (29바이트 이상 BLOB)")
-    seen = conn.execute("SELECT seen_at FROM payslips WHERE ym='2026-05' AND user_id = ?", (up,)).fetchone()[0]
-    _report(seen is None, "처음엔 아직 안 봄 (seen_at 비어 있음)", f"실제 {seen}")
-    for args, why in ((("2026-05", up, bytes(29)), "같은 달 같은 사람 두 줄"), (("2026-05", 9999, bytes(29)), "없는 직원"),
-                      (("2027-01", up, bytes(29)), "없는 달"), (("2026-06", up, "abc"), "BLOB 이 아닌 글자"), (("2026-06", up, "x" * 40), "BLOB 이 아닌 긴 글자(길이는 충분)"),
-                      (("2026-06", up, bytes(28)), "28바이트(내용 없음)"), (("2026-06", up, None), "빈 값")):
-        ok, _ = _rejects(conn, ps, args)
-        _report(ok, f"잠근 명세서 {why} 거부")
-    ok, _ = _rejects(conn, "DELETE FROM users WHERE id = ?", (emp,))
-    _report(ok, "명세서가 있는 직원은 지울 수 없음 (RESTRICT)")
-    idx = conn.execute("SELECT 1 FROM pragma_index_info('idx_payslips_user') WHERE name = 'user_id'").fetchone()
-    _report(idx is not None, "직원별 찾기 색인 (idx_payslips_user)")
-
-    conn.execute("DELETE FROM payslip_months WHERE ym = '2026-05'")
-    left = conn.execute("SELECT count(*) FROM payslips WHERE ym = '2026-05'").fetchone()[0]
-    _report(left == 0, "달을 지우면 그 달 명세서도 함께 지워짐 (CASCADE)", f"남은 {left}")
-
-
 def main() -> int:
     print("=" * 62)
     print("SQLite 스키마 적용 + 제약조건 동작 검사")
@@ -889,6 +896,7 @@ def main() -> int:
             check_updated_at(conn)
             check_login_tables(conn)
             check_payslip_tables(conn)
+            check_kpi_progress_tables(conn)
         finally:
             conn.close()
 

@@ -1,5 +1,7 @@
 # 평가·성과 실제화 2단계 ① — 진행 기록 · 일정 변경 요청 · 나의 업무 연동 구현 계획
 
+(2026-10-21 main #165 급여명세서가 판 11을 먼저 써서, 이 계획의 DB는 판 12 `012_kpi_progress.sql`로 합쳤다)
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 확정된 KPI가 있는 직원이 다음을 서버에 적는다.
