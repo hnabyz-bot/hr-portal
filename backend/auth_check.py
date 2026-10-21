@@ -1913,9 +1913,9 @@ def check_kpi_sched(hr) -> None:
     z = lambda m, d, hh=3, mm=0: f"{year}-{m:02d}-{d:02d}T{hh:02d}:{mm:02d}:00Z"  # noqa: E731
     jar: dict[int, object] = {}
 
-    def at(m, d, hh=3, mm=0):
-        """시계를 UTC 로 (올해 m월 d일 hh:mm) 에 맞춘다. 기본 03:00 = 한국 정오."""
-        t = datetime(year, m, d, hh, mm, tzinfo=timezone.utc)
+    def at(m, d, hh=3, mm=0, yr=None):
+        """시계를 UTC 로 (올해 — yr 이 있으면 그 해 — m월 d일 hh:mm) 에 맞춘다. 기본 03:00 = 한국 정오."""
+        t = datetime(yr or year, m, d, hh, mm, tzinfo=timezone.utc)
         auth._now = lambda: t
         jar.clear()
 
@@ -1932,7 +1932,7 @@ def check_kpi_sched(hr) -> None:
     BAD_DUE, SAME_DUE = f"{year}년 안의 날짜(YYYY-MM-DD)를 써 주세요.", "지금 기한과 같은 날짜예요. 다른 날짜를 써 주세요."
     BAD_REASON, BAD_NOTE = "일정을 바꾸려는 이유를 200자 안으로 써 주세요.", "돌려보내는 이유를 200자 안으로 써 주세요."
     BAD_REASON_CHARS, BAD_NOTE_CHARS = "일정을 바꾸려는 이유에 쓸 수 없는 글자가 있습니다.", "돌려보내는 이유에 쓸 수 없는 글자가 있습니다."
-    NOT_YOURS = "본인의 요청만 취소할 수 있습니다."
+    NOT_YOURS, THIS_YEAR = "본인의 요청만 취소할 수 있습니다.", "올해 계획서의 일정만 바꿀 수 있습니다."
     err = lambda r, code, msg: r.status_code == code and r.json == {"error": msg}  # noqa: E731
     bad_text = lambda r, *msgs: r.status_code == 400 and r.json.get("error") in msgs  # noqa: E731  — 글이 틀리면 400 (길이 문구 또는 쓸 수 없는 글자 문구)
     conflict = lambda r, st: r.status_code == 409 and r.json == {"error": "지금 상태에서는 할 수 없습니다.", "status": st}  # noqa: E731
@@ -1997,7 +1997,8 @@ def check_kpi_sched(hr) -> None:
 
         # ---- 요청의 조건 — 서버가 순서대로 본다 ----
         ok(all(ask(EMP, 1, ymd(10, 1), year=y).status_code == 400 for y in (None, "2026", True, 2025, 2101, year + 0.5, 10 ** 30))
-           and err(ask(EMP, 1, ymd(10, 1), year=year + 1), 404, NO_PLAN) and n_rows() == 0, "해는 2026~2100 정수 — 틀리면 400 · 계획서가 없는 해는 404")
+           and err(ask(EMP, 1, ymd(10, 1), year=year + 1), 400, THIS_YEAR) and err(ask(EMP, 1, ymd(10, 1), year=2100), 400, THIS_YEAR) and n_rows() == 0,
+           "해는 2026~2100 정수 — 틀리면 400 · 올해가 아닌 해도 400 (올해 계획서의 일정만)")
         ok(all(err(ask(EMP, s, ymd(10, 1)), 400, NO_SID) for s in (99, 0, -1, "1", True, 1.0, None, [1], 10 ** 30)) and n_rows() == 0
            and err(c(EMP).post("/api/kpi/me/sched-change", base_url=BASE, headers=ORIGIN, json={"year": year, "due": ymd(10, 1), "reason": "가상"}), 400, NO_SID),
            "지금 확정본에 없는 일정 (번호 모양이 틀린 것 · 불리언 포함) → 400")
@@ -2169,6 +2170,9 @@ def check_kpi_sched(hr) -> None:
         at(6, 18)
         r9 = ask(EMP, 1, ymd(10, 1)).json["id"]
         ok(act(LEAD, r9, "confirm").status_code == 200 and sched(prog(), 1)["due"] == ymd(10, 1), "(1번 일정 기한이 확인됨 — 확정본의 옛 기한은 9월 30일)")
+        rx = ask(EMP, 1, ymd(10, 3)).json["id"]
+        ok(act(LEAD, rx, "return", {"note": "가상 되돌림"}).status_code == 200
+           and sched(prog(), 1)["returned"] == {"to": ymd(10, 3), "note": "가상 되돌림", "at": z(6, 18)}, "(1번 일정 요청을 돌려받음 — 판 1 이 지금 확정본이라 돌려받은 줄이 보임)")
         at(6, 19)
         ok(own(EMP, "request-change", {"reason": "가상 수정 사유"}).status_code == 200 and q("SELECT status FROM kpi_plans WHERE user_id = ?", EMP) == [("CHANGE_REQUESTED",)],
            "(수정 요청)")
@@ -2185,6 +2189,7 @@ def check_kpi_sched(hr) -> None:
            "그 전에 걸어 둔 다른 PENDING 은 CANCELLED (결정한 시각 · 사람 = 풀어 준 팀장) — 다른 사람의 요청은 그대로")
         ok(audit("KPI_UNLOCKED") == [(LEAD, 0, None, "kpi_plan", json.dumps({"year": year, "cancelled": 1}))], "감사로그 KPI_UNLOCKED 에 취소한 요청 수(cancelled)")
         ok(version1() == v1 and json.loads(v1[0][0])[0]["items"][2]["scheds"][0]["due"] == ymd(9, 30), "확정본(판 1)은 그대로 — 옛 기한")
+        ok(sched(prog(), 1)["returned"] == {"to": ymd(10, 3), "note": "가상 되돌림", "at": z(6, 18)}, "고치는 중에도 아직 판 1 이 지금 확정본 — 돌려받은 줄이 보임")
         ok(drop(PEER, rp2).status_code == 200, "(동료의 요청을 취소)")
         n0 = n_rows()
         r = ask(EMP, 1, ymd(10, 2))
@@ -2202,6 +2207,8 @@ def check_kpi_sched(hr) -> None:
         p = prog()
         ok(v2[0]["items"][2]["scheds"] == [{"sid": 1, "due": ymd(10, 1), "name": "가상 초안"}] and p["version"] == 2
            and (sched(p, 1)["due"], sched(p, 1)["origDue"]) == (ymd(10, 1), ymd(10, 1)), "다시 확정하면 판 2 의 기한 = 새 기한 · progress_json 의 origDue 도 새 기한")
+        ok(sched(p, 1)["returned"] is None and row(rx) == [("RETURNED", "가상 되돌림", z(6, 18), LEAD, None)],
+           "돌려받은_줄은_다시_확정되면_숨는다: 판 2 가 확정되면 그 전에 돌려보낸 줄은 안 보임 (요청 줄은 RETURNED 그대로)")
         ok(version1() == v1, "판 1 은 끝까지 그대로")
         ok(err(ask(EMP, 2, ymd(12, 20)), 400, NO_SID), "새 판에서 지운 일정은 요청할 수 없음")
         at(6, 23)
@@ -2209,6 +2216,15 @@ def check_kpi_sched(hr) -> None:
         ok(q("SELECT from_due FROM kpi_sched_changes WHERE id = ?", r11) == [(ymd(10, 1),)] and act(LEAD, r11, "confirm").status_code == 200
            and (sched(prog(), 1)["due"], sched(prog(), 1)["origDue"]) == (ymd(10, 20), ymd(10, 1)),
            "새 판 뒤의 변경은 새 판 기한 위에 덮임 (그 전에 확인된 변경은 새 판에 이미 들어 있어 다시 덮지 않음)")
+
+        # ---- HR 이 대신 해제하면 취소된 요청에도 원래 관리자가 남는다 ----
+        at(6, 24)
+        rq = ask(PEER, 1, ymd(10, 5)).json["id"]
+        ok(own(PEER, "request-change", {"reason": "가상 수정 사유"}).status_code == 200
+           and c(HR).post(f"/api/kpi/plans/{PEER}/unlock", base_url=BASE, headers=ORIGIN, json={}).json == {"ok": True}
+           and row(rq) == [("CANCELLED", None, z(6, 24), HR, LEAD)]
+           and audit("KPI_UNLOCKED", PEER) == [(HR, 1, LEAD, "kpi_plan", json.dumps({"year": year, "cancelled": 1}))],
+           "HR이_대신_해제하면_취소된_요청에도_원래_관리자가_남는다: on_behalf_of = 팀장 (감사로그 KPI_UNLOCKED 와 같은 사람) · 결정한 사람은 HR")
 
         # ---- 동시에 여러 번 누르기 ----
         def crowd(uid):
@@ -2244,6 +2260,13 @@ def check_kpi_sched(hr) -> None:
         post_ = lambda **kw: c(LEAD).post(f"/api/kpi/sched-changes/{rj}/return", base_url=BASE, headers=ORIGIN, **kw).status_code  # noqa: E731
         ok(all(post_(json=b) == 400 for b in ([], "글", 5, {"note": {"a": 1}})) and post_(data="not json", content_type="application/json") == 400 and post_() == 400
            and row(rj)[0][0] == "PENDING" and drop(EMP, rj).status_code == 200, "돌려보내기 본문이 이상해도 400 (서버 오류가 아님) · 요청은 그대로")
+
+        # ---- 해가 바뀐 뒤: 지난해 계획서의 일정은 못 바꾼다 (처리함에는 올해 것만 오므로 기다리기만 하는 요청이 생기지 않게) ----
+        at(1, 3, yr=year + 1)
+        n0 = n_rows()
+        ok(err(ask(EMP, 1, ymd(12, 20)), 400, THIS_YEAR) and err(ask(EMP, 1, ymd(12, 20), "", year=year), 400, THIS_YEAR) and n_rows() == n0,
+           "지난해_일정은_못_바꾼다: 다음 해 1월에는 지난해 계획서의 일정 변경 요청이 400 (이유 · 일정 검사보다 먼저) · 아무것도 안 남김")
+        at(6, 25)
 
         # ---- 감사로그 · 결정 기록 ----
         acts = {r[0] for r in q("SELECT action FROM audit_logs WHERE action LIKE 'KPI_SCHED_%'")}

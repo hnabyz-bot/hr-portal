@@ -443,8 +443,8 @@ def unlock(uid: int) -> Response:
         for it in _rows(content):
             for s in it.get("scheds") or []:
                 s["due"] = dues.get(s["sid"], s["due"])
-        closed = m.conn.execute("UPDATE kpi_sched_changes SET status = 'CANCELLED', decided_at = ?, decided_by = ? WHERE user_id = ? AND year = ? AND status = 'PENDING'",
-                                (m.now, g.actor.user_id, uid, m.year)).rowcount
+        closed = m.conn.execute("UPDATE kpi_sched_changes SET status = 'CANCELLED', decided_at = ?, decided_by = ?, on_behalf_of = ? WHERE user_id = ? AND year = ? AND status = 'PENDING'",
+                                (m.now, g.actor.user_id, m.behalf, uid, m.year)).rowcount
         m.conn.execute("UPDATE kpi_plans SET status = ?, draft = ?, note = NULL, note_kind = NULL, change_reason = NULL, updated_at = ?"
                        " WHERE user_id = ? AND year = ?", (m.next, json.dumps(content, ensure_ascii=False), m.now, uid, m.year))
         _log(m, "KPI_UNLOCKED", cancelled=closed)
@@ -660,12 +660,13 @@ def progress_json(conn: sqlite3.Connection, uid: int, year: int) -> dict | None:
     """그 사람 그해 진행 기록을 지금 확정본의 실행목표 줄 모양으로, 계산한 숫자까지 붙여. 확정본이 없으면 None.
     날짜 판정은 한국 날짜(auth._today). 호출하는 쪽이 한 트랜잭션 안에서 부른다 (표 여럿을 한 번에 읽으므로).
     items 마다 rid · kind · action · weight · target · unit · actual · pct · why · at · value(막대 0~100) · expected(기대 진행률) 와
-    정기는 months {"1"…"12": {state, text, link, at}}, 비정기는 scheds [{sid, name, task, due, origDue, state, result, pending, returned}].
+    정기는 months {"1"…"12": {state, text, link, at}}, 비정기는 scheds [{sid, name, task, due, origDue, state, result, pending, returned}]
+    (returned = 가장 늦게 요청한 것이 돌려보내진 경우, 지금 확정본이 확정된 뒤에 돌려보낸 것만 — 수정 → 다시 확정한 뒤에는 옛 줄을 안 보인다).
     total · totalExpected = 가중 평균, todo = 지금 할 일 수, next = 결과가 없고 실제 기한이 오늘 이후인 가장 가까운 일정."""
     versions = _versions(conn, uid, year)
     if not versions:
         return None
-    today, (version, content, _) = auth._today(), versions[-1]
+    today, (version, content, confirmed_at) = auth._today(), versions[-1]
     first, dues, hire = _first_months(year, versions), _dues(conn, uid, year), _hire(conn, uid)
     own = (uid, year)
     prog = {r[0]: r[1:] for r in conn.execute("SELECT rid, actual, pct, why, updated_at FROM kpi_progress WHERE user_id = ? AND year = ?", own)}
@@ -674,7 +675,7 @@ def progress_json(conn: sqlite3.Connection, uid: int, year: int) -> dict | None:
     changes = conn.execute("SELECT id, sid, to_due, reason, status, note, requested_at, decided_at FROM kpi_sched_changes"
                            " WHERE user_id = ? AND year = ? ORDER BY requested_at, id", own).fetchall()
     waiting = {c[1]: c for c in changes if c[4] == "PENDING"}
-    newest = {c[1]: c for c in changes}  # 요청한 시각이 가장 늦은 것이 마지막에 덮는다
+    newest = {c[1]: c for c in changes}  # 요청한 시각이 가장 늦은 것이 마지막에 덮는다. 돌려받은 줄은 지금 확정본이 확정된 뒤에 돌려보낸 것만 (일정이 바뀔 수 있는 새 판 앞의 것은 숨는다)
     this_m = today.month if today.year == year else None  # 할 일: 이번 달, 그리고 1~7일이면 지난달 — 그해 달만
     last = today.replace(day=1) - timedelta(days=1)
     prev_m = last.month if today.day <= 7 and last.year == year else None
@@ -708,7 +709,7 @@ def progress_json(conn: sqlite3.Connection, uid: int, year: int) -> dict | None:
                     "sid": sid, "name": s["name"], "task": task_title(s["name"], it["action"]), "due": due, "origDue": s["due"], "state": state,
                     "result": {"text": res[0], "link": res[1], "at": res[2]} if res else None,
                     "pending": {"id": c[0], "to": c[2], "reason": c[3], "at": c[6]} if c else None,
-                    "returned": {"to": lc[2], "note": lc[5], "at": lc[7]} if lc and lc[4] == "RETURNED" else None})
+                    "returned": {"to": lc[2], "note": lc[5], "at": lc[7]} if lc and lc[4] == "RETURNED" and lc[7] >= confirmed_at else None})
         out["value"], out["expected"] = item_pct(it, actual, pct, done), item_expected(it, year, today, dues)
         values.append(out["value"])
         expects.append(out["expected"])
@@ -917,7 +918,7 @@ def _close(conn: sqlite3.Connection, ch: _Change, status: str, action: str, note
 @bp.post("/api/kpi/me/sched-change")
 def sched_request() -> Response:
     """{"year", "sid", "due", "reason"} → {"ok": true, "id"}. 지금 확정본의 비정기 일정 하나의 기한을 바꿔 달라는 요청.
-    서버가 보는 순서: KPI 작성 대상 403 → 해 400 → 확정본 404 → 계획서 상태 409 (고치는 중) → 평가 시작일 403 → 일정이 확정본의 비정기 일정이 아님 400 →
+    서버가 보는 순서: KPI 작성 대상 403 → 해 400 (2026~2100 정수가 아니거나 올해가 아님) → 확정본 404 → 계획서 상태 409 (고치는 중) → 평가 시작일 403 → 일정이 확정본의 비정기 일정이 아님 400 →
     결과를 이미 씀 400 → 기한이 그해 안의 실제 날짜가 아니거나 지금 실제 기한과 같음 400 → 같은 일정에 기다리는 요청이 있음 409 → 이유(1~200자) 400.
     확인과 쓰기는 한 트랜잭션이라 빠르게 여러 번 눌러도 한 번만 통과한다."""
     b = _body()
@@ -927,6 +928,8 @@ def sched_request() -> Response:
             raise _Refuse("KPI 작성 대상이 아닙니다.", 403)
         if type(year) is not int or year not in YEARS:
             raise _Refuse("해가 올바르지 않습니다.", 400)
+        if year != plan_year():  # 처리함에는 올해 요청만 온다 — 지난해 것을 받으면 아무도 못 보는 요청이 쌓인다
+            raise _Refuse("올해 계획서의 일정만 바꿀 수 있습니다.", 400)
         versions, plan = _versions(conn, uid, year), conn.execute("SELECT status FROM kpi_plans WHERE user_id = ? AND year = ?", (uid, year)).fetchone()
         if not versions or plan is None:
             raise _Refuse("확정된 KPI가 없습니다.", 404)

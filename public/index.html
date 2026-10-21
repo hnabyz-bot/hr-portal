@@ -3900,7 +3900,7 @@ function kpiContent(){
    표 · 행 더하기 · 지우기는 시연과 같은 함수(kpiTable · kpiAddGoal …)를 쓰고 — kpiDraft 가 서버 초안을 돌려준다 — 아래에 업무 종류 칸이 붙는다.
    단추를 막는 것은 안내일 뿐: 기간 · 상태 · 내용은 서버가 다시 본다. 관리자는 위에 처리할 KPI(GET /api/kpi/inbox) · 우리 팀 KPI 상태(시안 2),
    HR 관리 화면은 작성 기간 · 전 직원 표(GET /api/kpi/admin) · 대신 처리할 KPI, 대표이사는 HR에 맡기기(/api/kpi/delegation).
-   시안: 뉴디자인/KPI 진행 관리 시안 - 1. "확정되면 나의 업무에 …" 안내는 나의 업무 연동(2단계) 때 넣는다. */
+   시안: 뉴디자인/KPI 진행 관리 시안 - 1. 시안 1의 "확정되면 나의 업무에 …" 줄은 넣지 않았다 — 진행 관리 비정기 카드 아래 안내(kpiProgCard)가 이미 말한다. */
 const KPI_LIVE = { state:'', me:null, inbox:[], team:null, admin:null, deleg:null, yr:null, busy:false, progBusy:false, dirty:false, yrDirty:false, prog:null, typed:{} };   // busy: 계획서 일(kpiLiveDo) 도는 중 · progBusy: 진행 기록 저장(kpiProgDo) 도는 중. state: '' 아직 · loading · ok · err. deleg: 대표이사만 true/false. yr: HR 기간 칸에 적는 중인 날짜. dirty · yrDirty: 저장 안 한 내 초안 · 기간 칸 (R21). prog: 내 진행 기록(확정본이 있을 때). typed: 진행 관리에 적고 저장 안 한 글 { 'm-rid-달' · 'r-sid' · 'w-rid': { t, l } }
 function kpiEdited(){ if(AUTH.live) KPI_LIVE.dirty = true; }   // 내 초안을 화면에서 고쳤다 — 저장하기 전에는 다시 불러도 지킨다 (R21)
 addEventListener('beforeunload', e=>{ if(AUTH.live && (KPI_LIVE.dirty || KPI_LIVE.yrDirty || Object.keys(KPI_LIVE.typed).length)){ e.preventDefault(); e.returnValue = ''; } });   // 저장 안 한 내 초안 · 기간 칸 · 진행 관리 한 줄이 있으면 창을 닫거나 나가기 전에 브라우저가 묻는다 (없으면 아무것도 안 함)
@@ -4112,7 +4112,7 @@ function kpiProgSheet(me, prog, today){   // 진행 관리 (시안 3): 띠 · �
   const { year, window:win, plan } = me, st = plan.status, [label, cls] = KPI_LIVE_ST[st==='DRAFT' && plan.noteKind==='RETURNED' ? 'RETURNED' : st];
   const [note, foot] = kpiLiveFoot(me), redo = st==='DRAFT' || st==='SUBMITTED', info = {};
   plan.confirmed.content.forEach(g=>g.items.forEach(it=>{ info[it.rid] = { team:g.team, formula:it.formula }; }));
-  const band = redo ? '<div class="kl-period closed"><b>계획서를 고쳐 쓰는 중이에요</b><span>다시 확정되기 전까지 진행 기록은 마지막 확정본에 적어요</span>'
+  const band = redo ? '<div class="kl-period closed"><b>계획서를 고쳐 쓰는 중이에요</b><span>다시 확정되기 전까지 진행 기록은 마지막 확정본에 적어요 · 일정 변경 요청은 다시 확정된 뒤에 할 수 있어요</span>'
     : win.open ? `<div class="kl-period"><b>확정됨</b><span>${st==='CHANGE_REQUESTED' ? '수정 요청을 보냈어요' : '고치려면 수정 요청'}</span>`
     : `<div class="kl-period closed"><b>작성 기간이 끝났습니다${win.from ? ` (${kpiMd(win.from)} ~ ${kpiMd(win.to)})` : ''}</b><span>목표 · 예정 기한은 고칠 수 없어요 · 실적과 결과만 적어요</span>`;
   return `<div class="card" id="kpiProg">
@@ -4139,7 +4139,7 @@ function kpiProgCard(it, info, me, today, schedOpen){   // 실행목표 카드: 
       <div>${kpiProgBar(it.value, it.expected, slow)}<div class="kl-hint" style="margin-top:6px;">${slow ? `<b class="kp-slow">기대보다 ${gap}%p 늦음</b> · ` : ''}기대 ${Math.round(it.expected)}% (${reg ? '오늘 날짜 기준' : '지난 예정 기한 기준'})</div></div>
       <div class="pct">${Math.round(it.value)}%</div></div>
     ${reg ? kpiProgReg(it, today) : kpiProgIrr(it, me, schedOpen)}
-    <div class="kp-why"><span>늦어지는 이유</span><input class="kpi-in" id="kp-${kw}-t" maxlength="100" placeholder="비워 둬도 돼요 · 팀장 · 본부장 · HR이 봐요" aria-label="늦어지는 이유" value="${escapeHtml(tw ? tw.t : it.why || '')}" data-o="${escapeHtml((it.why || '').replace(/[\r\n]/g, ''))}" oninput="kpiProgType('${kw}')"><button type="button" class="btn sm" onclick="kpiProgSave('${kw}')">저장</button>${kpiProgDirty(kw)}</div>
+    <div class="kp-why"><span>늦어지는 이유</span><input class="kpi-in" id="kp-${kw}-t" maxlength="100" placeholder="비워 둬도 돼요 · 바로 위 관리자 · HR이 봐요" aria-label="늦어지는 이유" value="${escapeHtml(tw ? tw.t : it.why || '')}" data-o="${escapeHtml((it.why || '').replace(/[\r\n]/g, ''))}" oninput="kpiProgType('${kw}')"><button type="button" class="btn sm" onclick="kpiProgSave('${kw}')">저장</button>${kpiProgDirty(kw)}</div>
     ${reg ? '' : `<div class="kp-kf">${icon('calendar')}<span>나의 업무에 <b>KPI- 일정 ${it.scheds.length}건</b> · 결과를 적으면 그 업무가 완료로 바뀝니다</span><span class="sp"></span><button type="button" class="kp-lnk" onclick="goTo('ws','w1')">워크스페이스에서 보기 ›</button></div>`}
   </div>`;
 }
@@ -4175,7 +4175,7 @@ function kpiProgIrr(it, me, schedOpen){   // 비정기: 예정 기한 · 일정 
       : s.state==='OVERDUE' ? '<span class="kp-ph">결과를 한 줄로 적어 주세요 — 기한이 2주 지났어요</span>'
       : s.state==='LATE' ? '<span class="kp-lateh">기한이 지났어요 · 결과를 적어 주세요</span>'
       : `<span class="kl-hint">${left>0 ? left+'일 남음' : '오늘까지'}</span>`;
-    const act = open ? '' : r ? `<button type="button" class="btn sm" id="kp-${key}-o" onclick="kpiProgOpen('${key}')">고치기</button><button type="button" class="btn sm" onclick="kpiProgSave('${key}',true)">지우기</button>`
+    const act = open ? '' : r ? `<button type="button" class="btn sm" id="kp-${key}-o" onclick="kpiProgOpen('${key}')">고치기</button><button type="button" class="btn sm" onclick="kpiProgDel('${key}')">지우기</button>`
       : `<button type="button" class="btn sm${s.state==='LATE' || s.state==='OVERDUE' ? ' primary' : ''}" id="kp-${key}-o" onclick="kpiProgOpen('${key}')">결과 적기</button>`;
     const chg = schedOpen && !r && !s.pending ? `<button type="button" class="kp-lnk kp-chg" onclick="kpiSchedAsk(${+s.sid})">일정 변경 요청</button>` : '';
     const pend = s.pending ? `<small class="kp-pend">변경 요청 중 → ${kpiMd(s.pending.to)} <button type="button" class="kp-lnk" onclick="kpiProgCancel(${+s.pending.id},${+s.sid})">취소</button></small>` : '';
@@ -4210,11 +4210,22 @@ function kpiProgType(key){   // 적는 중 — 다시 그려도 · 다시 불러
   if(same(t) && same(l)) delete KPI_LIVE.typed[key]; else KPI_LIVE.typed[key] = { t:t.value, l:l ? l.value : '' };
   if(d) d.hidden = !KPI_LIVE.typed[key];
 }
-function kpiProgSave(key, clear){   // [저장] · [지우기]: 빈 글은 그 칸을 지운다. 받으면 보낸 그대로인 적던 글만 버린다(보내는 사이 더 적은 글은 남긴다). 400 이면 적던 글 그대로
+function kpiProgSave(key, clear, box){   // [저장] · [지우기]: 빈 글은 그 칸을 지운다. 받으면 보낸 그대로인 적던 글만 버린다(보내는 사이 더 적은 글은 남긴다). 400 이면 적던 글 그대로. box: 묻는 창 안 오류 칸 — 있으면 서버가 받은 뒤 창을 닫는다
   const [k, a, b] = key.split('-'), v = s=>clear ? '' : document.getElementById(`kp-${key}-${s}`)?.value ?? '', t = v('t'), l = v('l'), year = KPI_LIVE.prog.year;
   const [path, body] = k==='w' ? ['progress', { year, rid:+a, why:t }] : k==='m' ? ['month', { year, rid:+a, month:+b, text:t, link:l }] : ['result', { year, sid:+a, text:t, link:l }];
-  const after = ()=>{ const x = KPI_LIVE.typed[key]; if(!x || x.t===t && x.l===l) delete KPI_LIVE.typed[key]; kpiProgEdit.delete(key); };
-  kpiProgDo(()=>['/api/kpi/me/'+path, body, '', after], [`kp-${key}-t`, `kp-${key}-o`], path+JSON.stringify(body));
+  const after = ()=>{ const x = KPI_LIVE.typed[key]; if(!x || x.t===t && x.l===l) delete KPI_LIVE.typed[key]; kpiProgEdit.delete(key); if(box) orgCloseModal(); };
+  return kpiProgDo(()=>['/api/kpi/me/'+path, body, '', after, box], [`kp-${key}-t`, `kp-${key}-o`], path+JSON.stringify(body));
+}
+function kpiProgDel(key){   // 결과 [지우기]: 결과를 지우면 나의 업무의 KPI- 업무가 다시 예정이 된다 — 한 번 묻고, 확인해야 보낸다 (취소하면 아무것도 안 보낸다). key = 'r-<sid>'
+  orgModal(`<div class="card-title"><span>결과를 지울까요?</span><button type="button" class="x-btn" aria-label="닫기" onclick="orgCloseModal()">${icon('x')}</button></div>
+    <div class="list-sub" style="margin-bottom:12px;">나의 업무의 KPI- 업무가 다시 예정으로 바뀌어요. 적어 둔 결과 한 줄과 링크는 사라져요.</div>
+    <div class="kl-err" id="kpiActErr"></div>
+    <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:12px;"><button type="button" class="btn" onclick="orgCloseModal()">취소</button><button type="button" class="btn coral" onclick="kpiProgDelGo('${key}')">지우기</button></div>`);
+}
+function kpiProgDelGo(key){   // 창의 [지우기] — 일정 변경 창처럼: 보내는 동안 창 단추를 끄고, 오류는 창 안에, 창은 서버가 받은 뒤에 닫힌다
+  const err = document.getElementById('kpiActErr'), btns = [...document.querySelectorAll('#orgModal button')];
+  btns.forEach(b=>b.disabled = true); err.textContent = '';
+  return kpiProgSave(key, true, err).then(()=>{ btns.forEach(b=>b.disabled = false); });
 }
 function kpiProgOpen(key){ kpiProgEdit.add(key); kpiProgShow([`kp-${key}-t`], true); }   // [결과 적기] · [고치기] — 그 줄에 칸을 열고 글 끝에 커서
 function kpiProgClose(key){ kpiProgEdit.delete(key); delete KPI_LIVE.typed[key]; kpiProgShow([`kp-${key}-o`], true); }   // [취소] — 적던 글을 버리고 닫는다. 포커스는 그 줄의 단추로
@@ -4611,6 +4622,23 @@ async function kpiLiveSelfCheck(){   // 브라우저 콘솔에서 await kpiLiveS
         '보내면 진행 기록 저장 줄로 · 오류는 창 안 칸에 · 창은 서버가 받은 뒤에 닫힌다');
       sm[3]?.(); ok(!document.getElementById('orgModal'), 'kpiSchedGo: 서버가 받은 뒤 할 일(after)이 창을 닫는다');
     } finally { kpiProgDo = pq; orgCloseModal(); }
+    {   // 결과 [지우기]는 한 번 묻는다: 창이 뜨고, 확인하기 전에는 아무것도 보내지 않는다 (취소하면 그대로)
+      const dq = [], pd2 = kpiProgDo, del = ev[0].querySelector('button[onclick^="kpiProgDel("]');
+      try {
+        kpiProgDo = (make, focus, sig)=>{ dq.push([make(), focus, sig]); return Promise.resolve(); };
+        ok(del && del.textContent==='지우기' && del.getAttribute('onclick')==="kpiProgDel('r-1')" && !ev[0].querySelector('[onclick*="true)"]'), '결과 [지우기]는 바로 지우지 않고 묻는 창을 연다');
+        kpiProgDel('r-1'); const dd = document.getElementById('orgModal'), ddt = dd ? dd.textContent : '';
+        ok(dd && ddt.includes('결과를 지울까요?') && ddt.includes('나의 업무의 KPI- 업무가 다시 예정으로 바뀌어요') && names(dd).endsWith('취소,지우기') && !dq.length, '[지우기]: "결과를 지울까요?" 창이 뜨고 아직 아무것도 보내지 않는다');
+        [...dd.querySelectorAll('button')].find(b=>b.textContent==='취소').click();
+        ok(!document.getElementById('orgModal') && !dq.length, '[취소]: 창만 닫고 아무것도 보내지 않는다');
+        kpiProgDel('r-1'); const d2 = document.getElementById('orgModal'), conf = [...d2.querySelectorAll('button')].find(b=>b.textContent==='지우기');
+        conf.click();
+        const [dm] = dq[0] || [[]];
+        ok(dq.length===1 && dm[0]==='/api/kpi/me/result' && JSON.stringify(dm[1])==='{"year":2026,"sid":1,"text":"","link":""}' && dm[4]===d2.querySelector('#kpiActErr') && document.getElementById('orgModal'),
+          '확인하면 결과를 비운 모양으로 보낸다 · 오류는 창 안 칸에 · 창은 서버가 받은 뒤에 닫힌다');
+        dm[3]?.(); ok(!document.getElementById('orgModal'), 'kpiProgDelGo: 서버가 받은 뒤 할 일(after)이 창을 닫는다');
+      } finally { kpiProgDo = pd2; orgCloseModal(); }
+    }
     const nIn = document.getElementById('contentArea').appendChild(document.createElement('input'));
     try {
       nIn.type = 'number'; nIn.id = 'kp-n-1'; KPI_LIVE.prog = prog; nIn.value = '7'; nIn.focus(); const t7 = kpiProgTyping(); nIn.value = '10'; const t10 = kpiProgTyping();
@@ -8796,7 +8824,7 @@ const TOURS = {   // 단계: el = 가리킬 곳(여러 개면 묶어서, 배열�
     ...(AUTH.live ? [{ el:'#kpiProg .kp-sum', title:'진행 요약', body:'<b>종합 진행률</b>(세로선은 오늘 기준 기대) · <b>지금 적을 것</b> · <b>다가오는 예정 기한</b>을 한눈에 봐요.' },   // 진행 관리 (시안 3, R11)
       { el:'#kpiProg .kp-kb', one:true, title:'정기 업무 — 실적 · 이번 달 한 줄', body:'실적(또는 진행률)은 고치면 바로 저장돼요. 그 달에 한 일은 <b>한 줄</b>로 적고 <b>저장</b>해요. 다음 달 7일까지 고칠 수 있어요.' },
       { el:'#kpiProg .kp-evs', one:true, title:'비정기 업무 — 결과 한 줄', body:'예정 기한마다 <b>결과 적기</b>로 한 줄 적어요. 결과를 적으면 나의 업무가 완료로 바뀌어요. 기한이 지나면 주황, 2주가 넘으면 빨강이에요.' },
-      { el:'#kpiProg .kp-why', one:true, title:'늦어지는 이유 (선택)', body:'늦어지는 실행목표는 이유를 한 줄 적고 <b>저장</b>해요. 팀장 · 본부장 · HR이 봐요.' }] : []),
+      { el:'#kpiProg .kp-why', one:true, title:'늦어지는 이유 (선택)', body:'늦어지는 실행목표는 이유를 한 줄 적고 <b>저장</b>해요. 바로 위 관리자 · HR이 봐요.' }] : []),
     ...(AUTH.live ? [{ el:'#kpiMine .kl-steps', title:'진행 단계', body:'<b>작성 → 제출 · 팀장 확인 → 확정 → 수정 요청 → 해제</b> 순서예요. 지금 단계가 색으로 표시돼요. 작성 기간이 끝나면 제출 · 수정 요청이 모두 막혀요.' }] : []),
     { el:'#kpiInbox .list-row', one:true, title:'승인 대기함', body:'<b>검토</b>를 누르면 제출한 KPI가 펼쳐집니다. 수정 요청은 바뀐 줄이 노란색으로 표시됩니다. 내용을 확인하고 <b>승인</b>하거나, 사유를 적어 <b>반려</b>합니다.' },
     { el:trCol(1,2), inline:'start', title:'팀목표 · 개인목표', body:'팀 목표와 <b>직접 이어지는</b> 내 목표를 적습니다. 팀장과 면담한 뒤 정하세요.' },
