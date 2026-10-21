@@ -63,6 +63,10 @@ from hr_eval.domain.kpi_progress import (
     GRACE_DAY, LATE_DAYS, LINK_MAX, NOTE_MAX, WHY_MAX,
     effective_dues, item_expected, item_pct, month_open, month_state, overall, records_open, sched_state, task_title, valid_link,
 )
+from hr_eval.domain.kpi_review import (
+    BIZ_DETAIL_MAX, BIZ_GOAL_MAX, BIZ_MAX, GAP_DEFAULT, KST, MEMO_MAX, MUTE_TEXT_MAX, MUTE_WHY,
+    alarm, check_state, clean_biz_plan, is_muted, js_round, month_summary, mute_until, same_kst_day,
+)
 from hr_eval.domain.access import Act, Delegation, Pool, PoolRef, Target, can
 from hr_eval.domain.roster import (
     PortalDept,
@@ -72,7 +76,7 @@ from hr_eval.domain.roster import (
     parse_users,
     plan_sync,
 )
-from hr_eval.domain.org import Dept, Person, is_direct_team, manager_of
+from hr_eval.domain.org import Dept, Person, is_direct_team, manager_of, target_of
 from hr_eval.domain.members import (
     MSG_DENIED,
     Member,
@@ -2116,6 +2120,180 @@ def 링크는_http_https만():
     assert not valid_link("https://" + "a" * 293) and len("https://" + "a" * 293) == 301  # 300자 딱 맞는 것은 되고 301자는 안 된다
     assert not valid_link(None) and not valid_link(5)  # 글자가 아니면 거짓 (죽지 않는다)
     assert (NOTE_MAX, WHY_MAX, LINK_MAX, GRACE_DAY, LATE_DAYS) == (200, 100, 300, 7, 14)
+
+
+# ---- KPI 현황 규칙 (kpi_review.py) · 보는 대상 (org.target_of) ----
+
+
+def _오류_문구(fn, *args) -> str:
+    """fn(*args) 가 ValueError 를 내야 한다. 그 문구를 돌려준다."""
+    try:
+        fn(*args)
+    except ValueError as e:
+        return str(e)
+    raise AssertionError(f"ValueError 가 나야 한다: {fn.__name__}{args}")
+
+
+def _정기줄(rid: int, 삼월: str) -> dict:
+    """진행 JSON(kpi.progress_json) 모양의 정기 실행목표: 3월만 정한 상태, 나머지 달은 FUTURE."""
+    return {"rid": rid, "kind": "reg", "months": {str(m): {"state": 삼월 if m == 3 else "FUTURE", "text": None} for m in range(1, 13)}}
+
+
+def _월요약_진행() -> dict:
+    """정기 3개(3월 DONE · OPEN · NA) + 비정기 1개(일정 3/20 결과 · 3/28 없음 · 5/2 없음 · 다음 해 3/5 결과)."""
+    일정 = [
+        {"sid": 1, "due": "2027-03-20", "result": {"text": "끝냈어요", "link": None, "at": "2027-03-21T01:00:00Z"}},
+        {"sid": 2, "due": "2027-03-28", "result": None},
+        {"sid": 3, "due": "2027-05-02", "result": None},
+        {"sid": 4, "due": "2028-03-05", "result": {"text": "내년", "link": None, "at": None}},  # 다른 해의 3월은 세지 않는다
+    ]
+    return {"year": 2027, "items": [_정기줄(1, "DONE"), _정기줄(2, "OPEN"), _정기줄(3, "NA"), {"rid": 4, "kind": "irr", "scheds": 일정}]}
+
+
+@check
+def 반올림은_화면과_같다():
+    assert js_round(56.5) == 57 and js_round(57.49) == 57 and js_round(0.5) == 1
+    assert js_round(0) == 0 and js_round(37.4) == 37 and js_round(99.5) == 100 and js_round(45.0) == 45
+    assert isinstance(js_round(56.5), int)
+    assert round(56.5) == 56  # 파이썬 round 는 짝수쪽으로 가서 화면과 달라진다 — 쓰지 않는 이유
+
+
+@check
+def KPI_현황_약속_숫자():
+    assert (GAP_DEFAULT, MEMO_MAX, MUTE_TEXT_MAX, BIZ_GOAL_MAX, BIZ_DETAIL_MAX, BIZ_MAX) == (20, 200, 50, 60, 300, 20)
+    assert MUTE_WHY == ("year", "month", "wait", "etc")
+    assert KST.utcoffset(None).total_seconds() == 9 * 3600
+
+
+@check
+def 그_달_요약():
+    prog = _월요약_진행()
+    assert month_summary(prog, 3) == {"reg": [1, 2], "irr": [1, 2], "records": 2, "noSched": False}
+    넷째달 = month_summary(prog, 4)
+    assert 넷째달["noSched"] and 넷째달["irr"] == [0, 0] and 넷째달["reg"] == [0, 3] and 넷째달["records"] == 0  # 아직 안 온 달도 NA 가 아니면 센다
+    다섯째달 = month_summary(prog, 5)
+    assert 다섯째달["irr"] == [0, 1] and not 다섯째달["noSched"]
+    정기만 = {"year": 2027, "items": [_정기줄(1, "DONE")]}
+    assert month_summary(정기만, 3) == {"reg": [1, 1], "irr": [0, 0], "records": 1, "noSched": False}  # 비정기가 없으면 noSched 가 아니다
+    assert month_summary({"year": 2027, "items": []}, 3) == {"reg": [0, 0], "irr": [0, 0], "records": 0, "noSched": False}
+    assert month_summary({"year": 2028, "items": prog["items"]}, 3)["irr"] == [1, 1]  # 달은 prog["year"] 해의 것만 센다
+
+
+@check
+def 확인_상태는_순서대로():
+    s = month_summary(_월요약_진행(), 3)
+    assert check_state(False, s, True) == "NOSTEP" and check_state(True, None, False) == "NA"
+    assert check_state(False, None, False) == "NOSTEP"  # 확인 단계가 없다는 것이 먼저
+    assert check_state(True, {"reg": [0, 0], "irr": [0, 0], "records": 0, "noSched": True}, False) == "NA"
+    assert check_state(True, {"reg": [0, 2], "irr": [0, 0], "records": 0, "noSched": False}, True) == "NONE"
+    assert check_state(True, {"reg": [0, 0], "irr": [0, 1], "records": 0, "noSched": False}, False) == "NONE"
+    assert check_state(True, s, True) == "DONE" and check_state(True, s, False) == "TODO"
+
+
+@check
+def 알람_끄기는_고른_달까지():
+    assert is_muted(2027, 10, date(2027, 10, 31)) and not is_muted(2027, 10, date(2027, 11, 1)) and not is_muted(2027, 12, date(2028, 1, 2))
+    assert is_muted(2027, 12, date(2027, 12, 31)) and not is_muted(2027, 10, date(2026, 10, 5))  # 다른 해에는 켜져 있다
+    오늘 = date(2027, 4, 2)
+    assert mute_until("year", None, 오늘) == 12 and mute_until("month", 4, 오늘) == 4
+    assert mute_until("wait", 12, 오늘) == 12 and mute_until("etc", 7, 오늘) == 7 and mute_until("year", 3, 오늘) == 12  # year 는 달을 보지 않는다
+    이유 = "이유를 하나 골라 주세요."
+    for 틀린_이유 in ("later", "", None, 5, ["year"], "YEAR"):
+        assert _오류_문구(mute_until, 틀린_이유, 5, 오늘) == 이유, 틀린_이유
+    달 = "이번 달부터 12월 사이에서 골라 주세요."
+    assert _오류_문구(mute_until, "month", 3, 오늘) == 달 and _오류_문구(mute_until, "etc", 13, 오늘) == 달
+    assert _오류_문구(mute_until, "month", True, 오늘) == 달 and _오류_문구(mute_until, "month", True, date(2027, 1, 15)) == 달  # 참 = 1 이 1월에도 통과하면 안 된다
+    for 틀린_달 in (None, 4.0, "4", 0, -1, 13, [4]):
+        assert _오류_문구(mute_until, "wait", 틀린_달, 오늘) == 달, 틀린_달
+
+
+@check
+def 끈_항목은_빼고_따진다():
+    items = [{"weight": 50}, {"weight": 50}]
+    값, 기대 = [10, 80], [60, 60]
+    둘다켜짐 = alarm(items, 값, 기대, [False, False], 20)
+    assert 둘다켜짐 == {"slow": False, "pct": 45, "expected": 60}  # 차이 15 < 20
+    첫째끔 = alarm(items, 값, 기대, [True, False], 20)
+    assert 첫째끔 == {"slow": False, "pct": 80, "expected": 60}
+    둘째끔 = alarm(items, 값, 기대, [False, True], 20)
+    assert 둘째끔 == {"slow": True, "pct": 10, "expected": 60}  # 차이 50
+    assert alarm(items, 값, 기대, [True, True], 20) == {"slow": False, "pct": None, "expected": None}
+    assert alarm([], [], [], [], 20) == {"slow": False, "pct": None, "expected": None}
+    # 가중치가 다르면 가중 평균: 30 · 70, 값 0 · 100 → 70, 기대 100 · 0 → 30
+    assert alarm([{"weight": 30}, {"weight": 70}], [0, 100], [100, 0], [False, False], 20) == {"slow": False, "pct": 70, "expected": 30}
+    assert alarm(items, 값, 기대, [False, True], 50)["slow"] and not alarm(items, 값, 기대, [False, True], 51)["slow"]  # 기준 딱 맞으면 부진 (≥)
+    assert alarm([{"weight": 0}], [0], [100], [False], 20) == {"slow": False, "pct": None, "expected": None}  # 가중치 합이 0 이어도 죽지 않는다
+
+
+@check
+def 부진은_반올림한_숫자로():
+    한줄 = [{"weight": 100}]
+    결과 = alarm(한줄, [37.4], [56.5], [False], 20)
+    assert 결과["slow"], 결과  # 화면은 37 · 57 (차이 20)
+    assert 56.5 - 37.4 < 20 and round(56.5) - round(37.4) < 20  # 반올림 없이(19.1) · 파이썬 round(56)로는 부진이 아니게 되는 경계
+    assert not alarm(한줄, [37.5], [56.5], [False], 20)["slow"]  # 38 · 57 → 19
+    assert not alarm(한줄, [37.4], [56.4], [False], 20)["slow"]  # 37 · 56 → 19
+
+
+@check
+def 한국_날짜로_같은_날():
+    assert same_kst_day("2027-03-10T15:30:00Z", date(2027, 3, 11)) and not same_kst_day("2027-03-10T14:59:00Z", date(2027, 3, 11))
+    assert same_kst_day("2027-03-10T14:59:00Z", date(2027, 3, 10)) and same_kst_day("2027-03-11T14:59:59Z", date(2027, 3, 11))
+    assert not same_kst_day("2027-03-11T15:00:00Z", date(2027, 3, 11)) and same_kst_day("2027-12-31T15:00:00Z", date(2028, 1, 1))  # 해가 바뀌는 곳
+
+
+@check
+def 경영계획_검사():
+    assert clean_biz_plan([{"goal": " 매출 성장 ", "detail": ""}, {"goal": "", "detail": " "}]) == [{"goal": "매출 성장", "detail": ""}]
+    assert clean_biz_plan([]) == [] and clean_biz_plan([{"goal": "  ", "detail": "\t"}]) == []
+    assert clean_biz_plan([{"goal": "가", "detail": " 내용 ", "x": 1}]) == [{"goal": "가", "detail": "내용"}]  # 다른 칸은 버린다
+    원본 = [{"goal": " 가 ", "detail": " 나 "}]
+    clean_biz_plan(원본)
+    assert 원본 == [{"goal": " 가 ", "detail": " 나 "}]  # 받은 것은 건드리지 않는다
+    줄 = lambda i: {"goal": f"목표{i}", "detail": ""}
+    assert len(clean_biz_plan([줄(i) for i in range(BIZ_MAX)])) == 20
+    assert len(clean_biz_plan([줄(i) for i in range(BIZ_MAX)] + [{"goal": "", "detail": ""}] * 5)) == 20  # 빈 줄은 개수에 안 든다
+    assert _오류_문구(clean_biz_plan, [줄(i) for i in range(BIZ_MAX + 1)])
+    assert _오류_문구(clean_biz_plan, [{"goal": " ", "detail": "내용만"}])  # 목표 없이 내용
+    assert clean_biz_plan([{"goal": "가" * 60, "detail": "나" * 300}]) == [{"goal": "가" * 60, "detail": "나" * 300}]
+    assert clean_biz_plan([{"goal": " " + "가" * 60 + " ", "detail": " " + "나" * 300 + " "}])[0]["goal"] == "가" * 60  # 공백을 뺀 길이로 센다
+    assert _오류_문구(clean_biz_plan, [{"goal": "가" * 61, "detail": ""}])
+    assert _오류_문구(clean_biz_plan, [{"goal": "가", "detail": "나" * 301}])
+    for 글자_아님 in (None, "목표", {"goal": "가", "detail": ""}, ({"goal": "가", "detail": ""},), 5):
+        assert _오류_문구(clean_biz_plan, 글자_아님), 글자_아님  # 목록이 아니다
+    for 틀린_줄 in (None, "가", 5, [], {"goal": "가"}, {"detail": "가"}, {"goal": 5, "detail": ""}, {"goal": "가", "detail": None}, {"goal": None, "detail": None}):
+        assert _오류_문구(clean_biz_plan, [틀린_줄]), 틀린_줄  # 줄이 {goal, detail} 글자가 아니다
+
+
+@check
+def 보는_대상_모양():
+    # 본부 1 > 팀 11 · 직속 팀 9 · 임원 8 — 팀장 21(팀 11) · 팀원 22(팀 11) · 본부 직속 23(본부 1) · 본부장 20 · 직속 팀원 42(팀 9) · 임원 소속 81
+    D = [Dept(1, "가상본부", None), Dept(11, "가상1팀", 1), Dept(9, "가상지원팀", None), Dept(8, "임원", None)]
+    P = {p.id: p for p in (
+        Person(6, 8, Role.CEO),
+        Person(20, 8, Role.DIVISION_HEAD, led_department_id=1),
+        Person(21, 11, Role.TEAM_LEADER, led_department_id=11), Person(22, 11), Person(23, 1),
+        Person(24, 1, Role.TEAM_LEADER, led_department_id=11),  # 소속은 본부, 이끄는 곳은 팀 — 이끄는 곳이 기준
+        Person(41, 9, Role.TEAM_LEADER, led_department_id=9), Person(42, 9),
+        Person(81, 8),
+        Person(90, 777), Person(91, 11, Role.TEAM_LEADER, led_department_id=777),  # 명단에 없는 부서
+        Person(92, 8, Role.DIVISION_HEAD),  # 맡은 부서가 없으면 소속 부서
+    )}
+    assert target_of(P[21], D) == Target(21, 11, 1, Role.TEAM_LEADER) and target_of(P[22], D) == Target(22, 11, 1)
+    assert target_of(P[23], D) == Target(23, None, 1) and target_of(P[20], D) == Target(20, None, 1, Role.DIVISION_HEAD)
+    assert target_of(P[42], D) == Target(42, 9, None, direct=True) and target_of(P[81], D) == Target(81, None, None)
+    assert target_of(P[6], D) == Target(6, None, None, Role.CEO) and target_of(P[24], D) == Target(24, 11, 1, Role.TEAM_LEADER)
+    assert target_of(P[41], D) == Target(41, 9, None, Role.TEAM_LEADER, direct=True)
+    assert target_of(P[90], D) == Target(90, None, None) and target_of(P[91], D) == Target(91, None, None, Role.TEAM_LEADER)
+    assert target_of(P[92], D) == Target(92, None, 8, Role.DIVISION_HEAD)  # 본부장은 맡은 부서(없으면 소속)를 본부로 본다
+    assert target_of(P[22], D).pool is Pool.DIVISION and target_of(P[42], D).pool is Pool.DIRECT and target_of(P[21], D).pool is Pool.LEADERS
+    assert can(Actor(21, Role.TEAM_LEADER, led_team_id=11), Act.VIEW_KPI, target_of(P[22], D))
+    assert can(Actor(20, Role.DIVISION_HEAD, led_division_id=1), Act.VIEW_KPI, target_of(P[23], D))
+    assert not can(Actor(6, Role.CEO), Act.VIEW_KPI, target_of(P[22], D)) and can(Actor(6, Role.CEO), Act.VIEW_KPI, target_of(P[21], D))
+    assert can(Actor(6, Role.CEO), Act.VIEW_KPI, target_of(P[20], D)) and not can(Actor(6, Role.CEO), Act.VIEW_KPI, target_of(P[42], D))
+    assert can(Actor(20, Role.DIVISION_HEAD, led_division_id=1), Act.VIEW_KPI, target_of(P[21], D))
+    assert not can(Actor(20, Role.DIVISION_HEAD, led_division_id=1), Act.VIEW_KPI, target_of(P[42], D))  # 다른 본부(직속 팀)는 못 본다
+    assert not can(Actor(21, Role.TEAM_LEADER, led_team_id=11), Act.VIEW_KPI, target_of(P[42], D))
 
 
 def main() -> int:
