@@ -1623,7 +1623,8 @@ function homeSince(hireDate, t){   // 입사 후 지난 [년, 개월, 일]. 입�
 function homePortalTasks(){   // 인사포털이 만든 일. n의 합 = 왼쪽 메뉴 숫자의 합
   const out = [], add = (n, title, nav, tab, badge)=>{ if(n) out.push({ n, title:n>1 ? `${title} ${n}건` : title, nav, tab, badge }); };
   add(TODO.p2(), '연봉계약서 서명', 'pay', 'p2', '서명 대기');
-  add(AUTH.live ? KPI_LIVE.inbox.length : kpiWaiting().length, AUTH.live ? '처리할 KPI' : '팀원 KPI 승인', 'perf', 'e1', AUTH.live ? '확정 대기' : '승인 대기');   // 실제 로그인: 처리함 그대로 — 계획서 · 일정 변경 줄 (HR이 대신 처리할 것 · 대표이사 차례의 본부장도 들어가 "팀원"이 아니다)
+  const sch = KPI_LIVE.inbox.filter(i=>i.kind==='SCHED').length, ibBadge = !sch ? '확정 대기' : sch===KPI_LIVE.inbox.length ? '일정 확인' : '처리 대기';   // 실제 로그인 배지: 계획서만 · 일정 변경만 · 둘 다 (R13)
+  add(AUTH.live ? KPI_LIVE.inbox.length : kpiWaiting().length, AUTH.live ? '처리할 KPI' : '팀원 KPI 승인', 'perf', 'e1', AUTH.live ? ibBadge : '승인 대기');   // 실제 로그인: 처리함 그대로 — 계획서 · 일정 변경 줄 (HR이 대신 처리할 것 · 대표이사 차례의 본부장도 들어가 "팀원"이 아니다)
   add(AUTH.live ? kpiLiveBack() : kpiSheets[kpiRole]?.rejectNote ? 1 : 0, '반려된 KPI 다시 작성', 'perf', 'e1', AUTH.live ? '돌려받음' : '반려');
   add(AUTH.live ? kpiLivePrev() : 0, 'KPI 지난달 한 줄 쓰기', 'perf', 'e1', `${+kpiDay(0).slice(5, 7)}/7까지`);   // 실제 로그인: 마감 전 지난달 한 줄 (1~7일 · 진행 기록 todo.prev — TODO.e1 과 같게)
   add(AUTH.live ? 0 : kvMemoTodo(kvMe()), '확인 메모 확인', 'perf', 'e1', '확인 대기');   // 실제 로그인에는 확인 메모가 아직 없다 (TODO.e1 과 같게)
@@ -4030,7 +4031,7 @@ function kpiProgSheet(me, prog, today){   // 진행 관리 (시안 3): 띠 · �
   return `<div class="card" id="kpiProg">
     <div class="card-title"><span>${+year}년 KPI 진행 관리 <span class="kl-who" style="font-weight:500; color:var(--text-secondary);">[${escapeHtml(kpiLiveWho())}]</span></span><span class="badge ${cls}">${label}</span></div>
     ${band}<span class="sp"></span><button type="button" class="kp-lnk" onclick="kpiProgPlan()">KPI 계획서 보기 (읽기 전용) ›</button></div>${note}
-    ${kpiProgSum(prog, today)}${prog.items.map(it=>kpiProgCard(it, info[it.rid] || {}, me, today, prog.schedOpen)).join('')}${redo ? '' : foot}
+    ${kpiProgSum(prog, today)}${prog.items.map(it=>kpiProgCard(it, info[it.rid] || {}, me, today, prog.schedOpen && (st==='CONFIRMED' || st==='CHANGE_REQUESTED'))).join('')}${redo ? '' : foot}
   </div>`;
 }
 function kpiProgSum(prog, today){   // 요약 세 칸: 종합 진행률(기대 세로선) · 지금 적을 것(todo) · 다가오는 예정 기한(next + 그다음)
@@ -4078,7 +4079,7 @@ function kpiProgReg(it, today){   // 정기: 왼쪽 실적(목표가 있으면) 
       ${it.at ? `<div class="kl-hint" style="margin-top:8px;">마지막 수정 ${kpiAt(it.at)}</div>` : ''}</div>
     <div>${ms.map(box).join('') || '<div class="kl-hint">이번 달은 적을 한 줄이 없어요 (해당 없음)</div>'}${fold}</div></div>`;
 }
-function kpiProgIrr(it, me, schedOpen){   // 비정기: 예정 기한 · 일정 · 결과 한 줄 표. LATE 주황 · OVERDUE 빨강, 기다리는 일정 변경 요청 · 돌려받은 요청. [일정 변경 요청]은 schedOpen(평가 시작 전)이고 결과 · 기다리는 요청이 없는 일정에만 (R9)
+function kpiProgIrr(it, me, schedOpen){   // 비정기: 예정 기한 · 일정 · 결과 한 줄 표. LATE 주황 · OVERDUE 빨강, 기다리는 일정 변경 요청 · 돌려받은 요청. [일정 변경 요청]은 계획서가 확정 · 수정 요청 중이고 schedOpen(평가 시작 전)이며 결과 · 기다리는 요청이 없는 일정에만 (R9 · R12 — schedOpen 인자는 앞의 둘을 합친 것)
   const boss = kpiBoss(me), by = `<span class="kl-who">${boss}</span>${kpiGa(boss)}`;
   const row = s=>{
     const key = `r-${+s.sid}`, r = s.result, open = kpiProgEdit.has(key) || !!KPI_LIVE.typed[key], left = kpiLeft(s.due);
@@ -4490,6 +4491,9 @@ function kpiLiveSelfCheck(){   // 브라우저 콘솔에서 kpiLiveSelfCheck() �
     const hts = homePortalTasks();
     ok(TODO.e1()===6 && hts.find(p=>p.title.startsWith('처리할 KPI')).n===3 && hts.some(p=>p.title==='KPI 지난달 한 줄 쓰기 2건' && p.nav==='perf' && p.tab==='e1'), 'TODO.e1 = 처리함(계획서 + 일정 변경) + 돌려받음 + 지난달 한 줄 · 홈에 "KPI 지난달 한 줄 쓰기 n건"(목표설정)');
     ok(hts.reduce((a, p)=>a+p.n, 0)===Object.values(TODO).reduce((a, f)=>a+f(), 0), '홈 인사포털 일 합계 = 메뉴 숫자 합계 (일정 변경 · 지난달 한 줄 포함)');
+    const hbadge = ()=>homePortalTasks().find(p=>p.title.startsWith('처리할 KPI')).badge, hbBoth = hbadge();
+    KPI_LIVE.inbox = [sx(5, false)]; const hbSched = hbadge(); KPI_LIVE.inbox = [ib('SUBMITTED', false)]; const hbPlan = hbadge();
+    ok(hbBoth==='처리 대기' && hbSched==='일정 확인' && hbPlan==='확정 대기', '홈 처리할 KPI 배지: 계획서만 "확정 대기" · 일정 변경만 "일정 확인" · 둘 다 "처리 대기" (R13)');
     KPI_LIVE.me = pm(false, 'CONFIRMED');
     const HK = dom(homeKpiLive(KPI_LIVE.me, prog)), hb = [...HK.querySelectorAll('.hm-pct')];
     ok(HK.querySelector('.hm-kpi-total b').textContent==='41%' && HK.querySelector('.hm-kpi-total').textContent.includes('기대 60%') && HK.querySelector('.hm-kpi-total .kv-bar.slow u') && hb.length===3, '홈 KPI 카드: 종합 진행률 + 기대 세로선 · 실행목표마다 작은 막대');
@@ -4499,6 +4503,11 @@ function kpiLiveSelfCheck(){   // 브라우저 콘솔에서 kpiLiveSelfCheck() �
     const sp = { ...prog, schedOpen:true }, ev6 = [...ps(false, 'CONFIRMED', '2026-10-21', sp).querySelectorAll('.kp-k')[2].querySelectorAll('.kp-ev:not(.h)')];
     const req = r=>[...r.querySelectorAll('button')].find(b=>b.textContent==='일정 변경 요청');
     ok(!req(ev6[0]) && !req(ev6[1]) && req(ev6[2]) && req(ev6[2]).getAttribute('onclick')==='kpiSchedAsk(3)' && req(ev6[3]), '[일정 변경 요청]은 schedOpen 이고 결과 · 기다리는 요청이 없는 일정에만');
+    const nReq = st=>[...ps(true, st, '2026-10-21', sp).querySelectorAll('.kp-ev button')].filter(b=>b.textContent==='일정 변경 요청').length;
+    kpiProgTab = 'prog';
+    const reqRedo = [nReq('DRAFT'), nReq('SUBMITTED'), nReq('CHANGE_REQUESTED'), !!ps(true, 'DRAFT', '2026-10-21', sp).querySelector('#kpiProg')];
+    kpiProgTab = null;
+    ok(reqRedo.join()==='0,0,2,true', '해제 뒤 다시 쓰는 중(DRAFT · SUBMITTED)이면 진행 관리에 [일정 변경 요청] 없음 — 서버가 409, 확정 · 수정 요청 중에만 (R12)');
     KPI_LIVE.prog = sp; KPI_LIVE.me.manager = { id:99, name:'가상<b>팀장' };
     kpiSchedAsk(3); const dm = document.getElementById('orgModal'), du = dm?.querySelector('input[type=date]'), dt = dm ? dm.textContent : '';
     const pq = kpiProgDo, sq = [];
