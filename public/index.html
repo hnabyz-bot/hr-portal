@@ -631,7 +631,11 @@
   .kp-mon + .kp-mon{ margin-top:12px; padding-top:12px; border-top:1px dashed var(--border); }
   .kp-mon textarea, .kp-ev textarea{ font-size:var(--fs-sm); }
   .kp-row{ display:flex; gap:6px; margin-top:6px; } .kp-row .kpi-in{ flex:1; min-width:0; }
-  .kp-mstat{ margin-top:6px; font-size:var(--fs-xs); color:var(--text-muted); }
+  .kp-mstat{ display:flex; align-items:center; gap:8px; margin-top:6px; font-size:var(--fs-xs); color:var(--text-muted); }
+  .kp-chk{ display:inline-flex; align-items:center; flex:none; width:118px; white-space:nowrap; font-size:var(--fs-xs); font-weight:700; color:var(--success); }   /* 본인 화면의 팀장 확인 — 확인 안 한 달도 같은 폭의 빈 자리 (글자 시작을 맞춘다) */
+  .kp-chk i{ width:14px; flex:none; font-style:normal; }
+  .kp-mstat .kp-chk{ margin-left:auto; }
+  .kp-tl-r:has(.kp-chk){ grid-template-columns:56px minmax(0,1fr) auto; }
   .kp-st{ display:inline-flex; align-items:center; white-space:nowrap; }
   .kp-st i{ width:14px; flex:none; font-style:normal; font-weight:700; color:var(--success); }   /* ✓ 자리 — 비어 있어도 폭을 지켜 상태 글자 시작을 맞춘다 */
   .kp-st.dirty{ font-weight:600; color:var(--coral-text); } .kp-st[hidden]{ display:none; }
@@ -655,7 +659,8 @@
   .kp-lateh{ font-size:var(--fs-xs); color:#8A5A00; }
   .kp-pend{ display:block; margin-top:2px; font-size:var(--fs-xs); font-weight:600; color:#8A5A00; }
   .kp-back{ grid-column:1 / -1; padding:7px 10px; border-radius:6px; background:var(--bg-danger); font-size:var(--fs-xs); color:var(--danger); }
-  .kp-why{ display:flex; align-items:center; gap:8px; padding:10px 16px; border-top:1px solid var(--border); }
+  .kp-why{ display:flex; align-items:center; flex-wrap:wrap; gap:8px; padding:10px 16px; border-top:1px solid var(--border); }
+  .kp-mu{ flex-basis:100%; } .kp-mu .kv-mute, .kp-mu .kv-mute-btn{ margin-top:0; }   /* 알람 끄기 — "늦어지는 이유" 줄 아래 */
   .kp-why > span{ font-size:var(--fs-xs); font-weight:700; color:var(--coral-text); white-space:nowrap; }
   .kp-why .kpi-in{ flex:1; min-width:0; font-size:var(--fs-sm); }
   .kp-kf{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding:9px 16px; border-top:1px solid var(--border); border-radius:0 0 var(--radius) var(--radius); background:#FAFCFD; font-size:var(--fs-xs); color:var(--text-secondary); }
@@ -1894,7 +1899,7 @@ const KPI_HOME_ST = { NONE:'작성 전', DRAFT:'작성 중', RETURNED:'돌려받
 function homeKpiLive(me=KPI_LIVE.me, prog=KPI_LIVE.prog){   // 실제 로그인: 확정본이 있으면(진행 기록) 종합 진행률 + 기대 세로선 · 실행목표마다 작은 막대(늦으면 붉은색) · 다가오는 예정 기한, 없으면 서버 계획서의 상태 · 작성 기간만. 불러오기 전 · KPI를 쓰지 않는 분은 비움. 그리기만 한다 (부르지 않는다)
   if(!me || !me.writesKpi) return '';
   const p = me.plan, st = !p ? 'NONE' : p.status==='DRAFT' && p.noteKind==='RETURNED' ? 'RETURNED' : p.status, w = me.window;
-  const head = t=>`<div class="card-title"><span>나의 KPI${t} <span class="hm-dim">${+me.year}년</span> <span class="badge ${KPI_LIVE_ST[st][1]}">${KPI_HOME_ST[st]}</span></span><span class="more" onclick="goTo('perf','e1')">상세 보기 →</span></div>`;
+  const head = t=>`<div class="card-title"><span>나의 KPI${t} <span class="hm-dim">${+me.year}년</span> <span class="badge ${KPI_LIVE_ST[st][1]}">${KPI_HOME_ST[st]}</span>${prog?.alarm?.slow ? `<span class="kv-mk bell" title="진행이 기대보다 늦어요" style="vertical-align:-5px;">${icon('bell')}</span>` : ''}</span><span class="more" onclick="goTo('perf','e1')">상세 보기 →</span></div>`;
   if(!prog) return `<div class="card" id="hmKpi">
     ${head('')}
     <div class="list-sub" style="margin:0;">${w.open ? `작성 기간 ${kpiMd(w.from)} ~ ${kpiMd(w.to)}` : '작성 기간이 아니에요'}</div>
@@ -3939,7 +3944,7 @@ function kpiContent(){
    단추를 막는 것은 안내일 뿐: 기간 · 상태 · 내용은 서버가 다시 본다. 관리자는 위에 처리할 KPI(GET /api/kpi/inbox) · 우리 팀 KPI 상태(시안 2),
    HR 관리 화면은 작성 기간 · 전 직원 표(GET /api/kpi/admin) · 대신 처리할 KPI, 대표이사는 HR에 맡기기(/api/kpi/delegation).
    시안: 뉴디자인/KPI 진행 관리 시안 - 1. 시안 1의 "확정되면 나의 업무에 …" 줄은 넣지 않았다 — 진행 관리 비정기 카드 아래 안내(kpiProgCard)가 이미 말한다. */
-const KPI_LIVE = { state:'', me:null, inbox:[], team:null, admin:null, deleg:null, yr:null, busy:false, progBusy:false, dirty:false, yrDirty:false, prog:null, typed:{} };   // busy: 계획서 일(kpiLiveDo) 도는 중 · progBusy: 진행 기록 저장(kpiProgDo) 도는 중. state: '' 아직 · loading · ok · err. deleg: 대표이사만 true/false. yr: HR 기간 칸에 적는 중인 날짜. dirty · yrDirty: 저장 안 한 내 초안 · 기간 칸 (R21). prog: 내 진행 기록(확정본이 있을 때). typed: 진행 관리에 적고 저장 안 한 글 { 'm-rid-달' · 'r-sid' · 'w-rid': { t, l } }
+const KPI_LIVE = { state:'', me:null, inbox:[], team:null, admin:null, deleg:null, yr:null, busy:false, progBusy:false, dirty:false, yrDirty:false, prog:null, memos:null, typed:{} };   // busy: 계획서 일(kpiLiveDo) 도는 중 · progBusy: 진행 기록 저장(kpiProgDo) 도는 중. state: '' 아직 · loading · ok · err. deleg: 대표이사만 true/false. yr: HR 기간 칸에 적는 중인 날짜. dirty · yrDirty: 저장 안 한 내 초안 · 기간 칸 (R21). prog: 내 진행 기록(확정본이 있을 때). memos: 내 확인 메모(확정본이 있을 때 — GET /api/kpi/memos/<내 id>). typed: 진행 관리에 적고 저장 안 한 글 { 'm-rid-달' · 'r-sid' · 'w-rid': { t, l } }
 function kpiEdited(){ if(AUTH.live) KPI_LIVE.dirty = true; }   // 내 초안을 화면에서 고쳤다 — 저장하기 전에는 다시 불러도 지킨다 (R21)
 addEventListener('beforeunload', e=>{ if(AUTH.live && (KPI_LIVE.dirty || KPI_LIVE.yrDirty || Object.keys(KPI_LIVE.typed).length)){ e.preventDefault(); e.returnValue = ''; } });   // 저장 안 한 내 초안 · 기간 칸 · 진행 관리 한 줄이 있으면 창을 닫거나 나가기 전에 브라우저가 묻는다 (없으면 아무것도 안 함)
 function kpiLiveBack(){ return KPI_LIVE.me?.plan?.noteKind==='RETURNED' ? 1 : 0; }   // 돌려보내진 내 계획서 = 다시 써서 낼 일 1건 (메뉴 숫자 · 홈 오늘의 업무 같은 규칙). 수정 요청 거절은 확정본이 그대로라 할 일이 아니다
@@ -3958,9 +3963,9 @@ async function kpiLiveLoad(){
     const get = async u=>{ const r = await fetch(u); if(!r.ok) throw new Error(r.status); return r.json(); };
     const [me, inbox, admin, deleg] = await Promise.all([get('/api/kpi/me'), get('/api/kpi/inbox'), AUTH.me.is_hr ? get('/api/kpi/admin') : null, AUTH.me.position==='CEO' ? get('/api/kpi/delegation') : null]);
     if(!me.plan && me.writesKpi && me.window.open) me.plan = { status:'DRAFT', draft:[kpiNewGoal(AUTH.me.name, 3)], note:null, noteKind:null, changeReason:null, confirmed:null };   // 처음 쓰는 사람: 화면에서 시작하고, 처음 임시 저장할 때 서버에 생긴다
-    const prog = await kpiProgGet(me);   // 확정본이 있을 때만 — 못 읽어도 계획서는 그린다 (진행 칸에 오류 한 줄)
+    const [prog, memos] = await Promise.all([kpiProgGet(me), kpiMemoGet(me)]);   // 확정본이 있을 때만 — 못 읽어도 계획서는 그린다 (진행 칸에 오류 한 줄 · 메모 카드는 없음)
     if(prog) kpiProgPrune(prog);
-    Object.assign(KPI_LIVE, kpiLiveKeep(me, admin), { inbox:inbox.items, team:inbox.team, admin, deleg:deleg ? deleg.on : null, prog, state:'ok' });
+    Object.assign(KPI_LIVE, kpiLiveKeep(me, admin), { inbox:inbox.items, team:inbox.team, admin, deleg:deleg ? deleg.on : null, prog, memos, state:'ok' });
   } catch(e){ KPI_LIVE.state = 'err'; }
   if(!ORG_LIVE.state) orgLoad();   // 제목의 직급 · 관리자 직책은 조직도 명단에서
   renderContent();
@@ -3981,6 +3986,7 @@ function kpiBoss(me=KPI_LIVE.me){   // 바로 위 관리자 "김○○ 팀장" �
   const b = me.manager, p = b && ORG_LIVE.people.find(m=>m.uid===b.id);
   return b ? `${escapeHtml(b.name)} ${p && p.lead ? MS_LEAD[p.lead] : '님'}` : '바로 위 관리자';
 }
+function kpiLeadName(id){ const p = id!=null && ORG_LIVE.people.find(m=>m.uid===id); return p && p.lead ? MS_LEAD[p.lead] : '관리자'; }   // 그 사람의 직책 이름 "팀장" · "본부장" — kpiBoss 와 같은 조직도 명단에서, 못 찾으면 "관리자" (확인 메모 · 팀장 확인)
 function kpiGa(w){ const c = w.charCodeAt(w.length-1) - 0xAC00; return c>=0 && c<11172 && c%28 ? '이' : '가'; }   // 받침 있으면 "이" (팀장이 · 대표이사가)
 function kpiSteps(status){   // 단계 표시 네 칸 — 지난 칸 done(✓), 지금 칸 on
   const on = { SUBMITTED:1, CONFIRMED:2, CHANGE_REQUESTED:3 }[status] || 0;
@@ -4091,6 +4097,11 @@ async function kpiProgGet(me){   // 내 진행 기록 — 확정본이 없으면
   try { const r = await fetch(`/api/kpi/progress/${+AUTH.me.user_id}?year=${+me.year}`); return r.ok ? await r.json() : null; }
   catch(e){ return null; }
 }
+async function kpiMemoGet(me){   // 내 확인 메모 (2단계 ②) — 확정본이 없으면 부르지 않는다. 못 읽으면 null (메모 카드를 그리지 않는다)
+  if(!me || !me.plan || !me.plan.confirmed) return null;
+  try { const r = await fetch(`/api/kpi/memos/${+AUTH.me.user_id}`); return r.ok ? await r.json() : null; }
+  catch(e){ return null; }
+}
 function kpiProgTyping(){   // 적는 중 — 글 칸에 커서가 있거나, 진행 숫자 칸에 서버 값과 다른(저장 안 한) 숫자가 있다. 다시 그리면 커서 · 한글 조합 · 적던 숫자가 날아간다. 숫자를 저장해 서버 값과 같아지면 바로 그린다 (Enter 저장)
   const a = document.activeElement;
   if(!a?.matches('#contentArea textarea, #contentArea input')) return false;
@@ -4099,7 +4110,7 @@ function kpiProgTyping(){   // 적는 중 — 글 칸에 커서가 있거나, �
   return !!it && !(a.value==='' ? v==null : v!=null && +a.value===+v);
 }
 function kpiProgShow(focus=[], now){   // 진행 관리를 다시 그린다. 글 칸에 적는 중이면 미뤘다가 그 칸을 떠날 때 그린다(now: 오류 · 알림 · 누른 단추는 바로). 포커스 · 커서는 id 로 되살린다
-  if(currentTab.id!=='e1') return;
+  if(currentTab.id!=='e1' && currentTab.id!=='e4') return;   // KPI 현황(e4)의 확인 메모 칸도 같은 규칙 (2단계 ②)
   if(!now && kpiProgTyping()){ kpiProgStale = true; return; }
   kpiProgStale = false;
   const a = document.activeElement, mine = !!a?.closest?.('#contentArea'), sel = mine && typeof a.selectionStart==='number' ? [a.selectionStart, a.selectionEnd] : null;
@@ -4147,7 +4158,7 @@ const kpiProgDirty = key=>`<span class="kp-st dirty" id="kp-${key}-d"${KPI_LIVE.
 function kpiProgBar(v, e, slow){ const c = x=>Math.min(100, Math.max(0, x)); return `<div class="kv-bar${slow ? ' slow' : ''}"><i style="width:${c(v)}%"></i><u style="left:${c(e)}%" title="기대 ${Math.round(e)}%"></u></div>`; }   // 진행률 막대 + 기대 세로선
 const kpiProgName = s=>s.name.trim() || s.task.slice(5);   // 일정 이름 — 비었으면 나의 업무 제목처럼 실행목표 문장 ("KPI- " 뒤)
 function kpiProgLink(link){ return /^https?:\/\//i.test(link || '') ? ` <a class="kp-a" href="${escapeHtml(link)}" target="_blank" rel="noopener noreferrer">링크 ›</a>` : ''; }   // 근거 링크 — http(s) 만, 새 창
-function kpiProgSheet(me, prog, today){   // 진행 관리 (시안 3): 띠 · 요약 세 칸 · 실행목표 카드 · 맨 아래 수정 요청
+function kpiProgSheet(me, prog, today){   // 진행 관리 (시안 3): 띠 · (부진 알람) · 요약 세 칸 · 실행목표 카드 · 맨 아래 수정 요청 + 카드 아래 확인 메모 (2단계 ②)
   const { year, window:win, plan } = me, st = plan.status, [label, cls] = KPI_LIVE_ST[st==='DRAFT' && plan.noteKind==='RETURNED' ? 'RETURNED' : st];
   const [note, foot] = kpiLiveFoot(me), redo = st==='DRAFT' || st==='SUBMITTED', info = {};
   plan.confirmed.content.forEach(g=>g.items.forEach(it=>{ info[it.rid] = { team:g.team, formula:it.formula }; }));
@@ -4157,8 +4168,8 @@ function kpiProgSheet(me, prog, today){   // 진행 관리 (시안 3): 띠 · �
   return `<div class="card" id="kpiProg">
     <div class="card-title"><span>${+year}년 KPI 진행 관리 <span class="kl-who" style="font-weight:500; color:var(--text-secondary);">[${escapeHtml(kpiLiveWho())}]</span></span><span class="badge ${cls}">${label}</span></div>
     ${band}<span class="sp"></span><button type="button" class="kp-lnk" onclick="kpiProgPlan()">KPI 계획서 보기 (읽기 전용) ›</button></div>${note}
-    ${kpiProgSum(prog, today)}${prog.items.map(it=>kpiProgCard(it, info[it.rid] || {}, me, today, prog.schedOpen && (st==='CONFIRMED' || st==='CHANGE_REQUESTED'))).join('')}${redo ? '' : foot}
-  </div>`;
+    ${kpiProgAlarm(prog)}${kpiProgSum(prog, today)}${prog.items.map(it=>kpiProgCard(it, info[it.rid] || {}, me, today, prog.schedOpen && (st==='CONFIRMED' || st==='CHANGE_REQUESTED'), prog)).join('')}${redo ? '' : foot}
+  </div>${kvLiveMyMemoCard()}`;
 }
 function kpiProgSum(prog, today){   // 요약 세 칸: 종합 진행률(기대 세로선) · 지금 적을 것(todo) · 다가오는 예정 기한(next + 그다음)
   const m = +today.slice(5, 7), t = prog.todo, n = t.months + t.results, cur = t.months - t.prev, slow = kpiProgGap(prog.total, prog.totalExpected)>0;
@@ -4172,40 +4183,54 @@ function kpiProgSum(prog, today){   // 요약 세 칸: 종합 진행률(기대 �
     <div class="kp-tile"><span>다가오는 예정 기한</span>${nx ? `<b>${kpiMd(nx.due)}<small>${escapeHtml(kpiProgName(nx))}</small></b><div class="kl-hint">${after ? `다음: ${kpiMd(after.due)} ${escapeHtml(kpiProgName(after))}` : '그다음 예정 기한은 없어요'}</div>` : '<b>없음</b><div class="kl-hint">남은 예정 기한이 없어요</div>'}</div>
   </div>`;
 }
-function kpiProgCard(it, info, me, today, schedOpen){   // 실행목표 카드: 머리(업무 종류 · 팀목표 · 측정식 · 가중치 · 막대 · 큰 %) + 정기 / 비정기 + 늦어지는 이유 (+ 비정기는 나의 업무 안내)
+function kpiProgCard(it, info, me, today, schedOpen, prog=KPI_LIVE.prog){   // 실행목표 카드: 머리(업무 종류 · 팀목표 · 측정식 · 가중치 · 막대 · 큰 %) + 정기 / 비정기 + 늦어지는 이유 · 알람 끄기 (+ 비정기는 나의 업무 안내). prog: 팀장 확인 칸에 쓴다
   const reg = it.kind==='reg', gap = kpiProgGap(it.value, it.expected), slow = gap>0, kw = `w-${+it.rid}`, tw = KPI_LIVE.typed[kw];
   return `<div class="kp-k${slow ? ' slow' : ''}"><div class="kp-kh"><div class="t"><b>${escapeHtml(it.action)}</b><span class="badge ${reg ? 'info' : 'neutral'}">${reg ? '정기적' : '비정기적'}</span><small>${escapeHtml(info.team || '—')} · 측정식 ${escapeHtml(info.formula || '—')} · 가중치 ${+it.weight}</small></div>
       <div>${kpiProgBar(it.value, it.expected, slow)}<div class="kl-hint" style="margin-top:6px;">${slow ? `<b class="kp-slow">기대보다 ${gap}%p 늦음</b> · ` : ''}기대 ${Math.round(it.expected)}% (${reg ? '오늘 날짜 기준' : '지난 예정 기한 기준'})</div></div>
       <div class="pct">${Math.round(it.value)}%</div></div>
-    ${reg ? kpiProgReg(it, today) : kpiProgIrr(it, me, schedOpen)}
-    <div class="kp-why"><span>늦어지는 이유</span><input class="kpi-in" id="kp-${kw}-t" maxlength="100" placeholder="비워 둬도 돼요 · 바로 위 관리자 · HR이 봐요" aria-label="늦어지는 이유" value="${escapeHtml(tw ? tw.t : it.why || '')}" data-o="${escapeHtml((it.why || '').replace(/[\r\n]/g, ''))}" oninput="kpiProgType('${kw}')"><button type="button" class="btn sm" onclick="kpiProgSave('${kw}')">저장</button>${kpiProgDirty(kw)}</div>
+    ${reg ? kpiProgReg(it, today, prog) : kpiProgIrr(it, me, schedOpen, prog)}
+    <div class="kp-why"><span>늦어지는 이유</span><input class="kpi-in" id="kp-${kw}-t" maxlength="100" placeholder="비워 둬도 돼요 · 바로 위 관리자 · HR이 봐요" aria-label="늦어지는 이유" value="${escapeHtml(tw ? tw.t : it.why || '')}" data-o="${escapeHtml((it.why || '').replace(/[\r\n]/g, ''))}" oninput="kpiProgType('${kw}')"><button type="button" class="btn sm" onclick="kpiProgSave('${kw}')">저장</button>${kpiProgDirty(kw)}${kpiProgMute(it)}</div>
     ${reg ? '' : `<div class="kp-kf">${icon('calendar')}<span>나의 업무에 <b>KPI- 일정 ${it.scheds.length}건</b> · 결과를 적으면 그 업무가 완료로 바뀝니다</span><span class="sp"></span><button type="button" class="kp-lnk" onclick="goTo('ws','w1')">워크스페이스에서 보기 ›</button></div>`}
   </div>`;
+}
+function kpiProgMute(it){   // 알람 끄기(본인, 2단계 ②) — "늦어지는 이유" 아래: 꺼져 있으면 "알람 꺼짐 · 이유 (끝나는 때)" + [다시 켜기], 아니면 [알람 끄기]. 두 단추는 같은 id (누른 뒤 포커스가 그 자리에)
+  const id = `kp-mu-${+it.rid}`;
+  return `<div class="kp-mu">${it.mute ? `<div class="kv-mute">${icon('bellOff')}<span>알람 꺼짐 · ${escapeHtml(kvLiveMute(it.mute))} <button type="button" class="kv-link" id="${id}" onclick="kvLiveUnmute(${+AUTH.me.user_id},${+it.rid})">다시 켜기</button></span></div>`
+    : `<button type="button" class="kv-link kv-mute-btn" id="${id}" onclick="kvLiveMuteAsk(${+it.rid})">${icon('bellOff')}알람 끄기</button>`}</div>`;
+}
+function kpiProgChk(prog, month){   // 본인 화면의 팀장 확인 (설계 6.4) — 그 달을 확인했으면 "✓ 팀장 확인 m/d", 아니면 같은 폭의 빈 자리(글자 시작을 맞춘다). 확인 단계가 없는 분(대표이사에게 보고)은 칸 없음. month 가 거짓이면(기록 없음) 빈 자리
+  if(!prog.checkStep) return '';
+  const at = month && prog.checks?.[month];
+  return `<span class="kp-chk">${at ? `<i>✓</i>${kpiLeadName(KPI_LIVE.me?.manager?.id)} 확인 ${kpiMd(kpiYmd(at))}` : '<i>&#8203;</i>'}</span>`;
+}
+function kpiProgAlarm(prog){   // 부진 알람(본인, 2단계 ②) — 요약 세 칸 위 붉은 한 줄. 숫자는 서버 alarm(끈 실행목표는 빼고 셈)을 반올림해서 — 판정도 서버가 반올림한 숫자로 했다
+  const a = prog.alarm, off = prog.items.filter(it=>it.mute).length;
+  return a?.slow ? `<div class="kv-alert" id="kpiSlow" style="margin:0 0 12px;">${icon('bell')}<span>진행이 기대보다 늦어요 · ${off ? `알람을 끈 ${off}개 항목을 빼고` : '종합'} ${Math.round(a.pct)}% (기대 ${Math.round(a.expected)}%)</span></div>` : '';
 }
 function kpiProgEditor(key, text, link, ph, more=''){   // 한 줄(200자) + 근거 링크(선택) + [저장] — 저장 안 한 글(KPI_LIVE.typed)이 있으면 그것을 보인다
   const t = KPI_LIVE.typed[key], id = `kp-${key}`;
   return `<textarea class="kpi-in" id="${id}-t" rows="2" maxlength="200" placeholder="${ph}" aria-label="${ph}" data-o="${escapeHtml(text || '')}" oninput="kpiProgType('${key}')">${escapeHtml(t ? t.t : text || '')}</textarea>
     <div class="kp-row"><input class="kpi-in" id="${id}-l" maxlength="300" placeholder="링크 (선택) https://…" aria-label="근거 링크 (선택)" value="${escapeHtml(t ? t.l : link || '')}" data-o="${escapeHtml(link || '')}" oninput="kpiProgType('${key}')"><button type="button" class="btn sm primary" onclick="kpiProgSave('${key}')">저장</button>${more}</div>`;
 }
-function kpiProgReg(it, today){   // 정기: 왼쪽 실적(목표가 있으면) · 진행률(없으면) — 바뀌면 바로 저장 (R3) / 오른쪽 이번 달 한 줄(1~7일이면 지난달도) + 지난 달 기록
+function kpiProgReg(it, today, prog=KPI_LIVE.prog){   // 정기: 왼쪽 실적(목표가 있으면) · 진행률(없으면) — 바뀌면 바로 저장 (R3) / 오른쪽 이번 달 한 줄(1~7일이면 지난달도) + 지난 달 기록
   const tg = it.target!=null, ms = kpiProgMonths(it, today), m0 = +today.slice(5, 7);
   const num = (k, v, label, x)=>`<input type="number" class="kpi-in" min="0" ${x} value="${v==null ? '' : +v}" id="kp-n-${+it.rid}" aria-label="${label}" onchange="kpiProgNum(${+it.rid},'${k}',this.value)">`;
   const box = m=>{
     const c = it.months[m], key = `m-${+it.rid}-${+m}`;
     return `<div class="kp-mon"><div class="kp-lbl">${m}월 실적 한 줄<span class="sp"></span><span class="kl-hint">${m===12 ? 1 : m+1}/7까지</span></div>
-      ${kpiProgEditor(key, c.text, c.link, `${m}월에 한 일을 한 줄로 (200자)`)}<div class="kp-mstat"><span class="kp-st"><i>${c.text!=null ? '✓' : '&#8203;'}</i>${c.text!=null ? `적었어요 · ${kpiAt(c.at)}` : '아직 안 적었어요'}</span>${kpiProgDirty(key)}</div></div>`;
+      ${kpiProgEditor(key, c.text, c.link, `${m}월에 한 일을 한 줄로 (200자)`)}<div class="kp-mstat"><span class="kp-st"><i>${c.text!=null ? '✓' : '&#8203;'}</i>${c.text!=null ? `적었어요 · ${kpiAt(c.at)}` : '아직 안 적었어요'}</span>${kpiProgDirty(key)}${kpiProgChk(prog, c.text!=null && m)}</div></div>`;
   };
   const past = [...Array(Math.max(0, m0 - 1))].map((_, i)=>m0 - 1 - i).filter(m=>!ms.includes(m) && ['DONE', 'MISSED', 'NA'].includes(it.months[m].state)), rows = [];
   past.forEach(m=>{ const c = it.months[m], r = rows[rows.length - 1]; if(c.state==='NA' && r && r.na && r.lo===m + 1) r.lo = m; else rows.push({ na:c.state==='NA', hi:m, lo:m, c }); });   // 이어진 해당 없음 달은 한 줄로
   const n = past.filter(m=>it.months[m].state!=='NA').length;   // 쓴 달 · 안 쓴 달만 센다 — 해당 없음은 기록이 아니다 (R10)
   const fold = past.length ? `<details class="kp-tl"${kpiProgFold.has(+it.rid) ? ' open' : ''} ontoggle="kpiProgFold[this.open ? 'add' : 'delete'](${+it.rid})"><summary>지난 달 기록 ${n ? n+'개' : '없음'}</summary>${rows.map(r=>`<div class="kp-tl-r"><b>${r.lo===r.hi ? r.hi : `${r.lo}~${r.hi}`}월</b>${r.na ? '<span class="kl-hint">해당 없음</span>'
-    : r.c.state==='MISSED' ? '<span class="kp-miss">안 씀</span>' : `<span><span class="kp-text">${escapeHtml(r.c.text)}</span>${kpiProgLink(r.c.link)}</span>`}</div>`).join('')}</details>` : '';
+    : r.c.state==='MISSED' ? '<span class="kp-miss">안 씀</span>' : `<span><span class="kp-text">${escapeHtml(r.c.text)}</span>${kpiProgLink(r.c.link)}</span>`}${kpiProgChk(prog, !r.na && r.c.text!=null && r.hi)}</div>`).join('')}</details>` : '';
   return `<div class="kp-kb"><div><div class="kp-lbl">${tg ? '실적' : '진행률'}<span class="sp"></span><span class="kl-hint">언제든 고칠 수 있어요</span></div>
       <div class="kp-num">${tg ? `지금까지 ${num('actual', it.actual, '실적', 'max="1000000000" step="any"')} / 목표 <b>${+it.target}</b>${escapeHtml(it.unit)} <span class="kl-hint">→ ${Math.round(it.value)}% 자동</span>` : `${num('pct', it.pct, '진행률', 'max="100" step="1"')} %`}</div>
       ${it.at ? `<div class="kl-hint" style="margin-top:8px;">마지막 수정 ${kpiAt(it.at)}</div>` : ''}</div>
     <div>${ms.map(box).join('') || '<div class="kl-hint">이번 달은 적을 한 줄이 없어요 (해당 없음)</div>'}${fold}</div></div>`;
 }
-function kpiProgIrr(it, me, schedOpen){   // 비정기: 예정 기한 · 일정 · 결과 한 줄 표. LATE 주황 · OVERDUE 빨강, 기다리는 일정 변경 요청 · 돌려받은 요청. [일정 변경 요청]은 계획서가 확정 · 수정 요청 중이고 schedOpen(평가 시작 전)이며 결과 · 기다리는 요청이 없는 일정에만 (R9 · R12 — schedOpen 인자는 앞의 둘을 합친 것)
+function kpiProgIrr(it, me, schedOpen, prog=KPI_LIVE.prog){   // 비정기: 예정 기한 · 일정 · 결과 한 줄 표. LATE 주황 · OVERDUE 빨강, 기다리는 일정 변경 요청 · 돌려받은 요청. [일정 변경 요청]은 계획서가 확정 · 수정 요청 중이고 schedOpen(평가 시작 전)이며 결과 · 기다리는 요청이 없는 일정에만 (R9 · R12 — schedOpen 인자는 앞의 둘을 합친 것)
   const boss = kpiBoss(me), by = `<span class="kl-who">${boss}</span>${kpiGa(boss)}`;
   const row = s=>{
     const key = `r-${+s.sid}`, r = s.result, open = kpiProgEdit.has(key) || !!KPI_LIVE.typed[key], left = kpiLeft(s.due);
@@ -4219,7 +4244,7 @@ function kpiProgIrr(it, me, schedOpen){   // 비정기: 예정 기한 · 일정 
     const chg = schedOpen && !r && !s.pending ? `<button type="button" class="kp-lnk kp-chg" onclick="kpiSchedAsk(${+s.sid})">일정 변경 요청</button>` : '';
     const pend = s.pending ? `<small class="kp-pend">변경 요청 중 → ${kpiMd(s.pending.to)} <button type="button" class="kp-lnk" onclick="kpiProgCancel(${+s.pending.id},${+s.sid})">취소</button></small>` : '';
     const back = s.returned && !s.pending && !r ? `<div class="kp-back">${by} 돌려보냈어요: <span class="kp-text">${escapeHtml(s.returned.note || '')}</span></div>` : '';
-    return `<div class="kp-ev ${{ DONE:'done', UPCOMING:'up', LATE:'late', OVERDUE:'over' }[s.state] || ''}"><span class="d">${kpiMd(s.due)}${s.due!==s.origDue ? '<small>(바뀜)</small>' : ''}</span><span class="n">${escapeHtml(kpiProgName(s))}${pend}</span><span class="r">${res}</span><span class="c">${act}${chg}</span>${back}</div>`;
+    return `<div class="kp-ev ${{ DONE:'done', UPCOMING:'up', LATE:'late', OVERDUE:'over' }[s.state] || ''}"><span class="d">${kpiMd(s.due)}${s.due!==s.origDue ? '<small>(바뀜)</small>' : ''}</span><span class="n">${escapeHtml(kpiProgName(s))}${pend}</span><span class="r">${res}</span><span class="c">${r && !open ? kpiProgChk(prog, +s.due.slice(5, 7)) : ''}${act}${chg}</span>${back}</div>`;
   };
   return `<div class="kp-evs"><div class="kp-ev h"><span>예정 기한</span><span>일정</span><span>결과 한 줄</span><span></span></div>${it.scheds.map(row).join('')}</div>`;
 }
@@ -4300,6 +4325,7 @@ function kpiProgPlan(me=KPI_LIVE.me, prog=KPI_LIVE.prog){   // KPI 계획서 보
 /* ----- 관리자: 처리할 KPI · 우리 팀 KPI 상태 (시안 2) · HR 관리 화면 · 대표이사 맡기기 ----- */
 const KPI_TEAM_ST = { CONFIRMED:['확정','success'], SUBMITTED:['확인 대기','info'], CHANGE_REQUESTED:['수정 요청','warning'], DRAFT:['작성 중','neutral'], NONE:['아직 안 씀','danger'] };   // 이 순서로 배지 다섯 개 (R18)
 function kpiLiveSt(st, label=KPI_TEAM_ST[st][0]){ return `<span class="kl-st"><i>${st==='CONFIRMED' ? '✓' : '&#8203;'}</i><span class="badge ${KPI_TEAM_ST[st][1]}">${label}</span></span>`; }   // 상태 배지 — 앞의 ✓ 자리는 비어 있어도 둔다
+function kpiYmd(iso){ return new Date(Date.parse(iso) + 324e5).toISOString().slice(0, 10); }   // 서버 시각(UTC "…Z") → 한국 날짜 "2026-10-21" (확인 메모 · 팀장 확인 — 서버도 한국 날짜로 같은 날을 본다)
 function kpiAt(iso){ const d = new Date(iso), p = n=>String(n).padStart(2,'0'); return iso ? `${d.getMonth()+1}월 ${d.getDate()}일 ${p(d.getHours())}:${p(d.getMinutes())}` : ''; }
 function kpiLiveWhose(uid){ const p = KPI_LIVE.admin && KPI_LIVE.admin.people.find(x=>x.userId===uid); return !p ? '' : p.manager ? ' · 대표이사가 맡김' : ' · 관리자 없음'; }   // HR: 누구 차례를 대신 하나
 function kpiLiveBtns(uid, status, can=true){   // 내용 보기 + 제출: 돌려보내기 · 확정 / 수정 요청: 거절 · 해제. can 이 거짓이면 내용 보기만 — 처리함 줄과 HR 전 직원 표가 같이 쓴다
@@ -4457,9 +4483,9 @@ async function kpiLiveSelfCheck(){   // 브라우저 콘솔에서 await kpiLiveS
   ok(h1.querySelector('.kl-st i').textContent==='✓' && h2.querySelector('.kl-st i'), 'HR 표 상태 칸 아이콘 자리');
   ok(dom(kpiLiveDeleg(true)).querySelector('button').textContent==='맡기기 끄기' && dom(kpiLiveDeleg(false)).querySelector('button').textContent==='HR에 맡기기', '대표이사 HR에 맡기기 단추');
   ok(dom(kpiLiveSheet(me(true, 'DRAFT'))).querySelector('#kpiMine[oninput="kpiEdited()"]') && !dom(kpiLiveSheet(me(true, 'SUBMITTED'))).querySelector('#kpiMine[oninput]'), '작성 중일 때만 고친 것을 표시한다 (R21)');
-  const keep = { live:AUTH.live, authMe:AUTH.me, inbox:KPI_LIVE.inbox, me:KPI_LIVE.me, admin:KPI_LIVE.admin, dirty:KPI_LIVE.dirty, yrDirty:KPI_LIVE.yrDirty, yr:KPI_LIVE.yr, prog:KPI_LIVE.prog, typed:KPI_LIVE.typed, tab:kpiProgTab, fold:[...kpiProgFold] };
+  const keep = { live:AUTH.live, authMe:AUTH.me, inbox:KPI_LIVE.inbox, me:KPI_LIVE.me, admin:KPI_LIVE.admin, dirty:KPI_LIVE.dirty, yrDirty:KPI_LIVE.yrDirty, yr:KPI_LIVE.yr, prog:KPI_LIVE.prog, memos:KPI_LIVE.memos, typed:KPI_LIVE.typed, tab:kpiProgTab, fold:[...kpiProgFold] };
   try {
-    AUTH.live = true; KPI_LIVE.inbox = [ib('SUBMITTED', false), ib('CHANGE_REQUESTED', false)]; KPI_LIVE.me = me(true, 'DRAFT'); KPI_LIVE.prog = null;
+    AUTH.live = true; KPI_LIVE.inbox = [ib('SUBMITTED', false), ib('CHANGE_REQUESTED', false)]; KPI_LIVE.me = me(true, 'DRAFT'); KPI_LIVE.prog = null; KPI_LIVE.memos = null;
     const task = ()=>homePortalTasks().find(p=>p.title.startsWith('처리할 KPI'));
     ok(TODO.e1()===2 && task().n===2 && task().title==='처리할 KPI 2건' && task().badge==='확정 대기', '실제 로그인: TODO.e1 · 홈 처리할 KPI = 처리함 건수 (대신 처리할 것도 있어 "팀원"이라 하지 않는다, M-3)');
     // HR 전 직원 표의 줄 — 처리함에 없어도 같은 확인 창 · 원래 관리자 대신이라는 안내 (I-1)
@@ -4753,7 +4779,84 @@ async function kpiLiveSelfCheck(){   // 브라우저 콘솔에서 await kpiLiveS
         sv.btns.forEach(([b, d])=>{ b.disabled = d; }); orgCloseModal();
       }
     }
-  } finally { Object.assign(KPI_LIVE, { inbox:keep.inbox, me:keep.me, admin:keep.admin, dirty:keep.dirty, yrDirty:keep.yrDirty, yr:keep.yr, prog:keep.prog, typed:keep.typed }); kpiProgTab = keep.tab; kpiProgFold.clear(); keep.fold.forEach(r=>kpiProgFold.add(r)); AUTH.live = keep.live; AUTH.me = keep.authMe; }
+    {   // 본인 화면: 팀장 확인 · 부진 알람 · 알람 끄기 · 확인 메모 (2단계 ② Task 8) — 그림과 보내는 모양만 (fetch · 진행 기록 저장 줄은 가짜)
+      const o8 = { people:ORG_LIVE.people, tree:ORG_LIVE.tree, ost:ORG_LIVE.state, kl:{ ...KPI_LIVE }, ui:JSON.stringify(KV_LIVE.memoUi), fetch:window.fetch, rc:renderContent, pd:kpiProgDo, msg:kpiMsg };
+      try {
+        ORG_LIVE.people = [{ uid:2, lead:'TEAM', division:'가상본부' }]; ORG_LIVE.tree = [{ division:'가상본부', noHead:false }]; ORG_LIVE.state = 'ok';
+        KPI_LIVE.me = pm(false, 'CONFIRMED'); KPI_LIVE.memos = null; KV_LIVE.memoUi = { reply:null, edit:null, draft:{} }; renderContent = ()=>{};
+        const day = '2026-10-21', ck = { ...prog, checkStep:true, checks:{ '9':'2026-10-02T01:00:00Z', '3':'2026-04-01T16:00:00Z' } }, [c1, , c3] = ps(false, 'CONFIRMED', day, ck).querySelectorAll('.kp-k');
+        const tl8 = [...c1.querySelectorAll('details.kp-tl .kp-tl-r')], e8 = [...c3.querySelectorAll('.kp-ev:not(.h)')];
+        ok(kpiProgChk(prog, 9)==='' && !ps(false).querySelector('.kp-chk'), 'kpiProgChk: 확인 단계가 없으면(checkStep 거짓 — 대표이사에게 보고) 칸을 그리지 않는다');
+        ok(tl8.map(r=>r.querySelector('.kp-chk')?.textContent).join('|')==='✓팀장 확인 10/2|\u200b|\u200b' && tl8.every(r=>r.querySelector('.kp-chk > i')), '지난 달 기록: 확인한 달은 "✓ 팀장 확인 m/d" · 안 쓴 달 · 해당 없음은 같은 폭의 빈 자리');
+        const oct = { ...ck, checks:{ '10':'2026-10-21T05:00:00Z' }, items:ck.items.map(x=>x.rid===1 ? { ...x, months:{ ...x.months, '10':{ ...x.months['10'], text:'가상 10월', at:'2026-10-21T01:00:00Z' } } } : x) };
+        ok(c1.querySelector('.kp-mon .kp-mstat .kp-chk')?.textContent==='\u200b' && ps(false, 'CONFIRMED', day, oct).querySelector('.kp-mon .kp-mstat .kp-chk')?.textContent==='✓팀장 확인 10/21', '이번 달 칸: 쓴 달을 확인하면 "✓ 팀장 확인 m/d" (아직이면 빈 자리)');
+        ok(e8[0].querySelector('.c .kp-chk')?.textContent==='✓팀장 확인 4/2' && !e8[1].querySelector('.kp-chk') && e8[0].querySelector('.c').lastElementChild.textContent==='지우기', '비정기: 결과 줄에 그 일정 실제 기한의 달 확인 (한국 날짜 — UTC 4/1 16시 = 4/2) · 결과가 없는 줄은 없음');
+        ORG_LIVE.people = [{ uid:2, lead:'DIVISION', division:'가상본부' }];
+        ok(ps(false, 'CONFIRMED', day, ck).querySelector('details.kp-tl .kp-chk')?.textContent==='✓본부장 확인 10/2', '직책 이름은 조직도 명단에서 (바로 위 관리자가 본부장이면 "본부장 확인")');
+        ORG_LIVE.people = [{ uid:2, lead:'TEAM', division:'가상본부' }];
+        const host8 = document.body.appendChild(document.createElement('div'));
+        try {
+          host8.style.cssText = 'position:absolute; left:0; top:0; width:1200px; visibility:hidden;'; kpiProgFold.add(1); host8.appendChild(ps(false, 'CONFIRMED', day, ck));
+          const rr = [...host8.querySelector('details.kp-tl').querySelectorAll('.kp-tl-r')], R8 = (r, s)=>r.querySelector(s).getBoundingClientRect();
+          ok(rr.length===3 && Math.abs(R8(rr[0], '.kp-chk i').right - R8(rr[1], '.kp-chk i').right) < 0.5 && R8(rr[0], '.kp-chk').width > 0 && Math.abs(R8(rr[0], '.kp-chk').width - R8(rr[1], '.kp-chk').width) < 0.5
+            && Math.abs(rr[0].children[1].getBoundingClientRect().left - rr[1].children[1].getBoundingClientRect().left) < 0.5, 'kpiProgChk: 확인한 달 · 안 한 달의 글자 시작 위치가 같다 (아이콘 자리 · 같은 폭)');
+        } finally { host8.remove(); kpiProgFold.delete(1); }
+        const sl = { ...prog, alarm:{ slow:true, pct:41.2, expected:60.4 } }, sm = { ...prog, alarm:{ slow:true, pct:30.4, expected:80.3 }, items:prog.items.map(x=>x.rid===3 ? { ...x, mute:{ why:'wait', text:null, until:11, at:'2026-10-05T01:00:00Z' } } : x) };
+        const S1 = ps(false, 'CONFIRMED', day, sl);
+        ok(S1.querySelector('#kpiSlow.kv-alert')?.textContent==='진행이 기대보다 늦어요 · 종합 41% (기대 60%)' && S1.querySelector('#kpiSlow + .kp-sum'), '부진 알람: 요약 세 칸 바로 위 붉은 한 줄 (반올림한 숫자)');
+        ok(ps(false, 'CONFIRMED', day, sm).querySelector('#kpiSlow')?.textContent==='진행이 기대보다 늦어요 · 알람을 끈 1개 항목을 빼고 30% (기대 80%)' && !ps(false, 'CONFIRMED', day, { ...prog, alarm:{ slow:false, pct:50, expected:60 } }).querySelector('#kpiSlow') && !ps(false).querySelector('#kpiSlow'),
+          '끈 항목이 있으면 "알람을 끈 n개 항목을 빼고" · 부진이 아니면 없음');
+        const mu = [...ps(false, 'CONFIRMED', day, sm).querySelectorAll('.kp-k')].map(x=>x.querySelector('.kp-why .kp-mu'));
+        ok(mu[2]?.querySelector('.kv-mute')?.textContent.includes('알람 꺼짐 · 외부 일정을 기다리는 중 (11월 말까지)') && mu[2].querySelector('button').textContent==='다시 켜기' && mu[2].querySelector('button').getAttribute('onclick')==='kvLiveUnmute(77,3)' && mu[2].querySelector('button').id==='kp-mu-3',
+          '끈 항목: "늦어지는 이유" 아래 "알람 꺼짐 · 이유 (n월 말까지)" + [다시 켜기]');
+        ok(mu[0]?.querySelector('button').textContent==='알람 끄기' && mu[0].querySelector('button').getAttribute('onclick')==='kvLiveMuteAsk(1)' && !mu[0].querySelector('.kv-mute') && mu[1].querySelector('button').textContent==='알람 끄기', '켜진 항목: [알람 끄기]');
+        ok(dom(homeKpiLive(KPI_LIVE.me, sl)).querySelector('.card-title .kv-mk.bell') && !dom(homeKpiLive(KPI_LIVE.me, prog)).querySelector('.kv-mk.bell'), '홈 KPI 카드: 부진이면 제목 옆에 종');
+        // 알람 끄기 창 · 다시 켜기
+        KPI_LIVE.prog = sm; kvLiveMuteAsk(1);
+        const mm = document.getElementById('orgModal'), now8 = +kpiDay(0).slice(5, 7), mq = [];
+        ok(mm && mm.querySelectorAll('.kv-chip').length===4 && [...mm.querySelectorAll('#kvMuteMon option')].map(x=>x.value).join()===[...Array(13 - now8)].map((_, i)=>now8 + i).join() && mm.querySelector('#kvMuteText').maxLength===50 && mm.textContent.includes('가상 실행목표'),
+          '알람 끄기 창: 이유 넷 · 끝나는 달(이번 달 ~ 12월) · 직접 적기 50자 (시연 창과 같은 모양)');
+        kpiProgDo = (make, focus)=>{ mq.push([make(), focus]); return Promise.resolve(); };
+        kvLiveMuteSave(); ok(!mq.length && mm.querySelector('#kvMuteErr').textContent==='이유를 하나 골라 주세요.', '이유를 안 고르면 보내지 않고 창 안에 안내');
+        kvMutePick('etc'); kvLiveMuteSave();
+        ok(!mq.length && mm.querySelector('#kvMuteErr').textContent==='이유를 한 줄 적어 주세요.' && /(다시 켜져요|확인해요)\.$/.test(mm.querySelector('#kvMuteWhen').textContent), '직접 적기는 글이 있어야 · 끄는 때 안내는 "~해요"');
+        mm.querySelector('#kvMuteText').value = ' 가상 이유 '; kvLiveMuteSave();
+        const [m0, f0] = mq[0] || [[], []];
+        ok(mq.length===1 && m0[0]==='/api/kpi/me/mute' && JSON.stringify(m0[1])===JSON.stringify({ year:2026, rid:1, why:'etc', month:Math.min(12, now8 + 1), text:'가상 이유' }) && m0[4]===mm.querySelector('#kvMuteErr') && f0.includes('kp-mu-1') && document.getElementById('orgModal'),
+          '[알람 끄기]: 이유 · 달 · 글을 진행 기록 저장 줄로 · 오류는 창 안 · 창은 서버가 받은 뒤에 닫힌다');
+        kvMutePick('year'); kvLiveMuteSave(); ok(JSON.stringify(mq[1]?.[0][1])==='{"year":2026,"rid":1,"why":"year"}', '연말에 끝나는 일은 달 · 글 없이');
+        m0[3]?.(); ok(!document.getElementById('orgModal'), '받은 뒤 할 일(after)이 창을 닫는다');
+        mq.length = 0; await kvLiveUnmute(77, 3);
+        ok(mq[0]?.[0][0]==='/api/kpi/plans/77/unmute' && JSON.stringify(mq[0][0][1])==='{"year":2026,"rid":3}' && mq[0][1].includes('kp-mu-3'), '본인 [다시 켜기]: 진행 기록 저장 줄로 (받으면 진행 기록을 다시 읽는다)');
+        kpiProgDo = o8.pd;
+        // 확인 메모 카드 (본인)
+        const OM = (id, x)=>({ id, at:'2026-10-20T15:30:00Z', authorId:2, by:'가상2 팀장', text:`가상 <b>메모</b>${id}`, edited:false, ack:null, fresh:0, canEdit:false, replies:[], ...x });
+        const mine = x=>({ role:'owner', canWrite:false, writer:{ id:2, name:'가상2', title:'팀장' }, memos:[OM(3), OM(2, { at:'2026-10-18T01:00:00Z', ack:'2026-10-19T01:00:00Z', replies:[{ id:7, at:'2026-10-19T01:00:00Z', who:'owner', by:'가상나 대리', text:'가상 답글', canDelete:true }] }), OM(1, { at:'2026-09-01T01:00:00Z' })], ...x });
+        KPI_LIVE.memos = mine();
+        const Y = ps(false).querySelector('#kvMyMemo'), yf = Y ? [...Y.querySelectorAll(':scope > .kv-memo')] : [], yo = Y?.querySelector('details.kv-old'), yb = m=>[...m.querySelectorAll('button')].map(b=>b.textContent).join();
+        ok(Y && Y.querySelector('.card-title').textContent==='팀장 확인 메모확인할 메모 2건' && Y.querySelector('.list-sub').textContent==='가상2 팀장이 KPI 진행을 확인하고 남기는 메모예요. 확인했다고 누르거나 답글을 달 수 있어요. 본부장 · HR도 함께 봐요.' && ps(false).querySelector('#kpiProg + #kvMyMemo'),
+          '본인 화면: 진행 관리 맨 아래 "팀장 확인 메모" 카드 · 확인할 메모 n건 · 함께 보는 사람');
+        ok(yf.length===2 && yo?.querySelector('summary').textContent==='지난 메모 1건' && yo.textContent.includes('가상 <b>메모</b>2') && !Y.querySelector('.kv-memo-t b'), '지난 메모 접기: 확인한 옛 메모만 "지난 메모 N건" 안에 (맨 새것 · 확인 안 한 것은 펼침) · 글자 그대로');
+        ok(yf.every(m=>yb(m)==='확인했습니다,답글') && yf[0].querySelector('.btn.coral').getAttribute('onclick')==="kvLiveMemoDo('ack',3,77)" && yf[0].querySelector('.kv-memo-h b').textContent==='10월 21일 · 가상2 팀장', '본인: [확인했습니다] · [답글] (수정 · 삭제 없음) · 날짜는 한국 날짜');
+        ok(yo.querySelector('.kv-ack').textContent==='확인함 · 10월 19일' && yb(yo)==='삭제,답글' && yo.querySelector('.kv-reply button').getAttribute('onclick')==="kvLiveMemoDo('rdel',7,77)", '확인한 메모는 "✓ 확인함 · m월 d일" · 내가 오늘 단 답글은 [삭제]');
+        KPI_LIVE.memos = mine({ writer:null, memos:[] }); ok(!ps(false).querySelector('#kvMyMemo'), '쓸 사람도 받은 메모도 없으면(대표이사에게 보고) 카드 없음');
+        KPI_LIVE.memos = mine({ writer:null }); ok(ps(false).querySelector('#kvMyMemo')?.textContent.includes('대표이사에게 보고하는 분은 확인 메모가 없어요.'), '쓸 사람이 없어도 받은 메모가 있으면 카드 + 안내');
+        KPI_LIVE.memos = null; ok(!ps(false).querySelector('#kvMyMemo'), '메모를 못 읽었으면 카드 없음');
+        KPI_LIVE.memos = mine({ memos:[] }); ok(ps(false).querySelector('#kvMyMemo')?.textContent.includes('아직 받은 메모가 없어요.'), '받은 메모가 없으면 한 줄 안내');
+        const got = [];
+        window.fetch = (u, o)=>{ got.push(`${o?.method || 'GET'} ${u}${o?.body ? ' '+o.body : ''}`); return Promise.resolve({ ok:true, status:200, json:()=>Promise.resolve(String(u).startsWith('/api/kpi/memos/') ? mine({ memos:[] }) : { ok:true }) }); };
+        KPI_LIVE.memos = mine(); await kvLiveMemoDo('ack', 3, 77);
+        ok(got.join('|')==='POST /api/kpi/memo/3/ack {}|GET /api/kpi/memos/77' && KPI_LIVE.memos.memos.length===0, '본인 [확인했습니다]: 보내고 내 메모만 다시 읽는다');
+        got.length = 0; const gn = await kpiMemoGet(me(true, 'DRAFT')), gy = await kpiMemoGet(pm(false, 'CONFIRMED'));
+        ok(gn===null && gy?.role==='owner' && got.join()==='GET /api/kpi/memos/77', 'kpiMemoGet: 확정본이 있을 때만 내 메모를 읽는다');
+        got.length = 0;
+        window.fetch = u=>{ got.push(u); const r = { '/api/kpi/me':pm(false, 'CONFIRMED'), '/api/kpi/inbox':{ items:[], team:{} }, '/api/kpi/admin':{ year:2026, window:{}, people:[] }, '/api/kpi/delegation':{ on:false }, '/api/kpi/memos/77':mine() }[u] ?? (String(u).startsWith('/api/kpi/progress/77') ? prog : null);
+          return Promise.resolve({ ok:!!r, status:r ? 200 : 404, json:()=>Promise.resolve(JSON.parse(JSON.stringify(r))) }); };
+        KPI_LIVE.memos = null; await kpiLiveLoad();
+        ok(got.includes('/api/kpi/memos/77') && KPI_LIVE.memos?.role==='owner' && KPI_LIVE.prog && KPI_LIVE.state==='ok', 'kpiLiveLoad: 확정본이 있으면 진행 기록과 함께 내 확인 메모를 읽는다 (KPI_LIVE.memos)');
+      } finally { ORG_LIVE.people = o8.people; ORG_LIVE.tree = o8.tree; ORG_LIVE.state = o8.ost; Object.assign(KPI_LIVE, o8.kl); KV_LIVE.memoUi = JSON.parse(o8.ui); window.fetch = o8.fetch; renderContent = o8.rc; kpiProgDo = o8.pd; kpiMsg = o8.msg; orgCloseModal(); }
+    }
+  } finally { Object.assign(KPI_LIVE, { inbox:keep.inbox, me:keep.me, admin:keep.admin, dirty:keep.dirty, yrDirty:keep.yrDirty, yr:keep.yr, prog:keep.prog, memos:keep.memos, typed:keep.typed }); kpiProgTab = keep.tab; kpiProgFold.clear(); keep.fold.forEach(r=>kpiProgFold.add(r)); AUTH.live = keep.live; AUTH.me = keep.authMe; }
   return 'kpiLiveSelfCheck 통과';
 }
 
@@ -5035,18 +5138,18 @@ function kvMemoDo(act, pid, mid, ri){
   if(!done) return;
   kvMemoUi = { reply:null, edit:null }; kpiFlash(msg);
 }
-function kvMuteAsk(fi){
-  const it = kvItems(kvMe())[fi], now = +kpiDay(0).slice(5,7);
-  kvMuteUi = { fi, why:'' };
+function kvMuteAsk(fi){ kvMuteUi = { fi, why:'' }; kvMuteBox(kvItems(kvMe())[fi].action, '끈 항목은 빼고 나머지 항목으로 늦는지 따집니다. 팀장·본부장·HR이 이유를 함께 봅니다.', 'kvMuteSave()'); }
+function kvMuteBox(action, sub, save){   // 알람 끄기 창 — 시연(kvMuteAsk) · 실제 로그인(kvLiveMuteAsk)이 같은 모양 · 같은 칸 id 를 쓴다 (kvMutePick)
+  const now = +kpiDay(0).slice(5,7);
   orgModal(`<div class="card-title"><span>알람 끄기</span><button type="button" class="x-btn" onclick="orgCloseModal()" aria-label="닫기">${icon('x')}</button></div>
-    <div style="font-weight:600;">${escapeHtml(it.action)}</div>
-    <div class="list-sub" style="margin:2px 0 14px;">끈 항목은 빼고 나머지 항목으로 늦는지 따집니다. 팀장·본부장·HR이 이유를 함께 봅니다.</div>
+    <div style="font-weight:600;">${escapeHtml(action)}</div>
+    <div class="list-sub" style="margin:2px 0 14px;">${sub}</div>
     <div class="field" style="margin-bottom:10px;"><label id="kvMuteLab">왜 끄나요</label><div class="kv-chips" role="group" aria-labelledby="kvMuteLab">${Object.entries(KV_MUTE).map(([k, l])=>`<button type="button" class="kv-chip" aria-pressed="false" data-k="${k}" onclick="kvMutePick('${k}')">${l}</button>`).join('')}</div></div>
     <div class="field" id="kvMuteMonRow" style="display:none; margin-bottom:10px;"><label for="kvMuteMon" id="kvMuteMonLab">끝나는 달</label><select id="kvMuteMon" style="max-width:130px;" onchange="kvMutePick()">${Array.from({ length:13-now }, (x, i)=>now+i).map(m=>`<option value="${m}" ${m===Math.min(12, now+1)?'selected':''}>${m}월</option>`).join('')}</select></div>
     <div class="field" id="kvMuteTextRow" style="display:none; margin-bottom:10px;"><label for="kvMuteText">이유</label><input id="kvMuteText" maxlength="50" placeholder="이유를 한 줄로 적어 주세요" oninput="document.getElementById('kvMuteErr').textContent=''"></div>
     <div class="list-sub" id="kvMuteWhen" style="min-height:18px; margin:0;"></div>
     <div id="kvMuteErr" role="alert" style="min-height:18px; font-size:var(--fs-xs); color:var(--danger); font-weight:600;"></div>
-    <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:6px;"><button type="button" class="btn" onclick="orgCloseModal()">취소</button><button type="button" class="btn coral" onclick="kvMuteSave()">알람 끄기</button></div>`);
+    <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:6px;"><button type="button" class="btn" onclick="orgCloseModal()">취소</button><button type="button" class="btn coral" onclick="${save}">알람 끄기</button></div>`);
 }
 function kvMutePick(k){   // 창을 다시 그리지 않고 고른 것만 표시한다
   if(k) kvMuteUi.why = k;
@@ -5056,7 +5159,8 @@ function kvMutePick(k){   // 창을 다시 그리지 않고 고른 것만 표시
   document.getElementById('kvMuteMonLab').textContent = why==='month' ? '끝나는 달' : '언제까지 꺼 둘까요';
   document.getElementById('kvMuteTextRow').style.display = why==='etc' ? '' : 'none';
   const m = why==='year' ? 12 : +mon.value;
-  document.getElementById('kvMuteWhen').textContent = !why ? '' : m===12 ? '올해 말까지 꺼 둡니다. 연말 평가에서 확인합니다.' : `${m}월 말까지 꺼 두고, ${m+1}월 1일부터 저절로 다시 켜집니다.`;
+  document.getElementById('kvMuteWhen').textContent = !why ? '' : AUTH.live ? (m===12 ? '올해 말까지 꺼 둬요. 연말 평가에서 확인해요.' : `${m}월 말까지 꺼 두고, ${m+1}월 1일부터 저절로 다시 켜져요.`)
+    : m===12 ? '올해 말까지 꺼 둡니다. 연말 평가에서 확인합니다.' : `${m}월 말까지 꺼 두고, ${m+1}월 1일부터 저절로 다시 켜집니다.`;   // 실제 로그인은 "~해요" (시연 글은 그대로)
   document.getElementById('kvMuteErr').textContent = '';
 }
 function kvMuteSave(){
@@ -5237,16 +5341,23 @@ function kvContent(){
    사람을 누르면 표 아래에 그 사람의 그 달 기록(GET /api/kpi/progress/<uid>)이 나오고, [M월 확인]은 바로 위 관리자에게만 보인다(서버가 다시 본다).
    대표이사에게는 팀원 줄이 오지 않는다 — 팀마다 인원 · 평균 · 부진 수 한 줄만. 시연(kv*)은 그대로다.
    시안: 뉴디자인/KPI 진행 관리 시안 - 4 팀장 월간 점검. 모양은 .kvl-* (막대 · 종 · 말풍선은 .kv-bar · .kv-mk 그대로). */
-const KV_LIVE = { state:'', board:null, month:0, sel:null, prog:null, memos:null, open:{}, q:'', onlySlow:false, memoUi:{ reply:null, edit:null } };   // state: '' 아직(또는 다시 읽기) · loading · ok · err. month: 0 = 이번 달. sel: 펼친 사람 번호 — prog · memos 는 그 사람의 진행 기록 · 확인 메모. open: 접고 편 묶음 {부서 번호: 참/거짓}. q · onlySlow: HR 검색 · 부진만 보기. memoUi: 확인 메모 칸
+const KV_LIVE = { state:'', board:null, month:0, sel:null, prog:null, memos:null, open:{}, q:'', onlySlow:false, memoUi:{ reply:null, edit:null, draft:{} } };   // state: '' 아직(또는 다시 읽기) · loading · ok · err. month: 0 = 이번 달. sel: 펼친 사람 번호 — prog · memos 는 그 사람의 진행 기록 · 확인 메모. open: 접고 편 묶음 {부서 번호: 참/거짓}. q · onlySlow: HR 검색 · 부진만 보기. memoUi: 확인 메모 칸 — 답글 · 고치기를 연 메모 번호, draft = 적고 안 보낸 글 {칸 id: 글} (본인 화면의 메모 카드도 같이 쓴다)
 const KV_CHECK = { DONE:['✓', '확인함', 'done'], TODO:['', '확인 전', 'todo'], NONE:['', '안 씀', 'none'], NA:['', '—', ''], NOSTEP:['', '—', ''] };   // 확인 상태 → [앞 아이콘, 글자, 모양]
-function kvLiveFresh(){ if(AUTH.live && currentTab.id==='e4' && KV_LIVE.state!=='loading') Object.assign(KV_LIVE, { state:'', board:null, month:0, sel:null, prog:null, memos:null }); }   // KPI 현황 탭에 들어올 때마다 서버에서 새로 — 이번 달부터, 펼친 사람 없이
+function kvLiveFresh(){   // KPI 현황 탭에 들어올 때마다 서버에서 새로 — 이번 달부터, 펼친 사람 없이. 맨 위 처리할 요청(KPI_LIVE)도 새로 읽는다
+  if(!AUTH.live || currentTab.id!=='e4' || KV_LIVE.state==='loading') return;
+  Object.assign(KV_LIVE, { state:'', board:null, month:0, sel:null, prog:null, memos:null });
+  if(KPI_LIVE.state!=='loading') KPI_LIVE.state = '';
+}
 const kvLiveChk = b=>(!!AUTH.me.is_hr || AUTH.me.position!=='CEO') && b.people.some(p=>p.checkStep);   // 확인 열을 그리나 — 모든 줄이 확인 단계 없음이면 없고, 대표이사는 보기만 하므로(확인 단계 밖) 늘 없다
 const kvLiveNow = ()=>+kpiDay(0).slice(5, 7);   // 이번 달 — 달 넘기기의 끝 (서버는 오늘의 달보다 뒤를 400)
 const kvLiveDay = iso=>{ const d = new Date(iso); return `${d.getMonth() + 1}/${d.getDate()}`; };   // 서버 시각(UTC) → 이 PC 날짜 "10/21"
 const kvLiveMute = m=>`${m.why==='etc' ? m.text : m.why==='month' ? `${m.until}월에 끝나는 일` : KV_MUTE[m.why]} (${m.until===12 ? '올해 말까지' : `${m.until}월 말까지`})`;   // 끈 알람의 이유 (끝나는 때)
+let kvLiveSeq = 0;   // 명단 요청 차례 — 늦게 온 옛 응답이 나중에 보낸 요청의 표를 덮지 않게 (달 넘기기와 확인 뒤 다시 읽기가 겹칠 때)
 async function kvLiveLoad(month=KV_LIVE.month){   // 명단을 서버에서 (month 0 = 이번 달). 못 읽으면: 그린 표가 없으면 오류 안내, 있으면 그 표를 두고 아래쪽 알림
+  const seq = ++kvLiveSeq;
   KV_LIVE.state = 'loading';
   const b = await fetch('/api/kpi/board' + (month ? '?month='+month : '')).then(r=>r.ok ? r.json() : null).catch(()=>null);
+  if(seq!==kvLiveSeq) return;   // 그사이 새 요청을 보냈다 — 그쪽이 넣고 그린다
   if(b){
     Object.assign(KV_LIVE, { board:b, month, state:'ok' });
     if(!b.people.some(p=>p.userId===KV_LIVE.sel)) Object.assign(KV_LIVE, { sel:null, prog:null, memos:null });   // 펼친 사람이 명단에서 빠졌다 (팀을 옮김 등)
@@ -5254,7 +5365,7 @@ async function kvLiveLoad(month=KV_LIVE.month){   // 명단을 서버에서 (mon
   } else if(KV_LIVE.board){ KV_LIVE.state = 'ok'; wsNotice('KPI 현황을 불러오지 못했어요. 잠시 뒤 다시 해 주세요.'); }
   else KV_LIVE.state = 'err';
   if(!['ok', 'loading'].includes(KPI_LIVE.state)) kpiLiveLoad();   // 맨 위 처리할 요청 — 처리함을 아직 못 불렀으면 (다 오면 그쪽이 다시 그린다)
-  renderContent();
+  kpiProgShow();   // 확인 메모 칸에 적는 중이면 그 칸을 떠날 때 그린다 (한글 조합이 끊기지 않게 — 진행 관리와 같은 규칙)
 }
 function kvLiveContent(){   // 처리할 요청(내 몫) → 월간 점검 표 → 펼친 사람 → 맨 아래 한 줄. 시연 역할 전환 · 가상 자료 안내는 없다
   if(!KV_LIVE.state) kvLiveLoad();   // 아직 · 다시 읽을 때 — 이미 그린 표가 있으면 그 표를 보이며 읽는다
@@ -5295,7 +5406,7 @@ function kvLiveList(b=KV_LIVE.board){   // 표의 줄 — 머리 줄 + 부서 �
   if(every.length===1) return head + body(groups[0]);   // 묶음이 하나(팀장)면 머리 줄 없이 — 검색으로 하나만 남은 것은 머리 줄을 둔다
   return head + groups.map(g=>{
     const o = filt || (KV_LIVE.open[g.id] ?? !hr), d = by[g.id], up = d && by[d.parentId], lead = g.all.find(p=>p.position), slow = g.all.filter(p=>p.alarm?.slow).length;   // 처음에는 HR만 접어 둔다
-    return `<button type="button" class="kvl-g" aria-expanded="${o}" onclick="kvLiveFold(${+g.id})">${icon(o ? 'chevD' : 'chevR')}<b>${escapeHtml((up ? up.name+' › ' : '') + (d ? d.name : ''))}</b>${lead ? `<span>· ${escapeHtml(lead.name)} ${lead.position==='DIVISION_HEAD' ? '본부장' : '팀장'} ${lead.total==null ? KPI_LIVE_ST[lead.status][0] : Math.round(lead.total)+'%'}</span>` : ''}${slow ? `<span class="kv-cnt">부진 ${slow}명</span>` : ''}</button>${o ? body(g) : ''}`;
+    return `<button type="button" class="kvl-g" aria-expanded="${o}" onclick="kvLiveFold(${g.id==null ? null : +g.id})">${icon(o ? 'chevD' : 'chevR')}<b>${escapeHtml((up ? up.name+' › ' : '') + (d ? d.name : ''))}</b>${lead ? `<span>· ${escapeHtml(lead.name)} ${lead.position==='DIVISION_HEAD' ? '본부장' : '팀장'} ${lead.total==null ? KPI_LIVE_ST[lead.status][0] : Math.round(lead.total)+'%'}</span>` : ''}${slow ? `<span class="kv-cnt">부진 ${slow}명</span>` : ''}</button>${o ? body(g) : ''}`;
   }).join('');
 }
 function kvLiveRows(){ const el = document.getElementById('kvlRows'); if(el) el.innerHTML = kvLiveList(); }   // 표만 다시 그린다 — 검색어를 적는 동안 입력칸을 다시 그리면 한글 조합이 끊긴다
@@ -5320,14 +5431,14 @@ async function kvLiveRead(uid){   // 펼친 사람의 진행 기록 + 확인 메
 async function kvLivePick(uid){   // 사람을 누르면 표 아래에 그 사람의 그 달 기록 — 같은 사람을 또 누르면 닫는다. 내가 쓴 메모에 새 답글이 있으면 본 것으로 하고 명단(숫자)을 다시 읽는다
   if(KV_LIVE.sel===uid){ Object.assign(KV_LIVE, { sel:null, prog:null, memos:null }); return renderContent(); }
   const p = KV_LIVE.board.people.find(x=>x.userId===uid);
-  Object.assign(KV_LIVE, { sel:uid, prog:null, memos:null, memoUi:{ reply:null, edit:null } });
+  Object.assign(KV_LIVE, { sel:uid, prog:null, memos:null, memoUi:{ reply:null, edit:null, draft:{} } });
   renderContent();
   if(!await kvLiveRead(uid)) return;
   if(p && p.memo.fresh && await kpiLivePost(`/api/kpi/memos/${+uid}/seen`, { year:KV_LIVE.board.year })===200) await kvLiveLoad();   // 붉은 말풍선이 사라진다 (kvLiveLoad 가 다시 그린다)
   else renderContent();
   document.getElementById('kvlPerson')?.scrollIntoView({ block:'nearest' });
 }
-function kvLiveItem(it, M, year, gap){   // 펼친 사람의 실행목표 한 줄 (시안 4): 왼쪽 실행목표 · 진행 / 가운데 그 달 기록 · 늦어지는 이유 · 끈 알람 / 오른쪽 쓴 날
+function kvLiveItem(it, M, year, gap, uid){   // 펼친 사람의 실행목표 한 줄 (시안 4): 왼쪽 실행목표 · 진행 / 가운데 그 달 기록 · 늦어지는 이유 · 끈 알람 / 오른쪽 쓴 날. uid: 바로 위 관리자가 보면 그 사람 번호 — 끈 알람에 [다시 켜기]
   const reg = it.kind==='reg', late = Math.round(it.expected) - Math.round(it.value), ym = `${year}-${String(M).padStart(2, '0')}`;   // 늦음은 보이는 반올림 숫자로 — 서버 부진 판정과 같게
   const sub = reg ? `정기적 · ${it.target!=null ? `${it.actual==null ? 0 : +it.actual} / ${+it.target}${escapeHtml(it.unit)} · ` : ''}${Math.round(it.value)}%`
     : `비정기적 · ${it.scheds.filter(s=>s.result).length} / ${it.scheds.length}회 · ${Math.round(it.value)}%`;
@@ -5344,7 +5455,7 @@ function kvLiveItem(it, M, year, gap){   // 펼친 사람의 실행목표 한 �
     at = ss.map(s=>s.result?.at).filter(Boolean).sort().pop();
   }
   return `<div class="kvl-it"><div><b>${escapeHtml(it.action)}</b><small>${sub}</small>${!it.mute && late>=gap ? `<small class="kvl-late">기대보다 ${late}%p 늦음</small>` : ''}</div>
-    <div>${mid}${it.why ? `<div class="kvl-why">늦어지는 이유: ${escapeHtml(it.why)}</div>` : ''}${it.mute ? `<div class="kv-mute">${icon('bellOff')}<span>본인이 알람 끔 · ${escapeHtml(kvLiveMute(it.mute))}</span></div>` : ''}</div>
+    <div>${mid}${it.why ? `<div class="kvl-why">늦어지는 이유: ${escapeHtml(it.why)}</div>` : ''}${it.mute ? `<div class="kv-mute">${icon('bellOff')}<span>본인이 알람 끔 · ${escapeHtml(kvLiveMute(it.mute))}${uid ? ` <button type="button" class="kv-link" onclick="kvLiveUnmute(${+uid},${+it.rid})">다시 켜기</button>` : ''}</span></div>` : ''}</div>
     <div class="kvl-at">${at ? kvLiveDay(at)+' 작성' : '—'}</div></div>`;
 }
 function kvLivePerson(){   // 펼친 사람 카드 (시안 4 아래): 제목 · [계획서 보기] · [확인 메모 쓰기] · [M월 확인] → 실행목표마다 그 달 기록 → 안내 → 확인 메모
@@ -5356,10 +5467,18 @@ function kvLivePerson(){   // 펼친 사람 카드 (시안 4 아래): 제목 · 
   const chk = st==='DONE' ? `<span class="kvl-ck done"><i>✓</i>${M}월 확인함 ${kvLiveDay(p.month.checkedAt)}</span>` : mine && st==='TODO' ? `<button type="button" class="btn sm primary" id="kvlCheck" onclick="kvLiveCheck(${+p.userId})">${M}월 확인</button>` : '';
   const btns = `<span class="kvl-btns"><button type="button" class="btn sm" onclick="kpiLiveView(${+p.userId})">계획서 보기</button>${KV_LIVE.memos?.canWrite ? `<button type="button" class="btn sm" onclick="document.getElementById('kvMemo')?.focus()">확인 메모 쓰기</button>` : ''}${chk}</span>`;
   const say = !p.checkStep ? '대표이사에게 보고하는 분은 월간 확인이 없어요.' : mine ? `"${M}월 확인"을 누르면 ${escapeHtml(p.name)} 님 화면에 <b class="ok">✓ ${boss} 확인</b>이 붙고, 하고 싶은 말은 <b>확인 메모</b>로 남겨요.` : '읽기만 해요 · 확인과 메모는 바로 위 관리자가 해요.';
-  return title(btns) + prog.items.map(it=>kvLiveItem(it, M, prog.year, prog.gap)).join('')
+  return title(btns) + prog.items.map(it=>kvLiveItem(it, M, prog.year, prog.gap, p.direct ? p.userId : 0)).join('')
     + `<div class="kvl-foot">비정기 KPI는 <b>예정 기한이 지난 달에만</b> 적을 것이 생겨요. ${say}</div>${kvLiveMemos()}</div>`;
 }
-function kvLiveMemos(){ return ''; }   // 펼친 사람의 확인 메모 — 다음 작업(2단계 ② 확인 메모)에서 그린다
+function kvLiveMemos(){   // 펼친 사람 카드 아래 확인 메모 (시연 kvMemoBlock) — 바로 위 관리자가 쓰고(canWrite) 본인 · 윗사람 · HR이 함께 본다. 쓸 사람이 없으면(대표이사에게 보고) 안내 한 줄
+  const d = KV_LIVE.memos, p = KV_LIVE.board.people.find(x=>x.userId===KV_LIVE.sel);
+  if(!d || !d.memos || !p) return '';
+  const w = d.writer, lead = w ? kpiLeadName(w.id) : '', also = w ? kvLiveAlso(w.id) : '', uid = +p.userId;
+  return `<div class="kv-sec"><span>${lead ? lead+' ' : ''}확인 메모</span>${w ? `<small>${lead}${kpiGa(lead)} 쓰고 본인 · ${also ? also+' · ' : ''}HR이 함께 봐요</small>` : ''}</div>`
+    + (w ? '' : '<div class="list-sub">대표이사에게 보고하는 분은 확인 메모가 없어요.</div>')
+    + (kvLiveThread(d, p.name, uid) || (w && !d.canWrite ? '<div class="list-sub">아직 메모가 없어요.</div>' : ''))
+    + (d.canWrite ? `<div class="kv-memo-in"><input id="kvMemo" maxlength="200" placeholder="확인 · 면담한 내용을 적어 주세요" aria-label="확인 메모" value="${escapeHtml(KV_LIVE.memoUi.draft.kvMemo || '')}" oninput="KV_LIVE.memoUi.draft[this.id]=this.value" onkeydown="if(event.key==='Enter' && !event.isComposing) kvLiveMemoDo('add',0,${uid})"><button type="button" class="btn sm" onclick="kvLiveMemoDo('add',0,${uid})">남기기</button></div>` : '');
+}
 async function kvLiveCheck(uid){   // [M월 확인] — 받으면 아래쪽 알림. 받든 못 받든 펼친 사람 · 명단을 다시 읽는다 (그사이 바뀌었을 수 있다)
   const b = KV_LIVE.board, el = document.getElementById('kvlCheck');
   if(el) el.disabled = true;
@@ -5386,10 +5505,107 @@ function kvLiveExport(){   // HR: 지금 보는 달의 명단 전부(검색 · �
   a.href = URL.createObjectURL(new Blob([csvText([head, ...rows])], { type:'text/csv;charset=utf-8' }));
   a.download = `KPI진행현황_${kpiDay(0)}.csv`; a.click(); URL.revokeObjectURL(a.href);
 }
+/* ----- 확인 메모 주고받기 · 알람 끄기 — 실제 로그인 (2단계 ② Task 8) -----
+   시연(kvMemoOne · kvThread · kvMuteAsk)과 같은 모양 · 같은 클래스를 서버 자료로 그린다. 단추는 서버가 준 값(role · canEdit · canDelete · ack)대로 — 막는 것은 안내이고 서버가 다시 본다.
+   KPI 현황(펼친 사람 카드 아래)과 본인 진행 관리(맨 아래 카드)가 같은 kvLiveThread · kvLiveMemoDo 를 쓴다. 적고 안 보낸 글은 KV_LIVE.memoUi.draft 에 두어 다시 그려도 남고,
+   글 칸에 커서가 있는 동안에는 다시 그리지 않는다(kpiProgShow — 한글 조합이 끊기지 않게). */
+function kvLiveAlso(wid){   // 확인 메모를 함께 보는 윗사람 — 쓴 사람이 본부장이면 대표이사, 팀장이면 그 본부의 본부장(본부장이 없는 본부면 없음). 조직도 명단으로
+  const w = ORG_LIVE.people.find(m=>m.uid===wid);
+  return !w ? '' : w.lead==='DIVISION' ? '대표이사' : w.lead==='TEAM' && ORG_LIVE.tree.some(d=>d.division===w.division && !d.noHead) ? '본부장' : '';
+}
+function kvLiveMemoOne(d, m, owner, uid){   // 메모 하나 (시연 kvMemoOne 과 같은 모양). d = GET /api/kpi/memos 응답, owner = KPI 주인 이름. 윗사람 · HR(role '')은 단추 없이 읽기만
+  const ui = KV_LIVE.memoUi, edit = ui.edit===m.id, reply = ui.reply===m.id, day = at=>kvMd(kpiYmd(at)), go = (act, x=m.id)=>`kvLiveMemoDo('${act}',${+x},${+uid})`;
+  const own = m.replies.filter(r=>r.who==='owner').length, fresh = +m.fresh || 0;
+  let n = 0;   // 맨 뒤 fresh 개의 본인 답글이 "새 답글" (fresh = 쓴 사람이 마지막으로 본 뒤 달린 본인 답글 수 — 쓴 사람에게만 온다)
+  const replies = m.replies.map(r=>{
+    const isNew = r.who==='owner' && ++n > own - fresh;
+    return `<div class="kv-reply${r.who==='owner' ? ' own' : ''}"><b>${escapeHtml(r.by)} · ${day(r.at)}${isNew ? '<span class="kv-new">새 답글</span>' : ''}</b><span>${escapeHtml(r.text)}</span>${r.canDelete ? `<button type="button" class="kv-link" onclick="${go('rdel', r.id)}">삭제</button>` : ''}</div>`;
+  }).join('');
+  const state = d.role==='owner' ? (m.ack ? `<span class="kv-ack">${icon('check')}확인함 · ${day(m.ack)}</span>` : `<button type="button" class="btn sm coral" onclick="${go('ack')}">${icon('check')}확인했습니다</button>`)
+    : m.ack ? `<span class="kv-ack">${icon('check')}${escapeHtml(owner)} 확인함 · ${day(m.ack)}</span>` : `<span class="kv-wait">${icon('clock')}${escapeHtml(owner)} 아직 확인 전</span>`;
+  const box = (id, val, ph, act, label)=>`<div class="kv-memo-in"><input id="${id}" maxlength="200" value="${escapeHtml(val)}" placeholder="${ph}" aria-label="${label}" oninput="KV_LIVE.memoUi.draft[this.id]=this.value" onkeydown="if(event.key==='Enter' && !event.isComposing) ${go(act)}"><button type="button" class="btn sm" onclick="${go(act)}">${label}</button><button type="button" class="btn sm" onclick="kvLiveMemoOpen()">취소</button></div>`;
+  return `<div class="kv-memo"><div class="kv-memo-h"><b>${day(m.at)} · ${escapeHtml(m.by)}</b>${m.canEdit && !edit ? `<span><button type="button" class="kv-link" onclick="kvLiveMemoOpen('edit',${+m.id})">수정</button><button type="button" class="kv-link" onclick="${go('del')}">삭제</button><small>오늘까지 고칠 수 있음</small></span>` : ''}</div>
+    ${edit ? box('kvMemoEdit', ui.draft.kvMemoEdit ?? m.text, '메모를 고쳐 주세요', 'edit', '저장') : `<div class="kv-memo-t">${escapeHtml(m.text)}</div>`}
+    ${replies}
+    <div class="kv-memo-f">${state}${(d.role==='owner' || m.authorId===+AUTH.me.user_id) && !reply ? `<button type="button" class="kv-link" onclick="kvLiveMemoOpen('reply',${+m.id})">${icon('message')}답글</button>` : ''}</div>
+    ${reply ? box('kvMemoReply', ui.draft.kvMemoReply || '', '답글을 적어 주세요', 'reply', '답글 남기기') : ''}</div>`;
+}
+function kvLiveThread(d, owner, uid){   // 메모 묶음 (시연 kvThread) — 맨 새것 · 본인이 확인 안 한 것(본인일 때) · 새 답글이 온 것(쓴 사람일 때) · 고치거나 답글을 다는 중인 것은 펼치고, 나머지는 "지난 메모 N건"
+  const ui = KV_LIVE.memoUi, front = (m, i)=>i===0 || (d.role==='owner' && !m.ack) || m.fresh > 0 || ui.edit===m.id || ui.reply===m.id, one = m=>kvLiveMemoOne(d, m, owner, uid);
+  const a = d.memos.filter(front), b = d.memos.filter((m, i)=>!front(m, i));
+  return a.map(one).join('') + (b.length ? `<details class="kv-old"><summary>지난 메모 ${b.length}건</summary>${b.map(one).join('')}</details>` : '');
+}
+function kvLiveMyMemoCard(d=KPI_LIVE.memos){   // 본인 진행 관리 맨 아래 "{팀장|본부장} 확인 메모" (시연 kvMyMemoCard). 못 읽었거나, 쓸 사람도(대표이사에게 보고) 받은 메모도 없으면 그리지 않는다
+  if(!d || !d.memos || (!d.writer && !d.memos.length)) return '';
+  const w = d.writer, lead = w ? kpiLeadName(w.id) : '', also = w ? kvLiveAlso(w.id) : '', n = d.memos.filter(m=>!m.ack).length;
+  return `<div class="card" id="kvMyMemo" style="margin-top:14px;"><div class="card-title"><span>${lead ? lead+' ' : ''}확인 메모</span>${n ? `<span class="badge danger">확인할 메모 ${n}건</span>` : ''}</div>
+    <div class="list-sub" style="margin:-6px 0 4px;">${w ? `${escapeHtml(w.name)} ${lead}${kpiGa(lead)} KPI 진행을 확인하고 남기는 메모예요. 확인했다고 누르거나 답글을 달 수 있어요. ${also ? also+' · ' : ''}HR도 함께 봐요.` : '대표이사에게 보고하는 분은 확인 메모가 없어요.'}</div>
+    ${d.memos.length ? kvLiveThread(d, AUTH.me.name, +AUTH.me.user_id) : '<div class="list-sub" style="padding:8px 0 0;">아직 받은 메모가 없어요.</div>'}</div>`;
+}
+function kvLiveMemoOpen(kind, id){   // [수정] · [답글] — 그 칸을 열고(그 메모는 펼쳐 둔다) 글 끝에 커서. 인자 없이 부르면 [취소] — 닫고 적던 글을 버린다
+  const ui = KV_LIVE.memoUi;
+  Object.assign(ui, { reply:kind==='reply' ? id : null, edit:kind==='edit' ? id : null });
+  delete ui.draft.kvMemoEdit; delete ui.draft.kvMemoReply;
+  kpiProgShow(kind ? [kind==='edit' ? 'kvMemoEdit' : 'kvMemoReply'] : [], true);
+}
+let kvMemoBusy = false;   // 확인 메모 일 하나가 도는 중 — 두 번 누름 · Enter 두 번을 막는다
+async function kvLiveMemoDo(act, id, uid, box){   // 확인 메모 일: add(메모 남기기 · id 0) · edit · del · ack · reply(id = 메모 번호) · rdel(id = 답글 번호). uid = KPI 주인
+  // 지우기는 한 번 묻는다(box = 묻는 창의 오류 칸 — 창은 서버가 받은 뒤 닫힌다). 받으면 적던 글을 비우고 서버 것을 다시 읽는다(본인 화면 = 내 메모, KPI 현황 = 펼친 사람 · 명단 숫자).
+  // 오류는 kpiLivePost 규칙(400 위쪽 붉은 칸 · 403 아래쪽 알림, 창이 떠 있으면 창 안). 400 · 못 보냄이면 적던 글 그대로 두고 다시 읽지 않는다
+  const f = { add:'kvMemo', edit:'kvMemoEdit', reply:'kvMemoReply' }[act], el = f && document.getElementById(f), text = el ? el.value.trim() : '';
+  if(f && !text) return el?.focus();
+  if((act==='del' || act==='rdel') && !box) return kvLiveMemoAsk(act, id, uid);
+  if(kvMemoBusy) return;
+  kvMemoBusy = true; kpiMsg = null;
+  try {
+    const path = act==='add' ? `/api/kpi/memos/${+uid}` : act==='rdel' ? `/api/kpi/memo-reply/${+id}/delete` : `/api/kpi/memo/${+id}/${act==='del' ? 'delete' : act}`;
+    const s = await kpiLivePost(path, act==='add' ? { year:KV_LIVE.board.year, text } : f ? { text } : {}, box), ui = KV_LIVE.memoUi;
+    if(s===200){
+      if(f) delete ui.draft[f];
+      if(act!=='add' && act!=='ack') Object.assign(ui, { reply:null, edit:null });
+      if(box) orgCloseModal();
+      if(act==='del' || act==='rdel') wsNotice(act==='del' ? '메모를 지웠어요.' : '답글을 지웠어요.');
+    }
+    if(s!==400 && s!==0){   // 받았거나 거절(403 · 404) — 그사이 바뀌었을 수 있으니 서버 것을 다시 읽는다
+      if(uid===+AUTH.me.user_id) KPI_LIVE.memos = await kpiMemoGet(KPI_LIVE.me) || KPI_LIVE.memos;
+      else { await kvLiveRead(uid); await kvLiveLoad(); }
+    }
+    kpiProgShow(f ? [f] : [], true);   // 보낸 칸은 바로 비운다 (적는 중 미루기와 상관없이)
+    if(kpiMsg) document.getElementById('kpiLiveMsg')?.scrollIntoView({ block:'nearest' });
+  } finally { kvMemoBusy = false; }
+}
+function kvLiveMemoAsk(act, id, uid){   // 메모 · 답글 [삭제] — 한 번 묻는다. [지우기]를 누르면 보내고, 오류는 창 안에, 창은 서버가 받은 뒤에 닫힌다
+  const memo = act==='del';
+  orgModal(`<div class="card-title"><span>${memo ? '메모를 지울까요?' : '답글을 지울까요?'}</span><button type="button" class="x-btn" aria-label="닫기" onclick="orgCloseModal()">${icon('x')}</button></div>
+    <div class="list-sub" style="margin-bottom:12px;">${memo ? '달린 답글도 함께 지워져요. ' : ''}지운 글은 되돌릴 수 없어요.</div>
+    <div class="kl-err" id="kpiActErr"></div>
+    <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:12px;"><button type="button" class="btn" onclick="orgCloseModal()">취소</button><button type="button" class="btn coral" onclick="this.disabled=true; kvLiveMemoDo('${act}',${+id},${+uid},document.getElementById('kpiActErr')).then(()=>{ this.disabled=false; })">지우기</button></div>`);
+}
+function kvLiveMuteAsk(rid, prog=KPI_LIVE.prog){   // 본인 [알람 끄기] 창 — 시연 창과 같은 모양(kvMuteBox): 이유 넷 · 끝나는 달(이번 달 ~ 12월) · 직접 적기 50자. 이유 · 달 · 글은 서버가 다시 본다
+  const it = prog && prog.items.find(x=>x.rid===rid);
+  if(!it) return;
+  kvMuteUi = { rid, why:'' };
+  kvMuteBox(it.action, '끈 항목은 빼고 나머지 항목으로 늦는지 따져요. 바로 위 관리자 · HR이 이유를 함께 봐요.', 'kvLiveMuteSave()');
+}
+function kvLiveMuteSave(){   // 창의 [알람 끄기] — 진행 기록 저장 줄로 (받으면 진행 기록을 다시 읽는다). 보내는 동안 창 단추를 끄고, 오류는 창 안에, 창은 서버가 받은 뒤에 닫힌다
+  const v = id=>document.getElementById(id), { why, rid } = kvMuteUi, err = v('kvMuteErr'), text = v('kvMuteText').value.trim();
+  if(!why){ err.textContent = '이유를 하나 골라 주세요.'; return; }
+  if(why==='etc' && !text){ err.textContent = '이유를 한 줄 적어 주세요.'; return v('kvMuteText').focus(); }
+  const body = { year:KPI_LIVE.prog.year, rid, why, ...(why==='year' ? {} : { month:+v('kvMuteMon').value }), ...(why==='etc' ? { text } : {}) }, btns = [...document.querySelectorAll('#orgModal button')];
+  btns.forEach(b=>b.disabled = true); err.textContent = '';
+  return kpiProgDo(()=>['/api/kpi/me/mute', body, '', ()=>orgCloseModal(), err], [`kp-mu-${+rid}`], 'mute'+rid).then(()=>btns.forEach(b=>b.disabled = false));
+}
+async function kvLiveUnmute(uid, rid){   // [다시 켜기] — 본인 · 바로 위 관리자만 (서버가 다시 본다). 본인 화면이면 진행 기록 저장 줄로(진행 기록을 다시 읽는다), KPI 현황이면 받든 못 받든 펼친 사람 · 명단을 다시 읽는다
+  if(uid===+AUTH.me.user_id) return kpiProgDo(()=>[`/api/kpi/plans/${+uid}/unmute`, { year:KPI_LIVE.prog.year, rid }, ''], [`kp-mu-${+rid}`], 'unmute'+rid);
+  kpiMsg = null;
+  if(await kpiLivePost(`/api/kpi/plans/${+uid}/unmute`, { year:KV_LIVE.board.year, rid })===200) wsNotice('알람을 다시 켰어요.');
+  await kvLiveRead(uid);
+  await kvLiveLoad();
+}
 async function kvLiveSelfCheck(){   // 브라우저 콘솔에서 await kvLiveSelfCheck() — 실제 로그인 KPI 현황(시안 4)의 그리기와 보내는 모양만 본다. fetch · 내려받기는 가짜(서버에 보내지 않는다), 끝나면 화면을 되돌린다
   const ok = (c, m)=>{ if(!c) throw new Error('kvLiveSelfCheck 실패: '+m); };
   const dom = html=>{ const t = document.createElement('template'); t.innerHTML = html; return t.content; };
-  const txt = (r, s)=>[...r.querySelectorAll(s)].map(e=>e.textContent.replace(/​/g, '').trim()), now = +kpiDay(0).slice(5, 7);
+  const txt = (r, s)=>[...r.querySelectorAll(s)].map(e=>e.textContent.replace(/\u200b/g, '').trim()), now = +kpiDay(0).slice(5, 7);
   const mo = (check, x)=>({ reg:[1, 2], irr:[0, 1], records:1, noSched:false, check, checkedAt:check==='DONE' ? '2026-05-20T12:00:00Z' : null, ...x });
   const P = (userId, deptId, x)=>({ userId, name:'가상'+userId, title:'프로', deptId, position:null, status:'CONFIRMED', direct:true, checkStep:true, total:50, totalExpected:60,
     alarm:{ slow:false, pct:50, expected:60 }, items:[], month:mo('TODO'), memo:{ count:0, open:0, fresh:0 }, ...x });
@@ -5410,7 +5626,7 @@ async function kvLiveSelfCheck(){   // 브라우저 콘솔에서 await kvLiveSel
     ok(kvMonthText({ reg:[1, 1], irr:[0, 1], noSched:false })==='정기 1/1 · 비정기 결과 0/1' && kvMonthText({ reg:[3, 3], irr:[0, 0], noSched:true })==='정기 3/3 · 이번 달 일정 없음'
       && kvMonthText({ reg:[0, 0], irr:[0, 0], noSched:false })==='적을 것 없음' && kvMonthText(null)==='—', '그 달에 적을 것: 정기 n/m · 비정기 결과 n/m · 이번 달 일정 없음 · 적을 것 없음 · —');
     const st5 = ['DONE', 'TODO', 'NONE', 'NA', 'NOSTEP'];
-    ok(st5.map(s=>dom(kvCheckText(s)).textContent).join()==='✓확인함,​확인 전,​안 씀,​—,​—' && st5.every(s=>dom(kvCheckText(s)).querySelector('.kvl-ck > i')), '확인 글자 다섯 · 앞의 아이콘 자리는 늘 있다');
+    ok(st5.map(s=>dom(kvCheckText(s)).textContent).join()==='✓확인함,\u200b확인 전,\u200b안 씀,\u200b—,\u200b—' && st5.every(s=>dom(kvCheckText(s)).querySelector('.kvl-ck > i')), '확인 글자 다섯 · 앞의 아이콘 자리는 늘 있다');
 
     // 팀장: 시안 4 그대로 — 묶음 머리 없음
     const tlPeople = [P(11, 3, { total:30, alarm:{ slow:true, pct:30, expected:60 }, memo:{ count:2, open:1, fresh:1 } }), P(12, 3, { month:mo('DONE') }), P(13, 3, { month:mo('NONE', { reg:[0, 2], records:0 }) }),
@@ -5501,7 +5717,7 @@ async function kvLiveSelfCheck(){   // 브라우저 콘솔에서 await kvLiveSel
     ok(its[0].querySelector('.kp-text').textContent==='가상 <b>한 줄</b>' && its[0].querySelector('a[href="https://example.invalid/a"][target="_blank"]') && its[0].textContent.includes('늦어지는 이유: 가상 <i>이유</i>')
       && !its[0].querySelector('.kp-text b, .kvl-why i') && its[0].lastElementChild.textContent==='5/5 작성', '정기 가운데: 그 달 한 줄(글자 그대로) + 링크 · 늦어지는 이유 · 오른쪽 쓴 날');
     ok(txt(its[1], '.kvl-ev').join('|')==='5/3 가상일정1 — 가상 결과|5/5 가상일정2 — 결과 안 씀 (기한 지남)|5/6 가상일정3 — 결과 안 씀 (기한 지남)|5/28 가상일정4 예정' && its[1].querySelector('.kvl-ev.over') && its[1].querySelector('.kvl-ev.late') && its[1].lastElementChild.textContent==='5/4 작성', '비정기 가운데: 그 달 기한 일정마다 결과 · 안 씀(주황 · 빨강) · 예정 (다른 달 일정은 없음)');
-    ok(its[1].children[0].textContent.includes('비정기적 · 2 / 5회 · 25%') && !its[1].querySelector('.kvl-late') && its[1].querySelector('.kv-mute').textContent.includes('본인이 알람 끔 · 외부 일정을 기다리는 중 (11월 말까지)') && !its[1].querySelector('.kv-mute button'), '알람을 끈 실행목표: 늦음 표시 없이 "본인이 알람 끔 · 이유 (n월 말까지)"');
+    ok(its[1].children[0].textContent.includes('비정기적 · 2 / 5회 · 25%') && !its[1].querySelector('.kvl-late') && its[1].querySelector('.kv-mute').textContent.includes('본인이 알람 끔 · 외부 일정을 기다리는 중 (11월 말까지)') && its[1].querySelector('.kv-mute button')?.getAttribute('onclick')==='kvLiveUnmute(11,2)', '알람을 끈 실행목표: 늦음 표시 없이 "본인이 알람 끔 · 이유 (n월 말까지)" + 바로 위 관리자에게 [다시 켜기]');
     ok(its[2].textContent.includes('5월은 적을 것 없음 · 다음 기한 7/1 가상일정7') && its[2].lastElementChild.textContent==='—', '그 달 일정이 없으면 "적을 것 없음 · 다음 기한"');
     ok(k.querySelector('.kvl-foot').textContent.includes('"5월 확인"을 누르면 가상11 님 화면에 ✓ 팀장 확인이 붙고'), '아래 안내: 바로 아래 사람이면 확인 · 메모 안내');
     k = card(12); ok(!k.querySelector('#kvlCheck') && k.querySelector('.card-title').textContent.includes('5월 확인함 5/20') && k.querySelector('.card-title .kvl-ck.done i').textContent==='✓', '이미 확인한 달은 [5월 확인] 대신 "✓ 5월 확인함 m/d"');
@@ -5525,6 +5741,76 @@ async function kvLiveSelfCheck(){   // 브라우저 콘솔에서 await kvLiveSel
     await kvLivePick(13); ok(KV_LIVE.sel===null && notes.includes('가상 거절'), '못 읽으면 아래쪽 알림 · 카드를 닫는다');
     notes.length = 0; const old = KV_LIVE.board; await kvLiveLoad(4);
     ok(KV_LIVE.board===old && KV_LIVE.state==='ok' && KV_LIVE.month===5 && notes.length===1, '달을 넘기다 못 읽으면 지난 표를 두고 아래쪽 알림');
+    // 확인 메모 · KPI 현황의 [다시 켜기] · Task 7 리뷰에서 넘어온 작은 고침 (Task 8)
+    k = card(14); ok(k.querySelector('.kv-mute') && !k.querySelector('.kv-mute button'), '바로 아래 사람이 아니면 [다시 켜기] 없음 (본인 · 바로 위 관리자만)');
+    const o8 = { people:ORG_LIVE.people, tree:ORG_LIVE.tree, tab:currentTab, kst:KPI_LIVE.state };
+    try {
+      ORG_LIVE.people = [{ uid:99, lead:'TEAM', division:'가상본부' }]; ORG_LIVE.tree = [{ division:'가상본부', noHead:false }];
+      const MA = (id, x)=>({ id, at:'2026-05-20T15:30:00Z', authorId:99, by:'가상나 팀장', text:`가상 <b>메모</b>${id}`, edited:false, ack:null, fresh:0, canEdit:false, replies:[], ...x });
+      const RP = (id, who, x)=>({ id, at:'2026-05-21T01:00:00Z', who, by:who==='owner' ? '가상11 프로' : '가상나 팀장', text:`가상 답글${id}`, canDelete:false, ...x });
+      const md = (role, memos, x)=>({ role, canWrite:role==='writer', writer:{ id:99, name:'가상나', title:'팀장' }, memos, ...x });
+      const ms = ()=>[MA(3, { canEdit:true, fresh:1, replies:[RP(1, 'owner'), RP(2, 'writer', { canDelete:true }), RP(3, 'owner', { text:'가상 <i>새</i> 답글' })] }), MA(2, { ack:'2026-05-10T01:00:00Z' }), MA(1, { ack:'2026-04-10T01:00:00Z', authorId:98, by:'가상옛 팀장' })];
+      const ui0 = ()=>({ reply:null, edit:null, draft:{} }), mb = m=>[...m.querySelectorAll('button')].map(b=>b.textContent.trim()).join();
+      const mc = (memos, x={})=>view(TL, pb, { sel:11, prog, memos, memoUi:ui0(), ...x }).querySelector('#kvlPerson');
+      k = mc(md('writer', ms()));
+      const front = [...k.querySelectorAll(':scope > .kv-memo')], old = k.querySelector('details.kv-old');
+      ok(k.querySelector('.kv-sec')?.textContent==='팀장 확인 메모팀장이 쓰고 본인 · 본부장 · HR이 함께 봐요', '확인 메모 머리: "{직책} 확인 메모" · 함께 보는 사람 (조직도 명단으로)');
+      ok(front.length===1 && old?.querySelector('summary').textContent==='지난 메모 2건' && old.querySelectorAll('.kv-memo').length===2, '지난 메모 접기: 맨 새것은 펼치고 확인한 옛 메모는 "지난 메모 N건" 안에');
+      ok(mb(front[0])==='수정,삭제,삭제,답글' && front[0].querySelector('.kv-memo-h small').textContent==='오늘까지 고칠 수 있음' && front[0].querySelector('.kv-wait').textContent.includes('가상11 아직 확인 전') && !front[0].querySelector('.btn.coral'),
+        '쓴 사람: 같은 날 [수정][삭제] · 내가 오늘 단 답글 [삭제] · [답글] · 확인 단추 없이 본인 확인 상태만');
+      ok([...front[0].querySelectorAll('.kv-reply')].map(r=>!!r.querySelector('.kv-new')).join()==='false,false,true' && front[0].querySelectorAll('.kv-reply')[2].textContent.includes('가상 <i>새</i> 답글') && !k.querySelector('.kv-reply i, .kv-memo-t b'),
+        '새 답글: 쓴 사람이 아직 못 본 본인 답글(fresh 개, 맨 뒤부터)에만 "새 답글" · 글은 글자 그대로');
+      ok(mb(old.querySelectorAll('.kv-memo')[1])==='' && old.querySelectorAll('.kv-memo')[1].querySelector('.kv-ack').textContent.includes('가상11 확인함 · 4월 10일'), '다른 관리자가 쓴 옛 메모: 단추 없이 확인 상태만');
+      ok(front[0].querySelector('.kv-memo-h b').textContent==='5월 21일 · 가상나 팀장', '날짜는 한국 날짜 (UTC 5/20 15:30 = 한국 5/21)');
+      const mi = k.querySelector('#kvMemo');
+      ok(mi && mi.maxLength===200 && mi.getAttribute('onkeydown').includes("event.key==='Enter' && !event.isComposing") && mi.getAttribute('onkeydown').includes("kvLiveMemoDo('add',0,11)") && mb(mi.parentElement)==='남기기', '쓸 수 있으면 입력 칸(200자 · Enter · 한글 조합 중 아님) + [남기기]');
+      k = mc(md('', ms().map(m=>({ ...m, authorId:98, canEdit:false, replies:m.replies.map(r=>({ ...r, canDelete:false })) })), { canWrite:false }));
+      ok(!k.querySelector('.kv-memo button') && !k.querySelector('#kvMemo') && k.querySelectorAll('.kv-memo .kv-wait, .kv-memo .kv-ack').length===3, '윗사람 · HR(role 없음): 단추 없이 읽기만 · 입력 칸 없음');
+      k = mc(md('', [], { writer:null, canWrite:false }));
+      ok(k.querySelector('.kv-sec')?.textContent==='확인 메모' && k.textContent.includes('대표이사에게 보고하는 분은 확인 메모가 없어요.') && !k.querySelector('#kvMemo'), '쓸 사람이 없으면(대표이사에게 보고) 안내 한 줄');
+      k = mc(md('writer', ms()), { memoUi:{ reply:2, edit:null, draft:{ kvMemoReply:'적던 <답글>', kvMemo:'적던 메모' } } });
+      ok(k.querySelectorAll(':scope > .kv-memo').length===2 && k.querySelector('details.kv-old summary').textContent==='지난 메모 1건' && k.querySelector('#kvMemoReply')?.value==='적던 <답글>' && k.querySelector('#kvMemoReply').maxLength===200
+        && k.querySelector('#kvMemoReply').getAttribute('onkeydown').includes('!event.isComposing') && k.querySelector('#kvMemo').value==='적던 메모', '답글을 다는 메모는 펼쳐 두고, 적고 안 보낸 글은 다시 그려도 그대로');
+      // 보내는 모양 — fetch 는 가짜
+      const sent8 = []; let st8 = 200;
+      window.fetch = (u, o)=>{ sent8.push(`${o?.method || 'GET'} ${u}${o?.body ? ' '+o.body : ''}`);
+        const j = st8!==200 && o ? { error:'가상 거절' } : u.startsWith('/api/kpi/progress/') ? prog : u.startsWith('/api/kpi/memos/') && !o ? md('writer', ms()) : u.startsWith('/api/kpi/board') ? pb : { ok:true };
+        return Promise.resolve({ ok:st8===200 || !o, status:o ? st8 : 200, json:()=>Promise.resolve(JSON.parse(JSON.stringify(j))) }); };
+      const go8 = async (x, act, id, val)=>{ sent8.length = 0;
+        const c = mount(TL, pb, { month:5, sel:11, prog, memos:md('writer', ms()), memoUi:{ ...ui0(), ...x } }), el = c.querySelector({ add:'#kvMemo', edit:'#kvMemoEdit', reply:'#kvMemoReply' }[act] || '#없음');
+        if(el && val!=null){ el.value = val; el.dispatchEvent(new Event('input')); }
+        await kvLiveMemoDo(act, id, 11); return sent8.join('|'); };
+      const re = '|GET /api/kpi/progress/11|GET /api/kpi/memos/11|GET /api/kpi/board?month=5';
+      ok(await go8({}, 'add', 0, '  ')==='', '빈 글은 보내지 않는다');
+      ok(await go8({}, 'add', 0, ' 가상 새 메모 ')==='POST /api/kpi/memos/11 {"year":2026,"text":"가상 새 메모"}'+re && !KV_LIVE.memoUi.draft.kvMemo, '[남기기]: 그해 · 글을 보내고, 받으면 적던 글을 비우고 메모 · 펼친 사람 · 명단(숫자)을 다시 읽는다');
+      ok(await go8({ edit:3 }, 'edit', 3, '고친 글')==='POST /api/kpi/memo/3/edit {"text":"고친 글"}'+re && KV_LIVE.memoUi.edit===null, '[수정] → [저장]: 받으면 칸을 닫는다');
+      ok(await go8({}, 'ack', 3)==='POST /api/kpi/memo/3/ack {}'+re, '[확인했습니다]');
+      ok(await go8({ reply:3 }, 'reply', 3, '가상 답')==='POST /api/kpi/memo/3/reply {"text":"가상 답"}'+re && KV_LIVE.memoUi.reply===null, '[답글 남기기]');
+      notes.length = 0;
+      ok(await go8({}, 'del', 3)==='' && document.getElementById('orgModal')?.textContent.includes('메모를 지울까요?') && document.getElementById('orgModal').textContent.includes('달린 답글도 함께 지워져요'), '메모 [삭제]: 먼저 한 번 묻는다 (아직 보내지 않음)');
+      sent8.length = 0; await kvLiveMemoDo('del', 3, 11, document.getElementById('kpiActErr'));
+      ok(sent8.join('|')==='POST /api/kpi/memo/3/delete {}'+re && !document.getElementById('orgModal') && notes.includes('메모를 지웠어요.'), '창의 [지우기]: 보내고, 받으면 창을 닫고 아래쪽 알림');
+      ok(await go8({}, 'rdel', 2)==='' && document.getElementById('orgModal')?.textContent.includes('답글을 지울까요?'), '답글 [삭제]도 한 번 묻는다');
+      sent8.length = 0; await kvLiveMemoDo('rdel', 2, 11, document.getElementById('kpiActErr'));
+      ok(sent8.join('|')==='POST /api/kpi/memo-reply/2/delete {}'+re && !document.getElementById('orgModal'), '창의 [지우기]: 답글 지우기');
+      st8 = 400; kpiMsg = null;
+      ok(await go8({}, 'add', 0, '거절될 글')==='POST /api/kpi/memos/11 {"year":2026,"text":"거절될 글"}' && KV_LIVE.memoUi.draft.kvMemo==='거절될 글' && kpiMsg?.msg==='가상 거절', '400: 적던 글 그대로 · 다시 읽지 않는다 · 위쪽 붉은 칸 (kpiLivePost 규칙)');
+      st8 = 403; notes.length = 0; kpiMsg = null;
+      ok((await go8({}, 'ack', 3))==='POST /api/kpi/memo/3/ack {}'+re && notes.includes('가상 거절') && !kpiMsg, '403: 아래쪽 알림 · 서버 것을 다시 읽는다');
+      st8 = 200; notes.length = 0; set(TL, pb, { month:5, sel:11, prog, memos:md('writer', ms()) }); sent8.length = 0;
+      await kvLiveUnmute(11, 2);
+      ok(sent8.join('|')==='POST /api/kpi/plans/11/unmute {"year":2026,"rid":2}'+re && notes.includes('알람을 다시 켰어요.'), 'KPI 현황 [다시 켜기]: 그해 · 실행목표를 보내고 펼친 사람 · 명단을 다시 읽는다');
+      // Task 7 리뷰에서 넘어온 것
+      currentTab = { id:'e4' }; KPI_LIVE.state = 'ok'; KV_LIVE.state = 'ok'; kvLiveFresh();
+      ok(KPI_LIVE.state==='' && KV_LIVE.state==='' && !KV_LIVE.board, 'KPI 현황 탭에 들어올 때마다 맨 위 처리할 요청(KPI_LIVE)도 새로 읽는다');
+      currentTab = o8.tab;
+      const pend = []; window.fetch = u=>new Promise(res=>pend.push(()=>res({ ok:true, status:200, json:()=>Promise.resolve(B(tlPeople, { month:u.includes('month=4') ? 4 : 5 })) })));
+      set(TL, pb, { month:5 }); const l1 = kvLiveLoad(4), l2 = kvLiveLoad(5); pend[1](); await l2; pend[0](); await l1;
+      ok(KV_LIVE.board.month===5 && KV_LIVE.month===5 && KV_LIVE.state==='ok', '늦게 온 옛 명단 응답은 나중에 보낸 요청의 표를 덮지 않는다');
+      set(HR, B([P(81, null, { direct:false }), P(82, 3, { direct:false })])); kvLiveFold(null);
+      const fv = dom(kvContent()), fg = [...fv.querySelectorAll('.kvl-g')].find(g=>g.getAttribute('onclick')==='kvLiveFold(null)');
+      ok(fg && fg.getAttribute('aria-expanded')==='true' && R(fv).some(r=>r.textContent.includes('가상81')), '부서가 없는 묶음: 누르는 열쇠와 펼친 상태의 열쇠가 같다 (null)');
+    } finally { ORG_LIVE.people = o8.people; ORG_LIVE.tree = o8.tree; currentTab = o8.tab; KPI_LIVE.state = o8.kst; orgCloseModal(); }
     AUTH.live = false; ok(!kvContent().includes('kvlTable'), '시연(AUTH.live 거짓)은 지금 화면 그대로');
   } finally {
     AUTH.live = sv.live; AUTH.me = sv.me; Object.assign(KV_LIVE, sv.kv); KPI_LIVE.inbox = sv.inbox; kpiMsg = sv.msg; window.fetch = sv.fetch; renderContent = sv.rc; wsNotice = sv.notice; kpiLiveLoad = sv.load;
