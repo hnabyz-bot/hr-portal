@@ -59,6 +59,10 @@ from hr_eval.domain.contract_rules import (
 from hr_eval.domain.grading import Assignment, validate_and_assign_evaluation_grades
 from hr_eval.domain.kpi import KpiInput, validate_kpi_set
 from hr_eval.domain.kpi_plan import ACTIONS, assign_ids, clean_plan, next_status, validate_plan, window_open, window_span
+from hr_eval.domain.kpi_progress import (
+    GRACE_DAY, LATE_DAYS, LINK_MAX, NOTE_MAX, WHY_MAX,
+    effective_dues, item_expected, item_pct, month_open, month_state, overall, records_open, sched_state, task_title, valid_link,
+)
 from hr_eval.domain.access import Act, Delegation, Pool, PoolRef, Target, can
 from hr_eval.domain.roster import (
     PortalDept,
@@ -1945,6 +1949,173 @@ def 작성_기간_판정():
     # 어느 기간이 적용되는지는 한 곳에서 가린다: 사람 기간 > 그해 기간 > 없음
     assert window_span(y, 사람) == 사람 and window_span(y, None) == ("2027-01-04", "2027-01-22") and window_span(None, 사람) == 사람
     assert window_span(None, None) == (None, None) and window_span((None, None, None), None) == (None, None)
+
+
+def _진행_정기(target=12, **kw):
+    return {"kind": "reg", "target": target, "unit": "건", "weight": 40, "scheds": [], **kw}
+
+
+def _진행_비정기(*dues, weight=30, sid0=1):
+    return {"kind": "irr", "target": None, "unit": "", "weight": weight,
+            "scheds": [{"sid": sid0 + i, "due": d, "name": f"가상 일정 {sid0 + i}"} for i, d in enumerate(dues)]}
+
+
+@check
+def 달_한_줄은_다음_달_7일까지():
+    assert month_open(2027, 3, date(2027, 4, 7)) and not month_open(2027, 3, date(2027, 4, 8))
+    assert month_open(2027, 12, date(2028, 1, 7)) and not month_open(2027, 3, date(2027, 2, 28))
+    # 그 달 1일부터 열린다 · 12월은 해를 넘어 다음 해 1월 7일까지 · 윤년 2월
+    assert month_open(2027, 3, date(2027, 3, 1)) and not month_open(2027, 12, date(2028, 1, 8))
+    assert not month_open(2027, 12, date(2027, 11, 30)) and not month_open(2027, 11, date(2028, 1, 1))
+    assert month_open(2028, 2, date(2028, 2, 29)) and month_open(2028, 2, date(2028, 3, 7)) and not month_open(2028, 2, date(2028, 3, 8))
+
+
+@check
+def 그해_기록은_다음_해_1월_7일까지():
+    assert records_open(2027, date(2027, 1, 1)) and records_open(2027, date(2028, 1, 7))
+    assert not records_open(2027, date(2028, 1, 8)) and not records_open(2027, date(2028, 6, 1))
+
+
+@check
+def 처음_확정_전_달과_입사_전_달은_해당_없음():
+    assert month_state(2027, 1, date(2027, 3, 10), 2, None, False) == "NA"
+    assert month_state(2027, 2, date(2027, 3, 10), 2, date(2027, 3, 2), False) == "NA"
+    assert month_state(2027, 3, date(2027, 3, 10), 2, date(2027, 3, 2), False) == "OPEN"
+    assert month_state(2027, 1, date(2027, 3, 10), 1, None, False) == "MISSED"
+    assert month_state(2027, 2, date(2027, 3, 5), 1, None, True) == "DONE"
+    # 입사한 달은 해당 있음: 그 달 말일이 입사일 이후이면 된다 (2월 말일 28일 · 윤년 29일이 경계)
+    assert month_state(2027, 2, date(2027, 3, 3), 1, date(2027, 2, 28), False) == "OPEN"
+    assert month_state(2027, 2, date(2027, 3, 3), 1, date(2027, 3, 1), False) == "NA"
+    assert month_state(2028, 2, date(2028, 3, 3), 1, date(2028, 2, 29), False) == "OPEN"
+    assert month_state(2028, 2, date(2028, 3, 3), 1, date(2028, 3, 1), False) == "NA"
+    assert month_state(2027, 12, date(2028, 1, 3), 1, date(2027, 12, 31), False) == "OPEN"
+    # 해당 없음이 먼저다: 첫 확정 전 달은 썼어도 해당 없음
+    assert month_state(2027, 1, date(2027, 3, 10), 2, None, True) == "NA"
+    assert month_state(2027, 2, date(2027, 3, 10), 2, date(2027, 3, 2), True) == "NA"
+
+
+@check
+def 달_상태는_열림_놓침_예정으로_나뉜다():
+    상태 = lambda month, today, written=False: month_state(2027, month, today, 1, None, written)
+    assert 상태(3, date(2027, 4, 7)) == "OPEN" and 상태(3, date(2027, 4, 8)) == "MISSED"
+    assert 상태(3, date(2027, 3, 1)) == "OPEN" and 상태(3, date(2027, 2, 28)) == "FUTURE"
+    assert 상태(5, date(2027, 3, 10)) == "FUTURE" and 상태(12, date(2027, 3, 10)) == "FUTURE"
+    assert 상태(12, date(2028, 1, 7)) == "OPEN" and 상태(12, date(2028, 1, 8)) == "MISSED"
+    assert 상태(3, date(2027, 4, 7), True) == "DONE" and 상태(3, date(2027, 4, 8), True) == "DONE"  # 쓴 달은 늘 DONE
+
+
+@check
+def 실적은_목표로_나누고_100에서_자른다():
+    정기 = _진행_정기(12)
+    assert abs(item_pct(정기, 10, None, ()) - 10 / 12 * 100) < 1e-9 and abs(item_pct(정기, 10, None, ()) - 83.3333333) < 1e-6
+    assert item_pct(정기, 15, None, ()) == 100 and item_pct(정기, 12, None, ()) == 100
+    assert item_pct(정기, None, None, ()) == 0 and item_pct(정기, 0, None, ()) == 0
+    assert item_pct(정기, None, 70, ()) == 0  # 목표가 있으면 직접 입력한 진행률은 안 본다
+    # 목표 없음: 직접 입력한 진행률 그대로 (없으면 0) · 목표 0 은 없는 것으로 (검사가 막지만 죽지 않는다)
+    assert item_pct(_진행_정기(None), None, 70, ()) == 70 and item_pct(_진행_정기(None), 5, None, ()) == 0
+    assert item_pct(_진행_정기(0), 5, 40, ()) == 40 and item_pct({"kind": "reg"}, None, 25, ()) == 25
+    assert all(isinstance(item_pct(정기, a, None, ()), float) for a in (None, 0, 10, 15))
+
+
+@check
+def 비정기_진행률은_결과_쓴_일정_비율():
+    네개 = _진행_비정기("2027-03-01", "2027-06-01", "2027-09-01", "2027-12-01")
+    assert item_pct(네개, None, None, [1, 3]) == 50 and item_pct(네개, None, None, ()) == 0
+    assert item_pct(네개, None, None, {1, 2, 3, 4}) == 100
+    assert item_pct(네개, None, None, {1, 3, 99}) == 50  # 이 업무에 없는 일정 번호는 세지 않는다
+    assert item_pct(네개, 5, 80, {2}) == 25  # 비정기는 실적 · 진행률 입력을 안 본다
+    assert item_pct(_진행_비정기(), None, None, {1}) == 0  # 일정이 없어도 죽지 않는다
+
+
+@check
+def 비정기_기대는_기한_14일_뒤부터():
+    it = {"kind": "irr", "scheds": [{"sid": 1, "due": "2027-09-24", "name": ""}]}
+    assert item_expected(it, 2027, date(2027, 10, 8), {1: "2027-09-24"}) == 0
+    assert item_expected(it, 2027, date(2027, 10, 9), {1: "2027-09-24"}) == 100
+    # 일정 넷: 14일이 지난 것만 센다 · 바뀐 기한(dues)이 우선이고 dues 에 없으면 자기 기한
+    넷 = _진행_비정기("2027-03-01", "2027-06-01", "2027-09-01", "2027-12-01")
+    dues = {1: "2027-03-01", 2: "2027-06-01", 3: "2027-09-01", 4: "2027-12-01"}
+    assert item_expected(넷, 2027, date(2027, 3, 15), dues) == 0 and item_expected(넷, 2027, date(2027, 3, 16), dues) == 25
+    assert item_expected(넷, 2027, date(2027, 9, 10), dues) == 50 and item_expected(넷, 2027, date(2028, 3, 1), dues) == 100
+    assert item_expected(넷, 2027, date(2027, 9, 10), {**dues, 2: "2027-12-17"}) == 25  # 2번 일정을 뒤로 미뤘다
+    assert item_expected(넷, 2027, date(2027, 9, 10), {}) == 50 and item_expected(_진행_비정기(), 2027, date(2027, 9, 20), {}) == 0
+    # 윤년: 2월 20일 기한 + 14일 = 3월 5일
+    윤 = _진행_비정기("2028-02-20")
+    assert item_expected(윤, 2028, date(2028, 3, 5), {}) == 0 and item_expected(윤, 2028, date(2028, 3, 6), {}) == 100
+
+
+@check
+def 정기_기대는_그해_날수_비율():
+    assert round(item_expected({"kind": "reg"}, 2026, date(2026, 10, 12), {})) == 78
+    정기 = {"kind": "reg"}
+    # 화면 kvExpect 와 같은 식: 1월 1일은 1/365 → 0 · 12월 31일은 100 · 윤년(366일)의 7월 1일은 183/366 = 50
+    assert round(item_expected(정기, 2026, date(2026, 1, 1), {})) == 0 and abs(item_expected(정기, 2026, date(2026, 1, 1), {}) - 100 / 365) < 1e-9
+    assert item_expected(정기, 2026, date(2026, 12, 31), {}) == 100 and item_expected(정기, 2024, date(2024, 12, 31), {}) == 100
+    assert item_expected(정기, 2024, date(2024, 7, 1), {}) == 50 and round(item_expected(정기, 2024, date(2024, 2, 29), {})) == 16
+    # 그해 전이면 0 · 그해 뒤면 100
+    assert item_expected(정기, 2027, date(2026, 12, 31), {}) == 0 and item_expected(정기, 2027, date(2028, 1, 1), {}) == 100
+
+
+@check
+def 일정_상태는_주황_빨강():
+    상태 = lambda today, done=False, due="2027-09-24": sched_state(due, today, done)
+    assert 상태(date(2027, 9, 23)) == "UPCOMING" and 상태(date(2027, 9, 24)) == "UPCOMING"
+    assert 상태(date(2027, 9, 25)) == "LATE" and 상태(date(2027, 10, 8)) == "LATE"
+    assert 상태(date(2027, 10, 9)) == "OVERDUE" and 상태(date(2028, 5, 1)) == "OVERDUE"
+    assert 상태(date(2027, 9, 1), True) == "DONE" and 상태(date(2027, 10, 9), True) == "DONE"  # 결과 있으면 늦었어도 DONE
+    # 해를 넘는 14일 · 윤년
+    assert 상태(date(2028, 1, 8), due="2027-12-25") == "LATE" and 상태(date(2028, 1, 9), due="2027-12-25") == "OVERDUE"
+    assert 상태(date(2028, 3, 5), due="2028-02-20") == "LATE" and 상태(date(2028, 3, 6), due="2028-02-20") == "OVERDUE"
+
+
+@check
+def 바뀐_기한이_원래_기한을_덮는다():
+    내용 = [
+        {"team": "가상 팀목표", "personal": "가상 개인목표", "items": [
+            {**_진행_정기(), "rid": 1},
+            {**_진행_비정기("2027-09-24", "2027-11-05"), "rid": 2},
+        ]},
+        {"team": "가상 팀목표 2", "personal": "가상 개인목표 2", "items": [
+            {**_진행_비정기("2027-06-30", sid0=3), "rid": 3},
+        ]},
+    ]
+    원래 = {1: "2027-09-24", 2: "2027-11-05", 3: "2027-06-30"}
+    복사 = copy.deepcopy(내용)
+    assert effective_dues(내용, []) == 원래
+    assert effective_dues(내용, [(1, "2027-12-17")]) == {**원래, 1: "2027-12-17"}
+    assert effective_dues(내용, [(1, "2027-10-01"), (3, "2027-07-15"), (1, "2027-12-17")]) == {1: "2027-12-17", 2: "2027-11-05", 3: "2027-07-15"}  # 나중 변경이 이긴다
+    assert effective_dues(내용, [(99, "2027-12-17")]) == 원래  # 확정본에 없는 일정 번호는 무시
+    assert effective_dues([], [(1, "2027-12-17")]) == {} and effective_dues(내용, ()) == 원래
+    assert 내용 == 복사  # 확정본은 건드리지 않는다
+
+
+@check
+def 총합은_가중치와_값의_곱을_100으로_나눈다():
+    items = [{"weight": 40}, {"weight": 30}, {"weight": 30}]
+    assert overall(items, [100, 50, 0]) == 55 and overall(items, [100, 100, 100]) == 100 and overall(items, [0, 0, 0]) == 0
+    assert abs(overall(items, [10 / 12 * 100, 0, 0]) - 400 / 12) < 1e-9 and overall([], []) == 0
+    assert overall([{"weight": 33.5}, {"weight": 66.5}], [100, 100]) == 100
+
+
+@check
+def 빈_일정_이름은_실행목표로():
+    assert task_title("  ", "분기별 웨비나 개최") == "KPI- 분기별 웨비나 개최"
+    assert task_title("", " 분기별 웨비나 개최 ") == "KPI- 분기별 웨비나 개최"
+    assert task_title(" 1차 웨비나 ", "분기별 웨비나 개최") == "KPI- 1차 웨비나"  # 일정 이름이 있으면 그것
+    assert task_title("", "  ") == "KPI- "
+
+
+@check
+def 링크는_http_https만():
+    for 참 in ("https://a.b/c", "http://a.b", "HTTPS://A.B/c", "Http://a.b", "https://a.b/가나다?q=1#x", "https://" + "a" * 292):
+        assert valid_link(참), 참
+    assert len("https://" + "a" * 292) == LINK_MAX
+    for 거짓 in ("javascript:alert(1)", "http://a b", "http://a\tb", "https://a\nb", "https://a\x00b", "https://a\x7fb", "https://a　b",
+              " https://a.b", "https://a.b ", "ftp://a.b", "//a.b", "a.b", "", "http://", "https://", "HTTPS://", "https:/a.b"):
+        assert not valid_link(거짓), repr(거짓)
+    assert not valid_link("https://" + "a" * 293) and len("https://" + "a" * 293) == 301  # 300자 딱 맞는 것은 되고 301자는 안 된다
+    assert not valid_link(None) and not valid_link(5)  # 글자가 아니면 거짓 (죽지 않는다)
+    assert (NOTE_MAX, WHY_MAX, LINK_MAX, GRACE_DAY, LATE_DAYS) == (200, 100, 300, 7, 14)
 
 
 def main() -> int:
