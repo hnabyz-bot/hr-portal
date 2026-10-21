@@ -6342,6 +6342,107 @@ async function whPdfOpen(bytes){   // PDF를 여는 곳은 여기 하나 — 옵
   const { pdfjs } = await whLib(['pdfjs']);
   return pdfjs.getDocument({ data: bytes.slice(), ...WH_PDF_OPTS }).promise;   // 복사해서 준다 — pdf.js는 받은 버퍼를 워커로 옮겨서 호출한 쪽 bytes가 비어 버린다
 }
+/* ----- zip 풀기 (이 PC 화면 안에서) — 시험용 가짜 zip (python tools/wh_fixtures.py zip-samples, 안에 a.txt = "가상 시험 123", 암호는 whSelfCheck에 적힌 시험용) ----- */
+const WH_ZIP_ZC = 'UEsDBBQAAQAIAMpzVV0ZtGVxIAAAABEAAAAFAAAAYS50eHQ1wh+MXMLFS9wOTxSNtuZG1dMkzFijFoF7Moy1Li3UGFBLAQIUABQAAQAIAMpzVV0ZtGVxIAAAABEAAAAFAAAAAAAAAAAAAAAAAAAAAABhLnR4dFBLBQYAAAAAAQABADMAAABDAAAAAAA=';   // ZipCrypto (반디집 기본)
+const WH_ZIP_AES = 'UEsDBDMAAQBjAMpzVV0AAAAAMAAAABEAAAAFAAsAYS50eHQBmQcAAgBBRQMIAEQggjz95vHCazD5DsfdAeSDThqOJb96eR7qhiw18CGEpiEult4B0zEmBzdD7ADkhFBLAQIzADMAAQBjAMpzVV0AAAAAMAAAABEAAAAFAAsAAAAAAAAAAAAAAAAAAABhLnR4dAGZBwACAEFFAwgAUEsFBgAAAAABAAEAPgAAAF4AAAAAAA==';   // WinZip AES-256
+const WH_CRC = Uint32Array.from({ length:256 }, (_, n)=>{ for(let k = 0; k<8; k++) n = n & 1 ? 0xEDB88320 ^ n>>>1 : n>>>1; return n; });
+function whCrc(u8){ let c = ~0; for(let i = 0; i<u8.length; i++) c = WH_CRC[(c ^ u8[i]) & 255] ^ c>>>8; return ~c>>>0; }
+function whKind(u8){   // 첫 바이트로 종류를 본다 — 파일 이름(확장자)은 믿지 않는다
+  const h = String.fromCharCode(...u8.subarray(0, 6));
+  return h.startsWith('PK\x03\x04') ? 'zip' : h.startsWith('%PDF') ? 'pdf' : h==='7z\xBC\xAF\x27\x1C' ? '7z' : h.startsWith('ALZ\x01') ? 'alz' : h.startsWith('EGGA') ? 'egg' : h.startsWith('Rar!') ? 'rar' : '?';
+}
+function whZipList(buf){   // zip 맨 끝의 목차 → 파일마다 한 줄 (rzXlsx의 목차 읽기와 같은 방식)
+  const dv = new DataView(buf), u8 = new Uint8Array(buf), list = [];
+  let e = dv.byteLength-22; while(e>=0 && dv.getUint32(e, true)!==0x06054b50) e--;
+  if(e<0) throw new Error('ZIP');
+  let at = dv.getUint32(e+16, true);   // ponytail: ZIP64(4GB 넘는 zip)는 읽지 않는다 — 원천징수영수증 zip은 몇 MB. 필요해지면 0x0001 덧붙임을 읽는다
+  for(let i = dv.getUint16(e+10, true); i>0; i--){
+    if(dv.getUint32(at, true)!==0x02014b50) throw new Error('ZIP');
+    const flags = dv.getUint16(at+8, true), method = dv.getUint16(at+10, true), nlen = dv.getUint16(at+28, true), xlen = dv.getUint16(at+30, true);
+    let aes = null;
+    for(let x = at+46+nlen, end = x+xlen; x+4<=end; x += 4+dv.getUint16(x+2, true))
+      if(dv.getUint16(x, true)===0x9901) aes = { strength:u8[x+8], method:dv.getUint16(x+9, true) };   // WinZip AES 덧붙임: 판 2 · 'AE' 2 · 세기 1(1·2·3 = 128·192·256) · 진짜 압축 방식 2
+    list.push({ name:new TextDecoder(flags & 0x800 ? 'utf-8' : 'euc-kr').decode(u8.subarray(at+46, at+46+nlen)),   // 0x800 = UTF-8 이름. 아니면 한글 윈도우 글자(CP949)
+      encrypted:!!(flags & 1), aes:method===99 ? aes : null, method, crc:dv.getUint32(at+16, true), csize:dv.getUint32(at+20, true), usize:dv.getUint32(at+24, true),
+      flags, modTime:dv.getUint16(at+12, true), at:dv.getUint32(at+42, true) });
+    at += 46 + nlen + xlen + dv.getUint16(at+32, true);
+  }
+  return list;
+}
+async function whZipRead(buf, f, pw){   // 파일 하나(whZipList의 한 줄)를 풀어 Uint8Array로. 암호가 틀리면 Error('PW'), 읽지 못하는 방식이면 Error('ZIP')
+  const dv = new DataView(buf), method = f.aes ? f.aes.method : f.method;   // 암호는 여기서 푸는 데만 쓰고 어디에도 남기지 않는다
+  if(method!==0 && method!==8) throw new Error('ZIP');   // 0 = 저장, 8 = deflate. 99인데 AES 덧붙임이 없으면 여기서 걸린다
+  if(dv.getUint32(f.at, true)!==0x04034b50) throw new Error('ZIP');
+  const s = f.at + 30 + dv.getUint16(f.at+26, true) + dv.getUint16(f.at+28, true);   // 앞쪽 머리의 덧붙임 길이는 목차와 다를 수 있다 · 크기는 목차 것을 쓴다(flags bit3이면 앞쪽 머리엔 0)
+  let data = new Uint8Array(buf).slice(s, s+f.csize);
+  if(f.encrypted){
+    if(!pw) throw new Error('PW');
+    const p = new TextEncoder().encode(pw);
+    if(f.aes) data = await whAesOpen(data, p, f.aes.strength);
+    else {   // ZipCrypto(옛 방식): 열쇠 셋을 글자마다 섞는다. 앞 12바이트는 머리, 그 끝 바이트로 암호를 확인한다
+      const k = Uint32Array.of(0x12345678, 0x23456789, 0x34567890);
+      const upd = b=>{ k[0] = WH_CRC[(k[0] ^ b) & 255] ^ k[0]>>>8; k[1] = Math.imul(k[1] + (k[0] & 255), 134775813) + 1; k[2] = WH_CRC[(k[2] ^ k[1]>>>24) & 255] ^ k[2]>>>8; };
+      p.forEach(upd);
+      for(let i = 0; i<data.length; i++){ const t = k[2] | 2; upd(data[i] ^= Math.imul(t, t ^ 1)>>>8 & 255); }
+      if(data.length<12 || data[11]!==(f.flags & 8 ? f.modTime>>8 : f.crc>>>24)) throw new Error('PW');   // 확인 바이트 = 시각 위 바이트(bit3) 또는 CRC 맨 위 바이트. 1바이트라 틀린 암호도 1/256은 지나간다 → 아래 CRC가 잡는다
+      data = data.subarray(12);
+    }
+  }
+  let out = data;
+  if(method===8) try{ out = new Uint8Array(await new Response(new Blob([data]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).arrayBuffer()); }
+    catch(e){ throw new Error(f.encrypted ? 'PW' : 'ZIP'); }
+  if((f.crc || !f.aes) && whCrc(out)!==f.crc) throw new Error(f.encrypted ? 'PW' : 'ZIP');   // AES(AE-2)는 CRC 칸이 0 — HMAC으로 이미 확인했다
+  return out;
+}
+async function whAesOpen(data, p, strength){   // WinZip AES: 소금 + 확인 2바이트 + 암호문 + HMAC-SHA1 앞 10바이트
+  const n = 8*strength + 8, sl = n/2, S = crypto.subtle;   // 열쇠 16·24·32바이트, 소금은 그 반
+  if(!(strength>=1 && strength<=3) || data.length<sl+12) throw new Error('ZIP');
+  const ct = data.subarray(sl+2, data.length-10);
+  const dk = new Uint8Array(await S.deriveBits({ name:'PBKDF2', hash:'SHA-1', salt:data.subarray(0, sl), iterations:1000 }, await S.importKey('raw', p, 'PBKDF2', false, ['deriveBits']), (2*n+2)*8));
+  if(dk[2*n]!==data[sl] || dk[2*n+1]!==data[sl+1]) throw new Error('PW');
+  const mac = new Uint8Array(await S.sign('HMAC', await S.importKey('raw', dk.subarray(n, 2*n), { name:'HMAC', hash:'SHA-1' }, false, ['sign']), ct));
+  if(mac.subarray(0, 10).some((b, i)=>b!==data[data.length-10+i])) throw new Error('PW');   // 확인 2바이트는 1/65536로 우연히 맞을 수 있다 → HMAC이 마저 잡는다
+  const enc = whAesEcb(dk.subarray(0, n)), out = new Uint8Array(ct.length), ctr = new Uint8Array(16);
+  for(let i = 0; i<ct.length; i += 16){
+    const c = i/16 + 1; ctr[0] = c; ctr[1] = c>>>8; ctr[2] = c>>>16; ctr[3] = c>>>24;   // AES-CTR, 카운터는 작은 끝으로 1부터
+    const ks = enc(ctr);
+    for(let j = 0; j<16 && i+j<ct.length; j++) out[i+j] = ct[i+j] ^ ks[j];
+  }
+  return out;
+}
+function whAesEcb(key){   // 순수 JS AES 암호화(FIPS-197, 열쇠 16·24·32바이트) → 16바이트 블록 하나를 암호화하는 함수를 돌려준다
+  // WinZip AES는 카운터를 작은 끝으로 세서 crypto.subtle의 AES-CTR(큰 끝)로는 풀 수 없다. 블록마다 crypto.subtle을 부르면 큰 파일에서 너무 느려서 직접 한다
+  const x2 = b=>b<<1 ^ (b & 0x80 ? 0x11b : 0), S = new Uint8Array(256), T = [0, 1, 2, 3].map(()=>new Uint32Array(256)), exp = new Uint8Array(256), log = new Uint8Array(256);
+  for(let i = 0, b = 1; i<255; i++){ exp[i] = b; log[b] = i; b ^= x2(b); }   // 3의 거듭제곱 표(GF(2^8))
+  for(let a = 0; a<256; a++){
+    const v = a ? exp[(255-log[a]) % 255] : 0;   // 곱셈 역원
+    let s = v ^ v<<1 ^ v<<2 ^ v<<3 ^ v<<4; s = (s ^ s>>8) & 255 ^ 0x63;   // 아핀 변환 → S상자
+    S[a] = s;
+    const w = (x2(s)<<24 | s<<16 | s<<8 | x2(s) ^ s)>>>0;   // SubBytes + MixColumns 한 칸 (2s, s, s, 3s)
+    for(let r = 0; r<4; r++) T[r][a] = w>>>8*r | w<<32-8*r;
+  }
+  const nk = key.length>>2, nr = nk+6, w = new Uint32Array(4*nr+4), sub = t=>S[t>>>24]<<24 | S[t>>>16 & 255]<<16 | S[t>>>8 & 255]<<8 | S[t & 255];
+  for(let i = 0, rc = 1; i<w.length; i++){   // 열쇠 늘리기
+    if(i<nk){ w[i] = key[4*i]<<24 | key[4*i+1]<<16 | key[4*i+2]<<8 | key[4*i+3]; continue; }
+    let t = w[i-1];
+    if(i%nk===0){ t = sub(t<<8 | t>>>24) ^ rc<<24; rc = x2(rc); }
+    else if(nk>6 && i%nk===4) t = sub(t);
+    w[i] = w[i-nk] ^ t;
+  }
+  const [T0, T1, T2, T3] = T, word = (u, i)=>u[i]<<24 | u[i+1]<<16 | u[i+2]<<8 | u[i+3];
+  const last = (p, q, r, s, k)=>(S[p>>>24]<<24 | S[q>>>16 & 255]<<16 | S[r>>>8 & 255]<<8 | S[s & 255]) ^ k;
+  return blk=>{
+    let a = word(blk, 0) ^ w[0], b = word(blk, 4) ^ w[1], c = word(blk, 8) ^ w[2], d = word(blk, 12) ^ w[3];
+    for(let k = 4; k<4*nr; k += 4){
+      const a2 = T0[a>>>24] ^ T1[b>>>16 & 255] ^ T2[c>>>8 & 255] ^ T3[d & 255] ^ w[k];
+      const b2 = T0[b>>>24] ^ T1[c>>>16 & 255] ^ T2[d>>>8 & 255] ^ T3[a & 255] ^ w[k+1];
+      const c2 = T0[c>>>24] ^ T1[d>>>16 & 255] ^ T2[a>>>8 & 255] ^ T3[b & 255] ^ w[k+2];
+      d = T0[d>>>24] ^ T1[a>>>16 & 255] ^ T2[b>>>8 & 255] ^ T3[c & 255] ^ w[k+3]; a = a2; b = b2; c = c2;
+    }
+    const k = 4*nr, o = [last(a, b, c, d, w[k]), last(b, c, d, a, w[k+1]), last(c, d, a, b, w[k+2]), last(d, a, b, c, w[k+3])];
+    return Uint8Array.from({ length:16 }, (_, i)=>o[i>>2]>>>24-8*(i & 3));
+  };
+}
 
 /* ---------------- 원천징수영수증 (연말정산) ----------------
    시연용: 금액은 전부 가상 값. 실제는 위하고에서 나온 PDF를 HR이 서버에 올리고, 요약 숫자는 그 서식 1·2쪽 값을 쓴다.
@@ -6368,7 +6469,7 @@ function whSummary(year, row){   // 지방소득세 = 소득세의 10% (원 단�
     refund: settle<0, rate: Math.round(decided/gross*1000)/10, deductions, settleMonth:`${year+1}년 2월분 급여` };
 }
 function whYears(key){ return Object.keys(WH_DATA[key]||{}).map(Number).sort((a,b)=>b-a); }
-function whSelfCheck(){   // 브라우저 콘솔에서 whSelfCheck() 실행
+async function whSelfCheck(){   // 브라우저 콘솔에서 await whSelfCheck() 실행
   const ok = (c,m)=>{ if(!c) throw new Error('whSelfCheck 실패: '+m); };
   const s = whSummary(2025, [61730784, 2622246, 2153860, 4445520, {}, 444460]);   // 인사담당자 샘플 서식 1쪽 값
   ok(s.gross===64353030, '총급여 = 급여 + 상여');
@@ -6378,6 +6479,19 @@ function whSelfCheck(){   // 브라우저 콘솔에서 whSelfCheck() 실행
   ok(s.rate===3.3, '실효세율 = 결정세액 / 총급여 (샘플 3.3%)');
   ok(!whSummary(2024, [1,0,10,5,{}]).refund, '결정 > 기납부면 추가납부');
   ok(whYears('emp').join()==='2025,2024,2023' && whYears('none').length===0, '연도 목록');
+  ok(WH_PDF_OPTS.isEvalSupported===false, 'pdf.js 약점(CVE-2024-4367) 막는 설정');
+  const hex = u=>[...u].map(b=>b.toString(16).padStart(2, '0')).join(''), seq = n=>Uint8Array.from({ length:n }, (_, i)=>i), pt = Uint8Array.from({ length:16 }, (_, i)=>i*17);   // pt = 00112233…ff
+  ok(hex(whAesEcb(seq(32))(pt))==='8ea2b7ca516745bfeafc49904b496089' && hex(whAesEcb(seq(24))(pt))==='dda97ca4864cdfe06eaf70a0ec0d7191' && hex(whAesEcb(seq(16))(pt))==='69c4e0d86a7b0430d8cdb78070b4c55a', 'AES-256·192·128 (FIPS-197 시험값)');
+  const zip = b64=>Uint8Array.from(atob(b64), c=>c.charCodeAt(0));
+  for(const [kind, b64] of [['ZipCrypto', WH_ZIP_ZC], ['AES', WH_ZIP_AES]]){
+    const u8 = zip(b64), list = whZipList(u8.buffer);
+    ok(whKind(u8)==='zip' && list.length===1 && list[0].name==='a.txt' && list[0].encrypted, kind+' 목록');
+    ok(new TextDecoder().decode(await whZipRead(u8.buffer, list[0], 'hr-portal-check'))==='가상 시험 123', kind+' 맞는 암호로 푼다');
+    let bad = ''; try{ await whZipRead(u8.buffer, list[0], 'hr-portal-chec'); }catch(e){ bad = e.message; }
+    ok(bad==='PW', kind+' 틀린 암호는 PW');
+  }
+  ok(whZipList(zip(WH_ZIP_AES).buffer)[0].aes?.strength===3 && !whZipList(zip(WH_ZIP_ZC).buffer)[0].aes, 'AES-256을 알아본다');
+  ok(whKind(new TextEncoder().encode('%PDF-1.7'))==='pdf' && whKind(Uint8Array.of(0x37, 0x7A, 0xBC, 0xAF, 0x27, 0x1C, 0, 4))==='7z' && whKind(new Uint8Array(8))==='?', '파일 종류');
   return 'whSelfCheck 통과';
 }
 
