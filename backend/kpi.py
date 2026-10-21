@@ -38,17 +38,17 @@ app.py 가 bp 를 붙인다. 세션 검사는 auth._guard 가 모든 /api/* 에 
   POST /api/kpi/memo/<mid>/edit     {"text"} 쓴 사람이 쓴 날에만 고친다 (본인의 확인은 풀림) · /delete 같은 조건으로 지운다 (답글도 함께)
   POST /api/kpi/memo/<mid>/ack      본인이 '확인했습니다' (취소 없음) · /reply {"text"} 본인 · 메모를 쓴 사람의 답글 → {"ok", "id"} (본인 답글 = 확인, 쓴 사람 답글 = 확인 풀림)
   POST /api/kpi/memo-reply/<rpid>/delete  단 사람이 단 날에만 지운다
-  POST /api/kpi/memos/<uid>/seen    {"year"} 내가 쓴 그 사람의 메모 모두 '새 답글을 보았다' (seen_at = 지금)
+  POST /api/kpi/memos/<uid>/seen    {"year", "upTo"?} 내가 쓴 그 사람의 메모 모두 '새 답글을 보았다' (seen_at = upTo(화면에 보인 가장 새 본인 답글 시각, 지금보다 뒤면 지금) · 없으면 지금 · 앞으로만 간다)
 
   POST /api/kpi/me/mute             {"year", "rid", "why", "month"?, "text"?} 늦은 실행목표의 부진 알람을 고른 달 말일까지 끈다 (본인만 · 올해 것만 · 이미 끈 줄은 바꿔 끈다)
-  POST /api/kpi/plans/<uid>/unmute  {"year", "rid"} 알람을 다시 켠다 — 본인 · 바로 위 관리자 (HR 대신 없음)
+  POST /api/kpi/plans/<uid>/unmute  {"year", "rid"} 알람을 다시 켠다 — 본인 · 바로 위 관리자(대표이사 제외 — 대표이사는 보기만) (HR 대신 없음)
   POST /api/kpi/admin/alarm         {"year", "gap"} 그해 부진 알람 기준 (1~100 정수, 기본 20) (HR) · GET /api/kpi/admin 의 alarmGap 으로 읽는다
   GET  /api/kpi/biz-plan            ?year= 그해 경영계획 {"year", "goals": [{"goal", "detail"}]} — 대표이사 · 본부장 · HR 만
   POST /api/kpi/admin/biz-plan      {"year", "goals": [{"goal", "detail"}]} 그해 경영계획 목표를 통째로 바꾼다 (HR)
 
-  GET  /api/kpi/board               ?month= (없으면 오늘의 달) KPI 현황 명단 {"year", "month", "gap", "depts", "people", "teams", "todo"} — 팀장 · 본부장 · 대표이사 · HR 만.
+  GET  /api/kpi/board               ?month= (없으면 오늘의 달) KPI 현황 명단 {"year", "month", "gap", "scope", "depts", "people", "teams", "todo"} — 팀장 · 본부장 · 대표이사 · HR 만.
                                     people = 내가 볼 수 있는(_sees) 활성 KPI 작성자(본인 뺌)마다 계획서 상태 · 숫자 · 알람 · 그 달 요약 · 확인 상태 · 메모 수. 대표이사 응답에는 팀원 줄이 없고
-                                    teams 에 팀(부서)마다 인원 · 확정 · 평균 · 부진 수만 있다
+                                    teams 에 팀(부서)마다 인원 · 확정 · 평균 · 부진 수만 있다. scope = 보는 사람이 팀장 · 본부장이면 맡은 부서 {"deptId", "name"} (명단 제목), 아니면 null
 
 남의 KPI(계획서 · 진행 기록)를 보는 범위는 _sees 한 곳: HR · 본인 · 바로 위 관리자, 그리고 팀장 = 팀원, 본부장 = 본부의 팀장 · 팀원, 대표이사 = 본부장 · 팀장과 자기가 바로 위 관리자인 사람('임원' 소속 · 직속 팀장 등) (팀원은 못 본다).
 본인 쓰기는 서버가 늘 같은 순서로 다시 본다: KPI 작성 대상 403 → 작성 기간 403 → 상태 409 → 내용 400.
@@ -63,7 +63,7 @@ app.py 가 bp 를 붙인다. 세션 검사는 auth._guard 가 모든 /api/* 에 
 메모 고치기 · 지우기는: 메모 404 → 쓴 사람이 아님 403 → 쓴 날(한국)이 아님 403 → (고치기) 글 400. 답글 달기는: 메모 404 → 본인도 쓴 사람도 아님 403 → 글 400.
 답글 지우기는: 답글 404 → 단 사람이 아님 403 → 단 날이 아님 403. 확인했습니다는: 메모 404 → 본인이 아님 403 (이미 확인했으면 200). 메모 일은 감사로그를 남기지 않는다 (내용 문장이라서).
 메모 고치기 · 지우기 · 답글 달기 · 답글 지우기는 모두 지금도 그 사람의 KPI 를 볼 수 있어야 한다 (팀을 옮겨 못 보게 된 옛 관리자는 쓰지 못한다 — 위 "쓴 사람이 아님/둘 다 아님" 403 바로 뒤, 쓴 날 403 앞에서 보고 문구는 GET 과 같다). 확인했습니다는 본인만 하므로 따로 보지 않는다.
-알람 끄기는: KPI 작성 대상 403 → 해 400 → 확정본 404 → 기록 기간 403 → 올해가 아님 400 → 실행목표 400 → 이유 · 달 400 → (직접 적기) 글 1~50자 400. 다시 켜기는: 본인도 바로 위 관리자도 아님 403 → 해 400 → 실행목표 번호 400 (없는 줄은 200).
+알람 끄기는: KPI 작성 대상 403 → 해 400 → 확정본 404 → 기록 기간 403 → 올해가 아님 400 → 실행목표 400 → 이유 · 달 400 → (직접 적기) 글 1~50자 400. 다시 켜기는: 본인도 확인 단계가 있는 바로 위 관리자(대표이사 아님)도 아님 403 → 해 400 → 실행목표 번호 400 (없는 줄은 200).
 알람 기준은: HR 이 아님 403 → 해(2026~2100 정수) · 기준(1~100 정수) 400. 경영계획 보기는: 대표이사 · 본부장 · HR 이 아님 403 → 해 400. 경영계획 넣기는: HR 이 아님 403 → 해 400 → 목록 · 개수 · 글자 수 400 → 쓸 수 없는 글자 400.
 KPI 현황은: 팀장 · 본부장 · 대표이사 · HR 이 아님 403 → 달(1~오늘의 달 정수, 안 보내면 오늘의 달) 400. 읽기만 하므로 감사로그는 없다.
 알람 기준 · 경영계획의 처리만 감사로그를 남긴다 (KPI_ALARM_SET 해 · 기준, KPI_BIZ_PLAN_SET 해 · 목표 개수 — 목표 문장은 넣지 않는다). 알람 끄기는 남기지 않는다 (본인 설정).
@@ -1160,14 +1160,24 @@ def memo_reply_delete(rpid: int) -> Response:
 
 @bp.post(f"/api/kpi/memos/{UID}/seen")
 def memos_seen(uid: int) -> Response:
-    """{"year"} → {"ok": true}. 내가 쓴 그 사람 그해 메모를 모두 '새 답글을 보았다'로 (seen_at = 지금). 내가 쓴 메모가 없으면 아무것도 안 하고 200.
-    해가 올바른 정수(2026~2100)가 아니면 400. 남의 메모는 건드리지 않으므로 보는 범위는 따로 보지 않는다."""
-    year, conn = _body().get("year"), auth._db()
+    """{"year", "upTo"?} → {"ok": true}. 내가 쓴 그 사람 그해 메모를 모두 '새 답글을 보았다'로. 내가 쓴 메모가 없으면 아무것도 안 하고 200.
+    upTo = 화면이 실제로 보여 준 가장 새 본인 답글의 시각("YYYY-MM-DDTHH:MM:SSZ") — 읽은 뒤 보내기 전에 달린 답글은 새 답글로 남는다. 지금보다 뒤면 지금,
+    안 보내면(또는 null) 지금. seen_at 은 앞으로만 간다 (다른 창이 더 뒤까지 보았으면 그대로).
+    해가 올바른 정수(2026~2100)가 아니거나 upTo 가 그 모양의 실제 시각이 아니면 400. 남의 메모는 건드리지 않으므로 보는 범위는 따로 보지 않는다."""
+    b, conn = _body(), auth._db()
+    year, up_to, now = b.get("year"), b.get("upTo"), auth._iso(auth._now())
     if type(year) is not int or year not in YEARS:
         raise _Refuse("해가 올바르지 않습니다.", 400)
+    if up_to is not None:
+        try:
+            if not (isinstance(up_to, str) and re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z", up_to)):
+                raise ValueError(up_to)
+            datetime.strptime(up_to, "%Y-%m-%dT%H:%M:%SZ")  # 없는 날 · 시각(2월 30일 · 25시 …)은 여기서 ValueError
+        except ValueError:
+            raise _Refuse("본 때가 올바르지 않습니다.", 400) from None
     with _txn(conn):
-        conn.execute("UPDATE kpi_memos SET seen_at = ? WHERE user_id = ? AND year = ? AND author_id = ?",
-                     (auth._iso(auth._now()), uid, year, g.actor.user_id))
+        conn.execute("UPDATE kpi_memos SET seen_at = MAX(COALESCE(seen_at, ''), ?) WHERE user_id = ? AND year = ? AND author_id = ?",
+                     (now if up_to is None else min(up_to, now), uid, year, g.actor.user_id))
     return jsonify(ok=True)
 
 
@@ -1200,12 +1210,13 @@ def mute_set() -> Response:
 
 @bp.post(f"/api/kpi/plans/{UID}/unmute")
 def unmute(uid: int) -> Response:
-    """{"year", "rid"} → {"ok": true}. 알람을 다시 켠다 (끈 줄을 지운다) — 본인과 바로 위 관리자만 (HR 은 대신하지 못하고, 대표이사 맡김과도 상관없다).
-    순서: 본인도 바로 위 관리자도 아님 403 → 해(2026~2100 정수) 400 → 실행목표 번호 400. 끄지 않은 줄을 켜려 해도 200 (아무 일 없음). 감사로그는 남기지 않는다."""
+    """{"year", "rid"} → {"ok": true}. 알람을 다시 켠다 (끈 줄을 지운다) — 본인과 확인 단계가 있는 바로 위 관리자(_writer_of)만. 대표이사는 KPI 현황에서 보기만 하므로
+    자기에게 보고하는 분의 알람도 못 켠다 (확인 · 메모가 없는 것과 같다). HR 은 대신하지 못하고, 대표이사 맡김과도 상관없다.
+    순서: 본인도 그 관리자도 아님 403 → 해(2026~2100 정수) 400 → 실행목표 번호 400. 끄지 않은 줄을 켜려 해도 200 (아무 일 없음). 감사로그는 남기지 않는다."""
     b = _body()
     year, rid, conn = b.get("year"), b.get("rid"), auth._db()
     with _txn(conn):
-        if uid != g.actor.user_id and manager_of(uid, *load_org(conn)) != g.actor.user_id:
+        if uid != g.actor.user_id and _writer_of(uid, *load_org(conn)) != g.actor.user_id:
             raise _Refuse("본인과 바로 위 관리자만 다시 켤 수 있습니다.", 403)
         if type(year) is not int or year not in YEARS:
             raise _Refuse("해가 올바르지 않습니다.", 400)
@@ -1303,14 +1314,15 @@ def _review(conn: sqlite3.Connection, people: list[Person], depts: list[Dept], p
 
 @bp.get("/api/kpi/board")
 def board() -> Response:
-    """?month= (없으면 오늘의 달, 1~오늘의 달 정수만) → {"year", "month", "gap", "depts", "people", "teams", "todo"}. 팀장 · 본부장 · 대표이사 · HR 만 (아니면 403, 달 400 보다 먼저).
+    """?month= (없으면 오늘의 달, 1~오늘의 달 정수만) → {"year", "month", "gap", "scope", "depts", "people", "teams", "todo"}. 팀장 · 본부장 · 대표이사 · HR 만 (아니면 403, 달 400 보다 먼저).
     depts = [{"id", "name", "parentId"}] (부서 번호 순서 — 묶음 이름용, 부서 이름은 조직도에서 누구나 본다).
     people = 활성 · KPI 작성 대상 · 본인 아님 · _sees(plans 와 같은 보는 범위)가 참인 사람. 순서 = 부서 번호 → 본부장 · 팀장 · 그 밖 → 이름.
     사람마다 userId · name · title(없으면 "") · deptId(팀장 · 본부장은 맡은 부서, 그 밖은 소속) · position("DIVISION_HEAD" | "TEAM_LEADER" | null) ·
     status(계획서 줄의 상태, 없으면 "NONE") · direct(내가 바로 위 관리자) · checkStep · total · totalExpected · alarm · items[{rid, action, kind, weight, value, expected, why, mute}] ·
     month{reg, irr, records, noSched, check, checkedAt} · memo{count, open, fresh}. 확정본이 없으면 total · totalExpected · alarm · month 는 null, items 는 [].
     teams = 대표이사만: 줄로 못 받는 팀원(_sees 거짓인 활성 KPI 작성자)을 부서마다 묶은 {"deptId", "count", "confirmed", "avg"(확정본이 있는 사람 total 의 평균, 없으면 null), "slow"(부진 수)} —
-    그 사람들의 번호 · 이름 · KPI 는 응답 어디에도 가지 않는다. 다른 사람은 []. todo = {"check": _review 의 check}."""
+    그 사람들의 번호 · 이름 · KPI 는 응답 어디에도 가지 않는다. 다른 사람은 []. todo = {"check": _review 의 check}.
+    scope = 보는 사람이 팀장 · 본부장이면 맡은 부서(led_dept — 소속이 '임원'이어도 이끄는 본부) {"deptId", "name"}, 아니면 null (명단 제목에 쓴다)."""
     me = g.actor
     if not (me.is_hr or me.position in (Role.TEAM_LEADER, Role.DIVISION_HEAD, Role.CEO)):
         raise _Refuse(NO_BOARD, 403)
@@ -1363,7 +1375,9 @@ def board() -> Response:
             teams.append({"deptId": dept_id, "count": len(groups[dept_id]), "confirmed": len(got),
                           "avg": sum(pr["total"] for pr in got) / len(got) if got else None, "slow": sum(pr["alarm"]["slow"] for pr in got)})
         todo = {"check": _review(conn, people, depts, progs)["check"]}
-    return jsonify(year=year, month=month, gap=gap, depts=[{"id": d.id, "name": d.name, "parentId": d.parent_id} for d in depts],
+    led = led_dept(by_id[me.user_id]) if me.user_id in by_id else None
+    scope = next(({"deptId": d.id, "name": d.name} for d in depts if d.id == led), None)
+    return jsonify(year=year, month=month, gap=gap, scope=scope, depts=[{"id": d.id, "name": d.name, "parentId": d.parent_id} for d in depts],
                    people=out, teams=teams, todo=todo)
 
 

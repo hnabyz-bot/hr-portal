@@ -2660,6 +2660,22 @@ def check_kpi_review(hr) -> None:
         ok(all(c(LEAD).post(f"/api/kpi/memos/{EMP}/seen", base_url=BASE, headers=ORIGIN, json={"year": y}).status_code == 400 for y in (None, True, "%d" % year, 2020, year + 0.5))
            and c(LEAD).post(f"/api/kpi/memos/{EMP}/seen", base_url=BASE, headers=ORIGIN, json={}).status_code == 400, "열어 보았다: 해가 이상하면 400")
         ok(hit(seen(LEAD, EMP), 200, {"ok": True}) and one(EMP, LEAD, m4)["fresh"] == 0, "(다시 열어 보면 사라짐)")
+        seen_up = lambda up: c(LEAD).post(f"/api/kpi/memos/{EMP}/seen", base_url=BASE, headers=ORIGIN, json={"year": year, "upTo": up})  # noqa: E731
+        seen_of = lambda: q("SELECT DISTINCT seen_at FROM kpi_memos WHERE user_id = ? AND author_id = ?", EMP, LEAD)  # noqa: E731
+        at(9, 1, 9)
+        ok(memo_do(EMP, m4, "reply", text="가상 본 답글").status_code == 200 and one(EMP, LEAD, m4)["fresh"] == 1, "(팀장이 메모를 열어 본인 답글 하나를 봄 — 9시)")
+        at(9, 1, 10)
+        ok(memo_do(EMP, m4, "reply", text="가상 사이 답글").status_code == 200, "(팀장 화면이 '보았다'를 보내기 전에 본인이 답글을 더 닮 — 10시)")
+        at(9, 1, 11)
+        ok(hit(seen_up(z(9, 1, 9)), 200, {"ok": True}) and seen_of() == [(z(9, 1, 9),)] and one(EMP, LEAD, m4)["fresh"] == 1,
+           "본_때까지만_보았다: upTo(화면에 보인 가장 새 본인 답글 9시)를 보내면 seen_at = 9시 — 그 뒤(10시)에 달린 답글은 새 답글로 남음 (fresh 1)")
+        ok(hit(seen_up(z(9, 1, 8)), 200, {"ok": True}) and seen_of() == [(z(9, 1, 9),)] and one(EMP, LEAD, m4)["fresh"] == 1,
+           "seen_at 은 앞으로만: 더 앞의 upTo(8시)를 보내도 9시 그대로")
+        ok(all(hit(seen_up(v), 400, {"error": "본 때가 올바르지 않습니다."}) for v in ("x", 1, True, [], "", z(9, 1, 9)[:-1], f"{year}-02-30T03:00:00Z", f"{year}-09-01T25:00:00Z", f"{year}-09-01 03:00:00Z"))
+           and hit(c(LEAD).post(f"/api/kpi/memos/{EMP}/seen", base_url=BASE, headers=ORIGIN, json={"year": 1, "upTo": "x"}), 400, BAD_YEAR) and seen_of() == [(z(9, 1, 9),)],
+           "upTo 가 그 모양의 실제 시각이 아니면 400 (해 400 이 먼저) · seen_at 그대로")
+        ok(hit(seen_up(f"{year + 1}-01-01T00:00:00Z"), 200, {"ok": True}) and seen_of() == [(z(9, 1, 11),)] and one(EMP, LEAD, m4)["fresh"] == 0
+           and hit(seen_up(None), 200, {"ok": True}), "upTo 가 지금보다 뒤면 지금(11시)까지 · null 은 안 보낸 것과 같다")
 
         # 메모를 지우면 답글도
         at(9, 2)
@@ -2826,8 +2842,10 @@ def check_kpi_review(hr) -> None:
         ok(hit(unmute(EMP, EMP, 3), 200, {"ok": True}) and hit(unmute(LEAD, EMP, 99), 200, {"ok": True}), "꺼 두지 않은 줄을 켜려 해도 200 (아무 일 없음)")
         ok(mute(EMP2, 1).status_code == 200 and hit(unmute(LEAD, EMP2), 403, NOT_UNMUTER) and hit(unmute(LEAD2, EMP2), 200, {"ok": True}) and mutes(EMP2) == [],
            "바로 위 관리자는 지금 기준: 팀을 옮긴 사람은 옛 팀장 403 · 새 팀장 200")
-        ok(mute(HEAD, 1).status_code == 200 and hit(unmute(HR, HEAD), 403, NOT_UNMUTER) and hit(unmute(CEO, HEAD), 200, {"ok": True}) and mutes(HEAD) == [],
-           "바로 위 관리자가 대표이사여도 다시 켤 수 있음 (HR 은 403)")
+        ok(mute(HEAD, 1).status_code == 200 and mute(DIRECT, 1).status_code == 200 and all(hit(unmute(w, u), 403, NOT_UNMUTER) for w in (CEO, HR) for u in (HEAD, DIRECT))
+           and len(mutes(HEAD)) == 1 and len(mutes(DIRECT)) == 1,
+           "대표이사는_다시_켜지_못한다: 바로 위 관리자가 대표이사인 분(본부장 · 직속 팀장)의 알람은 대표이사도 403 (KPI 현황에서 보기만 — 확인 · 메모가 없는 것과 같다) · HR 403 — 줄 그대로")
+        ok(hit(unmute(HEAD, HEAD), 200, {"ok": True}) and hit(unmute(DIRECT, DIRECT), 200, {"ok": True}) and mutes(HEAD) == [] and mutes(DIRECT) == [], "그분들은 본인이 다시 켬")
 
         # 알람 기준은 HR이
         ok(all(hit(gap_set(w, 30), 403, NOT_HR) for w in (LEAD, HEAD, CEO, EMP, LEAD2)) and hit(gap_set(LEAD, 0), 403, NOT_HR) and prog(S).json["gap"] == 19,
@@ -2941,7 +2959,7 @@ def check_kpi_review(hr) -> None:
         # 팀장은 팀원만
         j = bj(LEAD)
         e = by_id(j, EMP)
-        ok(set(j) == {"year", "month", "gap", "depts", "people", "teams", "todo"} and (j["year"], j["month"], j["gap"]) == (year, 4, 20)
+        ok(set(j) == {"year", "month", "gap", "scope", "depts", "people", "teams", "todo"} and (j["year"], j["month"], j["gap"]) == (year, 4, 20)
            and [p["userId"] for p in j["people"]] == [PEER2, EMP] and all(p["direct"] is True and p["deptId"] == 72 and p["position"] is None for p in j["people"])
            and j["teams"] == [], "팀장은_팀원만: 팀장의 명단 = 그 팀 팀원 둘(이름순, direct 참) · 본인과 다른 팀 사람은 없음 · teams 는 빈 목록")
         ok({"id": 72, "name": "가상R팀A", "parentId": 71} in j["depts"] and {"id": 71, "name": "가상R본부", "parentId": None} in j["depts"]
@@ -2966,6 +2984,15 @@ def check_kpi_review(hr) -> None:
            and [p["position"] for p in j["people"]] == ["TEAM_LEADER", None, None, "TEAM_LEADER", None] and [p["deptId"] for p in j["people"]] == [72, 72, 72, 73, 73]
            and by_id(j, LEAD)["title"] == "팀장" and by_id(j, LEAD)["checkStep"] is True and j["teams"] == [],
            "본부장은_본부_전체: 본부의 팀장 둘 + 팀원들 (부서 번호 → 팀장 → 이름 순서) · 팀장 줄만 direct · 본부 밖(직속 팀 · '임원')은 없음 · teams 빈 목록")
+        ok(bj(LEAD)["scope"] == {"deptId": 72, "name": "가상R팀A"} and j["scope"] == {"deptId": 71, "name": "가상R본부"} and bj(CEO)["scope"] is None and bj(HR)["scope"] is None,
+           "scope: 팀장 · 본부장은 맡은 부서 (명단 제목) · 대표이사 · 직책 없는 HR 은 null")
+        x("UPDATE users SET department_id = 75, led_department_id = 71 WHERE id = ?", HEAD)  # 본부장의 소속이 '임원'이고 맡은 부서는 본부인 모습
+        try:
+            j = bj(HEAD)
+            ok(j["scope"] == {"deptId": 71, "name": "가상R본부"} and [p["userId"] for p in j["people"]] == [LEAD, PEER2, EMP, LEAD2, EMP2],
+               "scope 는 맡은 부서: 소속이 '임원'인 본부장도 명단 제목은 이끄는 본부 (명단은 그대로)")
+        finally:
+            x("UPDATE users SET department_id = 71, led_department_id = NULL WHERE id = ?", HEAD)
 
         # 대표이사는 팀원 줄을 못 받는다
         j = bj(CEO)
