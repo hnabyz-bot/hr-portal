@@ -20,8 +20,15 @@ app.py 가 bp 를 붙인다. 세션 검사는 auth._guard 가 모든 /api/* 에 
   POST /api/kpi/admin/window        {"userId", "year", "editFrom", "editTo"} | {"userId", "year", "clear": true} 한 사람만의 작성 기간 (HR)
   GET/POST /api/kpi/delegation      {"on": bool} 대표이사 몫을 HR 에 맡기기 — 대표이사 본인만
 
+  GET  /api/kpi/progress/<uid>      ?year= 그 사람 그해 진행 기록 + 계산한 숫자 — 주인 · 바로 위 관리자 · HR 만. 그해 확정본이 없으면 404
+  POST /api/kpi/me/progress         {"year", "rid", "actual"?, "pct"?, "why"?} 실적 · 진행률 · 늦어지는 이유 (보낸 칸만 바꾼다)
+  POST /api/kpi/me/month            {"year", "rid", "month", "text", "link"} 정기 실행목표의 월 한 줄 (text "" 는 지움)
+  POST /api/kpi/me/result           {"year", "sid", "text", "link"} 비정기 일정의 결과 한 줄 (text "" 는 지움)
+
 본인 쓰기는 서버가 늘 같은 순서로 다시 본다: KPI 작성 대상 403 → 작성 기간 403 → 상태 409 → 내용 400.
 관리자 처리는: 처리 권한 403 → 계획서 주인의 작성 기간 403 → 상태 409 → 사유 400. 권한은 요청마다 명단에서 새로 계산한다 (decider).
+진행 기록 쓰기는: KPI 작성 대상 403 → 그해 확정본 404 → 기록 기간(다음 해 1월 7일까지) 403 → 실행목표 · 일정 · 종류 400 → (월 한 줄) 달 403 → 글자 · 링크 · 숫자 한도 400.
+작성 기간 · 계획서 상태는 보지 않고 지금 확정본에 쓴다. 감사로그는 남기지 않는다 (내용 문장이라서).
 감사로그에는 행동 이름 · 대상 · 해(· 판)만 남긴다 — 계획서 · 사유 문장은 넣지 않는다. 임시 저장은 남기지 않는다. HR 이 대신 하면 on_behalf_of.
 """
 
@@ -31,7 +38,7 @@ import json
 import re
 import sqlite3
 from contextlib import contextmanager
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from typing import Iterator, NamedTuple
 
 from flask import Blueprint, Response, g, jsonify, request
@@ -40,6 +47,9 @@ import auth
 from hr_eval.domain.errors import StateConflictError
 from hr_eval.domain.kpi_plan import (
     PLAN_MAX_BYTES, REASON_MAX, assign_ids, clean_plan, next_status, validate_plan, window_open, window_span,
+)
+from hr_eval.domain.kpi_progress import (
+    LINK_MAX, NOTE_MAX, WHY_MAX, effective_dues, item_expected, item_pct, month_state, overall, records_open, sched_state, task_title, valid_link,
 )
 from hr_eval.domain.models import Actor, AuditEntry, Role
 from hr_eval.domain.org import Dept, Person, manager_of
@@ -553,3 +563,262 @@ def delegation_set() -> Response:
         if changed:
             auth._audit(conn, AuditEntry.by(g.actor, action="CEO_DELEGATION_ON" if on else "CEO_DELEGATION_OFF", entity_type="ceo_delegation", entity_id=me_id))
     return jsonify(ok=True, on=on)
+
+
+# ---------------- 진행 기록 (2단계 ①, 2026-10-21) ----------------
+def _rows(content: list[dict]) -> list[dict]:
+    """확정본(목표 묶음의 목록)의 실행목표 줄을 차례로."""
+    return [it for goal in content for it in goal["items"]]
+
+
+def _versions(conn: sqlite3.Connection, uid: int, year: int) -> list[tuple[int, list[dict], str]]:
+    """(판, 내용, 확정 시각) — 오래된 판부터. 확정본이 없으면 빈 목록."""
+    return [(v, json.loads(c), at) for v, c, at in conn.execute(
+        "SELECT version, content, confirmed_at FROM kpi_versions WHERE user_id = ? AND year = ? ORDER BY version", (uid, year))]
+
+
+def _first_months(year: int, versions: list[tuple[int, list[dict], str]]) -> dict[int, int]:
+    """실행목표(rid)마다 그 줄이 처음 들어간 판이 확정된 한국 달 — 월 한 줄은 그 달부터 해당 있다. 다른 해에 확정했으면 1월부터."""
+    first: dict[int, int] = {}
+    for _, content, at in versions:
+        t = datetime.strptime(at, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc).astimezone(auth.KST)  # 확정 시각은 UTC — 1일 새벽에 달이 어긋나지 않게
+        for it in _rows(content):
+            first.setdefault(it["rid"], t.month if t.year == year else 1)
+    return first
+
+
+def _hire(conn: sqlite3.Connection, uid: int) -> date | None:
+    h = conn.execute("SELECT hire_date FROM users WHERE id = ?", (uid,)).fetchone()[0]
+    try:
+        return date.fromisoformat(h) if h else None
+    except ValueError:  # 손으로 넣은 엉터리 입사일은 없는 것으로
+        return None
+
+
+def _dues(conn: sqlite3.Connection, uid: int, year: int) -> dict[int, str]:
+    """일정마다 실제 기한 {sid: due}: 지금(마지막) 확정본의 기한에, 그 판이 확정된 뒤 확인된 일정 변경을 확인한 시각이 오래된 것부터 덮는다.
+    (그 전에 확인된 변경은 새 판의 기한에 이미 들어 있다.) 확정본이 없으면 {}."""
+    versions = _versions(conn, uid, year)
+    if not versions:
+        return {}
+    changes = conn.execute(
+        "SELECT sid, to_due FROM kpi_sched_changes WHERE user_id = ? AND year = ? AND status = 'CONFIRMED' AND decided_at >= ?"
+        " ORDER BY decided_at, id", (uid, year, versions[-1][2])).fetchall()
+    return effective_dues(versions[-1][1], changes)
+
+
+def progress_json(conn: sqlite3.Connection, uid: int, year: int) -> dict | None:
+    """그 사람 그해 진행 기록을 지금 확정본의 실행목표 줄 모양으로, 계산한 숫자까지 붙여. 확정본이 없으면 None.
+    날짜 판정은 한국 날짜(auth._today). 호출하는 쪽이 한 트랜잭션 안에서 부른다 (표 여럿을 한 번에 읽으므로).
+    items 마다 rid · kind · action · weight · target · unit · actual · pct · why · at · value(막대 0~100) · expected(기대 진행률) 와
+    정기는 months {"1"…"12": {state, text, link, at}}, 비정기는 scheds [{sid, name, task, due, origDue, state, result, pending, returned}].
+    total · totalExpected = 가중 평균, todo = 지금 할 일 수, next = 결과가 없고 실제 기한이 오늘 이후인 가장 가까운 일정."""
+    versions = _versions(conn, uid, year)
+    if not versions:
+        return None
+    today, (version, content, _) = auth._today(), versions[-1]
+    first, dues, hire = _first_months(year, versions), _dues(conn, uid, year), _hire(conn, uid)
+    own = (uid, year)
+    prog = {r[0]: r[1:] for r in conn.execute("SELECT rid, actual, pct, why, updated_at FROM kpi_progress WHERE user_id = ? AND year = ?", own)}
+    notes = {(r[0], r[1]): r[2:] for r in conn.execute("SELECT rid, month, text, link, updated_at FROM kpi_month_notes WHERE user_id = ? AND year = ?", own)}
+    results = {r[0]: r[1:] for r in conn.execute("SELECT sid, text, link, updated_at FROM kpi_results WHERE user_id = ? AND year = ?", own)}
+    changes = conn.execute("SELECT id, sid, to_due, reason, status, note, requested_at, decided_at FROM kpi_sched_changes"
+                           " WHERE user_id = ? AND year = ? ORDER BY requested_at, id", own).fetchall()
+    waiting = {c[1]: c for c in changes if c[4] == "PENDING"}
+    newest = {c[1]: c for c in changes}  # 요청한 시각이 가장 늦은 것이 마지막에 덮는다
+    ev = conn.execute("SELECT eval_start FROM kpi_years WHERE year = ?", (year,)).fetchone()
+    this_m = today.month if today.year == year else None  # 할 일: 이번 달, 그리고 1~7일이면 지난달 — 그해 달만
+    last = today.replace(day=1) - timedelta(days=1)
+    prev_m = last.month if today.day <= 7 and last.year == year else None
+
+    rows, items, values, expects, nxt = _rows(content), [], [], [], None
+    cur = prev = late = 0
+    for it in rows:
+        rid = it["rid"]
+        actual, pct, why, at = prog.get(rid, (None, None, None, None))
+        out = {"rid": rid, "kind": it["kind"], "action": it["action"], "weight": it["weight"], "target": it["target"], "unit": it["unit"],
+               "actual": actual, "pct": pct, "why": why, "at": at}
+        done: set[int] = set()
+        if it["kind"] == "reg":
+            out["months"] = {}
+            for m in range(1, 13):
+                text, link, mat = notes.get((rid, m), (None, None, None))
+                out["months"][str(m)] = {"state": month_state(year, m, today, first[rid], hire, text is not None), "text": text, "link": link, "at": mat}
+            cur += this_m is not None and out["months"][str(this_m)]["state"] == "OPEN"
+            prev += prev_m is not None and out["months"][str(prev_m)]["state"] == "OPEN"
+        else:
+            out["scheds"] = []
+            for s in it["scheds"]:
+                sid, res, due = s["sid"], results.get(s["sid"]), dues[s["sid"]]
+                state, c, lc = sched_state(due, today, res is not None), waiting.get(sid), newest.get(sid)
+                if res is not None:
+                    done.add(sid)
+                late += state in ("LATE", "OVERDUE")
+                if res is None and due >= today.isoformat() and (nxt is None or (due, sid) < (nxt["due"], nxt["sid"])):
+                    nxt = {"sid": sid, "due": due, "name": s["name"]}
+                out["scheds"].append({
+                    "sid": sid, "name": s["name"], "task": task_title(s["name"], it["action"]), "due": due, "origDue": s["due"], "state": state,
+                    "result": {"text": res[0], "link": res[1], "at": res[2]} if res else None,
+                    "pending": {"id": c[0], "to": c[2], "reason": c[3], "at": c[6]} if c else None,
+                    "returned": {"to": lc[2], "note": lc[5], "at": lc[7]} if lc and lc[4] == "RETURNED" else None})
+        out["value"], out["expected"] = item_pct(it, actual, pct, done), item_expected(it, year, today, dues)
+        values.append(out["value"])
+        expects.append(out["expected"])
+        items.append(out)
+    return {"year": year, "version": version, "open": records_open(year, today), "schedOpen": not (ev and ev[0]) or today.isoformat() < ev[0],
+            "items": items, "total": overall(rows, values), "totalExpected": overall(rows, expects),
+            "todo": {"months": cur + prev, "prev": prev, "results": late}, "next": nxt}
+
+
+@bp.get(f"/api/kpi/progress/{UID}")
+def progress_get(uid: int) -> Response:
+    """?year= (없으면 올해) → progress_json. 주인 · 바로 위 관리자 · HR 만 (plan_get 과 같은 범위). 그해 확정본이 없으면 404."""
+    conn = auth._db()
+    if not (g.actor.is_hr or uid == g.actor.user_id or manager_of(uid, *load_org(conn)) == g.actor.user_id):
+        return jsonify(error="이 KPI를 볼 권한이 없습니다."), 403
+    year = _year_arg()
+    with _txn(conn):  # 표 여럿을 읽는 동안 다른 요청이 끼어들지 않게
+        out = progress_json(conn, uid, year)
+    if out is None:
+        return jsonify(error="확정된 KPI가 없습니다."), 404
+    return jsonify(out)
+
+
+class _Rec(NamedTuple):
+    conn: sqlite3.Connection
+    uid: int  # 쓰는 사람 = 로그인한 사람 (본문의 번호는 보지 않는다)
+    year: int
+    versions: list[tuple[int, list[dict], str]]
+    now: str
+
+    @property
+    def items(self) -> list[dict]:
+        """지금(마지막) 확정본의 실행목표 줄 — 기록은 여기 있는 rid · sid 에만 쓴다."""
+        return _rows(self.versions[-1][1])
+
+
+@contextmanager
+def _record() -> Iterator[_Rec]:
+    """내 진행 기록을 쓰는 요청의 틀. 본문 앞에서 KPI 작성 대상 403 → (해가 이상하면 400) → 그해 확정본 404 → 기록 기간 403 을 순서대로 본다.
+    작성 기간 · 계획서 상태는 보지 않는다 — 수정 중이어도 기록은 늘 지금 확정본에 쓴다. 감사로그는 남기지 않는다 (내용 문장이라서)."""
+    conn, uid, year = auth._db(), g.actor.user_id, _body().get("year")
+    with _txn(conn):
+        if not conn.execute("SELECT writes_kpi FROM users WHERE id = ?", (uid,)).fetchone()[0]:
+            raise _Refuse("KPI 작성 대상이 아닙니다.", 403)
+        if type(year) is not int or year not in YEARS:
+            raise _Refuse("해가 올바르지 않습니다.", 400)
+        versions = _versions(conn, uid, year)
+        if not versions:
+            raise _Refuse("확정된 KPI가 없습니다.", 404)
+        if not records_open(year, auth._today()):
+            raise _Refuse("기록 기간이 지났습니다.", 403)
+        yield _Rec(conn, uid, year, versions, auth._iso(auth._now()))
+
+
+def _item(m: _Rec, rid: object) -> dict:
+    it = next((i for i in m.items if type(rid) is int and i["rid"] == rid), None)  # type 검사: True 가 1번으로 통하지 않게
+    if it is None:
+        raise _Refuse("지금 확정본에 없는 실행목표입니다.", 400)
+    return it
+
+
+def _line(v: object, label: str, limit: int) -> str:
+    """진행 기록의 글 한 줄: 글자만, 앞뒤 공백을 뺀 limit자 이하 ("" 가능). 글자가 아니거나 UTF-8 로 쓸 수 없는 글자(짝 없는 서로게이트)가 있거나
+    한도를 넘으면 400."""
+    if not isinstance(v, str):
+        raise _Refuse(f"{label}: 글자로 보내 주세요.", 400)
+    t = v.strip()
+    try:
+        t.encode("utf-8")
+    except UnicodeEncodeError:
+        raise _Refuse(f"{label}에 쓸 수 없는 글자가 있습니다.", 400) from None
+    if len(t) > limit:
+        raise _Refuse(f"{label}: {limit}자 안으로 써 주세요.", 400)
+    return t
+
+
+def _link(v: object) -> str | None:
+    """근거 링크: 없거나 빈칸이면 None, 아니면 앞뒤 빈칸을 뺀 글이 valid_link 를 지나야 한다 (아니면 400)."""
+    if v is None:
+        return None
+    s = _line(v, "링크", LINK_MAX)
+    if s and not valid_link(s):
+        raise _Refuse("링크는 http:// 또는 https:// 로 시작하는 주소만, 빈칸 없이 써 주세요.", 400)
+    return s or None
+
+
+@bp.post("/api/kpi/me/progress")
+def progress_set() -> Response:
+    """{"year", "rid", "actual"?, "pct"?, "why"?} 보낸 칸만 바꾼다. actual(0~10억 숫자)은 목표 숫자가 있는 정기에만, pct(0~100 정수)는 목표 숫자가 없는
+    정기에만, why(늦어지는 이유 100자)는 모든 행에 — 다른 데 보내면 400. why "" 는 지운다."""
+    b = _body()
+    with _record() as m:
+        it = _item(m, b.get("rid"))
+        reg, has_target = it["kind"] == "reg", it["target"] is not None
+        if "actual" in b and not (reg and has_target):
+            raise _Refuse("실적은 목표 숫자가 있는 정기 업무에만 적을 수 있습니다.", 400)
+        if "pct" in b and not (reg and not has_target):
+            raise _Refuse("진행률은 목표 숫자가 없는 정기 업무에만 직접 적을 수 있습니다.", 400)
+        sets: dict[str, object] = {}
+        if "actual" in b:
+            a = b["actual"]
+            if not (isinstance(a, (int, float)) and not isinstance(a, bool) and 0 <= a <= 1e9):  # NaN · 무한도 여기서 걸린다
+                raise _Refuse("실적은 0 이상 10억 이하 숫자로 적어 주세요.", 400)
+            sets["actual"] = a
+        if "pct" in b:
+            if type(b["pct"]) is not int or not 0 <= b["pct"] <= 100:
+                raise _Refuse("진행률은 0~100 사이 정수로 적어 주세요.", 400)
+            sets["pct"] = b["pct"]
+        if "why" in b:
+            sets["why"] = _line(b["why"], "늦어지는 이유", WHY_MAX) or None
+        if not sets:
+            raise _Refuse("바꿀 칸(actual · pct · why)을 보내 주세요.", 400)
+        cols = list(sets)  # 위에서 정한 고정 이름뿐 — 요청의 글자가 SQL 에 들어가지 않는다
+        m.conn.execute(
+            f"INSERT INTO kpi_progress (user_id, year, rid, {', '.join(cols)}, updated_at) VALUES (?, ?, ?, {', '.join('?' * len(cols))}, ?)"
+            f" ON CONFLICT (user_id, year, rid) DO UPDATE SET {', '.join(c + ' = excluded.' + c for c in cols)}, updated_at = excluded.updated_at",
+            (m.uid, m.year, it["rid"], *sets.values(), m.now))
+        m.conn.execute("DELETE FROM kpi_progress WHERE user_id = ? AND year = ? AND rid = ? AND actual IS NULL AND pct IS NULL AND why IS NULL",
+                       (m.uid, m.year, it["rid"]))  # 비워서 아무것도 안 남은 줄은 두지 않는다
+    return jsonify(ok=True)
+
+
+@bp.post("/api/kpi/me/month")
+def month_set() -> Response:
+    """{"year", "rid", "month", "text", "link"} 정기 실행목표의 그 달 한 줄(200자) · 근거 링크(선택, 안 보내면 지워진다). text "" 는 그 달 줄을 지운다.
+    쓸 수 있는 달: 그 달 1일부터 다음 달 7일까지, 그리고 이 실행목표가 해당 있는 달 (첫 확정 전 · 입사 전 달은 403)."""
+    b = _body()
+    with _record() as m:
+        it = _item(m, b.get("rid"))
+        if it["kind"] != "reg":
+            raise _Refuse("월 한 줄은 정기 업무에만 쓸 수 있습니다.", 400)
+        month = b.get("month")
+        if type(month) is not int or not 1 <= month <= 12:
+            raise _Refuse("달은 1~12 사이 숫자로 보내 주세요.", 400)
+        if month_state(m.year, month, auth._today(), _first_months(m.year, m.versions)[it["rid"]], _hire(m.conn, m.uid), False) != "OPEN":
+            raise _Refuse("이 달은 적는 기간이 아닙니다.", 403)
+        text, link = _line(b.get("text"), "월 한 줄", NOTE_MAX), _link(b.get("link"))
+        key = (m.uid, m.year, it["rid"], month)
+        if text:
+            m.conn.execute("INSERT OR REPLACE INTO kpi_month_notes (user_id, year, rid, month, text, link, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                           (*key, text, link, m.now))
+        else:
+            m.conn.execute("DELETE FROM kpi_month_notes WHERE user_id = ? AND year = ? AND rid = ? AND month = ?", key)
+    return jsonify(ok=True)
+
+
+@bp.post("/api/kpi/me/result")
+def result_set() -> Response:
+    """{"year", "sid", "text", "link"} 지금 확정본의 비정기 일정 하나의 결과 한 줄(200자) · 근거 링크(선택). text "" 는 지운다 (일정이 다시 예정)."""
+    b = _body()
+    with _record() as m:
+        sid = b.get("sid")
+        if not any(type(sid) is int and s["sid"] == sid for it in m.items for s in it["scheds"]):
+            raise _Refuse("지금 확정본에 없는 일정입니다.", 400)
+        text, link = _line(b.get("text"), "결과 한 줄", NOTE_MAX), _link(b.get("link"))
+        if text:
+            m.conn.execute("INSERT OR REPLACE INTO kpi_results (user_id, year, sid, text, link, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+                           (m.uid, m.year, sid, text, link, m.now))
+        else:
+            m.conn.execute("DELETE FROM kpi_results WHERE user_id = ? AND year = ? AND sid = ?", (m.uid, m.year, sid))
+    return jsonify(ok=True)
