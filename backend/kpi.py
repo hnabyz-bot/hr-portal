@@ -32,7 +32,14 @@ app.py 가 bp 를 붙인다. 세션 검사는 auth._guard 가 모든 /api/* 에 
 
   POST /api/kpi/plans/<uid>/check   {"year", "month"} 그 달 기록을 확인했다고 남긴다 — 바로 위 관리자 본인만 (HR 대신 없음 · 대표이사에게 보고하는 분은 확인이 없음)
 
-남의 KPI(계획서 · 진행 기록)를 보는 범위는 _sees 한 곳: HR · 본인 · 바로 위 관리자, 그리고 팀장 = 팀원, 본부장 = 본부의 팀장 · 팀원, 대표이사 = 본부장 · 팀장 (팀원은 못 본다).
+  GET  /api/kpi/memos/<uid>         올해 확인 메모 {"role", "canWrite", "writer", "memos": [{…, "replies": […]}]} — 보는 범위는 plans 와 같다. 메모는 새것부터, 답글은 오래된 것부터
+  POST /api/kpi/memos/<uid>         {"year", "text"} 확인 메모 쓰기 → {"ok", "id"} — 바로 위 관리자 본인만 (HR 대신 없음 · 대표이사에게 보고하는 분은 메모가 없음)
+  POST /api/kpi/memo/<mid>/edit     {"text"} 쓴 사람이 쓴 날에만 고친다 (본인의 확인은 풀림) · /delete 같은 조건으로 지운다 (답글도 함께)
+  POST /api/kpi/memo/<mid>/ack      본인이 '확인했습니다' (취소 없음) · /reply {"text"} 본인 · 메모를 쓴 사람의 답글 → {"ok", "id"} (본인 답글 = 확인, 쓴 사람 답글 = 확인 풀림)
+  POST /api/kpi/memo-reply/<rpid>/delete  단 사람이 단 날에만 지운다
+  POST /api/kpi/memos/<uid>/seen    {"year"} 내가 쓴 그 사람의 메모 모두 '새 답글을 보았다' (seen_at = 지금)
+
+남의 KPI(계획서 · 진행 기록)를 보는 범위는 _sees 한 곳: HR · 본인 · 바로 위 관리자, 그리고 팀장 = 팀원, 본부장 = 본부의 팀장 · 팀원, 대표이사 = 본부장 · 팀장과 자기가 바로 위 관리자인 사람('임원' 소속 · 직속 팀장 등) (팀원은 못 본다).
 본인 쓰기는 서버가 늘 같은 순서로 다시 본다: KPI 작성 대상 403 → 작성 기간 403 → 상태 409 → 내용 400.
 관리자 처리는: 처리 권한 403 → 계획서 주인의 작성 기간 403 → 상태 409 → 사유 400. 권한은 요청마다 명단에서 새로 계산한다 (decider).
 진행 기록 쓰기는: KPI 작성 대상 403 → 그해 확정본 404 → 기록 기간(다음 해 1월 7일까지) 403 → 실행목표 · 일정 · 종류 400 → (월 한 줄) 달 403 → 글자 · 링크 · 숫자 한도 400.
@@ -41,6 +48,9 @@ app.py 가 bp 를 붙인다. 세션 검사는 auth._guard 가 모든 /api/* 에 
 확인 · 돌려보내기는: 요청 번호 404 → 처리 권한 403 → 평가 시작일 403 → 기다리는 중이 아니면 409 → (돌려보내기) 이유 400. 작성 기간과는 상관없다.
 월간 확인은: 바로 위 관리자가 아님 403 → 내가 대표이사 403 → 해(올해 정수) · 달(1~12 정수) 400 → 아직 오지 않은 달 403 → 그해 확정본 404 → 그 달 기록 없음 409 →
 이미 확인한 달은 아무것도 더하지 않고 200. 작성 기간 · 평가 시작일과는 상관없다. 확인한 달의 월 한 줄 · 결과(결과는 지금 실제 기한의 달)를 쓰거나 지우면 그 달 확인이 풀린다.
+확인 메모 쓰기는: 지금 바로 위 관리자가 아니거나 그 관리자가 대표이사 403 → 해(올해 정수) 400 → 그해 확정본 404 → 글 1~200자 400.
+메모 고치기 · 지우기는: 메모 404 → 쓴 사람이 아님 403 → 쓴 날(한국)이 아님 403 → (고치기) 글 400. 답글 달기는: 메모 404 → 본인도 쓴 사람도 아님 403 → 글 400.
+답글 지우기는: 답글 404 → 단 사람이 아님 403 → 단 날이 아님 403. 확인했습니다는: 메모 404 → 본인이 아님 403 (이미 확인했으면 200). 메모 일은 감사로그를 남기지 않는다 (내용 문장이라서).
 감사로그에는 행동 이름 · 대상 · 해(· 판 · 일정과 옛 · 새 기한 · 확인한 달)만 남긴다 — 계획서 · 사유 문장은 넣지 않는다. 임시 저장은 남기지 않는다. HR 이 대신 하면 on_behalf_of.
 """
 
@@ -64,7 +74,7 @@ from hr_eval.domain.kpi_plan import (
 from hr_eval.domain.kpi_progress import (
     LINK_MAX, NOTE_MAX, WHY_MAX, effective_dues, item_expected, item_pct, month_state, overall, records_open, sched_state, task_title, valid_link,
 )
-from hr_eval.domain.kpi_review import month_summary
+from hr_eval.domain.kpi_review import MEMO_MAX, month_summary, same_kst_day
 from hr_eval.domain.models import Actor, AuditEntry, Role
 from hr_eval.domain.org import Dept, Person, manager_of, target_of
 
@@ -74,6 +84,8 @@ YEARS = range(2026, 2101)  # kpi_years 의 CHECK 와 같게
 STATES = ("NONE", "DRAFT", "SUBMITTED", "CONFIRMED", "CHANGE_REQUESTED")  # NONE = 계획서 줄이 없음
 UID = "<int(max=2147483647):uid>"  # 경로의 사람 번호 — SQLite 정수보다 큰 수는 묶다가 서버 오류가 나므로 길 단계에서 404
 CID = "<int(max=2147483647):cid>"  # 경로의 일정 변경 요청 번호 — 같은 이유
+MID = "<int(max=2147483647):mid>"  # 경로의 확인 메모 번호 — 같은 이유
+RPID = "<int(max=2147483647):rpid>"  # 경로의 메모 답글 번호 — 같은 이유 (실행목표 번호 rid 와 헷갈리지 않게 rpid)
 
 
 def plan_year() -> int:
@@ -473,10 +485,15 @@ def _can_view(conn: sqlite3.Connection, uid: int) -> bool:
     return _sees(uid, *load_org(conn))
 
 
+def _writer_of(uid: int, people: list[Person], depts: list[Dept]) -> int | None:
+    """월간 확인 · 확인 메모를 하는 사람 = 바로 위 관리자. 없거나 대표이사면 None (대표이사에게 보고하는 분은 단계가 없다)."""
+    boss = manager_of(uid, people, depts)
+    return boss if boss is not None and next((p.position for p in people if p.id == boss), None) is not Role.CEO else None
+
+
 def _step(uid: int, people: list[Person], depts: list[Dept]) -> bool:
     """월간 확인 · 확인 메모 단계가 있나 = 바로 위 관리자가 있고 대표이사가 아니다 (대표이사에게 보고하는 분은 단계가 없다)."""
-    boss = manager_of(uid, people, depts)
-    return boss is not None and next((p.position for p in people if p.id == boss), None) is not Role.CEO
+    return _writer_of(uid, people, depts) is not None
 
 
 @bp.get(f"/api/kpi/plans/{UID}")
@@ -755,11 +772,12 @@ def progress_json(conn: sqlite3.Connection, uid: int, year: int, org: tuple[list
 def progress_get(uid: int) -> Response:
     """?year= (없으면 올해) → progress_json. 볼 수 있는 사람만 (_sees — plan_get 과 같은 범위). 그해 확정본이 없으면 404."""
     conn = auth._db()
-    if not _can_view(conn, uid):
+    org = load_org(conn)  # 명단은 한 번만 읽어 보는 범위와 확인 단계에 같이 쓴다
+    if not _sees(uid, *org):
         return jsonify(error="이 KPI를 볼 권한이 없습니다."), 403
     year = _year_arg()
     with _txn(conn):  # 표 여럿을 읽는 동안 다른 요청이 끼어들지 않게
-        out = progress_json(conn, uid, year)
+        out = progress_json(conn, uid, year, org)
     if out is None:
         return jsonify(error="확정된 KPI가 없습니다."), 404
     return jsonify(out)
@@ -933,6 +951,180 @@ def month_check(uid: int) -> Response:
                         (uid, year, month, auth._iso(auth._now()), g.actor.user_id)).rowcount:  # 이미 확인한 달이면 줄도 감사로그도 더하지 않는다
             auth._audit(conn, AuditEntry.by(g.actor, action="KPI_MONTH_CHECKED", entity_type="kpi_plan", entity_id=uid,
                                             after_data={"year": year, "month": month}))
+    return jsonify(ok=True)
+
+
+# ---------------- 확인 메모 · 답글 (2단계 ②, 2026-10-21) ----------------
+NOT_WRITER = "바로 위 관리자만 메모를 남길 수 있습니다."
+ONLY_TODAY = "쓴 날에만 고치거나 지울 수 있습니다."
+
+
+def _has_plan(conn: sqlite3.Connection, uid: int, year: int) -> bool:
+    """그해 확정본이 있나 — 메모는 확정된 계획서에 붙는다."""
+    return conn.execute("SELECT 1 FROM kpi_versions WHERE user_id = ? AND year = ?", (uid, year)).fetchone() is not None
+
+
+def _memo_text(v: object, label: str) -> str:
+    """확인 메모 · 답글의 글: 글자만, 앞뒤 공백을 뺀 1~MEMO_MAX자, _chars 규칙 — 아니면 400."""
+    t = _chars(v.strip() if isinstance(v, str) else "", label)
+    if not 0 < len(t) <= MEMO_MAX:
+        raise _Refuse(f"{label}: 1~{MEMO_MAX}자로 써 주세요.", 400)
+    return t
+
+
+def _by(name: str, title: str | None) -> str:
+    """글 옆에 보이는 이름: 이름 + 직급 (직급이 없으면 이름만)."""
+    return f"{name} {title}" if title else name
+
+
+def _mine_today(author_id: int, created_at: str, only: str) -> None:
+    """고치거나 지울 수 있는 사람: 쓴 사람 본인(아니면 403 only) → 쓴 날(한국 날짜)에만(아니면 403)."""
+    if author_id != g.actor.user_id:
+        raise _Refuse(only, 403)
+    if not same_kst_day(created_at, auth._today()):
+        raise _Refuse(ONLY_TODAY, 403)
+
+
+def _memo(conn: sqlite3.Connection, mid: int) -> tuple[int, int, str, str | None]:
+    """(본인, 쓴 사람, 쓴 시각, 본인이 확인한 시각) — 없으면 404."""
+    row = conn.execute("SELECT user_id, author_id, created_at, ack_at FROM kpi_memos WHERE id = ?", (mid,)).fetchone()
+    if row is None:
+        raise _Refuse("메모를 찾을 수 없습니다.", 404)
+    return row
+
+
+@bp.get(f"/api/kpi/memos/{UID}")
+def memos_get(uid: int) -> Response:
+    """올해 그 사람의 확인 메모 — 볼 수 있는 사람만 (_sees, plan_get 과 같은 범위). {"role": "owner"(본인) | "writer"(지금 바로 위 관리자, 대표이사 아님) | "",
+    "canWrite": writer 이고 그해 확정본이 있음, "writer": {"id", "name", "title"} | null(확인 단계가 없음),
+    "memos": [{"id", "at", "authorId", "by", "text", "edited", "ack", "fresh", "canEdit", "replies": [{"id", "at", "who", "by", "text", "canDelete"}]}]}.
+    메모는 새것부터, 답글은 오래된 것부터. fresh = 쓴 사람이 마지막으로 본 뒤 달린 본인 답글 수 (보는 사람이 그 메모를 쓴 사람일 때만 — 아니면 0).
+    canEdit · canDelete = 쓴 사람 본인이고 쓴 날 (한국 날짜). 메모가 없으면 빈 목록."""
+    conn, me, year, today = auth._db(), g.actor.user_id, plan_year(), auth._today()
+    org = load_org(conn)
+    if not _sees(uid, *org):
+        return jsonify(error="이 KPI를 볼 권한이 없습니다."), 403
+    boss = _writer_of(uid, *org)
+    with _txn(conn):  # 표 여럿을 읽는 동안 다른 요청이 끼어들지 않게
+        writer = conn.execute("SELECT id, name, title FROM users WHERE id = ?", (boss,)).fetchone() if boss is not None else None
+        can_write = boss == me and _has_plan(conn, uid, year)
+        replies: dict[int, list[dict]] = {}
+        owner_at: dict[int, list[str]] = {}  # 메모마다 본인 답글의 시각
+        for mid, rid, at, who, author, name, title, text in conn.execute(
+                "SELECT r.memo_id, r.id, r.created_at, r.who, r.author_id, u.name, u.title, r.text FROM kpi_memo_replies r"
+                " JOIN kpi_memos m ON m.id = r.memo_id JOIN users u ON u.id = r.author_id WHERE m.user_id = ? AND m.year = ? ORDER BY r.id", (uid, year)):
+            replies.setdefault(mid, []).append({"id": rid, "at": at, "who": who, "by": _by(name, title), "text": text,
+                                                "canDelete": author == me and same_kst_day(at, today)})
+            if who == "owner":
+                owner_at.setdefault(mid, []).append(at)
+        memos = []
+        for mid, at, author, name, title, text, edited, ack, seen in conn.execute(
+                "SELECT m.id, m.created_at, m.author_id, u.name, u.title, m.text, m.edited_at, m.ack_at, m.seen_at FROM kpi_memos m"
+                " JOIN users u ON u.id = m.author_id WHERE m.user_id = ? AND m.year = ? ORDER BY m.id DESC", (uid, year)):
+            fresh = sum(seen is None or t > seen for t in owner_at.get(mid, [])) if author == me else 0
+            memos.append({"id": mid, "at": at, "authorId": author, "by": _by(name, title), "text": text, "edited": edited is not None, "ack": ack,
+                          "fresh": fresh, "canEdit": author == me and same_kst_day(at, today), "replies": replies.get(mid, [])})
+    return jsonify(role="owner" if uid == me else "writer" if boss == me else "", canWrite=can_write,
+                   writer={"id": writer[0], "name": writer[1], "title": writer[2] or ""} if writer else None, memos=memos)
+
+
+@bp.post(f"/api/kpi/memos/{UID}")
+def memo_add(uid: int) -> Response:
+    """{"year", "text"} → {"ok": true, "id"}. 바로 위 관리자 본인만 (HR 대신 없음 · 대표이사에게 보고하는 분은 메모가 없다).
+    서버가 보는 순서: 지금 바로 위 관리자가 아님(그 관리자가 대표이사여도) 403 → 해(올해 정수) 400 → 그해 확정본 404 → 글 1~200자 400. 감사로그는 남기지 않는다."""
+    b = _body()
+    year, text, conn = b.get("year"), b.get("text"), auth._db()
+    with _txn(conn):
+        if _writer_of(uid, *load_org(conn)) != g.actor.user_id:
+            raise _Refuse(NOT_WRITER, 403)
+        if type(year) is not int or year != plan_year():  # type 검사: True 가 1로 통하지 않게
+            raise _Refuse("해가 올바르지 않습니다.", 400)
+        if not _has_plan(conn, uid, year):
+            raise _Refuse("확정된 KPI가 없습니다.", 404)
+        text = _memo_text(text, "메모")
+        cur = conn.execute("INSERT INTO kpi_memos (user_id, year, author_id, text, created_at) VALUES (?, ?, ?, ?, ?)",
+                           (uid, year, g.actor.user_id, text, auth._iso(auth._now())))
+    return jsonify(ok=True, id=cur.lastrowid)
+
+
+@bp.post(f"/api/kpi/memo/{MID}/edit")
+def memo_edit(mid: int) -> Response:
+    """{"text"} 쓴 사람이 쓴 날에만. 순서: 메모 404 → 쓴 사람이 아님 403 → 쓴 날(한국)이 아님 403 → 글 400.
+    고치면 edited_at = 지금, ack_at = 비움 (본인이 다시 확인한다). 답글은 그대로."""
+    text, conn = _body().get("text"), auth._db()
+    with _txn(conn):
+        _, author, created, _ = _memo(conn, mid)
+        _mine_today(author, created, "쓴 사람만 고치거나 지울 수 있습니다.")
+        conn.execute("UPDATE kpi_memos SET text = ?, edited_at = ?, ack_at = NULL WHERE id = ?", (_memo_text(text, "메모"), auth._iso(auth._now()), mid))
+    return jsonify(ok=True)
+
+
+@bp.post(f"/api/kpi/memo/{MID}/delete")
+def memo_delete(mid: int) -> Response:
+    """쓴 사람이 쓴 날에만 (edit 과 같은 순서). 답글도 함께 지워진다 (DB CASCADE)."""
+    conn = auth._db()
+    with _txn(conn):
+        _, author, created, _ = _memo(conn, mid)
+        _mine_today(author, created, "쓴 사람만 고치거나 지울 수 있습니다.")
+        conn.execute("DELETE FROM kpi_memos WHERE id = ?", (mid,))
+    return jsonify(ok=True)
+
+
+@bp.post(f"/api/kpi/memo/{MID}/ack")
+def memo_ack(mid: int) -> Response:
+    """'확인했습니다' — 본인만. 순서: 메모 404 → 본인이 아님 403 → 이미 확인했으면 아무것도 바꾸지 않고 200 → ack_at = 지금. 취소는 없다."""
+    conn = auth._db()
+    with _txn(conn):
+        owner, _, _, ack = _memo(conn, mid)
+        if owner != g.actor.user_id:
+            raise _Refuse("본인만 확인할 수 있습니다.", 403)
+        if ack is None:
+            conn.execute("UPDATE kpi_memos SET ack_at = ? WHERE id = ?", (auth._iso(auth._now()), mid))
+    return jsonify(ok=True)
+
+
+@bp.post(f"/api/kpi/memo/{MID}/reply")
+def memo_reply(mid: int) -> Response:
+    """{"text"} → {"ok": true, "id"}. 본인과 그 메모를 쓴 사람만. 순서: 메모 404 → 둘 다 아님 403 → 글 400.
+    본인의 답글은 확인한 것으로 친다 (ack_at 이 비었을 때만 지금으로), 쓴 사람의 답글은 ack_at 을 비운다 (본인이 다시 확인)."""
+    text, conn, me = _body().get("text"), auth._db(), g.actor.user_id
+    with _txn(conn):
+        owner, author, _, ack = _memo(conn, mid)
+        if me not in (owner, author):
+            raise _Refuse("본인과 메모를 쓴 사람만 답글을 달 수 있습니다.", 403)
+        text, now = _memo_text(text, "답글"), auth._iso(auth._now())
+        cur = conn.execute("INSERT INTO kpi_memo_replies (memo_id, author_id, who, text, created_at) VALUES (?, ?, ?, ?, ?)",
+                           (mid, me, "owner" if me == owner else "writer", text, now))
+        if me != owner:
+            conn.execute("UPDATE kpi_memos SET ack_at = NULL WHERE id = ?", (mid,))
+        elif ack is None:
+            conn.execute("UPDATE kpi_memos SET ack_at = ? WHERE id = ?", (now, mid))
+    return jsonify(ok=True, id=cur.lastrowid)
+
+
+@bp.post(f"/api/kpi/memo-reply/{RPID}/delete")
+def memo_reply_delete(rpid: int) -> Response:
+    """단 사람이 단 날에만. 순서: 답글 404 → 단 사람이 아님 403 → 단 날(한국)이 아님 403."""
+    conn = auth._db()
+    with _txn(conn):
+        row = conn.execute("SELECT author_id, created_at FROM kpi_memo_replies WHERE id = ?", (rpid,)).fetchone()
+        if row is None:
+            raise _Refuse("답글을 찾을 수 없습니다.", 404)
+        _mine_today(*row, "단 사람만 지울 수 있습니다.")
+        conn.execute("DELETE FROM kpi_memo_replies WHERE id = ?", (rpid,))
+    return jsonify(ok=True)
+
+
+@bp.post(f"/api/kpi/memos/{UID}/seen")
+def memos_seen(uid: int) -> Response:
+    """{"year"} → {"ok": true}. 내가 쓴 그 사람 그해 메모를 모두 '새 답글을 보았다'로 (seen_at = 지금). 내가 쓴 메모가 없으면 아무것도 안 하고 200.
+    해가 올바른 정수(2026~2100)가 아니면 400. 남의 메모는 건드리지 않으므로 보는 범위는 따로 보지 않는다."""
+    year, conn = _body().get("year"), auth._db()
+    if type(year) is not int or year not in YEARS:
+        raise _Refuse("해가 올바르지 않습니다.", 400)
+    with _txn(conn):
+        conn.execute("UPDATE kpi_memos SET seen_at = ? WHERE user_id = ? AND year = ? AND author_id = ?",
+                     (auth._iso(auth._now()), uid, year, g.actor.user_id))
     return jsonify(ok=True)
 
 

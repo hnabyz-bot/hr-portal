@@ -952,6 +952,8 @@ def check_kpi_review_tables(conn: sqlite3.Connection) -> None:
                             ((memo, 9999, "owner", "가상 답글"), "없는 사람이 쓴 답글", "FOREIGN KEY")):
         ok, msg = _rejects(conn, rp, args)
         _report(ok and word in msg, f"답글 {why} 거부", msg)
+    idx = [r[0] for r in conn.execute("SELECT name FROM pragma_index_info('kpi_memo_replies_memo') ORDER BY seqno").fetchall()]
+    _report(idx == ["memo_id"], "메모별 답글 찾기 색인 (kpi_memo_replies_memo)", f"실제 {idx}")
     # 글쓴이는 지울 수 없다 (RESTRICT) — 다른 데 쓰이지 않는 새 사람으로 확인한다
     writer = conn.execute(
         "INSERT INTO users (employee_no, name, email, department_id)"

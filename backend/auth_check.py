@@ -2297,17 +2297,19 @@ def check_kpi_review(hr) -> None:
     바로 위 관리자가 달마다 '확인' (HR 대신 없음 · 대표이사에게 보고하는 분은 확인 단계가 없음) · 확인한 달의 기록을 고치거나 지우면 그 달 확인이 풀림 ·
     결과의 달은 바뀐 기한으로 센다. 서버가 순서대로 다시 본다 (바로 위 관리자 403 → 대표이사 403 → 해 · 달 400 → 아직 안 온 달 403 → 확정본 404 → 기록 없음 409).
     오늘에 기대는 검사는 모두 시계(auth._now)를 정해 두고 돈다 — 어느 날 돌려도 같다 (R4). 시계가 바뀌면 창은 새로 연다.
-    뒤 절(메모 · 알람 · 명단 · 경영계획)은 같은 가상 조직과 아래 도구를 이어 쓴다."""
+    확인 메모 · 확인했습니다 · 답글 · 새 답글 표시는 이 검사의 뒤쪽 절 (바로 위 관리자만 쓰고 · 쓴 사람이 쓴 날에만 고치고 · 본인만 확인하고 · 감사로그는 없음).
+    뒤 절(알람 · 명단 · 경영계획)은 같은 가상 조직과 아래 도구를 이어 쓴다."""
     import kpi
     print("KPI 현황 (보는 범위 · 월간 확인)")
     # 이 검사만의 가상 조직: 본부(71) 밑 팀 둘(72 · 73), 대표이사 직속 팀(74), 장이 없는 '임원'(75)
     for dept in ((71, "R71", "가상R본부", "DIVISION", None), (72, "R72", "가상R팀A", "TEAM", 71), (73, "R73", "가상R팀B", "TEAM", 71),
                  (74, "R74", "가상R직속팀", "DIVISION", None), (75, "R75", "임원", "DIVISION", None)):
         x("INSERT INTO departments (id, code, name, level, parent_id) VALUES (?, ?, ?, ?, ?)", *dept)
-    HR, HEAD, LEAD, EMP, EMP2, LEAD2, PEER2, DIRECT, EXEC, CEO = 1, 91, 92, 93, 94, 95, 96, 97, 98, 99
+    HR, HEAD, LEAD, EMP, EMP2, LEAD2, PEER2, DIRECT, EXEC, CEO, DMEMBER = 1, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100
     cast = {HEAD: ("가상R본부장", 71, "DIVISION_HEAD", 1), LEAD: ("가상R팀장", 72, "TEAM_LEADER", 1), EMP: ("가상R직원", 72, None, 1),
             EMP2: ("가상R동료", 72, None, 1), LEAD2: ("가상R다른팀장", 73, "TEAM_LEADER", 1), PEER2: ("가상R다른팀원", 73, None, 1),
-            DIRECT: ("가상R직속팀장", 74, "TEAM_LEADER", 1), EXEC: ("가상R임원직원", 75, None, 1), CEO: ("가상R대표", 71, "CEO", 0)}
+            DIRECT: ("가상R직속팀장", 74, "TEAM_LEADER", 1), EXEC: ("가상R임원직원", 75, None, 1), CEO: ("가상R대표", 71, "CEO", 0),
+            DMEMBER: ("가상R직속팀원", 74, None, 1)}  # 직속 팀의 보통 팀원 — 계획서가 없다 (403 이 404 보다 먼저인 것을 보려고)
     for uid, (name, dept, role, writes) in cast.items():
         x("INSERT INTO users (id, name, email, department_id, hiworks_user_no, portal_enabled, is_active, writes_kpi) VALUES (?, ?, ?, ?, ?, 1, 1, ?)",
           uid, name, f"r{uid}@example.invalid", dept, f"HW-{uid}", writes)
@@ -2349,6 +2351,20 @@ def check_kpi_review(hr) -> None:
     audit = lambda uid: q("SELECT actor_user_id, actor_is_hr, on_behalf_of, entity_type, after_data FROM audit_logs"  # noqa: E731
                           " WHERE action = 'KPI_MONTH_CHECKED' AND entity_id = ? ORDER BY id", uid)
     aj = lambda m: json.dumps({"year": year, "month": m})  # noqa: E731
+    NOT_WRITER, BAD_YEAR = {"error": "바로 위 관리자만 메모를 남길 수 있습니다."}, {"error": "해가 올바르지 않습니다."}
+    WRONG_DAY, NOT_AUTHOR = {"error": "쓴 날에만 고치거나 지울 수 있습니다."}, {"error": "쓴 사람만 고치거나 지울 수 있습니다."}
+    NOT_REPLIER = {"error": "단 사람만 지울 수 있습니다."}
+    memos = lambda uid, who: c(who).get(f"/api/kpi/memos/{uid}", base_url=BASE)  # noqa: E731
+    view = lambda uid, who: memos(uid, who).json  # noqa: E731
+    one = lambda uid, who, mid: next(m for m in view(uid, who)["memos"] if m["id"] == mid)  # noqa: E731
+    memo_post = lambda who, uid, text="가상 메모", **over: c(who).post(f"/api/kpi/memos/{uid}", base_url=BASE, headers=ORIGIN,  # noqa: E731
+                                                                      json={"year": year, "text": text, **over})
+    memo_do = lambda who, mid, what, **body: c(who).post(f"/api/kpi/memo/{mid}/{what}", base_url=BASE, headers=ORIGIN, json=body)  # noqa: E731
+    rp_del = lambda who, rpid: c(who).post(f"/api/kpi/memo-reply/{rpid}/delete", base_url=BASE, headers=ORIGIN, json={})  # noqa: E731
+    seen = lambda who, uid: c(who).post(f"/api/kpi/memos/{uid}/seen", base_url=BASE, headers=ORIGIN, json={"year": year})  # noqa: E731
+    memo_row = lambda mid: q("SELECT text, edited_at, ack_at, seen_at FROM kpi_memos WHERE id = ?", mid)  # noqa: E731
+    n_memos = lambda: q("SELECT COUNT(*) FROM kpi_memos")[0][0]  # noqa: E731
+    n_replies = lambda mid: q("SELECT COUNT(*) FROM kpi_memo_replies WHERE memo_id = ?", mid)[0][0]  # noqa: E731
     sched_due = lambda uid, sid: next(s["due"] for i in prog(uid).json["items"] for s in i.get("scheds", []) if s["sid"] == sid)  # noqa: E731
 
     def item(name, w, kind, **more):
@@ -2382,6 +2398,11 @@ def check_kpi_review(hr) -> None:
         ok(closed(HEAD, DIRECT) and closed(HEAD, EXEC), "본부장도 본부 밖(대표이사 직속 팀장 · '임원' 소속)은 못 봄")
         ok(all(sees(CEO, u) for u in (LEAD, HEAD, DIRECT, EXEC)), "대표이사는 팀장 · 본부장 · 직속 팀장 · '임원' 소속(자기에게 보고하는 분)을 봄")
         ok(all(closed(CEO, u) for u in (EMP, EMP2, PEER2)), "대표이사는 팀원 KPI 를 응답으로 받지 않음: 진행 기록 · 계획서 모두 403")
+        ok(closed(CEO, DMEMBER) and hit(memos(DMEMBER, CEO), 403, NO_VIEW) and closed(HEAD, DMEMBER) and closed(EMP, DMEMBER),
+           "대표이사는 직속 팀의 팀원 KPI 도 못 봄: 진행 기록 · 계획서 · 메모 모두 403 (그 사람은 계획서가 없는데도 404 가 아니라 403 — 보는 범위가 먼저)")
+        ok(prog(DMEMBER, DIRECT).status_code == 404 and plan_of(DMEMBER, DIRECT).status_code == 404 and prog(DMEMBER, HR).status_code == 404
+           and view(DMEMBER, DIRECT)["role"] == "writer" and view(DMEMBER, DIRECT)["writer"]["id"] == DIRECT and view(DMEMBER, DIRECT)["canWrite"] is False,
+           "직속 팀의 팀원은 직속 팀장(바로 위 관리자)과 HR 이 봄 (계획서가 없어 404) · 메모는 직속 팀장이 쓰는 사람 (계획서가 없어 canWrite 거짓)")
         ok(closed(LEAD2, EMP) and closed(EMP2, EMP) and closed(LEAD, LEAD2) and closed(EMP, EMP2), "다른 팀장 · 동료 팀원 · 팀장끼리 · 팀원끼리는 못 봄 403")
         ok(all(sees(w, EMP) for w in (EMP, LEAD, HR)) and all(sees(w, LEAD) for w in (LEAD, HEAD, CEO, HR)), "이미 되던 것은 그대로: 본인 · 바로 위 관리자 · HR")
 
@@ -2449,6 +2470,8 @@ def check_kpi_review(hr) -> None:
         # ---- 거절 순서 ----
         ok(hit(check(LEAD2, EMP, 3), 403, NOT_BOSS) and hit(check(LEAD2, EMP, 13), 403, NOT_BOSS) and hit(check(LEAD2, EMP, 8, year=year - 1), 403, NOT_BOSS),
            "확인_거절_순서: 다른 팀장은 달 · 해가 이상해도 먼저 403")
+        ok(hit(check(CEO, HEAD, 13), 403, TO_CEO) and hit(check(CEO, HEAD, 3, year=year - 1), 403, TO_CEO) and hit(check(CEO, DIRECT, "3"), 403, TO_CEO),
+           "확인_거절_순서: 대표이사가 보고하는 분을 확인하면 달 · 해가 이상해도 먼저 403 (대표이사에게 보고하는 분은 확인이 없음 → 해 · 달 400)")
         ok(all(check(LEAD, EMP, m).status_code == 400 for m in (13, 0, -1, "3", True, 3.0, None, [3], 10 ** 30))
            and all(check(LEAD, EMP, 3, year=y).status_code == 400 for y in (year - 1, year + 1, "%d" % year, None, True, year + 0.5, 0))
            and c(LEAD).post(f"/api/kpi/plans/{EMP}/check", base_url=BASE, headers=ORIGIN, json={"month": 3}).status_code == 400
@@ -2468,6 +2491,204 @@ def check_kpi_review(hr) -> None:
         ok(hit(check(LEAD, EMP2, 7), 403, NOT_BOSS) and q("SELECT checked_by FROM kpi_month_checks WHERE user_id = ? AND month = 7", EMP2) == [(LEAD2,)]
            and audit(EMP2)[-1] == (LEAD2, 0, None, "kpi_plan", aj(7)), "옛 팀장은 403 · 확인한 사람 · 감사로그는 새 팀장")
         ok(closed(LEAD, EMP2) and sees(LEAD2, EMP2) and sees(HEAD, EMP2), "보는 범위도 따라 바뀜: 옛 팀장은 못 보고 새 팀장 · 본부장은 봄")
+
+        # ---- 확인 메모 · 확인했습니다 · 답글 (2단계 ②, Task 4) ----
+        x("UPDATE users SET title = '팀장' WHERE id = ?", LEAD)  # 이름 옆에 붙는 직급 — 직급이 없는 사람(직원)은 이름만
+        n_audit = lambda: q("SELECT COUNT(*) FROM audit_logs WHERE action NOT IN ('LOGIN', 'CEO_DELEGATION_ON', 'CEO_DELEGATION_OFF')")[0][0]  # noqa: E731
+        audit0 = n_audit()  # 메모 일은 감사로그를 남기지 않는다 — 끝에서 견준다 (로그인 · 이 절이 켜고 끄는 맡김은 뺀다)
+        at(8, 3)  # 한국 8월 3일 12시
+        ok(anon.get(f"/api/kpi/memos/{EMP}", base_url=BASE).status_code == 401
+           and anon.post(f"/api/kpi/memos/{EMP}", base_url=BASE, headers=ORIGIN, json={"year": year, "text": "가상"}).status_code == 401
+           and anon.post("/api/kpi/memo/1/ack", base_url=BASE, headers=ORIGIN, json={}).status_code == 401, "로그인 없이는 401 (확인 메모)")
+
+        # 팀장만 쓴다
+        r = memo_post(LEAD, EMP, "가상 첫 메모")
+        m1 = r.json.get("id")
+        ok(r.status_code == 200 and r.json == {"ok": True, "id": m1}
+           and q("SELECT user_id, year, author_id, text, created_at, edited_at, ack_at, seen_at FROM kpi_memos") == [(EMP, year, LEAD, "가상 첫 메모", z(8, 3), None, None, None)],
+           "팀장만_쓴다: 바로 위 관리자(팀장)가 메모를 남김 — 쓴 사람 · 쓴 시각, 고친 때 · 확인 · 본 때는 비어 있음")
+        ok(all(hit(memo_post(w, EMP), 403, NOT_WRITER) for w in (HEAD, LEAD2, EMP, EMP2)) and n_memos() == 1,
+           "팀장만_쓴다: 본부장(윗사람) · 다른 팀장 · 본인 · 동료 팀원은 403 — 아무것도 안 남음")
+        ok(c(LEAD).post(f"/api/kpi/memos/{EMP}", base_url=BASE, headers={}, json={"year": year, "text": "가상"}).status_code == 403 and n_memos() == 1,
+           "포털 화면에서만 (Origin 없으면 403) · 아무것도 안 남음")
+
+        # 대표이사 · HR 은 못 쓴다
+        ok(all(hit(memo_post(HR, u), 403, NOT_WRITER) for u in (EMP, HEAD, DIRECT)) and all(hit(memo_post(CEO, u), 403, NOT_WRITER) for u in (HEAD, DIRECT, EXEC))
+           and n_memos() == 1, "대표이사_HR은_메모를_못_쓴다: HR 은 누구에게도, 대표이사는 자기에게 보고하는 분(본부장 · 직속 팀장 · '임원' 소속)에게도 403")
+        ok(c(CEO).post("/api/kpi/delegation", base_url=BASE, headers=ORIGIN, json={"on": True}).json == {"ok": True, "on": True}
+           and all(hit(memo_post(HR, u), 403, NOT_WRITER) for u in (EMP, HEAD, DIRECT, EXEC)) and n_memos() == 1,
+           "대표이사가 HR 에 맡김을 켜도 HR 은 403 (같은 문구)")
+        c(CEO).post("/api/kpi/delegation", base_url=BASE, headers=ORIGIN, json={"on": False})
+        ok(all((j := view(HEAD, w))["writer"] is None and j["canWrite"] is False and j["memos"] == [] for w in (HEAD, CEO, HR))
+           and view(HEAD, HEAD)["role"] == "owner" and view(HEAD, CEO)["role"] == "" and view(HEAD, HR)["role"] == "",
+           "대표이사에게 보고하는 분(본부장)의 메모란: writer 없음 · canWrite 거짓 — 대표이사도 쓰는 사람이 아니라 role 은 빈 글자")
+        ok(view(EXEC, CEO)["writer"] is None and view(DIRECT, CEO)["writer"] is None and view(EXEC, CEO)["role"] == "",
+           "(직속 팀장 · '임원' 소속도 같다)")
+
+        # 읽기 · 모양
+        mj = view(EMP, LEAD)
+        ok(set(mj) == {"role", "canWrite", "writer", "memos"} and mj["role"] == "writer" and mj["canWrite"] is True
+           and mj["writer"] == {"id": LEAD, "name": "가상R팀장", "title": "팀장"}
+           and mj["memos"] == [{"id": m1, "at": z(8, 3), "authorId": LEAD, "by": "가상R팀장 팀장", "text": "가상 첫 메모", "edited": False, "ack": None,
+                                "fresh": 0, "canEdit": True, "replies": []}],
+           "GET 모양: role · canWrite · writer{id name title} · memos[{id at authorId by text edited ack fresh canEdit replies}] — 쓴 사람은 canEdit 참 · by 는 이름 + 직급")
+        ok(all((j := view(EMP, w))["role"] == "" and j["canWrite"] is False and j["writer"]["id"] == LEAD and len(j["memos"]) == 1
+               and not any(m["canEdit"] for m in j["memos"]) for w in (HEAD, HR)),
+           "윗사람_HR은_읽기만: 본부장 · HR 은 읽기 200 — role 빈 글자 · canWrite 거짓 · canEdit 모두 거짓")
+        mj = view(EMP, EMP)
+        ok(mj["role"] == "owner" and mj["canWrite"] is False and mj["writer"]["id"] == LEAD and not mj["memos"][0]["canEdit"] and mj["memos"][0]["fresh"] == 0,
+           "본인 화면: role owner · canWrite 거짓 · canEdit 거짓 · fresh 0")
+        ok(all(hit(memos(EMP, w), 403, NO_VIEW) for w in (CEO, LEAD2, EMP2)), "볼 수 없는 사람(대표이사 · 다른 팀장 · 동료 팀원)은 메모란도 403")
+        ok(view(LEAD, CEO)["role"] == "" and view(LEAD, CEO)["writer"]["id"] == HEAD and view(LEAD, CEO)["canWrite"] is False,
+           "대표이사는 팀장의 메모란을 읽기만 (쓰는 사람은 본부장)")
+        mj = view(PEER2, LEAD2)
+        ok(mj["role"] == "writer" and mj["canWrite"] is False and mj["memos"] == [], "확정본이 없는 사람: 바로 위 관리자라도 canWrite 거짓")
+        ok(hit(memo_post(LEAD2, PEER2), 404, NO_PLAN), "(그 사람에게 쓰려 하면 404)")
+
+        # 본인이 확인했습니다
+        at(8, 4)
+        ok(hit(memo_do(EMP, m1, "ack"), 200, {"ok": True}) and memo_row(m1) == [("가상 첫 메모", None, z(8, 4), None)] and one(EMP, LEAD, m1)["ack"] == z(8, 4),
+           "본인이_확인했습니다: 본인이 누르면 ack 에 그 시각")
+        at(8, 5)
+        ok(hit(memo_do(EMP, m1, "ack"), 200, {"ok": True}) and memo_row(m1)[0][2] == z(8, 4) and one(EMP, EMP, m1)["ack"] == z(8, 4),
+           "또 눌러도 200 · 처음 시각 그대로")
+        ok(all(memo_do(w, m1, "ack").status_code == 403 for w in (LEAD, HEAD, HR, CEO, EMP2)) and memo_row(m1)[0][2] == z(8, 4),
+           "팀장 · 본부장 · HR · 대표이사 · 남은 확인 403 (본인만) · 시각 그대로")
+        ok(memo_do(EMP, 999999, "ack").status_code == 404 and memo_do(LEAD, 999999, "ack").status_code == 404, "없는 메모는 누가 눌러도 404 (권한 403 보다 먼저)")
+
+        # 답글 규칙
+        at(8, 6)
+        m2 = memo_post(LEAD, EMP, "가상 둘째 메모").json["id"]
+        at(8, 6, 4)
+        r = memo_do(EMP, m2, "reply", text="가상 본인 답글")
+        rp1 = r.json.get("id")
+        ok(r.status_code == 200 and r.json == {"ok": True, "id": rp1} and memo_row(m2)[0][2] == z(8, 6, 4)
+           and q("SELECT memo_id, author_id, who, text, created_at FROM kpi_memo_replies WHERE id = ?", rp1) == [(m2, EMP, "owner", "가상 본인 답글", z(8, 6, 4))],
+           "답글_규칙: 본인 답글 → 확인한 것으로 침 (ack = 답글 시각) · who owner")
+        at(8, 6, 5)
+        ok(memo_do(EMP, m2, "reply", text="가상 본인 답글 2").status_code == 200 and memo_row(m2)[0][2] == z(8, 6, 4), "(본인 답글을 또 달아도 처음 확인 시각 그대로)")
+        at(8, 6, 6)
+        r = memo_do(LEAD, m2, "reply", text="가상 팀장 답글")
+        rp3 = r.json.get("id")
+        ok(r.status_code == 200 and memo_row(m2)[0][2] is None and q("SELECT who, author_id FROM kpi_memo_replies WHERE id = ?", rp3) == [("writer", LEAD)]
+           and one(EMP, EMP, m2)["ack"] is None, "팀장 답글 → ack 비움 (본인이 다시 확인) · who writer")
+        at(8, 6, 7)
+        ok(memo_do(EMP, m2, "reply", text="가상 본인 답글 3").status_code == 200 and memo_row(m2)[0][2] == z(8, 6, 7), "(본인이 다시 답하면 다시 확인됨)")
+        rs = one(EMP, EMP, m2)["replies"]
+        ok([(p["who"], p["by"], p["text"]) for p in rs] == [("owner", "가상R직원", "가상 본인 답글"), ("owner", "가상R직원", "가상 본인 답글 2"),
+                                                           ("writer", "가상R팀장 팀장", "가상 팀장 답글"), ("owner", "가상R직원", "가상 본인 답글 3")]
+           and [p["at"] for p in rs] == [z(8, 6, 4), z(8, 6, 5), z(8, 6, 6), z(8, 6, 7)] and set(rs[0]) == {"id", "at", "who", "by", "text", "canDelete"},
+           "답글은 오래된 것부터 — 모양 {id at who by text canDelete}")
+        ok([p["canDelete"] for p in rs] == [True, True, False, True] and [p["canDelete"] for p in one(EMP, LEAD, m2)["replies"]] == [False, False, True, False]
+           and not any(p["canDelete"] for p in one(EMP, HEAD, m2)["replies"]), "canDelete: 단 사람 본인이고 단 날만 (본부장은 모두 거짓)")
+        ok(all(memo_do(w, m2, "reply", text="가상 끼어들기").status_code == 403 for w in (EMP2, HEAD, HR, CEO, LEAD2)) and memo_do(EMP2, m2, "reply", text="").status_code == 403
+           and memo_do(EMP, 999999, "reply", text="").status_code == 404 and n_replies(m2) == 4,
+           "다른 팀원 · 본부장 · HR · 대표이사 · 다른 팀장 답글 403 (글 400 보다 먼저) · 없는 메모 404")
+        ok(all(memo_do(w, m2, "reply", text=t).status_code == 400 for w in (EMP, LEAD) for t in ("", "  \n ", "가" * 201, "가\x00나", "\ud800", None, 5, ["가"]))
+           and n_replies(m2) == 4 and memo_row(m2)[0][2] == z(8, 6, 7), "답글 글: 빈 글 · 공백뿐 · 201자 · 제어문자 · 짝 없는 글자 · 글이 아닌 것은 400 — 아무것도 안 바뀜")
+        ok(memo_do(EMP, m2, "reply", text="  " + "가" * 200 + " \n").status_code == 200 and q("SELECT length(text) FROM kpi_memo_replies ORDER BY id DESC LIMIT 1") == [(200,)],
+           "200자(앞뒤 공백은 뺌)까지 됨")
+        at(8, 6, 8)
+        ok(memo_do(LEAD, m1, "reply", text="가상 팀장 답글").status_code == 200 and memo_row(m1)[0][2] is None, "(확인한 메모에 팀장이 답글을 달면 확인이 풀림)")
+        ok(memo_do(EMP, m1, "reply", text="가상 본인 답글").status_code == 200 and memo_row(m1)[0][2] == z(8, 6, 8), "(본인 답글 = 확인)")
+
+        # 메모 쓰기의 거절 순서
+        at(8, 7)
+        n = n_memos()
+        ok(hit(memo_post(HEAD, EMP, year=year - 1), 403, NOT_WRITER) and hit(memo_post(LEAD2, PEER2, year=year - 1), 400, BAD_YEAR)
+           and all(hit(memo_post(LEAD2, PEER2, year=y), 400, BAD_YEAR) for y in (year + 1, True, "%d" % year, None, 0)),
+           "메모_거절_순서: 바로 위 관리자 403 → 해(올해 정수) 400")
+        ok(hit(memo_post(LEAD2, PEER2), 404, NO_PLAN) and hit(memo_post(LEAD2, PEER2, text=""), 404, NO_PLAN), "→ 확정본 404 (글이 비어 있어도 404 가 먼저)")
+        ok(all(memo_post(LEAD, EMP, t).status_code == 400 for t in ("", "   \n ", "가" * 201, "가\x00나", "\ud800", None, 5, ["가"], {"a": 1})) and n_memos() == n,
+           "→ 글 400: 빈 글 · 공백뿐 · 201자 · 제어문자 · 짝 없는 글자 · 글이 아닌 것 — 아무것도 안 남음")
+        r = memo_post(LEAD, EMP, "  " + "가" * 200 + "\n")
+        ok(r.status_code == 200 and q("SELECT text FROM kpi_memos WHERE id = ?", r.json["id"]) == [("가" * 200,)] and hit(memo_do(LEAD, r.json["id"], "delete"), 200, {"ok": True})
+           and n_memos() == n, "200자(앞뒤 공백은 뺌)까지 됨 (같은 날 지움)")
+
+        # 쓴 날(한국 날짜)에만 고친다 — UTC 15:00 에 한국 날짜가 바뀐다
+        at(3, 10, 15, 30)  # 한국 3월 11일 0시 30분
+        m3 = memo_post(LEAD, EMP, "가상 3월 메모").json["id"]
+        at(3, 11, 1, 0)  # 한국 3월 11일 10시
+        rp_w = memo_do(LEAD, m3, "reply", text="가상 팀장 답글").json["id"]
+        at(3, 11, 2, 0)
+        rp_o = memo_do(EMP, m3, "reply", text="가상 본인 답글").json["id"]
+        ok(memo_row(m3)[0][2] == z(3, 11, 2) and one(EMP, LEAD, m3)["canEdit"] is True, "(본인이 답글로 확인함)")
+        at(3, 11, 14, 59)  # 한국 3월 11일 23시 59분
+        ok(memo_do(LEAD, m3, "edit", text="").status_code == 400 and memo_row(m3) == [("가상 3월 메모", None, z(3, 11, 2), None)], "고치기 글이 비면 400 · 아무것도 안 바뀜")
+        ok(hit(memo_do(LEAD, m3, "edit", text="  가상 고친 메모 \n"), 200, {"ok": True}) and memo_row(m3) == [("가상 고친 메모", z(3, 11, 14, 59), None, None)],
+           "쓴_날에만_고친다: 한국 3/11 23:59 에 고치기 200 — 글 · 고친 때, 확인(ack)은 비워짐")
+        j = one(EMP, EMP, m3)
+        ok(j["edited"] is True and j["ack"] is None and j["text"] == "가상 고친 메모" and j["at"] == z(3, 10, 15, 30), "GET: edited 참 · ack 없음 · 쓴 시각은 그대로")
+        ok(memo_do(LEAD, m3, "edit", text="가" * 201).status_code == 400 and memo_do(LEAD, m3, "edit", text="가" * 200).status_code == 200, "고치기도 1~200자")
+        ok(all(hit(memo_do(w, m3, "edit", text="가상 남의 손"), 403, NOT_AUTHOR) and hit(memo_do(w, m3, "delete"), 403, NOT_AUTHOR) for w in (EMP, HEAD, HR, CEO, EMP2))
+           and memo_do(LEAD, 999999, "edit", text="가상").status_code == 404 and memo_do(EMP, 999999, "delete").status_code == 404,
+           "고치기 · 지우기: 없는 메모 404 → 쓴 사람이 아니면 403 (본인 · 본부장 · HR · 대표이사도)")
+        ok(hit(rp_del(LEAD, rp_o), 403, NOT_REPLIER) and hit(rp_del(HEAD, rp_o), 403, NOT_REPLIER) and hit(rp_del(EMP, rp_w), 403, NOT_REPLIER) and rp_del(EMP, 999999).status_code == 404,
+           "답글 지우기: 없는 답글 404 → 단 사람이 아니면 403")
+        ok(hit(rp_del(EMP, rp_o), 200, {"ok": True}) and n_replies(m3) == 1, "한국 3/11 23:59 에 본인 답글 지우기 200")
+        at(3, 11, 15, 0)  # 한국 3월 12일 0시
+        ok(hit(memo_do(LEAD, m3, "edit", text="가상 늦은 손"), 403, WRONG_DAY) and hit(memo_do(LEAD, m3, "delete"), 403, WRONG_DAY) and hit(rp_del(LEAD, rp_w), 403, WRONG_DAY)
+           and memo_row(m3)[0][0] == "가" * 200 and n_replies(m3) == 1, "쓴_날에만_고친다: 한국 3/12 0시부터는 고치기 · 지우기 · 답글 지우기 403 — 아무것도 안 바뀜")
+        ok(hit(memo_do(LEAD, m3, "edit", text=""), 403, WRONG_DAY) and hit(memo_do(EMP, m3, "edit", text="가상"), 403, NOT_AUTHOR) and hit(rp_del(EMP, rp_w), 403, NOT_REPLIER),
+           "거절 순서: 쓴 사람 아님 403 → 쓴 날 아님 403 → 글 400 (날이 지났으면 글이 비어도 403)")
+        ok(one(EMP, LEAD, m3)["canEdit"] is False and not any(p["canDelete"] for p in one(EMP, LEAD, m3)["replies"]), "GET: 날이 지나면 canEdit · canDelete 거짓")
+
+        # 새 답글은 열어 보면 사라진다
+        at(9, 1)
+        m4 = memo_post(LEAD, EMP, "가상 넷째 메모").json["id"]
+        at(9, 1, 4)
+        ok(memo_do(EMP, m4, "reply", text="가상 새 답글 1").status_code == 200, "(본인 답글 1)")
+        at(9, 1, 5)
+        ok(memo_do(EMP, m4, "reply", text="가상 새 답글 2").status_code == 200 and memo_do(LEAD, m4, "reply", text="가상 팀장 답글").status_code == 200,
+           "(본인 답글 2 · 팀장 답글 1 — 팀장 자신의 답글은 새 답글이 아님)")
+        ok(one(EMP, LEAD, m4)["fresh"] == 2 and one(EMP, EMP, m4)["fresh"] == 0 and one(EMP, HEAD, m4)["fresh"] == 0 and one(EMP, HR, m4)["fresh"] == 0,
+           "새_답글은_열어_보면_사라진다: 쓴 사람(팀장)에게만 fresh 2 · 본인 · 본부장 · HR 화면은 0")
+        at(9, 1, 6)
+        n_lead = q("SELECT COUNT(*) FROM kpi_memos WHERE user_id = ? AND author_id = ?", EMP, LEAD)[0][0]
+        ok(hit(seen(LEAD, EMP), 200, {"ok": True}) and all(m["fresh"] == 0 for m in view(EMP, LEAD)["memos"])
+           and q("SELECT COUNT(*) FROM kpi_memos WHERE user_id = ? AND author_id = ? AND seen_at = ?", EMP, LEAD, z(9, 1, 6)) == [(n_lead,)],
+           "열어 보았다고 보내면 내가 쓴 그 사람의 메모 모두 seen_at = 지금 → fresh 0")
+        at(9, 1, 7)
+        ok(memo_do(EMP, m4, "reply", text="가상 새 답글 3").status_code == 200 and one(EMP, LEAD, m4)["fresh"] == 1 and one(EMP, EMP, m4)["fresh"] == 0,
+           "그 뒤 달린 본인 답글만 새로 셈 (fresh 1)")
+        at(9, 1, 8)
+        ok(hit(seen(HEAD, EMP), 200, {"ok": True}) and hit(seen(LEAD, EMP2), 200, {"ok": True}) and hit(seen(CEO, EMP), 200, {"ok": True}) and one(EMP, LEAD, m4)["fresh"] == 1
+           and q("SELECT COUNT(*) FROM kpi_memos WHERE seen_at = ?", z(9, 1, 8)) == [(0,)],
+           "내가 쓴 메모가 없으면 아무것도 안 하고 200 (남의 메모 본 때는 안 바뀜 · 못 보는 사람이어도 200)")
+        ok(all(c(LEAD).post(f"/api/kpi/memos/{EMP}/seen", base_url=BASE, headers=ORIGIN, json={"year": y}).status_code == 400 for y in (None, True, "%d" % year, 2020, year + 0.5))
+           and c(LEAD).post(f"/api/kpi/memos/{EMP}/seen", base_url=BASE, headers=ORIGIN, json={}).status_code == 400, "열어 보았다: 해가 이상하면 400")
+        ok(hit(seen(LEAD, EMP), 200, {"ok": True}) and one(EMP, LEAD, m4)["fresh"] == 0, "(다시 열어 보면 사라짐)")
+
+        # 메모를 지우면 답글도
+        at(9, 2)
+        m5 = memo_post(LEAD, EMP, "가상 지울 메모").json["id"]
+        at(9, 2, 4)
+        ok(memo_do(EMP, m5, "reply", text="가상 본인 답글").status_code == 200 and memo_do(LEAD, m5, "reply", text="가상 팀장 답글").status_code == 200 and n_replies(m5) == 2,
+           "(메모에 답글 둘)")
+        n_all = q("SELECT COUNT(*) FROM kpi_memo_replies")[0][0]
+        ok(hit(memo_do(LEAD, m5, "delete"), 200, {"ok": True}) and memo_row(m5) == [] and n_replies(m5) == 0
+           and q("SELECT COUNT(*) FROM kpi_memo_replies")[0][0] == n_all - 2, "메모를_지우면_답글도: 같은 날 지우면 두 표 모두 비고 다른 메모의 답글은 그대로")
+        ok(memo_do(LEAD, m5, "delete").status_code == 404 and memo_do(EMP, m5, "ack").status_code == 404, "(이미 지운 메모는 404)")
+
+        # 팀을 옮기면 — 쓰는 사람은 지금 바로 위 관리자, 옛 메모는 그대로
+        at(9, 3)
+        m6 = memo_post(LEAD2, EMP2, "가상 다른 팀 메모").json["id"]
+        x("UPDATE users SET department_id = 72 WHERE id = ?", EMP2)  # 팀 A 로
+        try:
+            j = view(EMP2, LEAD)
+            ok(j["role"] == "writer" and j["writer"]["id"] == LEAD and j["canWrite"] is True and [m["authorId"] for m in j["memos"]] == [LEAD2]
+               and j["memos"][0]["canEdit"] is False and hit(memos(EMP2, LEAD2), 403, NO_VIEW) and hit(memo_post(LEAD2, EMP2), 403, NOT_WRITER)
+               and memo_post(LEAD, EMP2, "가상 새 팀장 메모").status_code == 200,
+               "팀을_옮기면_새_관리자가_쓴다: 새 팀장이 role writer · 옛 메모를 읽음(고치기 거짓) · 옛 팀장은 읽기도 쓰기도 403")
+        finally:
+            x("UPDATE users SET department_id = 73 WHERE id = ?", EMP2)  # 원래대로 (팀 B)
+        ok(hit(memo_do(LEAD2, m6, "edit", text="가상 고친 다른 팀 메모"), 200, {"ok": True}) and memo_row(m6)[0][0] == "가상 고친 다른 팀 메모",
+           "(쓴 사람은 팀을 옮겨도 쓴 날에는 자기 메모를 고침)")
+
+        # 감사로그는 남기지 않는다
+        ok(n_audit() == audit0
+           and q("SELECT COUNT(*) FROM audit_logs WHERE action LIKE '%MEMO%' OR entity_type LIKE '%memo%'")[0][0] == 0,
+           "감사로그_없음: 메모 · 답글 · 확인 · 본 때 일을 아무리 해도 audit_logs 줄 수가 그대로")
     finally:
         auth._now = real_now
         x("DELETE FROM ceo_delegation WHERE ceo_user_id = ?", CEO)

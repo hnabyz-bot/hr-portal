@@ -55,6 +55,9 @@ CREATE TABLE kpi_memo_replies (
     created_at  TEXT    NOT NULL
 );
 
+-- 메모 하나의 답글을 빨리 찾는다 (메모를 읽을 때 · 메모를 지우면서 답글을 함께 지울 때).
+CREATE INDEX kpi_memo_replies_memo ON kpi_memo_replies(memo_id);
+
 -- 알람 끄기 — 본인이 늦은 목표의 알람을 끄고 이유를 고른다. 실행목표 하나에 한 줄.
 -- why: year 올해 안 · month 이번 달까지 · wait 기다리는 중 · etc 직접 적기 (화면 KV_MUTE 의 열쇠와 같다).
 -- text: '직접 적기'(etc)일 때만 있다. until_month: 이 달 말일까지 끈다(1~12). '올해 안'은 12월까지.
