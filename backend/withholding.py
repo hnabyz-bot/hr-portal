@@ -170,11 +170,15 @@ def pdf_get(year: str) -> Response:
 def years_get() -> Response:
     if (denied := auth._hr_only()) is not None:
         return denied
-    rows = auth._db().execute(
+    conn, users = auth._db(), {}
+    rows = conn.execute(
         "SELECT y.year, y.status, COUNT(w.user_id), y.pending, COALESCE(SUM(w.revised), 0), y.uploaded_at, y.opened_at"
-        " FROM withholding_years y LEFT JOIN withholding w ON w.year = y.year GROUP BY y.year ORDER BY y.year DESC")
+        " FROM withholding_years y LEFT JOIN withholding w ON w.year = y.year GROUP BY y.year ORDER BY y.year DESC").fetchall()
+    for year, uid in conn.execute("SELECT year, user_id FROM withholding ORDER BY year, user_id"):
+        users.setdefault(year, []).append(uid)  # 사람만 올리기 확인 창의 "바꿈 · 더함" — 직원 번호만 (이름 · 금액 없음)
     return jsonify(ready=pay_key() is not None, years=[
-        {"year": r[0], "status": r[1], "people": r[2], "pending": r[3], "revised": r[4], "uploadedAt": r[5], "openedAt": r[6]} for r in rows])
+        {"year": r[0], "status": r[1], "people": r[2], "pending": r[3], "revised": r[4], "uploadedAt": r[5], "openedAt": r[6], "users": users.get(r[0], [])}
+        for r in rows])
 
 
 def _store(conn, year: int, mode: str, reset: bool, total: int, plan: list[tuple[int, dict, bytes]], key: bytes) -> tuple[int, str] | int:

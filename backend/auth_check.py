@@ -1021,7 +1021,8 @@ def check_withholding(hr) -> None:
         y = years().json
         ok(y["ready"] is True and len(y["years"]) == 1 and y["years"][0]["uploadedAt"]
            and {k: y["years"][0][k] for k in ("year", "status", "people", "pending", "revised", "openedAt")}
-           == {"year": 2025, "status": "DRAFT", "people": 2, "pending": 1, "revised": 0, "openedAt": None}, "해 목록: DRAFT · 2명 · 남은 1명 · 수정 0")
+           == {"year": 2025, "status": "DRAFT", "people": 2, "pending": 1, "revised": 0, "openedAt": None}
+           and y["years"][0]["users"] == [3, 10], "해 목록: DRAFT · 2명 · 남은 1명 · 수정 0 · 올라간 직원 번호")
         r = post(hr, "/api/withholding/2025/open")
         ok(r.status_code == 409 and "올리다 멈춘 해" in r.json["error"] and q("SELECT status FROM withholding_years") == [("DRAFT",)],
            "다 올리기 전(pending 1)에는 공개 409")
@@ -1035,7 +1036,8 @@ def check_withholding(hr) -> None:
         ok(get(emp).json == {"years": []} and pdf_of(emp, 2025).status_code == 404 and post(emp, "/api/withholding/2025/seen").status_code == 404,
            "공개 전에는 목록에 없음 · PDF 404 · '봤음' 404")
         r = up(hr, 2025, [person(11)], reset=False)
-        ok(r.status_code == 200 and r.json == {"saved": 1, "pending": 0} and years().json["years"][0]["people"] == 3, "나머지 1명 → pending 0 · 3명")
+        ok(r.status_code == 200 and r.json == {"saved": 1, "pending": 0} and years().json["years"][0]["people"] == 3
+           and years().json["years"][0]["users"] == [3, 10, 11], "나머지 1명 → pending 0 · 3명 · 직원 번호 셋")
 
         print("  - 잠금")
         rows = q("SELECT user_id, sum, pdf FROM withholding WHERE year = 2025 ORDER BY user_id")
