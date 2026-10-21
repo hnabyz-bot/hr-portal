@@ -13,9 +13,9 @@ app.py 가 bp 를 붙인다. 세션 검사는 auth._guard 가 모든 /api/* 에 
   GET  /api/kpi/plans/<uid>         그 사람 올해 계획서 + owner — 주인 · 바로 위 관리자 · HR 만
   POST /api/kpi/plans/<uid>/confirm 확정 (SUBMITTED → CONFIRMED, 새 판)
   POST /api/kpi/plans/<uid>/return  {"note"} 돌려보내기 (SUBMITTED → DRAFT)
-  POST /api/kpi/plans/<uid>/unlock  수정 요청 풀어 주기 (CHANGE_REQUESTED → DRAFT, 초안 = 마지막 확정본)
+  POST /api/kpi/plans/<uid>/unlock  수정 요청 풀어 주기 (CHANGE_REQUESTED → DRAFT, 초안 = 마지막 확정본 + 지금 실제 기한, 기다리던 일정 변경 요청은 취소)
   POST /api/kpi/plans/<uid>/reject  {"note"} 수정 요청 거절 (CHANGE_REQUESTED → CONFIRMED)
-  GET  /api/kpi/inbox               내가 처리할 것 {"items": […], "team": {상태: 수}} — HR 은 관리자가 없는 것 · 맡겨진 것도 proxy 로
+  GET  /api/kpi/inbox               내가 처리할 것 {"items": […], "team": {상태: 수}} — 계획서(kind PLAN) · 일정 변경(kind SCHED), 오래된 것부터. HR 은 관리자가 없는 것 · 맡겨진 것도 proxy 로
   GET  /api/kpi/admin               ?year= 사람마다 상태 · 바로 위 관리자 · 사람별 기간 (HR)
   POST /api/kpi/admin/window        {"userId", "year", "editFrom", "editTo"} | {"userId", "year", "clear": true} 한 사람만의 작성 기간 (HR)
   GET/POST /api/kpi/delegation      {"on": bool} 대표이사 몫을 HR 에 맡기기 — 대표이사 본인만
@@ -25,11 +25,18 @@ app.py 가 bp 를 붙인다. 세션 검사는 auth._guard 가 모든 /api/* 에 
   POST /api/kpi/me/month            {"year", "rid", "month", "text", "link"} 정기 실행목표의 월 한 줄 (text "" 는 지움)
   POST /api/kpi/me/result           {"year", "sid", "text", "link"} 비정기 일정의 결과 한 줄 (text "" 는 지움)
 
+  POST /api/kpi/me/sched-change     {"year", "sid", "due", "reason"} 비정기 일정 하나의 기한을 바꿔 달라는 요청 → {"ok", "id"} (확정본이 있고 평가 시작일 전일 때)
+  POST /api/kpi/me/sched-change/<id>/cancel  본인의 기다리는 요청을 취소
+  POST /api/kpi/sched-changes/<id>/confirm   바로 위 관리자(또는 대신하는 HR)가 확인 — 그 일정의 실제 기한이 바뀐다 (확정본은 그대로)
+  POST /api/kpi/sched-changes/<id>/return    {"note"} 돌려보내기 (이유 필수)
+
 본인 쓰기는 서버가 늘 같은 순서로 다시 본다: KPI 작성 대상 403 → 작성 기간 403 → 상태 409 → 내용 400.
 관리자 처리는: 처리 권한 403 → 계획서 주인의 작성 기간 403 → 상태 409 → 사유 400. 권한은 요청마다 명단에서 새로 계산한다 (decider).
 진행 기록 쓰기는: KPI 작성 대상 403 → 그해 확정본 404 → 기록 기간(다음 해 1월 7일까지) 403 → 실행목표 · 일정 · 종류 400 → (월 한 줄) 달 403 → 글자 · 링크 · 숫자 한도 400.
 작성 기간 · 계획서 상태는 보지 않고 지금 확정본에 쓴다. 감사로그는 남기지 않는다 (내용 문장이라서).
-감사로그에는 행동 이름 · 대상 · 해(· 판)만 남긴다 — 계획서 · 사유 문장은 넣지 않는다. 임시 저장은 남기지 않는다. HR 이 대신 하면 on_behalf_of.
+일정 변경 요청은: KPI 작성 대상 403 → 해 400 → 확정본 404 → 계획서 상태 409 → 평가 시작일 403 → 일정 · 결과 · 기한 400 → 같은 일정에 기다리는 요청 409 → 이유 400.
+확인 · 돌려보내기는: 요청 번호 404 → 처리 권한 403 → 평가 시작일 403 → 기다리는 중이 아니면 409 → (돌려보내기) 이유 400. 작성 기간과는 상관없다.
+감사로그에는 행동 이름 · 대상 · 해(· 판 · 일정과 옛 · 새 기한)만 남긴다 — 계획서 · 사유 문장은 넣지 않는다. 임시 저장은 남기지 않는다. HR 이 대신 하면 on_behalf_of.
 """
 
 from __future__ import annotations
@@ -59,6 +66,7 @@ bp = Blueprint("kpi", __name__)
 YEARS = range(2026, 2101)  # kpi_years 의 CHECK 와 같게
 STATES = ("NONE", "DRAFT", "SUBMITTED", "CONFIRMED", "CHANGE_REQUESTED")  # NONE = 계획서 줄이 없음
 UID = "<int(max=2147483647):uid>"  # 경로의 사람 번호 — SQLite 정수보다 큰 수는 묶다가 서버 오류가 나므로 길 단계에서 404
+CID = "<int(max=2147483647):cid>"  # 경로의 일정 변경 요청 번호 — 같은 이유
 
 
 def plan_year() -> int:
@@ -428,12 +436,18 @@ def reject(uid: int) -> Response:
 
 @bp.post(f"/api/kpi/plans/{UID}/unlock")
 def unlock(uid: int) -> Response:
-    """수정 요청을 풀어 준다 (CHANGE_REQUESTED → DRAFT). 초안 = 마지막 확정본 내용, 확정본은 그대로 유효하다."""
+    """수정 요청을 풀어 준다 (CHANGE_REQUESTED → DRAFT). 초안 = 마지막 확정본 내용에 지금 실제 기한(확인된 일정 변경)을 넣은 것 — 다음 확정본이 이어받는다.
+    확정본은 그대로 유효하다. 기다리던 일정 변경 요청은 모두 취소한다 (새 판에서 일정이 바뀔 수 있다) — 감사로그에 취소한 수(cancelled)."""
     with _manage(uid, "unlock") as m:
-        last = m.conn.execute("SELECT content FROM kpi_versions WHERE user_id = ? AND year = ? ORDER BY version DESC LIMIT 1", (uid, m.year)).fetchone()[0]
+        dues, content = _dues(m.conn, uid, m.year), _versions(m.conn, uid, m.year)[-1][1]
+        for it in _rows(content):
+            for s in it.get("scheds") or []:
+                s["due"] = dues.get(s["sid"], s["due"])
+        closed = m.conn.execute("UPDATE kpi_sched_changes SET status = 'CANCELLED', decided_at = ?, decided_by = ? WHERE user_id = ? AND year = ? AND status = 'PENDING'",
+                                (m.now, g.actor.user_id, uid, m.year)).rowcount
         m.conn.execute("UPDATE kpi_plans SET status = ?, draft = ?, note = NULL, note_kind = NULL, change_reason = NULL, updated_at = ?"
-                       " WHERE user_id = ? AND year = ?", (m.next, last, m.now, uid, m.year))
-        _log(m, "KPI_UNLOCKED")
+                       " WHERE user_id = ? AND year = ?", (m.next, json.dumps(content, ensure_ascii=False), m.now, uid, m.year))
+        _log(m, "KPI_UNLOCKED", cancelled=closed)
     return jsonify(ok=True)
 
 
@@ -457,26 +471,48 @@ def plan_get(uid: int) -> Response:
 
 @bp.get("/api/kpi/inbox")
 def inbox() -> Response:
-    """{"items": [내가 처리할 계획서], "team": {상태: 수}}. items = 내가 바로 위 관리자인 제출 · 수정 요청 (오래된 것부터).
+    """{"items": [내가 처리할 것], "team": {상태: 수}}. items = 오래된 것부터 두 가지: kind "PLAN" = 내가 바로 위 관리자인 제출 · 수정 요청 계획서,
+    kind "SCHED" = 기다리는 일정 변경 요청 (그해 평가 시작일이 지났으면 뺀다). 일정 변경 줄은 id · 실행목표(action) · 일정 이름(sched) · 옛 → 새 기한 · 이유가 있다.
     HR 이면 관리자가 없거나 대표이사가 맡긴 것도 proxy: true 로 (HR 본인 것은 빼고). 주인이 활성이고 KPI 작성이 켜진 것만 —
-    team · HR 목록과 같은 기준. team = 내가 바로 위 관리자인 KPI 작성자들의 상태 수 (HR 대신 몫은 안 센다)."""
+    team · HR 목록과 같은 기준. team = 내가 바로 위 관리자인 KPI 작성자들의 상태 수 (HR 대신 몫은 안 센다 · 일정 변경은 안 센다)."""
     conn, year, mine = auth._db(), plan_year(), g.actor.user_id
     people, depts = load_org(conn)
     ceos = _ceos(conn, people)
+
+    def proxy(uid: int) -> bool | None:
+        """이 사람의 것이 내 처리함에 오나: False = 내가 바로 위 관리자, True = HR 이 대신 처리할 것, None = 내 몫이 아님."""
+        boss = manager_of(uid, people, depts)
+        if boss == mine:
+            return False
+        return True if g.actor.is_hr and uid != mine and (boss is None or ceos.get(boss, False)) else None
+
     items = []
     for uid, name, dept, title, status, submitted, updated, reason, draft in conn.execute(
             "SELECT p.user_id, u.name, d.name, COALESCE(u.title, ''), p.status, p.submitted_at, p.updated_at, p.change_reason, p.draft"
             " FROM kpi_plans p JOIN users u ON u.id = p.user_id JOIN departments d ON d.id = u.department_id"
             " WHERE p.year = ? AND p.status IN ('SUBMITTED', 'CHANGE_REQUESTED') AND u.is_active = 1 AND u.writes_kpi = 1", (year,)):
-        boss = manager_of(uid, people, depts)
-        if boss != mine and not (g.actor.is_hr and uid != mine and (boss is None or ceos.get(boss, False))):
+        px = proxy(uid)
+        if px is None:
             continue
         rows = [it for goal in json.loads(draft) for it in goal["items"]]
-        items.append({"userId": uid, "name": name, "dept": dept, "title": title, "status": status,
+        items.append({"kind": "PLAN", "userId": uid, "name": name, "dept": dept, "title": title, "status": status,
                       "at": submitted if status == "SUBMITTED" else updated, "reason": reason if status == "CHANGE_REQUESTED" else None,
                       "items": len(rows), "reg": sum(it["kind"] == "reg" for it in rows), "irr": sum(it["kind"] == "irr" for it in rows),
-                      "scheds": sum(len(it["scheds"]) for it in rows), "proxy": boss != mine})
-    items.sort(key=lambda i: (i["at"], i["userId"]))
+                      "scheds": sum(len(it["scheds"]) for it in rows), "proxy": px})
+    waiting = conn.execute(
+        "SELECT c.id, c.user_id, u.name, d.name, COALESCE(u.title, ''), c.sid, c.from_due, c.to_due, c.reason, c.requested_at"
+        " FROM kpi_sched_changes c JOIN users u ON u.id = c.user_id JOIN departments d ON d.id = u.department_id"
+        " WHERE c.year = ? AND c.status = 'PENDING' AND u.is_active = 1 AND u.writes_kpi = 1", (year,)).fetchall() if _sched_open(conn, year) else []
+    for cid, uid, name, dept, title, sid, frm, to, reason, at in waiting:
+        px = proxy(uid)
+        if px is None:
+            continue
+        last = conn.execute("SELECT content FROM kpi_versions WHERE user_id = ? AND year = ? ORDER BY version DESC LIMIT 1", (uid, year)).fetchone()
+        names = {s["sid"]: (it["action"], s["name"]) for it in _rows(json.loads(last[0])) for s in it["scheds"]} if last else {}
+        action, sched = names.get(sid, ("", ""))
+        items.append({"kind": "SCHED", "id": cid, "userId": uid, "name": name, "dept": dept, "title": title, "action": action, "sched": sched,
+                      "from": frm, "to": to, "reason": reason, "at": at, "proxy": px})
+    items.sort(key=lambda i: (i["at"], i["userId"], i["kind"], i.get("id", 0)))
     team = dict.fromkeys(STATES, 0)
     for uid, status in conn.execute("SELECT u.id, p.status FROM users u LEFT JOIN kpi_plans p ON p.user_id = u.id AND p.year = ?"
                                     " WHERE u.is_active = 1 AND u.writes_kpi = 1", (year,)):
@@ -639,7 +675,6 @@ def progress_json(conn: sqlite3.Connection, uid: int, year: int) -> dict | None:
                            " WHERE user_id = ? AND year = ? ORDER BY requested_at, id", own).fetchall()
     waiting = {c[1]: c for c in changes if c[4] == "PENDING"}
     newest = {c[1]: c for c in changes}  # 요청한 시각이 가장 늦은 것이 마지막에 덮는다
-    ev = conn.execute("SELECT eval_start FROM kpi_years WHERE year = ?", (year,)).fetchone()
     this_m = today.month if today.year == year else None  # 할 일: 이번 달, 그리고 1~7일이면 지난달 — 그해 달만
     last = today.replace(day=1) - timedelta(days=1)
     prev_m = last.month if today.day <= 7 and last.year == year else None
@@ -678,7 +713,7 @@ def progress_json(conn: sqlite3.Connection, uid: int, year: int) -> dict | None:
         values.append(out["value"])
         expects.append(out["expected"])
         items.append(out)
-    return {"year": year, "version": version, "open": records_open(year, today), "schedOpen": not (ev and ev[0]) or today.isoformat() < ev[0],
+    return {"year": year, "version": version, "open": records_open(year, today), "schedOpen": _sched_open(conn, year),
             "items": items, "total": overall(rows, values), "totalExpected": overall(rows, expects),
             "todo": {"months": cur + prev, "prev": prev, "results": late}, "next": nxt}
 
@@ -831,3 +866,133 @@ def result_set() -> Response:
         else:
             m.conn.execute("DELETE FROM kpi_results WHERE user_id = ? AND year = ? AND sid = ?", (m.uid, m.year, sid))
     return jsonify(ok=True)
+
+
+# ---------------- 일정 변경 요청 (2단계 ①, 2026-10-21) ----------------
+def _sched_open(conn: sqlite3.Connection, year: int) -> bool:
+    """일정 변경은 그해 평가 시작일부터 막힌다 (한국 날짜). 평가 시작일을 정하지 않았으면 늘 열려 있다."""
+    ev = conn.execute("SELECT eval_start FROM kpi_years WHERE year = ?", (year,)).fetchone()
+    return not (ev and ev[0]) or auth._today().isoformat() < ev[0]
+
+
+STARTED = "평가가 시작되어 일정을 바꿀 수 없습니다."
+
+
+class _Change(NamedTuple):
+    id: int
+    uid: int  # 일정의 주인
+    year: int
+    sid: int
+    frm: str
+    to: str
+    status: str
+
+
+def _change(conn: sqlite3.Connection, cid: int) -> _Change:
+    row = conn.execute("SELECT id, user_id, year, sid, from_due, to_due, status FROM kpi_sched_changes WHERE id = ?", (cid,)).fetchone()
+    if row is None:
+        raise _Refuse("일정 변경 요청을 찾을 수 없습니다.", 404)
+    return _Change(*row)
+
+
+def _waiting(ch: _Change) -> None:
+    """기다리는 중(PENDING)이 아니면 409 — 지금 상태를 알려 준다."""
+    if ch.status != "PENDING":
+        raise _Refuse("지금 상태에서는 할 수 없습니다.", 409, status=ch.status)
+
+
+def _sched_log(conn: sqlite3.Connection, uid: int, year: int, sid: int, action: str, frm: str, to: str, behalf: int | None = None) -> None:
+    """감사로그: 행동 · 일정 주인 · 해 · 일정 · 옛 기한 · 새 기한만 — 이유 · 돌려보내는 이유 문장은 넣지 않는다. HR 이 대신 했으면 on_behalf_of = 원래 관리자."""
+    auth._audit(conn, AuditEntry.by(g.actor, on_behalf_of=behalf, action=action, entity_type="kpi_plan", entity_id=uid,
+                                    after_data={"year": year, "sid": sid, "from": frm, "to": to}))
+
+
+def _close(conn: sqlite3.Connection, ch: _Change, status: str, action: str, note: str | None = None, behalf: int | None = None) -> None:
+    """기다리는 요청을 닫는다 (확인 · 돌려보내기 · 본인 취소). 닫는 모든 길이 결정한 시각과 사람을 채운다 (표의 CHECK: PENDING 일 때만 비어 있다)."""
+    conn.execute("UPDATE kpi_sched_changes SET status = ?, note = ?, decided_at = ?, decided_by = ?, on_behalf_of = ? WHERE id = ?",
+                 (status, note, auth._iso(auth._now()), g.actor.user_id, behalf, ch.id))
+    _sched_log(conn, ch.uid, ch.year, ch.sid, action, ch.frm, ch.to, behalf)
+
+
+@bp.post("/api/kpi/me/sched-change")
+def sched_request() -> Response:
+    """{"year", "sid", "due", "reason"} → {"ok": true, "id"}. 지금 확정본의 비정기 일정 하나의 기한을 바꿔 달라는 요청.
+    서버가 보는 순서: KPI 작성 대상 403 → 해 400 → 확정본 404 → 계획서 상태 409 (고치는 중) → 평가 시작일 403 → 일정이 확정본의 비정기 일정이 아님 400 →
+    결과를 이미 씀 400 → 기한이 그해 안의 실제 날짜가 아니거나 지금 실제 기한과 같음 400 → 같은 일정에 기다리는 요청이 있음 409 → 이유(1~200자) 400.
+    확인과 쓰기는 한 트랜잭션이라 빠르게 여러 번 눌러도 한 번만 통과한다."""
+    b = _body()
+    conn, uid, year, sid = auth._db(), g.actor.user_id, b.get("year"), b.get("sid")
+    with _txn(conn):
+        if not conn.execute("SELECT writes_kpi FROM users WHERE id = ?", (uid,)).fetchone()[0]:
+            raise _Refuse("KPI 작성 대상이 아닙니다.", 403)
+        if type(year) is not int or year not in YEARS:
+            raise _Refuse("해가 올바르지 않습니다.", 400)
+        versions, plan = _versions(conn, uid, year), conn.execute("SELECT status FROM kpi_plans WHERE user_id = ? AND year = ?", (uid, year)).fetchone()
+        if not versions or plan is None:
+            raise _Refuse("확정된 KPI가 없습니다.", 404)
+        if plan[0] not in ("CONFIRMED", "CHANGE_REQUESTED"):
+            raise _Refuse("지금은 계획서를 고치는 중이라 일정 변경을 요청할 수 없습니다.", 409, status=plan[0])
+        if not _sched_open(conn, year):
+            raise _Refuse(STARTED, 403)
+        if not any(type(sid) is int and s["sid"] == sid for it in _rows(versions[-1][1]) if it["kind"] == "irr" for s in it["scheds"]):  # type 검사: True 가 1번으로 통하지 않게
+            raise _Refuse("지금 확정본에 없는 일정입니다.", 400)
+        if conn.execute("SELECT 1 FROM kpi_results WHERE user_id = ? AND year = ? AND sid = ?", (uid, year, sid)).fetchone():
+            raise _Refuse("결과를 이미 쓴 일정은 날짜를 바꿀 수 없습니다.", 400)
+        try:
+            to = _iso_date(b.get("due"))  # YYYY-MM-DD 로 쓴 실제 날짜 (20270924 · 2-30 · 줄바꿈이 붙은 것은 ValueError)
+        except ValueError:
+            to = None
+        if to is None or to[:4] != str(year):
+            raise _Refuse(f"{year}년 안의 날짜(YYYY-MM-DD)를 써 주세요.", 400)
+        frm = _dues(conn, uid, year)[sid]
+        if to == frm:
+            raise _Refuse("지금 기한과 같은 날짜예요. 다른 날짜를 써 주세요.", 400)
+        if conn.execute("SELECT 1 FROM kpi_sched_changes WHERE user_id = ? AND year = ? AND sid = ? AND status = 'PENDING'", (uid, year, sid)).fetchone():
+            raise _Refuse("이미 확인을 기다리는 요청이 있습니다.", 409)  # 부분 유니크 인덱스는 마지막 보루 — 여기서 먼저 막아 서버 오류가 아니라 409
+        reason = _text(b.get("reason"), "일정을 바꾸려는 이유")
+        cid = conn.execute("INSERT INTO kpi_sched_changes (user_id, year, sid, from_due, to_due, reason, status, requested_at) VALUES (?, ?, ?, ?, ?, ?, 'PENDING', ?)",
+                           (uid, year, sid, frm, to, reason, auth._iso(auth._now()))).lastrowid
+        _sched_log(conn, uid, year, sid, "KPI_SCHED_REQUESTED", frm, to)
+    return jsonify(ok=True, id=cid)
+
+
+@bp.post(f"/api/kpi/me/sched-change/{CID}/cancel")
+def sched_cancel(cid: int) -> Response:
+    """본인이 기다리는 요청을 취소한다 (PENDING → CANCELLED). 요청 번호 404 → 본인 것이 아니면 403 → 기다리는 중이 아니면 409."""
+    conn = auth._db()
+    with _txn(conn):
+        ch = _change(conn, cid)
+        if ch.uid != g.actor.user_id:
+            raise _Refuse("본인의 요청만 취소할 수 있습니다.", 403)
+        _waiting(ch)
+        _close(conn, ch, "CANCELLED", "KPI_SCHED_CANCELLED")
+    return jsonify(ok=True)
+
+
+def _settle(cid: int, status: str, action: str, label: str | None) -> Response:
+    """확인 · 돌려보내기 (PENDING → CONFIRMED | RETURNED): 요청 번호 404 → 처리 권한 403 → 평가 시작일 403 → 기다리는 중이 아니면 409 → (돌려보내기) 이유 1~200자 400.
+    권한은 계획서 확정 · 돌려보내기와 같은 decider (바로 위 관리자 · HR 대신 · 대표이사 맡김). 작성 기간과는 상관없다. 이유 · 처리한 사람은 요청 줄에 남고 감사로그에는 날짜만."""
+    note = _body().get("note")
+    conn = auth._db()
+    with _txn(conn):
+        ch = _change(conn, cid)
+        can, behalf = decider(conn, g.actor, ch.uid)
+        if not can:
+            raise _Refuse("이 요청을 처리할 권한이 없습니다.", 403)
+        if not _sched_open(conn, ch.year):
+            raise _Refuse(STARTED, 403)
+        _waiting(ch)
+        _close(conn, ch, status, action, _text(note, label) if label else None, behalf)
+    return jsonify(ok=True)
+
+
+@bp.post(f"/api/kpi/sched-changes/{CID}/confirm")
+def sched_confirm(cid: int) -> Response:
+    """확인한다 — 그 일정의 실제 기한이 새 기한으로 바뀐다 (확정본 · 계획서 줄은 건드리지 않고 _dues 가 변경 기록에서 읽는다)."""
+    return _settle(cid, "CONFIRMED", "KPI_SCHED_CONFIRMED", None)
+
+
+@bp.post(f"/api/kpi/sched-changes/{CID}/return")
+def sched_return(cid: int) -> Response:
+    """{"note": "…"} 돌려보낸다 — 기한은 그대로, 이유는 주인 화면(progress 의 returned.note)에 보인다."""
+    return _settle(cid, "RETURNED", "KPI_SCHED_RETURNED", "돌려보내는 이유")
