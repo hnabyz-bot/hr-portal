@@ -29,6 +29,8 @@ services:
       - HR_ENV=production
       - HIWORKS_FIRST_HR_USER_NO=${HIWORKS_FIRST_HR_USER_NO:-}
       - HIWORKS_SSO_LINK_BY_EMPLOYEE_NO=${HIWORKS_SSO_LINK_BY_EMPLOYEE_NO:-}
+      # 급여명세서 잠금 열쇠 (backend/payslip.py). 값은 서버 .env 에만 — 없으면 HR 의 명세서 올리기가 막힌다
+      - HR_PAY_KEY=${HR_PAY_KEY:-}
     volumes:
       - ./regulations:/app/regulations:ro
       # 직원·로그인 DB. 상자(이미지) 안에 두면 merge 때 재빌드하면서 사라진다 → 서버 폴더 data/ 에 보관
