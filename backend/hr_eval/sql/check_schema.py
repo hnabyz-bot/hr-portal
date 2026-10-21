@@ -108,6 +108,10 @@ def apply_schema(path: str) -> sqlite3.Connection | None:
         "kpi_plans",
         "kpi_versions",
         "ceo_delegation",
+        "kpi_progress",
+        "kpi_month_notes",
+        "kpi_results",
+        "kpi_sched_changes",
     }
     missing = expected - tables
     _report(not missing, f"테이블 {len(expected)}개 생성", f"누락: {sorted(missing)}")
@@ -779,6 +783,98 @@ def check_payslip_tables(conn: sqlite3.Connection) -> None:
     _report(left == 0, "달을 지우면 그 달 명세서도 함께 지워짐 (CASCADE)", f"남은 {left}")
 
 
+def check_kpi_progress_tables(conn: sqlite3.Connection) -> None:
+    """KPI 진행 기록 표 (012 — main #165 급여명세서가 011 을 먼저 써서 판 12). 계획서는 22 절(check_login_tables)이 만든 것을 쓴다."""
+    print("24. KPI 진행 기록 (012)")
+    user = "(SELECT id FROM users WHERE employee_no='T001')"
+    boss = conn.execute("SELECT id FROM users WHERE employee_no='T020'").fetchone()[0]
+    ver = conn.execute("PRAGMA user_version").fetchone()[0]
+    _report(ver >= 12, f"판 번호가 12 이상 — {ver}", f"실제 {ver}")
+    # 계획서는 22 절에서 만든 것을 쓴다: 2027 확정 · 2029 제출 · 2030 수정 요청 / 2028 · 2031 은 계획서가 없다.
+    T = "'2027-03-02T09:00:00Z'"
+    ln = lambda n: "가" * n  # 글자 수 맞춘 가상 문장
+    lk = lambda n: "https://example.invalid/" + "a" * (n - 24)  # 길이 n 인 가상 링크
+
+    # 실행목표별 진행 (실적 · 진행률 · 늦어지는 이유)
+    pg = "INSERT INTO kpi_progress (user_id, year, rid, actual, pct, why, updated_at) VALUES ({u}, ?, ?, ?, ?, ?, " + T + ")"
+    conn.execute(pg.format(u=user), (2027, 1, 12.5, 40, "가상 이유"))
+    conn.execute(pg.format(u=user), (2027, 2, None, None, None))
+    _report(True, "진행 저장 (실적 · 진행률 · 이유 / 모두 비움)")
+    conn.execute(pg.format(u=user), (2027, 3, 0, 100, ln(100)))
+    _report(True, "진행 경계값 저장 (실적 0 · 진행률 100 · 이유 100자)")
+    for args, why, word in (((2027, 4, 1, 101, None), "진행률 101", "CHECK"), ((2027, 4, 1, -1, None), "진행률 -1", "CHECK"),
+                            ((2027, 4, -0.5, 10, None), "음수 실적", "CHECK"), ((2027, 4, 1, 10, ln(101)), "101자 이유", "CHECK"),
+                            ((2027, 0, 1, 10, None), "실행목표 번호 0", "CHECK"), ((2027, 1, 1, 10, None), "같은 실행목표 두 줄", "UNIQUE"),
+                            ((2031, 1, 1, 10, None), "계획서 없는 (직원, 해)", "FOREIGN KEY")):
+        ok, msg = _rejects(conn, pg.format(u=user), args)
+        _report(ok and word in msg, f"진행 {why} 거부", msg)
+
+    # 월 한 줄
+    mn = "INSERT INTO kpi_month_notes (user_id, year, rid, month, text, link, updated_at) VALUES ({u}, ?, ?, ?, ?, ?, " + T + ")"
+    conn.execute(mn.format(u=user), (2027, 1, 3, "가상 월 한 줄", "https://example.invalid/a"))
+    conn.execute(mn.format(u=user), (2027, 1, 12, ln(200), None))
+    _report(True, "월 한 줄 저장 (링크 있음 / 12월 · 200자 · 링크 없음)")
+    conn.execute(mn.format(u=user), (2027, 1, 1, "가상", lk(300)))
+    _report(True, "월 한 줄 링크 300자 저장")
+    for args, why, word in (((2027, 1, 13, "가상", None), "13월", "CHECK"), ((2027, 1, 0, "가상", None), "0월", "CHECK"),
+                            ((2027, 1, 4, "", None), "빈 문장", "CHECK"), ((2027, 1, 4, ln(201), None), "201자 문장", "CHECK"),
+                            ((2027, 1, 4, "가상", lk(301)), "301자 링크", "CHECK"),
+                            ((2027, 0, 4, "가상", None), "실행목표 번호 0", "CHECK"),
+                            ((2027, 1, 3, "가상", None), "같은 달 두 줄", "UNIQUE"),
+                            ((2031, 1, 4, "가상", None), "계획서 없는 (직원, 해)", "FOREIGN KEY")):
+        ok, msg = _rejects(conn, mn.format(u=user), args)
+        _report(ok and word in msg, f"월 한 줄 {why} 거부", msg)
+
+    # 일정별 결과 한 줄
+    rs = "INSERT INTO kpi_results (user_id, year, sid, text, link, updated_at) VALUES ({u}, ?, ?, ?, ?, " + T + ")"
+    conn.execute(rs.format(u=user), (2027, 1, "가상 결과", "https://example.invalid/r"))
+    conn.execute(rs.format(u=user), (2027, 2, ln(200), None))
+    _report(True, "결과 한 줄 저장 (링크 있음 / 200자 · 링크 없음)")
+    for args, why, word in (((2027, 3, "", None), "빈 문장", "CHECK"), ((2027, 3, ln(201), None), "201자 문장", "CHECK"),
+                            ((2027, 3, "가상", lk(301)), "301자 링크", "CHECK"),
+                            ((2027, 0, "가상", None), "일정 번호 0", "CHECK"), ((2027, 1, "가상", None), "같은 일정 두 줄", "UNIQUE"),
+                            ((2031, 1, "가상", None), "계획서 없는 (직원, 해)", "FOREIGN KEY")):
+        ok, msg = _rejects(conn, rs.format(u=user), args)
+        _report(ok and word in msg, f"결과 한 줄 {why} 거부", msg)
+
+    # 일정 변경 요청 — 한 일정에 대기 중인 요청은 하나뿐이고, 대기 중이어야만 결정한 때가 비어 있다
+    sc = ("INSERT INTO kpi_sched_changes (user_id, year, sid, from_due, to_due, reason, status, note, requested_at, decided_at, decided_by, on_behalf_of)"
+          " VALUES ({u}, ?, ?, ?, ?, ?, ?, ?, " + T + ", ?, ?, ?)")
+    conn.execute(sc.format(u=user), (2027, 1, "2027-03-31", "2027-04-30", "가상 사유", "PENDING", None, None, None, None))
+    _report(True, "일정 변경 요청 저장 (대기 중 · 결정한 때 비움)")
+    conn.execute(sc.format(u=user), (2027, 2, "2027-05-31", "2027-06-30", "가상 사유", "PENDING", None, None, None, None))
+    _report(True, "다른 일정의 대기 중 요청은 따로 저장")
+    conn.execute(sc.format(u=user), (2027, 1, "2027-03-31", "2027-04-15", "가상 사유", "CONFIRMED", None, T[1:-1], boss, boss))
+    conn.execute(sc.format(u=user), (2027, 1, "2027-03-31", "2027-04-20", "가상 사유", "CANCELLED", None, T[1:-1], None, None))
+    conn.execute(sc.format(u=user), (2027, 1, "2027-03-31", "2027-04-25", ln(200), "RETURNED", ln(200), T[1:-1], boss, None))
+    _report(True, "같은 일정에 결정이 끝난 요청 여러 건 저장 (확인 · 취소 · 돌려보내기 / 대신 처리 기록)")
+    ok, msg = _rejects(conn, sc.format(u=user), (2027, 1, "2027-03-31", "2027-05-10", "가상 사유", "PENDING", None, None, None, None))
+    _report(ok and "UNIQUE" in msg, "같은 일정에 대기 중 요청 둘 거부", msg)
+    for args, why, word in (((2027, 3, "2027-03-31", "2027-04-30", "가상 사유", "RETURNED", None, T[1:-1], boss, None), "이유 없이 돌려보낸 요청", "CHECK"),
+                            ((2027, 3, "2027-03-31", "2027-04-30", "가상 사유", "PENDING", None, T[1:-1], None, None), "대기 중인데 결정한 때가 있음", "CHECK"),
+                            ((2027, 3, "2027-03-31", "2027-04-30", "가상 사유", "CONFIRMED", None, None, boss, None), "결정이 났는데 결정한 때가 없음", "CHECK"),
+                            ((2027, 3, "2027-02-30", "2027-04-30", "가상 사유", "PENDING", None, None, None, None), "없는 원래 날짜 2027-02-30", "CHECK"),
+                            ((2027, 3, "2027-03-31", "2027-4-30", "가상 사유", "PENDING", None, None, None, None), "날짜 모양이 아닌 바꿀 날짜", "CHECK"),
+                            ((2027, 3, "2027-03-31", "2027-04-30", "", "PENDING", None, None, None, None), "빈 사유", "CHECK"),
+                            ((2027, 3, "2027-03-31", "2027-04-30", ln(201), "PENDING", None, None, None, None), "201자 사유", "CHECK"),
+                            ((2027, 3, "2027-03-31", "2027-04-30", "가상 사유", "OTHER", None, None, None, None), "정해진 것이 아닌 상태", "CHECK"),
+                            ((2027, 3, "2027-03-31", "2027-04-30", "가상 사유", "CANCELLED", ln(201), T[1:-1], None, None), "201자 메모", "CHECK"),
+                            ((2031, 3, "2027-03-31", "2027-04-30", "가상 사유", "PENDING", None, None, None, None), "계획서 없는 (직원, 해)", "FOREIGN KEY"),
+                            ((2027, 3, "2027-03-31", "2027-04-30", "가상 사유", "CONFIRMED", None, T[1:-1], 9999, None), "없는 사람이 결정한 것으로 적기", "FOREIGN KEY"),
+                            ((2027, 3, "2027-03-31", "2027-04-30", "가상 사유", "CONFIRMED", None, T[1:-1], boss, 9999), "없는 사람이 대신한 것으로 적기", "FOREIGN KEY")):
+        ok, msg = _rejects(conn, sc.format(u=user), args)
+        _report(ok and word in msg, f"일정 변경 {why} 거부", msg)
+
+    # 기록이 달린 계획서는 지워지지 않는다 (RESTRICT) — 표마다 하나씩, 방금 넣은 줄은 바로 치운다
+    for tbl, ins, args in (("kpi_progress", pg, (2029, 1, 1, 10, None)), ("kpi_month_notes", mn, (2029, 1, 3, "가상", None)),
+                           ("kpi_results", rs, (2029, 1, "가상", None)),
+                           ("kpi_sched_changes", sc, (2029, 1, "2029-03-31", "2029-04-30", "가상 사유", "PENDING", None, None, None, None))):
+        conn.execute(ins.format(u=user), args)
+        ok, msg = _rejects(conn, f"DELETE FROM kpi_plans WHERE user_id = {user} AND year = 2029")
+        _report(ok and "FOREIGN KEY" in msg, f"{tbl} 기록이 있는 계획서 지우기 거부", msg)
+        conn.execute(f"DELETE FROM {tbl} WHERE user_id = {user} AND year = 2029")
+
+
 def main() -> int:
     print("=" * 62)
     print("SQLite 스키마 적용 + 제약조건 동작 검사")
@@ -800,6 +896,7 @@ def main() -> int:
             check_updated_at(conn)
             check_login_tables(conn)
             check_payslip_tables(conn)
+            check_kpi_progress_tables(conn)
         finally:
             conn.close()
 
