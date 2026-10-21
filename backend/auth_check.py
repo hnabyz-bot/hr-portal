@@ -2969,7 +2969,7 @@ def check_kpi_review(hr) -> None:
 
         # 대표이사는 팀원 줄을 못 받는다
         j = bj(CEO)
-        txt = board(CEO).get_data(as_text=True)
+        txt = json.dumps(j, ensure_ascii=False)  # 읽을 수 있는 글자로 — 응답 원문은 한글이 \uXXXX 로 바뀌어 나가 이름 찾기가 소용없다
         gone, names = (EMP, EMP2, PEER2, DMEMBER), ("가상R직원", "가상R동료", "가상R다른팀원", "가상R직속팀원")
 
         def leaves(o, key=""):
@@ -2998,6 +2998,22 @@ def check_kpi_review(hr) -> None:
            and (tm[73]["count"], tm[73]["confirmed"], tm[73]["slow"]) == (1, 1, 1) and near(tm[73]["avg"], 0.0)
            and tm[74] == {"deptId": 74, "count": 1, "confirmed": 0, "avg": None, "slow": 0} and not {71, 75} & set(tm),
            "teams: 팀마다 인원 · 확정 · 평균(확정본이 있는 사람만, 없으면 null) · 부진 수 — 72 = 2 · 1 · 22 · 0 / 73 = 1 · 1 · 0 · 1 / 74 = 1 · 0 · null · 0 (줄로 보이는 사람 몫은 없음)")
+        # 번호가 어느 칸에 새도 잡히게: 가중치(최대 100) · 부서(7x) · 달 · 해와 겹칠 수 없는 번호(9301~)의 팀원을 팀마다 하나씩 잠깐 더해 모든 정수 · 글자 · 이름을 뒤진다
+        # (위 검사의 …Id 칸만 보는 방식은 가중치 100 = 번호 100 같은 우연을 피하려던 것이라, 예를 들어 teams 안의 "members": [93, 94] 는 못 잡는다)
+        probes = {9301: ("가상R새는지A", 72), 9302: ("가상R새는지B", 73), 9303: ("가상R새는지C", 74)}
+        for uid, (name, dept) in probes.items():
+            x("INSERT INTO users (id, name, email, department_id, hiworks_user_no, portal_enabled, is_active, writes_kpi) VALUES (?, ?, ?, ?, ?, 1, 1, 1)",
+              uid, name, f"r{uid}@example.invalid", dept, f"HW-{uid}")
+        try:
+            j2 = bj(CEO)
+            n_before, n_after = {t["deptId"]: t["count"] for t in j["teams"]}, {t["deptId"]: t["count"] for t in j2["teams"]}
+            seen_ints = {v for _, v in leaves(j2) if type(v) is int}
+            dec = json.dumps(j2, ensure_ascii=False)
+            ok(all(n_after[d] == n_before.get(d, 0) + 1 for d in (72, 73, 74)) and not seen_ints & set(probes)
+               and not any(isinstance(v, str) and v in map(str, probes) for _, v in leaves(j2)) and not any(nm in dec for nm, _ in probes.values()),
+               "새는지_모든_칸에서: 팀마다 하나씩 더한 팀원이 인원에는 세어지지만 번호(어느 칸의 정수든 · 글자 · 사전의 키) · 이름은 응답 어디에도 없음")
+        finally:
+            x("DELETE FROM users WHERE id IN (9301, 9302, 9303)")
         ok(all(by_id(j, u)["direct"] and by_id(j, u)["checkStep"] is False and by_id(j, u)["month"]["check"] == "NOSTEP" for u in (HEAD, DIRECT, EXEC))
            and not by_id(j, LEAD)["direct"] and not by_id(j, LEAD2)["direct"] and by_id(j, LEAD)["month"]["check"] == "NONE" and j["todo"] == {"check": 0},
            "대표이사에게 보고하는 분(본부장 · 직속 팀장 · '임원' 소속)은 direct 참 · 확인 단계 없음 · month.check NOSTEP — 팀장은 대표이사 몫이 아님")
@@ -3110,6 +3126,7 @@ def check_kpi_review(hr) -> None:
         x("DELETE FROM kpi_years WHERE year = ?", Y3)
 
         # 이 절이 만든 것을 치운다
+        # (다른팀원 PEER2 의 1월 확정본은 kpi_versions 줄이라 지울 수 없어 이 검사 끝까지 남는다 — 뒤 검사는 이 사람을 쓰지 않는다)
         wipe()
         x("UPDATE users SET department_id = 73 WHERE id = ?", PEER2)
         if had_row:
