@@ -779,6 +779,60 @@ def check_payslip_tables(conn: sqlite3.Connection) -> None:
     _report(left == 0, "달을 지우면 그 달 명세서도 함께 지워짐 (CASCADE)", f"남은 {left}")
 
 
+def check_withholding_tables(conn: sqlite3.Connection) -> None:
+    """원천징수영수증 표 (012). 금액·이름은 전부 가상 — sum · pdf 는 잠근 글(nonce 12 + 내용 + 태그 16바이트)을 흉내 낸 아무 바이트."""
+    print("24. 원천징수영수증 (012)")
+    up = conn.execute("SELECT id FROM users WHERE employee_no='T001'").fetchone()[0]
+    emp = conn.execute(
+        "INSERT INTO users (employee_no, name, email, department_id)"
+        " VALUES ('T032', '가상영수직원', 't032@example.invalid', (SELECT id FROM departments WHERE code='DIV1')) RETURNING id"
+    ).fetchone()[0]
+    ver = conn.execute("PRAGMA user_version").fetchone()[0]
+    _report(ver >= 12, f"판 번호가 12 이상 — {ver}", f"실제 {ver}")
+
+    yr = "INSERT INTO withholding_years (year, status, pending, uploaded_at, uploaded_by) VALUES (?, ?, ?, '2027-03-02T09:00:00Z', ?)"
+    conn.execute(yr, (2025, "DRAFT", 0, up))
+    _report(True, "원천징수영수증 해 한 건 저장 (올려 둠)")
+    for args, why in (((1999, "DRAFT", 0, up), "1999년"), ((2100, "DRAFT", 0, up), "2100년"), ((None, "DRAFT", 0, up), "해 비어 있음(NULL)"),
+                      (("2026", "DRAFT", 0, up), "해가 글자('2026')"), ((2026, "X", 0, up), "상태 X"),
+                      ((2026, "DRAFT", -1, up), "대기 -1명"), ((2026, "DRAFT", 1.5, up), "대기 1.5명(정수 아님)"),
+                      ((2025, "DRAFT", 0, up), "같은 해 두 번"), ((2026, "DRAFT", 0, 9999), "없는 올린 사람")):
+        ok, _ = _rejects(conn, yr, args)
+        _report(ok, f"원천징수영수증 해 {why} 거부")
+    oy = ("INSERT INTO withholding_years (year, status, pending, uploaded_at, uploaded_by, opened_at, opened_by)"
+          " VALUES (?, 'OPEN', ?, '2027-03-02T09:00:00Z', ?, ?, ?)")
+    ok, msg = _rejects(conn, oy, (2026, 0, up, None, up))
+    _report(ok and "CHECK" in msg, "공개(OPEN)인데 공개한 때가 없으면 거부", msg)
+    ok, msg = _rejects(conn, oy, (2026, 2, up, "2027-03-02T10:00:00Z", up))
+    _report(ok and "CHECK" in msg, "공개(OPEN)인데 올릴 사람이 남아 있으면 거부", msg)
+    conn.execute(oy, (2026, 0, up, "2027-03-02T10:00:00Z", up))
+    conn.execute("INSERT INTO withholding_years (year, status, pending, uploaded_at, uploaded_by, opened_at, opened_by)"
+                 f" VALUES (2027, 'DRAFT', 3, '2027-03-02T09:00:00Z', {up}, '2027-03-02T10:00:00Z', {up})")
+    _report(True, "공개 중(OPEN · 대기 0) · 내렸던 해(DRAFT · 공개한 때 있음 · 대기 3) 저장")
+
+    wh = "INSERT INTO withholding (year, user_id, sum, pdf, revised, uploaded_at) VALUES (?, ?, ?, ?, ?, '2027-03-02T09:00:00Z')"
+    conn.execute(wh, (2025, up, bytes(29), bytes(29), 0))
+    conn.execute(wh, (2025, emp, bytes(range(60)), bytes(range(60)), 1))
+    _report(True, "잠근 영수증 두 건 저장 (29바이트 이상 BLOB)")
+    seen = conn.execute("SELECT seen_at FROM withholding WHERE year=2025 AND user_id = ?", (up,)).fetchone()[0]
+    _report(seen is None, "처음엔 아직 안 봄 (seen_at 비어 있음)", f"실제 {seen}")
+    for args, why in (((2025, up, bytes(29), bytes(29), 0), "같은 해 같은 사람 두 줄"), ((2030, up, bytes(29), bytes(29), 0), "없는 해"),
+                      ((2026, 9999, bytes(29), bytes(29), 0), "없는 직원"), ((2026, up, "x" * 40, bytes(29), 0), "sum 이 글자(길이는 충분)"),
+                      ((2026, up, bytes(28), bytes(29), 0), "sum 28바이트(내용 없음)"), ((2026, up, bytes(29), bytes(28), 0), "pdf 28바이트(내용 없음)"),
+                      ((2026, up, bytes(29), "x" * 40, 0), "pdf 가 글자(길이는 충분)"), ((2026, up, bytes(29), None, 0), "pdf 빈 값"),
+                      ((2026, up, bytes(29), bytes(29), 2), "수정됨 표시 2")):
+        ok, _ = _rejects(conn, wh, args)
+        _report(ok, f"잠근 영수증 {why} 거부")
+    ok, _ = _rejects(conn, "DELETE FROM users WHERE id = ?", (emp,))
+    _report(ok, "영수증이 있는 직원은 지울 수 없음 (RESTRICT)")
+    idx = conn.execute("SELECT 1 FROM pragma_index_info('idx_withholding_user') WHERE name = 'user_id'").fetchone()
+    _report(idx is not None, "직원별 찾기 색인 (idx_withholding_user)")
+
+    conn.execute("DELETE FROM withholding_years WHERE year = 2025")
+    left = conn.execute("SELECT count(*) FROM withholding WHERE year = 2025").fetchone()[0]
+    _report(left == 0, "해를 지우면 그 해 영수증도 함께 지워짐 (CASCADE)", f"남은 {left}")
+
+
 def main() -> int:
     print("=" * 62)
     print("SQLite 스키마 적용 + 제약조건 동작 검사")
@@ -800,6 +854,7 @@ def main() -> int:
             check_updated_at(conn)
             check_login_tables(conn)
             check_payslip_tables(conn)
+            check_withholding_tables(conn)
         finally:
             conn.close()
 
