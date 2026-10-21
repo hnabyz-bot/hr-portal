@@ -3443,7 +3443,7 @@ const kpiSheets = {   // confirmed=확정본, draft=작성 중, pending=승인 �
     ['조직 역량 강화','법정 교육','법정 의무 교육 이수','이수율(%)',30,85,'100%','98%','95%','90%','90% 미만']]), 3),
 };
 let kpiRole = 'emp', kpiEditing = false, kpiReviewKey = null, kpiReason = '', kpiMsg = null;
-const AUTH = { live:false, me:null };   // 로그인했나(서버 /api/me) — 아래 "로그인" 참고. live 면 역할은 직책·HR 권한으로 정해진다
+const AUTH = { live:false, me:null, locked:false };   // 로그인했나(서버 /api/me) — 아래 "로그인" 참고. live 면 역할은 직책·HR 권한으로 정해진다. locked: 로그인 안내가 화면을 덮음(authLock)
 let hrView = 'me';   // HR 담당자·HR 팀장의 평가·성과 화면은 둘로 나뉜다 (인사담당자 2026-10-13 — 한 화면에 다 나오면 복잡하다): 'me' 내 KPI · 평가 / 'admin' 직원 인사평가 관리
 let evProxy = false;   // 대표이사가 자기 일을 HR에 맡겼나 — 대표이사가 켜고 끈다(켠 날짜를 담는다). 켜져 있으면 HR이 대표이사의 일(직속부서 팀장 평가 · 등급 조정 · 확인 · KPI 승인 · 이의 신청 확인)을 대신 넣는다
 
@@ -5162,6 +5162,9 @@ function paySelfCheck(){   // 브라우저 콘솔에서 paySelfCheck() 실행
   ok(s.gross===sum(s.pay) && s.net===s.gross-s.deduct && s.payday==='2026-09-18', '명세서 합계·지급일');
   ok(payTarget([s], payWindow(new Date(2026, 8, 1))).estimate===false && payTarget([s], w).estimate===true, '명세서 없으면 예상 금액');
   ok(payCanView('emp','emp') && !payCanView('lead','emp') && payCanView('hr','head'), '본인과 HR만 열람');
+  { const kv = payViewKey, lv = AUTH.live; AUTH.live = false;   // 로그아웃 뒤(시연 모드 · 열쇠 null)에도 payTick 이 오류 없이 멈추게
+    try { payViewKey = null; ok(payList().length===0, '시연 명단에 없는 열쇠(null)는 빈 목록'); payViewKey = 'ceo'; ok(payList().length===0, '대표이사 열쇠도 빈 목록'); }
+    finally { payViewKey = kv; AUTH.live = lv; } }
   ok(payWon2(1234567.899)==='1,234,567.89원' && payWon2(5)==='5.00원', '쌓이는 금액은 소수 둘째 자리까지(버림)');
   /* 실제 명세서 모양 (서버 모양 + payNorm이 붙이는 y · m · label · payday) — 시연도 같은 모양 */
   const n = payNorm({ ym:'2026-05', payDate:'2026-06-19' });
@@ -5356,7 +5359,7 @@ function paySlipsFor(key){
   }
   return paySlips[key];
 }
-function payList(){ return AUTH.live ? PAY_LIVE.slips : paySlipsFor(payViewKey); }   // 지금 화면의 명세서 (최근 달부터)
+function payList(){ return AUTH.live ? PAY_LIVE.slips : PAY_PEOPLE[payViewKey] ? paySlipsFor(payViewKey) : []; }   // 지금 화면의 명세서 (최근 달부터). 시연 명단에 없는 열쇠(로그아웃 뒤의 null · 대표이사)는 빈 목록
 
 /* ----- 화면 ----- */
 const PAY_MASK = '●,●●●,●●●\u2060원';   // \u2060: 보이지 않는 줄바꿈 금지 표시 — 가린 금액의 '원'만 다음 줄로 내려가지 않게
@@ -5365,9 +5368,9 @@ function payWon2(n){ return (Math.floor(n*100)/100).toLocaleString('ko-KR', {min
 const PAY_TICK_MS = matchMedia('(prefers-reduced-motion:reduce)').matches ? 1000 : 50;   // 움직임 줄이기를 켠 기기는 예전처럼 1초마다
 function payMd(d){ return `${d.getMonth()+1}월 ${d.getDate()}일`; }
 function payTick(){
-  const el = document.getElementById('payAmt');
-  if(!el){ clearInterval(payTimer); payTimer = null; return; }
-  const now = new Date(), w = payWindow(now), t = payTarget(payList(), w), p = payPreview ? 1 : payProgress(now, w);
+  const el = document.getElementById('payAmt'), list = payList();
+  if(!el || !list.length){ clearInterval(payTimer); payTimer = null; return; }   // 화면이 바뀌었거나 명세서가 없어졌다(로그아웃 등)
+  const now = new Date(), w = payWindow(now), t = payTarget(list, w), p = payPreview ? 1 : payProgress(now, w);
   const txt = !payShow ? PAY_MASK : p===1 ? payWon(t.amount) : payWon2(t.amount*p);   // 급여일(전액)에는 소수점 없이
   // 글자만 바꾼다(nodeValue). textContent로 바꾸면 화면 감시(a11yEnhance)가 1초에 20번 화면 전체를 다시 훑는다
   if(!el.firstChild) el.textContent = txt; else if(el.firstChild.nodeValue!==txt) el.firstChild.nodeValue = txt;
@@ -5513,7 +5516,7 @@ function payContent(){
     if(!PAY_LIVE.state || PAY_LIVE.who!==payViewKey) payLoad(payViewKey);
     if(PAY_LIVE.state!=='ok') return `${head}${picker}${kpiNote(PAY_LIVE.state==='err' ? '명세서를 불러오지 못했습니다. 잠시 뒤 새로 고쳐 주세요.' : '명세서를 불러오는 중입니다…', PAY_LIVE.state==='err' ? 'danger' : 'info')}`;
   } else {
-    if(!payViewKey || !payCanView(role, payViewKey)) payViewKey = role;
+    if(!payViewKey || !payCanView(role, payViewKey) || !PAY_PEOPLE[payViewKey]) payViewKey = role;   // 급여 명단에 없는 열쇠(대표이사 → HR로 바꾼 뒤의 'ceo')도 본인으로
     if(!PAY_PEOPLE[payViewKey]) return `${head}<div class="card"><div class="placeholder-note" style="margin:0;">아직 등록된 급여명세서가 없습니다.</div></div>`;   // 급여 명단에 없는 역할(대표이사)
     picker = kpiIsHr(role) ? `<div class="card" style="margin-bottom:14px;"><div class="field" style="max-width:320px;"><label>볼 직원 (HR)</label><select onchange="payViewKey=this.value; payOpen=null; payYear=null; renderContent()">${Object.keys(PAY_PEOPLE).map(k=>`<option value="${k}" ${k===payViewKey?'selected':''}>${escapeHtml(KPI_USERS[k].name)} ${escapeHtml(KPI_USERS[k].title)}</option>`).join('')}</select></div></div>` : '';
   }
@@ -5637,7 +5640,7 @@ function psBlock(){   // 올릴 수 없는 이유 하나 (빈 글자 = 올릴 �
 }
 function psPick(i, v){   // 못 맞춘 줄의 고르기: '' 아직 · 'skip' 이번 달에서 빼기 · 직원 번호(시연은 열쇠)
   const k = ps.pick, m = k.members.find(x=>String(x.id)===v);
-  k.to[i] = m ? m.id : v==='skip' ? 'skip' : null;
+  k.to[i] = m ? m.id : v==='skip' ? 'skip' : null; k.err = '';   // 고르기를 바꾸면 지난 서버 답(빨간 글)은 지운다
   psConfirm();
 }
 function psNote(){   // 확인 창: 고른 귀속 월이 이미 올라가 있으면 (공개 중 = 막음 · 공개 전 = 바뀜)
@@ -5646,6 +5649,7 @@ function psNote(){   // 확인 창: 고른 귀속 월이 이미 올라가 있으
 }
 function psSync(){   // 날짜 칸을 고친 뒤: 창을 다시 그리지 않고 바뀌는 곳만 (크롬은 날짜 칸에 숫자 하나 적을 때마다 change를 보낸다 — 다시 그리면 적던 자리가 처음으로 돌아간다)
   const b = psBlock();
+  ps.pick.err = ''; document.getElementById('psErr')?.remove();   // 날짜를 고치면 지난 서버 답(빨간 글)은 지운다
   document.getElementById('psNote').innerHTML = psNote();
   document.getElementById('psBlockMsg').textContent = b;
   document.getElementById('psGo').disabled = !!b;
@@ -5665,7 +5669,9 @@ function psConfirm(){   // 확인 창 (스펙 7 · 시안). 고르기를 바꾸�
     return `<option value="">직원 고르기</option>${free.map(m=>`<option value="${escapeHtml(String(m.id))}" ${String(m.id)===cur ? 'selected' : ''}>${escapeHtml(m.name)} · ${escapeHtml(m.team || m.division || '')}${m.active===false ? ' (비활성)' : ''}</option>`).join('')}<option value="skip" ${cur==='skip' ? 'selected' : ''}>이번 달에서 빼기</option>`; };
   const why = (x, p)=>x.why==='SAME' ? `같은 이름 ${k.members.filter(m=>rzNorm(m.name)===rzNorm(p.head.name)).length}명` : PS_WHY[x.why];
   const um = k.auto.map((x, i)=>[x, i]).filter(([x])=>x.id===null).map(([x, i])=>{ const p = r.people[i];
-    return `<div class="ps-um"><div>${who(p)}</div><span class="ps-why">${why(x, p)}</span><select id="psSel${i}" class="${k.to[i]===null ? 'need' : ''}" aria-label="${escapeHtml(p.head.name)} — 맞출 직원" onchange="psPick(${i}, this.value)">${opts(i)}</select></div>`; }).join('');
+    return `<div class="ps-um"><div>${who(p)}</div><span class="ps-why">${why(x, p)}</span><select id="psSel${i}" class="${k.to[i]===null ? 'need' : ''}" aria-label="${escapeHtml(p.head.name)} — 맞출 직원" onchange="psPick(${i}, this.value)">${opts(i)}</select>${x.why==='CODE' ? '<span class="ps-why" style="grid-column:1 / -1;">같은 이름의 직원에게 다른 사원코드가 붙어 있습니다. 전에 직원을 잘못 골라 붙은 코드라면 구성원 설정에서 그 직원의 사원코드를 지운 뒤 다시 올려 주세요.</span>' : ''}</div>`; }).join('');
+  const byCode = k.auto.map((x, i)=>[r.people[i], x.id!==null && k.members.find(m=>m.id===x.id)])   // 사원코드로 맞춘 사람 중 이름이 다른 사람 — 막지 않고 알리기만 (잘못 붙은 코드일 수 있다)
+    .filter(([p, m])=>m && p.head.code && String(m.no || '').trim()===p.head.code && rzNorm(m.name)!==rzNorm(p.head.name));
   const html = `<div class="ps-cf"><div class="card-title"><span>급여명세서 올리기 — 읽은 내용 확인</span><button type="button" class="x-btn" onclick="ps.pick=null; orgCloseModal()" aria-label="닫기">${icon('x')}</button></div>
     <div class="list-sub rz-file" style="margin:0 0 12px;">${icon('clip')} <b>${escapeHtml(k.file)}</b> · ${k.locked ? '암호를 풀어 ' : ''}이 PC 화면 안에서만 읽었습니다</div>
     <div class="field-row"><div class="field"><label for="psYm">귀속 월</label><input id="psYm" type="month" value="${escapeHtml(k.ym)}" onchange="psSetYm(this.value)"></div>
@@ -5675,9 +5681,10 @@ function psConfirm(){   // 확인 창 (스펙 7 · 시안). 고르기를 바꾸�
     <div class="ps-tot"><div class="ps-sums"><div><small>지급액 계</small><b>${won(sum('gross'))}</b></div><div><small>공제액 계</small><b>${won(sum('deduct'))}</b></div><div><small>실지급액 계</small><b>${won(sum('net'))}</b></div></div>${tot}</div>
     ${chips('지급', r.pay)}${chips('공제', r.ded)}
     ${bad.length ? `<div class="ps-bad"><b>금액이 맞지 않는 사람 ${bad.length}명 — 올릴 수 없습니다</b>${bad.map(p=>`<div>${who(p)} — ${escapeHtml(p.bad)}</div>`).join('')}</div>` : ''}
+    ${byCode.length ? `<div id="psByCode" style="margin-top:12px;">${kpiNote(`<b>사원코드로 맞춘 사람 중 이름이 다른 사람</b>: ${byCode.map(([p, m])=>`급여대장 ${escapeHtml(p.head.name)} → 포털 ${escapeHtml(m.name)}`).join(' · ')} — 틀렸으면 구성원 설정에서 사원코드를 지운 뒤 다시 올려 주세요.`, 'warning')}</div>` : ''}
     ${um ? `<div class="ps-ums"><div class="ps-ums-t"><b>못 맞춘 사람</b><small>직원을 고르거나 이번 달에서 뺍니다${skip ? ` · 뺀 사람 ${skip}명` : ''}</small></div>${um}</div>` : ''}
     ${r.skip ? `<div class="list-sub" style="margin-top:8px;">건너뛴 줄 ${r.skip}개 (빈 줄 · 사원명이 없는 줄)</div>` : ''}
-    ${k.err ? `<div style="margin-top:12px;">${kpiNote(escapeHtml(k.err), 'danger')}</div>` : ''}
+    ${k.err ? `<div id="psErr" style="margin-top:12px;">${kpiNote(escapeHtml(k.err), 'danger')}</div>` : ''}
     <div class="ps-foot"><span class="ps-block" id="psBlockMsg">${escapeHtml(block)}</span><button type="button" class="btn" onclick="ps.pick=null; orgCloseModal(); rzPick('slip')">다른 파일 고르기</button><button type="button" class="btn coral" id="psGo" ${block ? 'disabled' : ''} onclick="psUpload()">올리기 (공개 전)</button></div></div>`;
   const old = document.querySelector('#orgModal .ps-cf') && document.querySelector('#orgModal .card'), top = old ? old.scrollTop : 0, fid = document.activeElement?.id;
   orgModal(html);
@@ -5795,11 +5802,16 @@ async function psFlowCheck(){   // 브라우저 콘솔에서 await psFlowCheck()
     await psStage(file, W); ok(psBlock().includes('금액이 맞지 않는 사람'), '금액이 틀린 사람이 있으면 올릴 수 없다');
     const U = cp(R); U[3][0] = 99999; U[3][1] = '가상없는사람';
     await psStage(file, U); ok(psBlock().includes('직원을 고르거나'), '못 맞춘 사람이 있으면 올릴 수 없다');
-    psPick(1, 'lead'); ok(!psBlock() && ps.pick.to[1]==='lead', '직원을 고르면 풀린다');
+    ps.pick.err = '가상 서버 답'; psPick(1, 'lead'); ok(!psBlock() && ps.pick.to[1]==='lead' && !ps.pick.err && !document.getElementById('psErr'), '직원을 고르면 풀린다 · 지난 서버 답은 지운다');
     psPick(1, 'skip'); ok(!psBlock(), '이번 달에서 빼도 풀린다');
     psPick(1, ''); ok(psBlock().includes('직원을 고르거나'), '고르기를 되돌리면 다시 막힌다');
     psPick(1, 'skip'); await psUpload();
     ok(ps.mem.months[ym].people===1 && Object.keys(ps.mem.slips[ym]).join()==='emp' && !ps.pick && !document.getElementById('orgModal'), '이번 달에서 뺀 사람은 올리지 않는다');
+    const N = cp(R); N[2][1] = '가상다른이름';   // 사원코드는 직원 것, 이름은 다르다 — 잘못 붙은 코드일 수 있다
+    await psStage(file, N); ok(!psBlock() && document.getElementById('psByCode')?.textContent.includes(`급여대장 가상다른이름 → 포털 ${KPI_USERS.emp.name}`), '사원코드로 맞췄는데 이름이 다르면 알리기만 (막지 않음)');
+    await psStage(file, R); ok(!document.getElementById('psByCode'), '이름이 같으면 알리지 않는다');
+    const C = cp(R); C[3][0] = 77777;   // 같은 이름의 직원에게 다른 사원코드가 붙어 있다
+    await psStage(file, C); ok(ps.pick.auto[1].why==='CODE' && document.querySelector('#orgModal .ps-cf').textContent.includes('구성원 설정에서 그 직원의 사원코드를 지운 뒤'), '사원코드가 다른 줄에는 고치는 길 안내');
     const S = cp(R); S[3][0] = '10 142'; S[3][1] = '가상없는사람';   // 사원코드 모양이 서버와 다르다
     await psStage(file, S); psPick(1, 'lead'); ok(psBlock().includes('사원코드가 없거나 모양이 다른 사람(가상없는사람)'), '서버가 거절할 사원코드는 미리 막는다');
     psPick(1, 'skip'); ok(!psBlock(), '그 사람을 빼면 사원코드는 보지 않는다');
@@ -5814,11 +5826,13 @@ async function psFlowCheck(){   // 브라우저 콘솔에서 await psFlowCheck()
     for(const [k, v, want] of [['ym','0001-01','귀속 월'], ['ym','2026-5','귀속 월'], ['payDate','0009-10-01','지급일'], ['payDate','2026-02-30','지급일'], ['payDate','','지급일']]){
       const was = ps.pick[k]; ps.pick[k] = v; ok(psBlock().includes(want), `${k} ${v || '빈 값'}은 올릴 수 없다`); ps.pick[k] = was;
     }
+    ps.pick.err = '가상 서버 답'; psConfirm(); ok(document.getElementById('psErr'), '서버가 거절한 이유는 창 안에 보인다');
     const yEl = document.getElementById('psYm'), pEl = document.getElementById('psPay'), other = `${+ym.slice(0, 4)-1}${ym.slice(4)}`;
     const typeIn = (el, v)=>{ el.value = v; el.dispatchEvent(new Event('change')); };
     typeIn(yEl, other);
     ok(document.getElementById('psYm')===yEl && ps.pick.ym===other && pEl.value===psPayDate(other) && ps.pick.payDate===psPayDate(other) && !document.querySelector('#psNote').textContent && !psBlock() && !document.getElementById('psGo').disabled,
       '귀속 월을 바꾸면 창을 다시 그리지 않고 지급일 · 안내 · 단추만 바뀐다');
+    ok(!ps.pick.err && !document.getElementById('psErr'), '날짜를 고치면 지난 서버 답은 지운다');
     typeIn(pEl, `${other.slice(0, 4)}-02-27`);
     ok(document.getElementById('psPay')===pEl && ps.pick.payDate===`${other.slice(0, 4)}-02-27`, '지급일을 바꿔도 창을 다시 그리지 않는다');
     ps.pick.payDate = `${other.slice(0, 4)}-02-30`; psSync();
@@ -7312,6 +7326,19 @@ async function msActive(id, on){
   MS_LIVE.state = '';
   kpiFlash(on ? '다시 켰습니다.' : '비활성화했습니다. 그 사람의 로그인도 끊겼습니다.');
 }
+function msNoAsk(id){   // 실제 로그인: 사원코드 지우기 확인 — 급여명세서를 올릴 때 직원을 잘못 골라 남의 사원코드가 붙었을 때 (2026-10-21)
+  const m = MS_LIVE.list.find(o=>o.id===id);
+  orgModal(`<div class="card-title">${escapeHtml(m.name)} 님의 사원코드 ${escapeHtml(m.no)}을(를) 지울까요?</div>
+    ${kpiNote('급여명세서를 다음에 올릴 때 다시 맞춥니다. 이미 올린 명세서는 바뀌지 않으니, 잘못 맞춘 달은 다시 올려 주세요(공개 중이면 공개를 내린 뒤).', 'info')}
+    <div style="display:flex; gap:8px; justify-content:flex-end;"><button type="button" class="btn" onclick="orgCloseModal()">취소</button><button type="button" class="btn coral" onclick="msNoClear(${id})">지우기</button></div>`);
+}
+async function msNoClear(id){
+  const r = await fetch(`/api/members/${id}/employee-no`, { method:'POST', headers:{ 'Content-Type':'application/json' }, body:JSON.stringify({ no:'' }) }).catch(()=>null);
+  orgCloseModal();
+  if(!r || !r.ok) return kpiFlash('사원코드를 지우지 못했습니다. 잠시 뒤 다시 해 주세요.', 'danger');
+  MS_LIVE.state = '';
+  kpiFlash('사원코드를 지웠습니다. 급여명세서를 다음에 올릴 때 다시 맞춥니다.');
+}
 async function msPhoneRevoke(id){   // 실제 로그인: 그 사람의 휴대폰 등록 해제 (잃어버렸을 때 — 로그인 설계 13.1)
   const r = await fetch(`/api/members/${id}/phone/revoke`, { method:'POST' });
   orgCloseModal();
@@ -7505,6 +7532,7 @@ function msSee(id){
       : m.use ? `<ul class="ms-see">${msSeeList(m).map(([a, b])=>`<li class="${b?'':'no'}"><b>${a}</b><span>${b || '보이는 것이 없음'}</span></li>`).join('')}</ul>`
       : kpiNote('포털 사용이 꺼져 있어 <b>들어올 수 없습니다.</b> 하이웍스에서 메뉴를 누르면 "인사포털은 준비 중입니다" 화면이 나옵니다.')}
     ${AUTH.live && m.phone ? `<div style="display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:10px;"><span class="list-sub" style="margin:0;">등록된 휴대폰: ${escapeHtml(m.phone)}</span><button type="button" class="btn sm" onclick="msPhoneRevoke(${id})">휴대폰 해제</button></div>` : ''}
+    ${AUTH.live && m.no ? `<div style="display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:10px;"><span class="list-sub" style="margin:0;">사원코드(급여명세서): ${escapeHtml(m.no)}</span><button type="button" class="btn sm" id="msNoBtn" onclick="msNoAsk(${id})">사원코드 지우기</button></div>` : ''}
     ${AUTH.live ? `<div class="ms-hire"><label for="msHire" class="list-sub" style="margin:0;">입사일</label><input type="date" id="msHire" value="${escapeHtml(m.hireDate || '')}"><button type="button" class="btn sm" onclick="msHireSave(${id})">저장</button><span class="list-sub" style="margin:0;">${m.hireDate ? '' : '아직 없음 — 홈 배너의 재직 기간이 보이지 않습니다'}</span></div>
       <div class="ms-hire"><label for="msBday" class="list-sub" style="margin:0;">생일</label><input id="msBday" value="${escapeHtml(m.birthday || '')}" placeholder="03-15" style="width:92px;" aria-label="생일 (월-일)"><button type="button" class="btn sm" onclick="msBdaySave(${id})">저장</button>
         <label class="ms-sw" style="margin-left:6px;"><input type="checkbox" aria-label="생일 알림" ${m.birthdayPublic ? 'checked' : ''} onchange="msBdayPublic(${id}, this.checked, this)"><span></span></label><span class="list-sub" style="margin:0;">생일 알림 ${m.birthdayPublic ? '켜짐' : '꺼짐 — 이번 주 소식에 안 나옵니다'}</span></div>` : ''}
@@ -7632,6 +7660,7 @@ function renderSubtabs(){   // 탭이 하나뿐이면 비워 둔다. 단 PC에�
 }
 TOP_PC.addEventListener('change', ()=>{ renderSubtabs(); tourHelpSync(); });   // 창 폭이 PC ↔ 휴대폰으로 바뀌면 단추 자리도 옮긴다
 function renderContent(){   // 화면을 다시 그릴 때마다 메뉴·탭 숫자도 맞춘다 (승인·서명 직후 바로 줄어들게)
+  if(AUTH.locked) return;   // 로그인 안내가 덮은 뒤에는 늦게 온 답(payLoad 등)이 화면을 다시 채우지 않게
   if(currentTab.show && !currentTab.show()) currentTab = navTabs(currentNav)[0];   // 역할을 바꿔 지금 탭이 안 보이게 되면 첫 탭으로
   document.getElementById('pageTitle').textContent = currentNav.label;
   document.getElementById('contentArea').innerHTML = currentTab.render();
@@ -7651,6 +7680,7 @@ function selectTab(id){
   tourAuto();
 }
 function goTo(navId, tabId){
+  if(navId==='pay' && tabId==='p1') ps.view = 'me';   // 홈 "새 급여명세서 확인" · 빠른 서비스 · 원천징수영수증의 "급여명세서 보기"는 HR도 내 명세서 화면으로
   if(selectNav(navId) === false) return;   // 휴대폰에서 막힌 메뉴 — 안내창만 뜬다
   if(tabId) selectTab(tabId);
 }
@@ -7912,7 +7942,11 @@ function authRole(me){   // 서버의 직책·HR 권한 → 화면이 쓰는 역
   if(me.position==='TEAM_LEADER') return 'lead';
   return me.writes_kpi===false ? 'line' : 'emp';
 }
-function authLock(kind){
+function authLock(kind){   // 로그아웃 · 세션 끝(401)에도 부른다 — 가린 화면 밑에 급여 금액 · 명단이 남지 않게 지우고 다시 그리지 않는다(renderContent)
+  AUTH.locked = true;
+  document.getElementById('contentArea').innerHTML = '';   // #payAmt 도 사라져 payTick 이 멈춘다
+  orgCloseModal(true);   // 급여대장 확인 창 · 미리 보기 등
+  ps.pick = null; ps.prev = null; Object.assign(PAY_LIVE, { state:'', who:null, slips:[], mine:[] });
   if(kind==='login' && isPhone()) kind = 'phone';
   const [title, body] = AUTH_TEXT[kind];
   let el = document.getElementById('authLock');
