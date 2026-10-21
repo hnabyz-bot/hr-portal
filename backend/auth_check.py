@@ -1201,6 +1201,7 @@ def check_kpi_manager(hr) -> None:
     conflict = lambda r, st: r.status_code == 409 and r.json == {"error": "지금 상태에서는 할 수 없습니다.", "status": st}  # noqa: E731
     no_auth, no_window = {"error": "이 KPI를 처리할 권한이 없습니다."}, {"error": "KPI 작성 기간이 아닙니다."}
     zero = {"NONE": 0, "DRAFT": 0, "SUBMITTED": 0, "CONFIRMED": 0, "CHANGE_REQUESTED": 0}
+    calm = {"check": 0, "replies": 0, "memos": 0}  # 처리할 일 숫자(review) — 이 검사에서는 진행 기록 · 메모가 없어 늘 0
     y = {"year": year}
 
     def mk(tag="가상"):
@@ -1226,7 +1227,7 @@ def check_kpi_manager(hr) -> None:
     at = q("SELECT submitted_at FROM kpi_plans WHERE user_id = 42 AND year = ?", year)[0][0]
     item = {"kind": "PLAN", "userId": 42, "name": "가상팀원A1", "dept": "가상K팀A", "title": "프로", "status": "SUBMITTED", "at": at, "reason": None,
             "items": 3, "reg": 2, "irr": 1, "scheds": 2, "proxy": False}
-    ok(inbox(lead) == {"items": [item], "team": {**zero, "NONE": 2, "SUBMITTED": 1}},
+    ok(inbox(lead) == {"items": [item], "team": {**zero, "NONE": 2, "SUBMITTED": 1}, "review": calm},
        "팀장 처리함에 1건 (직급 · 제출 시각 · 행 수) · 우리 팀 상태: 제출 1 · 아직 안 씀 2")
     x("UPDATE users SET writes_kpi = 0 WHERE id = 42")
     ok(inbox(lead)["items"] == [], "KPI 를 안 쓰게 된 사람의 제출은 처리함에서 빠짐")
@@ -1234,8 +1235,8 @@ def check_kpi_manager(hr) -> None:
     ok(inbox(lead)["items"] == [], "비활성이 된 사람의 제출도 빠짐")
     x("UPDATE users SET is_active = 1, deactivated_at = NULL WHERE id = 42")
     ok(inbox(lead)["items"] == [item], "(되돌리면 다시 처리함에 보임)")
-    ok(inbox(a2) == {"items": [], "team": zero} and inbox(b1) == {"items": [], "team": zero}
-       and inbox(leadb) == {"items": [], "team": {**zero, "NONE": 2}} and inbox(hr) == {"items": [], "team": zero},
+    ok(inbox(a2) == {"items": [], "team": zero, "review": calm} and inbox(b1) == {"items": [], "team": zero, "review": calm}
+       and inbox(leadb) == {"items": [], "team": {**zero, "NONE": 2}, "review": calm} and inbox(hr) == {"items": [], "team": zero, "review": calm},
        "다른 팀원 · 다른 팀장 · HR 처리함에는 없음 (HR 은 바로 위 관리자가 아니면 안 옴)")
 
     ok(all((r := act(c, 42, "confirm")).status_code == 403 and r.json == no_auth for c in (a2, a1, leadb, head, ceo, leadc))
@@ -2298,6 +2299,7 @@ def check_kpi_review(hr) -> None:
     결과의 달은 바뀐 기한으로 센다. 서버가 순서대로 다시 본다 (바로 위 관리자 403 → 대표이사 403 → 해 · 달 400 → 아직 안 온 달 403 → 확정본 404 → 기록 없음 409).
     오늘에 기대는 검사는 모두 시계(auth._now)를 정해 두고 돈다 — 어느 날 돌려도 같다 (R4). 시계가 바뀌면 창은 새로 연다.
     확인 메모 · 확인했습니다 · 답글 · 새 답글 표시는 이 검사의 뒤쪽 절 (바로 위 관리자만 쓰고 · 쓴 사람이 쓴 날에만 고치고 · 본인만 확인하고 · 감사로그는 없음).
+    KPI 현황 명단(/api/kpi/board)과 처리할 일 숫자(inbox 의 review)는 맨 뒤 절 (팀장은 팀원만 · 본부장은 본부 전체 · 대표이사는 팀원 줄 없이 팀 숫자만 · HR 은 전체 · 직원은 403).
     뒤 절(알람 · 명단 · 경영계획)은 같은 가상 조직과 아래 도구를 이어 쓴다."""
     import kpi
     print("KPI 현황 (보는 범위 · 월간 확인)")
@@ -2371,14 +2373,14 @@ def check_kpi_review(hr) -> None:
         return {"action": name, "formula": "가상 측정식", "weight": w, "owner": "가상R직원", "S": "가상 s", "A": "가상 a", "B": "가상 b", "C": "가상 c",
                 "D": "가상 d", "kind": kind, "target": None, "unit": "", "scheds": [], **more}
 
-    def confirmed(uid):
-        """계획서를 바로 확정된 모습으로 넣는다: 정기 2 (실행목표 1 · 2) + 비정기 1 (실행목표 3, 일정 1 = 3/20 · 일정 2 = 5/20). 2월 10일에 확정."""
+    def confirmed(uid, when=None):
+        """계획서를 바로 확정된 모습으로 넣는다: 정기 2 (실행목표 1 · 2) + 비정기 1 (실행목표 3, 일정 1 = 3/20 · 일정 2 = 5/20). when(없으면 2월 10일)에 확정."""
         content = json.dumps([{"team": "가상 팀목표", "personal": "가상 개인목표", "items": [
             {**item("가상 정기 업무 1", 40, "reg", target=12, unit="건"), "rid": 1}, {**item("가상 정기 업무 2", 30, "reg"), "rid": 2},
             {**item("가상 비정기 업무", 30, "irr", scheds=[{"sid": 1, "due": ymd(3, 20), "name": "가상 초안"}, {"sid": 2, "due": ymd(5, 20), "name": "가상 마감"}]),
              "rid": 3}]}], ensure_ascii=False)
         x("INSERT INTO kpi_plans (user_id, year, status, draft, confirmed_version, updated_at) VALUES (?, ?, 'CONFIRMED', ?, 1, '2000-01-01T00:00:00Z')", uid, year, content)
-        x("INSERT INTO kpi_versions (user_id, year, version, content, confirmed_at, confirmed_by) VALUES (?, ?, 1, ?, ?, ?)", uid, year, content, z(2, 10), LEAD)
+        x("INSERT INTO kpi_versions (user_id, year, version, content, confirmed_at, confirmed_by) VALUES (?, ?, 1, ?, ?, ?)", uid, year, content, when or z(2, 10), LEAD)
 
     for uid in (HEAD, LEAD, EMP, EMP2, LEAD2, DIRECT, EXEC):  # 동료 팀원(PEER2) 만 계획서가 없다 — '확정본 없음 404' 를 보려고
         confirmed(uid)
@@ -2904,6 +2906,212 @@ def check_kpi_review(hr) -> None:
         x("DELETE FROM kpi_mutes")
         x("DELETE FROM kpi_progress WHERE user_id = ?", S)
         x("DELETE FROM kpi_years WHERE year = ?", Y2)
+        if had_row:
+            x("UPDATE kpi_years SET alarm_gap = 20, biz_plan = NULL WHERE year = ?", year)
+        else:
+            x("DELETE FROM kpi_years WHERE year = ?", year)
+
+        # ---- KPI 현황 명단 · 처리할 일 숫자 (2단계 ②, Task 6) ----
+        board = lambda who, month=None: c(who).get("/api/kpi/board", base_url=BASE, query_string=None if month is None else {"month": month})  # noqa: E731
+        bj = lambda who, month=None: board(who, month).json  # noqa: E731
+        by_id = lambda j, uid: next((p for p in j["people"] if p["userId"] == uid), None)  # noqa: E731
+        mine_ids = lambda j: [p["userId"] for p in j["people"] if 91 <= p["userId"] <= 100]  # noqa: E731
+        review = lambda who: c(who).get("/api/kpi/inbox", base_url=BASE).json["review"]  # noqa: E731
+        near = lambda a, b: a is not None and abs(a - b) < 1e-9  # noqa: E731
+        NO_BOARD = {"error": "KPI 현황을 볼 수 있는 분이 아닙니다."}
+        bad_month = lambda top: {"error": f"달은 1~{top} 사이 숫자로 보내 주세요."}  # noqa: E731
+        wipe = lambda: [x(f"DELETE FROM {t} WHERE user_id BETWEEN 91 AND 100")  # noqa: E731
+                        for t in ("kpi_memos", "kpi_month_checks", "kpi_month_notes", "kpi_results", "kpi_progress", "kpi_sched_changes", "kpi_mutes")]
+
+        at(4, 5)  # 앞 절이 시계를 다음 해로 두고 갔다 — 올해 4월 5일 한국 정오로. 앞 절들이 남긴 기록은 치우고 필요한 상태를 새로 만든다
+        wipe()
+        x("UPDATE users SET department_id = 72 WHERE id = ?", PEER2)  # 팀 A 의 팀원은 둘 (직원 · 다른팀원) — 계획서는 직원만 있다
+        exp4 = ((date(year, 4, 5) - date(year, 1, 1)).days + 1) / ndays * 100  # 4월 5일 정기 업무의 기대 진행률 · 비정기(일정 1 = 3/20 만 14일 넘게 지남)는 50
+        ok(anon.get("/api/kpi/board", base_url=BASE).status_code == 401, "로그인 없이는 401 (KPI 현황)")
+
+        # 직원은 못 본다 · 달 검사
+        ok(all(hit(board(w), 403, NO_BOARD) for w in (EMP, EMP2, PEER2, DMEMBER)) and hit(board(EMP, 13), 403, NO_BOARD) and hit(board(EMP, "a"), 403, NO_BOARD),
+           "직원은_못_본다: 팀원은 403 (달이 이상해도 403 먼저)")
+        ok(all(hit(board(LEAD, m), 400, bad_month(4)) for m in (13, 0, 5, "a", "-1", "4.0", "", " 4", "4 ", "004", "٣", "1e1"))
+           and all(board(LEAD, m).status_code == 200 and bj(LEAD, m)["month"] == int(m) for m in (1, 2, 3, 4, "04")) and bj(LEAD)["month"] == 4,
+           "달_검사: 13 · 0 · 다음 달 · 글자 · 음수 · 소수 · 빈 값 · 공백 · 자리 넘침 · 다른 나라 숫자는 400 (1~오늘의 달 정수만) · 안 보내면 오늘의 달")
+        ok(put(EMP, "progress", {"rid": 1, "actual": 3}).status_code == 200 and put(EMP, "progress", {"rid": 2, "pct": 40}).status_code == 200
+           and put(EMP, "progress", {"rid": 2, "why": "가상 이유"}).status_code == 200, "(준비: 직원이 실적 3건 · 진행률 40% · 늦어지는 이유를 씀 — 종합 진행률 22)")
+
+        # 팀장은 팀원만
+        j = bj(LEAD)
+        e = by_id(j, EMP)
+        ok(set(j) == {"year", "month", "gap", "depts", "people", "teams", "todo"} and (j["year"], j["month"], j["gap"]) == (year, 4, 20)
+           and [p["userId"] for p in j["people"]] == [PEER2, EMP] and all(p["direct"] is True and p["deptId"] == 72 and p["position"] is None for p in j["people"])
+           and j["teams"] == [], "팀장은_팀원만: 팀장의 명단 = 그 팀 팀원 둘(이름순, direct 참) · 본인과 다른 팀 사람은 없음 · teams 는 빈 목록")
+        ok({"id": 72, "name": "가상R팀A", "parentId": 71} in j["depts"] and {"id": 71, "name": "가상R본부", "parentId": None} in j["depts"]
+           and all(set(d) == {"id", "name", "parentId"} for d in j["depts"]) and [d["id"] for d in j["depts"]] == sorted(d["id"] for d in j["depts"]),
+           "depts: 부서 번호 순서로 {id name parentId}")
+        ok(set(e) == {"userId", "name", "title", "deptId", "position", "status", "direct", "checkStep", "total", "totalExpected", "alarm", "items", "month", "memo"}
+           and (e["name"], e["title"], e["deptId"], e["position"], e["status"], e["direct"], e["checkStep"]) == ("가상R직원", "", 72, None, "CONFIRMED", True, True)
+           and e["total"] == 22.0 and near(e["totalExpected"], 0.7 * exp4 + 15) and e["alarm"]["slow"] is False and near(e["alarm"]["pct"], 22.0)
+           and near(e["alarm"]["expected"], 0.7 * exp4 + 15) and e["memo"] == {"count": 0, "open": 0, "fresh": 0},
+           "사람 한 줄의 모양: 이름 · 직급(없으면 빈 글자) · 맡은 부서 · 직책 · 계획서 상태 · direct · checkStep · 종합 진행률 · 기대 · 알람 · 메모 수")
+        ok(len(e["items"]) == 3 and all(set(i) == {"rid", "action", "kind", "weight", "value", "expected", "why", "mute"} for i in e["items"])
+           and [(i["rid"], i["action"], i["kind"], i["weight"], i["value"], i["why"], i["mute"]) for i in e["items"]]
+           == [(1, "가상 정기 업무 1", "reg", 40, 25, None, None), (2, "가상 정기 업무 2", "reg", 30, 40, "가상 이유", None), (3, "가상 비정기 업무", "irr", 30, 0, None, None)]
+           and near(e["items"][0]["expected"], exp4) and near(e["items"][2]["expected"], 50), "items: 실행목표마다 rid · 내용 · 종류 · 가중치 · 막대(value) · 기대 · 이유 · 끈 알람")
+        pe = by_id(j, PEER2)
+        ok((pe["status"], pe["total"], pe["totalExpected"], pe["alarm"], pe["items"], pe["month"], pe["checkStep"]) == ("NONE", None, None, None, [], None, True),
+           "확정본이 없는 사람: status NONE · 숫자 · 알람 null · items [] · month null (그래도 확인 단계는 있음)")
+
+        # 본부장은 본부 전체
+        j = bj(HEAD)
+        ok([p["userId"] for p in j["people"]] == [LEAD, PEER2, EMP, LEAD2, EMP2] and [p["direct"] for p in j["people"]] == [True, False, False, True, False]
+           and [p["position"] for p in j["people"]] == ["TEAM_LEADER", None, None, "TEAM_LEADER", None] and [p["deptId"] for p in j["people"]] == [72, 72, 72, 73, 73]
+           and by_id(j, LEAD)["title"] == "팀장" and by_id(j, LEAD)["checkStep"] is True and j["teams"] == [],
+           "본부장은_본부_전체: 본부의 팀장 둘 + 팀원들 (부서 번호 → 팀장 → 이름 순서) · 팀장 줄만 direct · 본부 밖(직속 팀 · '임원')은 없음 · teams 빈 목록")
+
+        # 대표이사는 팀원 줄을 못 받는다
+        j = bj(CEO)
+        txt = board(CEO).get_data(as_text=True)
+        gone, names = (EMP, EMP2, PEER2, DMEMBER), ("가상R직원", "가상R동료", "가상R다른팀원", "가상R직속팀원")
+
+        def leaves(o, key=""):
+            """응답 JSON 안의 모든 (바로 위 키 이름, 값) — 사전의 키 글자도 값으로 한 번 더 (자리에 상관없이)."""
+            if isinstance(o, dict):
+                for k, v in o.items():
+                    yield "", k
+                    yield from leaves(v, k)
+            elif isinstance(o, list):
+                for v in o:
+                    yield from leaves(v, key)
+            else:
+                yield key, o
+
+        flat = list(leaves(j))
+        ok(mine_ids(j) == [HEAD, LEAD, LEAD2, DIRECT, EXEC]
+           and [by_id(j, u)["position"] for u in (HEAD, LEAD, LEAD2, DIRECT, EXEC)] == ["DIVISION_HEAD", "TEAM_LEADER", "TEAM_LEADER", "TEAM_LEADER", None],
+           "대표이사는_팀원_줄을_못_받는다: 명단에는 본부장 · 팀장 · 직속 팀장 · '임원' 소속만")
+        ok(not any(type(v) is int and k.lower().endswith("id") and v in gone for k, v in flat)
+           and not any(isinstance(v, str) and (v in map(str, gone) or any(nm in v for nm in names)) for _, v in flat)
+           and not any(nm in txt for nm in names) and by_id(j, LEAD)["items"] != [],
+           "대표이사_응답_어디에도_팀원이_없다: 팀원 번호(…Id 칸 어디에도 · 글자 · 사전의 키로도) · 이름이 응답 글자에 하나도 없음")
+        tm = {t["deptId"]: t for t in j["teams"]}
+        ok(all(set(t) == {"deptId", "count", "confirmed", "avg", "slow"} for t in j["teams"]) and [t["deptId"] for t in j["teams"]] == sorted(tm)
+           and tm[72]["count"] == 2 and tm[72]["confirmed"] == 1 and near(tm[72]["avg"], 22.0) and tm[72]["slow"] == 0
+           and (tm[73]["count"], tm[73]["confirmed"], tm[73]["slow"]) == (1, 1, 1) and near(tm[73]["avg"], 0.0)
+           and tm[74] == {"deptId": 74, "count": 1, "confirmed": 0, "avg": None, "slow": 0} and not {71, 75} & set(tm),
+           "teams: 팀마다 인원 · 확정 · 평균(확정본이 있는 사람만, 없으면 null) · 부진 수 — 72 = 2 · 1 · 22 · 0 / 73 = 1 · 1 · 0 · 1 / 74 = 1 · 0 · null · 0 (줄로 보이는 사람 몫은 없음)")
+        ok(all(by_id(j, u)["direct"] and by_id(j, u)["checkStep"] is False and by_id(j, u)["month"]["check"] == "NOSTEP" for u in (HEAD, DIRECT, EXEC))
+           and not by_id(j, LEAD)["direct"] and not by_id(j, LEAD2)["direct"] and by_id(j, LEAD)["month"]["check"] == "NONE" and j["todo"] == {"check": 0},
+           "대표이사에게 보고하는 분(본부장 · 직속 팀장 · '임원' 소속)은 direct 참 · 확인 단계 없음 · month.check NOSTEP — 팀장은 대표이사 몫이 아님")
+
+        # HR 은 전체
+        j = bj(HR)
+        want = {r[0] for r in q("SELECT id FROM users WHERE is_active = 1 AND writes_kpi = 1 AND id <> ?", HR)}
+        rank = {"DIVISION_HEAD": 0, "TEAM_LEADER": 1}
+        ok({p["userId"] for p in j["people"]} == want and len(j["people"]) == len(want) and HR not in want and CEO not in want
+           and set(mine_ids(j)) == {HEAD, LEAD, EMP, EMP2, LEAD2, PEER2, DIRECT, EXEC, DMEMBER} and j["teams"] == []
+           and j["people"] == sorted(j["people"], key=lambda p: (p["deptId"], rank.get(p["position"], 2), p["name"], p["userId"])),
+           "HR은_전체: 활성 · KPI 작성이 켜진 사람 모두 (HR 본인 · 작성이 꺼진 대표이사 · 비활성은 없음) — 순서는 부서 번호 → 본부장 · 팀장 · 그 밖 → 이름 · teams 빈 목록")
+        x("UPDATE users SET is_active = 0, deactivated_at = '2027-01-01T00:00:00Z' WHERE id = ?", DMEMBER)
+        x("UPDATE users SET writes_kpi = 0 WHERE id = ?", EMP2)
+        try:
+            ok(DMEMBER not in {p["userId"] for p in bj(HR)["people"]} and EMP2 not in {p["userId"] for p in bj(HR)["people"]}
+               and EMP2 not in {p["userId"] for p in bj(HEAD)["people"]} and not {73, 74} & {t["deptId"] for t in bj(CEO)["teams"]},
+               "비활성 · KPI 작성을 끈 사람은 명단에도 팀 묶음에도 없다")
+        finally:
+            x("UPDATE users SET is_active = 1, deactivated_at = NULL WHERE id = ?", DMEMBER)
+            x("UPDATE users SET writes_kpi = 1 WHERE id = ?", EMP2)
+
+        # 계획서 상태는 계획서 줄에서, 숫자는 확정본에서
+        x("UPDATE kpi_plans SET status = 'CHANGE_REQUESTED', change_reason = '가상 사유' WHERE user_id = ?", EMP2)
+        try:
+            e2 = by_id(bj(LEAD2), EMP2)
+            ok(e2["status"] == "CHANGE_REQUESTED" and e2["month"] is not None and len(e2["items"]) == 3, "수정 요청 중인 사람: status 는 CHANGE_REQUESTED, 숫자 · 월 요약은 지금 확정본으로")
+        finally:
+            x("UPDATE kpi_plans SET status = 'CONFIRMED', change_reason = NULL WHERE user_id = ?", EMP2)
+
+        # 이번 달 적을 것 · 확인 상태가 바뀐다
+        j = bj(LEAD, 3)
+        ok(j["month"] == 3 and by_id(j, EMP)["month"] == {"reg": [0, 2], "irr": [0, 1], "records": 0, "noSched": False, "check": "NONE", "checkedAt": None},
+           "확인_상태가_바뀐다: 아무것도 안 쓴 달은 NONE")
+        ok(line(EMP, 3, "가상 3월 줄").status_code == 200
+           and by_id(bj(LEAD, 3), EMP)["month"] == {"reg": [1, 2], "irr": [0, 1], "records": 1, "noSched": False, "check": "TODO", "checkedAt": None},
+           "이번_달_적을_것: 3월 — 정기 [1, 2] · 비정기 [0, 1] · noSched 거짓 · 한 줄 쓰기 → 확인 TODO")
+        ok(by_id(bj(LEAD, 4), EMP)["month"] == {"reg": [0, 2], "irr": [0, 0], "records": 0, "noSched": True, "check": "NONE", "checkedAt": None}
+           and by_id(bj(LEAD), EMP)["month"] == by_id(bj(LEAD, 4), EMP)["month"], "이번_달_적을_것: 4월 — 비정기가 있는데 그 달 일정이 없어 noSched 참 · 달을 안 보내면 오늘의 달(4월)")
+        ok(check(LEAD, EMP, 3).status_code == 200
+           and by_id(bj(LEAD, 3), EMP)["month"] == {"reg": [1, 2], "irr": [0, 1], "records": 1, "noSched": False, "check": "DONE", "checkedAt": z(4, 5)}
+           and by_id(bj(LEAD, 4), EMP)["month"]["check"] == "NONE", "확인_상태가_바뀐다: 팀장이 확인 → 그 달만 DONE · 확인한 시각")
+        ok(line(EMP, 3, "가상 고친 3월 줄").status_code == 200 and by_id(bj(LEAD, 3), EMP)["month"]["check"] == "TODO" and by_id(bj(LEAD, 3), EMP)["month"]["checkedAt"] is None,
+           "확인_상태가_바뀐다: 확인한 달의 줄을 고치면 다시 TODO")
+        ok(by_id(bj(HEAD, 3), LEAD)["month"]["check"] == "NONE" and by_id(bj(HEAD, 3), LEAD)["direct"] is True, "(본부장 명단의 팀장 줄도 같은 규칙: 쓴 것이 없으면 NONE)")
+
+        # 알람 기준은 한 번만 읽어 모두에게
+        ok(hit(gap_set(HR, 40), 200, {"ok": True}) and bj(HR)["gap"] == 40 and bj(LEAD2)["gap"] == 40 and by_id(bj(LEAD2), EMP2)["alarm"]["slow"] is False
+           and {t["deptId"]: t["slow"] for t in bj(CEO)["teams"]}[73] == 0, "알람 기준 40: 명단의 gap · 사람마다의 부진 판정 · 대표이사의 부진 수가 모두 새 기준을 따름")
+        ok(hit(gap_set(HR, 20), 200, {"ok": True}) and bj(HR)["gap"] == 20 and by_id(bj(LEAD2), EMP2)["alarm"]["slow"] is True
+           and {t["deptId"]: t["slow"] for t in bj(CEO)["teams"]}[73] == 1, "알람 기준 20 으로 되돌리면 부진")
+
+        # 처리할 일 숫자
+        wipe()
+        confirmed(PEER2, z(1, 5))  # 다른팀원도 계획서를 가진다 — 1월에 확정이라 정기 업무가 1월부터 해당 있음 (확정본은 지울 수 없어 이 검사 끝까지 남는다)
+        x("INSERT INTO kpi_month_notes (user_id, year, rid, month, text, link, updated_at) VALUES (?, ?, 1, 1, '가상 1월 줄', NULL, ?)", PEER2, year, z(1, 6))
+        at(1, 8)
+        ok(review(LEAD) == {"check": 1, "replies": 0, "memos": 0} and review(LEAD2)["check"] == 0 and bj(LEAD)["todo"] == {"check": 1} and bj(LEAD)["month"] == 1
+           and hit(board(LEAD, 2), 400, bad_month(1)), "처리할_일_숫자: 1월 8일 — 이번 달(1월) 기록을 안 확인한 사람 1 (지난달은 작년이라 세지 않음) · 명단의 todo 와 같은 수")
+        at(2, 5)
+        ok(review(LEAD)["check"] == 1, "2월 5일 — 지난달(1월) 기록도 셈")
+        at(3, 5)
+        ok(line(EMP, 2, "가상 2월 줄").status_code == 200 and line(EMP, 3, "가상 3월 줄").status_code == 200, "(준비: 3월 5일 — 직원이 2월 · 3월 줄을 씀)")
+        at(3, 10)
+        ok(review(LEAD) == {"check": 1, "replies": 0, "memos": 0} and bj(LEAD)["todo"] == {"check": 1},
+           "처리할_일_숫자: 3월 10일 — 지난달(2월) · 이번 달(3월)에 확인 안 한 기록이 있는 직원 1 (직원이 두 달 다 써도 한 사람) · 다른팀원의 확인 안 한 1월 기록은 세지 않는다")
+        ok(line(PEER2, 3, "가상 3월 줄").status_code == 200 and review(LEAD) == {"check": 2, "replies": 0, "memos": 0} and bj(LEAD)["todo"] == {"check": 2},
+           "다른팀원도 3월 줄을 쓰면 팀원 둘이 확인 안 한 기록 → 팀장 check 2 (사람 수)")
+        ok(review(LEAD2)["check"] == 0 and review(HEAD)["check"] == 0 and review(CEO) == {"check": 0, "replies": 0, "memos": 0} and review(HR) == {"check": 0, "replies": 0, "memos": 0}
+           and review(EMP) == {"check": 0, "replies": 0, "memos": 0},
+           "바로 위 관리자가 아닌 사람 · 대표이사 · HR · 본인은 0")
+        ok(check(LEAD, EMP, 2).status_code == 200 and review(LEAD)["check"] == 2, "(직원의 2월을 확인해도 3월이 남아 있어 사람 수는 그대로)")
+        ok(check(LEAD, EMP, 3).status_code == 200 and review(LEAD)["check"] == 1 and bj(LEAD)["todo"] == {"check": 1}, "(3월도 확인 → 1)")
+        ok(check(LEAD, PEER2, 3).status_code == 200 and review(LEAD)["check"] == 0 and bj(LEAD)["todo"] == {"check": 0}, "(다른팀원도 확인 → 0)")
+
+        at(3, 11)
+        mA, mB = memo_post(LEAD, EMP, "가상 메모").json["id"], memo_post(LEAD, PEER2, "가상 메모 2").json["id"]
+        ok(review(EMP) == {"check": 0, "replies": 0, "memos": 1} and review(PEER2)["memos"] == 1 and review(LEAD) == {"check": 0, "replies": 0, "memos": 0}
+           and review(HEAD)["memos"] == 0, "처리할_일_숫자: 팀장이 메모를 쓰면 본인 inbox 의 memos(확인 안 한 내 메모) 1 · 쓴 팀장은 아직 0")
+        at(3, 11, 4)
+        ok(memo_do(EMP, mA, "reply", text="가상 본인 답글").status_code == 200 and memo_do(EMP, mA, "reply", text="가상 본인 답글 2").status_code == 200
+           and review(LEAD)["replies"] == 1 and review(EMP)["memos"] == 0, "본인이 답글(둘)을 달면 팀장 replies 1 (답글 수가 아니라 사람 수) · 본인 답글은 확인한 것이라 memos 0")
+        ok(memo_do(PEER2, mB, "reply", text="가상 본인 답글").status_code == 200 and review(LEAD)["replies"] == 2, "다른 사람의 답글도 더해 replies 2")
+        at(3, 11, 5)
+        ok(memo_do(LEAD, mA, "reply", text="가상 팀장 답글").status_code == 200 and review(EMP)["memos"] == 1 and review(LEAD)["replies"] == 2,
+           "팀장이 답글을 달면 본인의 확인이 풀려 memos 1 (팀장 자신의 답글은 새 답글이 아님)")
+        ok(by_id(bj(LEAD), EMP)["memo"] == {"count": 1, "open": 1, "fresh": 2} and by_id(bj(LEAD), PEER2)["memo"] == {"count": 1, "open": 0, "fresh": 1}
+           and by_id(bj(HEAD), EMP)["memo"] == {"count": 1, "open": 1, "fresh": 0}, "명단의 memo: 올해 메모 수 · 본인이 확인 안 한 수 · 내가 쓴 메모의 못 본 본인 답글 수 (남이 쓴 메모의 답글은 0)")
+        x("UPDATE users SET department_id = 73 WHERE id = ?", PEER2)  # 다른팀원이 다른 팀으로 — 팀장이 더는 볼 수 없다
+        try:
+            ok(review(LEAD)["replies"] == 1 and PEER2 not in {p["userId"] for p in bj(LEAD)["people"]}, "더 이상 볼 수 없는 사람의 새 답글은 세지 않음 (명단에 없는 사람의 숫자는 지울 길이 없다)")
+        finally:
+            x("UPDATE users SET department_id = 72 WHERE id = ?", PEER2)
+        ok(review(LEAD)["replies"] == 2, "(다시 같은 팀이 되면 다시 셈)")
+        ok(memo_do(EMP, mA, "ack").status_code == 200 and review(EMP)["memos"] == 0 and review(LEAD)["replies"] == 2, "본인이 확인했습니다 → 본인 memos 0 (팀장의 못 본 답글은 그대로)")
+        at(3, 11, 6)
+        ok(seen(LEAD, EMP).status_code == 200 and review(LEAD)["replies"] == 1 and seen(LEAD, PEER2).status_code == 200 and review(LEAD)["replies"] == 0
+           and by_id(bj(LEAD), EMP)["memo"]["fresh"] == 0, "열어 보았다고 보내면 replies 가 줄어 0")
+        ok(all(set(review(w)) == {"check", "replies", "memos"} for w in (LEAD, HEAD, CEO, HR, EMP)), "inbox 의 review 모양: check · replies · memos")
+
+        # 알람 기준 · 경영계획은 서로의 칸과 기간 날짜를 건드리지 않는다 (이미 날짜가 있는 해에서)
+        Y3 = 2098
+        d3 = (f"{Y3}-03-01", f"{Y3}-03-31", f"{Y3}-06-01")
+        x("INSERT INTO kpi_years (year, edit_from, edit_to, eval_start, updated_at) VALUES (?, ?, ?, ?, ?)", Y3, *d3, z(1, 1))
+        ok(hit(gap_set(HR, 33, Y3), 200, {"ok": True}) and year_row(Y3)[0][:5] == (*d3, 33, None), "알람 기준을 넣어도 이미 있는 기간 날짜 · 경영계획 칸은 그대로")
+        ok(hit(biz_set(HR, [goal("가상 목표", "가상 내용")], Y3), 200, {"ok": True}) and year_row(Y3)[0][:4] == (*d3, 33) and json.loads(year_row(Y3)[0][4]) == [goal("가상 목표", "가상 내용")],
+           "경영계획을 넣어도 기간 날짜 · 알람 기준은 그대로")
+        ok(hit(gap_set(HR, 44, Y3), 200, {"ok": True}) and year_row(Y3)[0][:4] == (*d3, 44) and json.loads(year_row(Y3)[0][4]) == [goal("가상 목표", "가상 내용")],
+           "알람 기준을 다시 바꿔도 경영계획 · 기간 날짜는 그대로")
+        x("DELETE FROM kpi_years WHERE year = ?", Y3)
+
+        # 이 절이 만든 것을 치운다
+        wipe()
+        x("UPDATE users SET department_id = 73 WHERE id = ?", PEER2)
         if had_row:
             x("UPDATE kpi_years SET alarm_gap = 20, biz_plan = NULL WHERE year = ?", year)
         else:
