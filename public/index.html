@@ -6505,7 +6505,7 @@ function whNums(p1, p2){   // 스펙 4.5 — 사람의 첫 쪽(p1) · 둘째 쪽
   const pre = [0, 1].map(i=>cur[i] + (prev[i] ?? 0)), fits = sign=>cur.length>1 && [0, 1].every(i=>dec[i]!==undefined && st[i]!==undefined && t10(dec[i] - pre[i])===sign*st[i]);   // 기납부 = 주(현) + 종(전)(없으면 0), 소득세 · 지방소득세 따로
   if(fits(1)) [sum.taxPrepaid, sum.localPrepaid] = pre;   // 10원 미만 절사(결정 − 기납부) = 차감일 때만 (whSummary의 t10). 결정 − 차감으로 거꾸로 계산하지 않는다(최대 9원 틀림)
   else if(fits(-1)) sum.taxSettle = sum.localSettle = null;   // 부호만 반대 = pdf.js가 '-'를 떼어 놓아 부호를 잃은 것 → 믿을 수 없는 부호는 보이지 않는다(환급이 추가납부로 보이면 실패)
-  if(sum.taxSettle && sum.localSettle && (sum.taxSettle<0)!==(sum.localSettle<0)) sum.taxSettle = sum.localSettle = null;   // 소득세 · 지방소득세 부호가 서로 반대 = 한쪽만 '-'를 잃었다 → 둘 다 보이지 않는다
+  if(sum.taxPrepaid===null && sum.taxSettle && sum.localSettle && (sum.taxSettle<0)!==(sum.localSettle<0)) sum.taxSettle = sum.localSettle = null;   // 기납부 검사가 받쳐 주지 않는데 소득세 · 지방소득세 부호가 서로 반대 = 한쪽만 '-'를 잃었다 → 둘 다 보이지 않는다 (검사가 맞으면 아주 작은 환급처럼 부호가 다를 수 있어 둔다)
   const d2 = row(p2, '결정세액('), decided2 = d2 ? d2.length>0 && d2[0]===sum.taxDecided : null;   // 둘째 쪽 결정세액이 첫 쪽 소득세 결정과 같은지 (줄이 없으면 null)
   if(decided2===false && sum.taxPrepaid===null) sum.taxDecided = sum.localDecided = null;   // 둘째 쪽과 다르고 기납부 검사도 못 맞췄다 → 결정세액을 받쳐 주는 것이 없다
   return { sum, check:{ decided2 } };
@@ -6626,6 +6626,8 @@ async function whSelfCheck(){   // 브라우저 콘솔에서 await whSelfCheck()
   ok(flip.taxSettle===null && flip.localSettle===null && flip.taxPrepaid===null && flip.taxDecided===2153860, '차감 부호가 떨어져 나와 거꾸로 읽히면(결정 − 기납부와 부호만 반대) 차감도 null — 환급을 추가납부로 보이지 않는다');
   const half = whNums(p1({ settle:'- 2,291,660 -229,070' }), p2).sum;   // 차감징수세액( - - - ) - 2,291,660 -229,070 — 소득세 쪽만 '-'가 떨어졌다
   ok(half.taxSettle===null && half.localSettle===null && half.taxPrepaid===null && half.taxDecided===2153860, '차감 부호가 한쪽만 떨어져 소득세 · 지방소득세 부호가 서로 반대면 둘 다 null');
+  const tiny = whNums(p1({ dec:'결정세액 1,000,000 100,000', cur:'1,000,500 99,950', settle:'-500 50' }), null).sum;   // 소득세 −500 · 지방 +50 — 기납부 검사가 맞는 부호가 다른 작은 환급
+  ok(tiny.taxSettle===-500 && tiny.localSettle===50 && tiny.taxPrepaid===1000500 && tiny.localPrepaid===99950, '기납부 검사가 맞으면 소득세 · 지방소득세 부호가 서로 달라도 그대로 보인다');
   const nums = o=>whNums(p1(o), p2).sum, near = nums({ cur:'4,445,529 444,460' }), off = nums({ cur:'4,445,600 444,460' }), noSt = nums({ noSettle:true });
   ok(near.taxPrepaid===4445529 && near.localPrepaid===444460, '기납부 검사: 10원 미만 절사 범위 안이면 맞음');
   ok(off.taxPrepaid===null && off.localPrepaid===null && J({ ...off, taxPrepaid:4445520, localPrepaid:444460 })===J(nums()), '기납부 검사가 틀리면 기납부 둘 다 null, 나머지는 그대로');
@@ -6700,6 +6702,15 @@ async function whSelfCheck(){   // 브라우저 콘솔에서 await whSelfCheck()
     const t = homePortalTasks().find(x=>x.title==='새 원천징수영수증 확인');
     ok(TODO.p3()===1 && t && t.n===1 && t.nav==='pay' && t.tab==='p3', '새 영수증 숫자 = 공개됐는데 아직 안 연 해 · 홈 오늘의 업무에 같은 수');
     AUTH.live = false; ok(TODO.p3()===0, '시연에는 새 영수증이 없다');
+    const ka = [wh.ask, kpiMsg]; wh.mem = { years:{}, rows:{} };   // 확인 창: 접힌 "맞춘 사람" 중 PDF 속 이름이 다른 사람 · 다 올리면 자료를 놓는다
+    try {
+      await whDemo(); const k = wh.pick, txt = ()=>document.querySelector('#orgModal').innerText, det = ()=>document.querySelector('#orgModal details.wh-more');
+      ok(k.why.every(w=>!w) && k.groups.every(g=>g.pdfName) && !txt().includes('PDF 속 이름과 다른 사람') && !det().open, '시연 예시: 모두 맞춤 · PDF 속 이름이 같으면 목록은 접혀 있다');
+      k.groups[0].pdfName = '가상오'; whConfirm();
+      ok(txt().includes('PDF 속 이름과 다른 사람 1명') && det().open && det().innerText.includes('PDF 속 이름과 다름'), '맞춘 사람 중 PDF 속 이름이 다르면 위에 수를 보이고 목록을 펼친다');
+      await whUpload();
+      ok(wh.up===null && wh.pick===null && !document.getElementById('orgModal') && !k.busy, '다 올리면 확인 창 자료와 올리던 자료를 놓는다 (wh.up · wh.pick)');
+    } finally { orgCloseModal(); [wh.ask, kpiMsg] = ka; }
   } finally { [AUTH.live, payShow, WH_LIVE.mine, wh.mem, whOrig] = keep; }
   return 'whSelfCheck 통과';
 }
@@ -7047,15 +7058,16 @@ function whConfirm(){   // 확인 창 (스펙 4.7). 고르기를 바꾸거나 �
       <select id="whSel${i}" class="${k.to[i]===null ? 'need' : ''}" aria-label="${i+1}번째 사람 — 맞출 직원" onchange="whPick(${i}, this.value)">${opts(i)}</select></div></div>`; };
   const line = i=>{ const g = k.groups[i], m = k.members.find(x=>x.id===k.to[i]);
     return `<div class="wh-line"><b>${escapeHtml(m ? m.name : '')}</b><span>${escapeHtml(m ? m.team || m.division || '' : '')}</span><span>PDF 속 이름 ${g.pdfName ? escapeHtml(g.pdfName) : '찾지 못함'}</span><span>${where(g)}</span><span>${amt(g)}</span>${tags(i)}</div>`; };
-  const um = idx.filter(i=>k.why[i] || whHuge(k.groups[i]) || whBig(k.groups[i])), ok = idx.filter(i=>!um.includes(i)), head = (t, sub)=>`<div class="ps-ums-t"><b>${t}</b><small>${sub}${skip ? ` · 뺀 사람 ${skip}명` : ''}</small></div>`;
+  const um = idx.filter(i=>k.why[i] || whHuge(k.groups[i]) || whBig(k.groups[i])), ok = idx.filter(i=>!um.includes(i)), okDiff = some ? 0 : ok.filter(nameDiff).length, head = (t, sub)=>`<div class="ps-ums-t"><b>${t}</b><small>${sub}${skip ? ` · 뺀 사람 ${skip}명` : ''}</small></div>`;
   const people = some ? `<div class="ps-ums">${head(`올릴 사람 ${whSent(k).length}명`, '이름과 첫 쪽 그림을 한 사람씩 확인해 주세요 · 그림을 누르면 크게 보입니다')}${idx.map(card).join('')}</div>
       <label class="wh-seen"><input type="checkbox" id="whSeen" ${k.seenAll ? 'checked' : ''} onchange="wh.pick.seenAll=this.checked; whSync()"> 이름과 그림을 한 사람씩 확인했어요</label>`
-    : `${ok.length ? `<details class="wh-more" ${k.okOpen ? 'open' : ''} ontoggle="wh.pick.okOpen=this.open"><summary>맞춘 사람 ${ok.length}명</summary>${ok.map(line).join('')}</details>` : ''}
+    : `${ok.length ? `<details class="wh-more" ${k.okOpen ?? okDiff>0 ? 'open' : ''} ontoggle="if(wh.pick) wh.pick.okOpen=this.open"><summary>맞춘 사람 ${ok.length}명</summary>${ok.map(line).join('')}</details>` : ''}
       ${um.length ? `<div class="ps-ums">${head('확인할 사람', '못 맞춘 사람은 직원을 고르고, 올릴 수 없는 사람은 이번에서 뺍니다 · 그림을 누르면 크게 보입니다')}${um.map(card).join('')}</div>` : ''}`;
   const notes = [k.zipcrypto && kpiNote('옛 암호 방식(ZipCrypto)이에요. 반디집에서 암호화 방식을 AES256으로 골라 다시 압축하면 더 안전해요', 'warning'),
     !k.encrypted && !k.demo && kpiNote('암호가 없는 압축 파일입니다 — NAS에는 암호를 걸어 두세요', 'warning'),
     noSettle && kpiNote(`<b>환급·추가 금액을 못 읽은 사람 ${noSettle}명</b> — 그 사람의 직원 화면에는 요약 없이 원본 PDF만 보입니다. 아래 "읽은 모양 보기"로 원인을 찾을 수 있습니다.`, 'danger'),
     unread && kpiNote(`숫자를 못 읽은 사람 ${unread}명 — 못 읽은 줄은 직원 화면에서 숨깁니다 (올리기는 막지 않습니다).`, 'warning'),
+    okDiff && kpiNote(`PDF 속 이름과 다른 사람 ${okDiff}명 — 목록을 열어 확인해 주세요.`, 'warning'),   // 맞춘 사람 목록은 접혀 있다 — 그래서 처음에는 펼쳐 둔다
     diff && kpiNote(`생일이 달라요 — 음력 생일일 수 있어요 (${diff}명). ${some ? '그림으로' : '올린 뒤 "미리 보기"의 원본으로'} 맞는 사람인지 확인해 주세요.`, 'warning')].filter(Boolean).join('');
   const html = `<div class="wh-cf"><div class="card-title"><span>원천징수영수증 올리기 — 읽은 내용 확인</span><button type="button" class="x-btn" onclick="orgCloseModal()" aria-label="닫기">${icon('x')}</button></div>
     <div class="list-sub rz-file" style="margin:0 0 12px;">${icon('clip')} <b>${escapeHtml(k.file)}</b> · ${k.demo ? '시연용 글자 견본입니다 (PDF 없음)' : `${k.encrypted ? '암호를 풀어 ' : ''}이 PC 화면 안에서만 읽었습니다`}</div>
@@ -7123,6 +7135,9 @@ function whBatches(items, size, max = WH_BODY, most = WH_BATCH){   // 사람을 
 async function whUpload(){   // 확인 창의 올리기: 사람별 PDF를 만들고(whBuild) — 실제 = 서버에 묶음으로(첫 묶음에 해 전체면 reset), 시연 = wh.mem (서버와 같은 규칙)
   const k = wh.pick; if(!k || k.busy || whBlock()) return;
   k.busy = true; k.err = ''; wh.up = k;   // wh.up: 창을 닫아도 이 올리기가 끝날 때까지 새 올리기를 받지 않는다(whStart)
+  try { await whUploadRun(k); } finally { k.busy = false; if(wh.up===k) wh.up = null; }   // 끝나면(성공 · 실패 · 예외) 놓는다 — 여러 사람 PDF · 주민번호가 든 글자를 오래 쥐고 있지 않게
+}
+async function whUploadRun(k){   // whUpload의 본체 (k.busy · wh.up은 whUpload가 맡는다)
   document.querySelectorAll('#orgModal .wh-cf :is(input, select, .ps-foot button)').forEach(e=>{ e.disabled = true; });   // 기다리는 동안 고치지 못하게 (닫기 X는 둔다)
   const go = document.getElementById('whGo'), ours = ()=>wh.pick===k && !!document.querySelector('#orgModal .wh-cf');   // 기다리는 사이 창을 닫았거나 다른 파일을 골랐으면 그 창은 건드리지 않는다
   if(go) go.textContent = 'PDF 나누는 중…';
@@ -7151,9 +7166,8 @@ async function whUpload(){   // 확인 창의 올리기: 사람별 PDF를 만들
     sent.forEach(x=>{ rows[x.userId] = { sum:x.g.sum, pdf:x.g.pdfBytes, revised:opened && (k.mode==='all' || !!rows[x.userId]), seen:false }; });
     const all = Object.values(rows);
     wh.mem.years[year] = { year, status:y ? y.status : 'DRAFT', pending:0, people:all.length, revised:all.filter(r=>r.revised).length, uploadedAt:new Date().toISOString(), openedAt:y ? y.openedAt : null };
-    k.busy = false;
   }
-  if(ours()) orgCloseModal();   // 읽은 자료도 버린다 (whDrop)
+  const mine = ours(); if(wh.pick===k) whDrop(); if(mine) orgCloseModal();   // 다 올렸다 — 읽은 자료(pdf.js 문서 · 사람별 PDF)를 버린다. 창을 다른 곳에서 바꿔 그렸어도
   kpiFlash(`${year}년 귀속 ${n}명 원천징수영수증을 올렸습니다. ${now ? '공개 중인 해라 바로 보입니다.' : '아직 공개 전입니다.'}`);
 }
 function whOpenAsk(year, open){   // 공개 · 내리기 확인 창 (바꾸는 것은 whSetOpen)
@@ -9322,7 +9336,7 @@ function authLock(kind){   // 로그아웃 · 세션 끝(401)에도 부른다 �
   document.getElementById('contentArea').innerHTML = '';   // #payAmt 도 사라져 payTick 이 멈춘다
   orgCloseModal(true);   // 급여대장 확인 창 · 미리 보기 등
   ps.pick = null; ps.prev = null; Object.assign(PAY_LIVE, { state:'', who:null, slips:[], mine:[] });
-  Object.assign(WH_LIVE, { state:'', who:null, years:[], mine:[] }); whOrig = null; whDrop(); wh.prev = null; wh.run = null;   // 받아 둔 원천징수영수증 원본 · 확인 창의 사람별 PDF(주민등록번호가 있다) · 미리 보기 · 읽는 중인 것도 버린다 (orgCloseModal(true)는 whDrop을 건너뛴다)
+  Object.assign(WH_LIVE, { state:'', who:null, years:[], mine:[] }); whOrig = null; whDrop(); wh.up = null; wh.prev = null; wh.run = null;   // 받아 둔 원천징수영수증 원본 · 확인 창의 사람별 PDF(주민등록번호가 있다) · 미리 보기 · 읽는 중인 것도 버린다 (orgCloseModal(true)는 whDrop을 건너뛴다)
   if(kind==='login' && isPhone()) kind = 'phone';
   const [title, body] = AUTH_TEXT[kind];
   let el = document.getElementById('authLock');
