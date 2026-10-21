@@ -6318,6 +6318,31 @@ async function psFlowCheck(){   // 브라우저 콘솔에서 await psFlowCheck()
   return 'psFlowCheck 통과';
 }
 
+/* ---------------- 원천징수영수증 · PDF 도구 ----------------
+   pdf.js(읽기) · pdf-lib(자르기·합치기)는 우리 서버(vendor/)에서 처음 쓸 때만 불러온다. 남의 주소는 쓰지 않는다. */
+const WH_PDF_OPTS = { cMapUrl:'vendor/pdfjs-3.11.174/cmaps/', cMapPacked:true, isEvalSupported:false };   // 한글 글꼴 지도 · isEvalSupported:false = pdf.js 코드실행 약점(CVE-2024-4367) 막기 — 바꾸지 않는다
+const whLibP = {};   // 불러온 것은 약속을 기억해서 다시 부르지 않는다
+function whLoad(key, src, glob, after){
+  return whLibP[key] ||= new Promise((res, rej)=>{
+    const done = ()=>{ if(!window[glob]) return rej(new Error('LIB')); after?.(window[glob]); res(window[glob]); };
+    if(window[glob]) return done();
+    const s = document.createElement('script');
+    s.src = src; s.onload = done; s.onerror = ()=>rej(new Error('LIB'));
+    document.head.appendChild(s);
+  }).catch(e=>{ delete whLibP[key]; throw e; });   // 실패는 기억하지 않는다 → 다음에 다시 시도
+}
+async function whLib(need = ['pdfjs']){
+  const [pdfjs, PDFLib] = await Promise.all([
+    need.includes('pdfjs') && whLoad('pdfjs', 'vendor/pdfjs-3.11.174/pdf.min.js', 'pdfjsLib', l=>{ l.GlobalWorkerOptions.workerSrc = 'vendor/pdfjs-3.11.174/pdf.worker.min.js'; }),
+    need.includes('pdflib') && whLoad('pdflib', 'vendor/pdf-lib-1.17.1/pdf-lib.min.js', 'PDFLib'),
+  ]);
+  return { pdfjs: pdfjs || undefined, PDFLib: PDFLib || undefined };
+}
+async function whPdfOpen(bytes){   // PDF를 여는 곳은 여기 하나 — 옵션(WH_PDF_OPTS)이 빠지지 않게
+  const { pdfjs } = await whLib(['pdfjs']);
+  return pdfjs.getDocument({ data: bytes.slice(), ...WH_PDF_OPTS }).promise;   // 복사해서 준다 — pdf.js는 받은 버퍼를 워커로 옮겨서 호출한 쪽 bytes가 비어 버린다
+}
+
 /* ---------------- 원천징수영수증 (연말정산) ----------------
    시연용: 금액은 전부 가상 값. 실제는 위하고에서 나온 PDF를 HR이 서버에 올리고, 요약 숫자는 그 서식 1·2쪽 값을 쓴다.
    원본에는 주민번호 전체·주소·계좌번호가 있으므로 저장소·화면에 그대로 싣지 않는다.
