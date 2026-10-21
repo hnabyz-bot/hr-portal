@@ -1208,6 +1208,10 @@
   .wh-row{ display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px solid var(--border); font-size:var(--fs-sm); }
   .wh-row:last-of-type{ border-bottom:0; }
   .wh-actions{ display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; }
+  .wh-hero.none{ grid-template-columns:1fr; background:var(--bg-page); border:1px solid var(--border); }   /* 환급/추가를 못 읽음 · 0원 — 효과 없이 */
+  .wh-none{ margin-top:4px; font-size:var(--fs-lg); font-weight:700; }
+  .wh-orig{ margin-top:12px; padding-top:12px; border-top:1px solid var(--border); }   /* 원본 PDF 보기 — 쪽 캔버스는 .wh-pages */
+  .pay-year .badge{ margin-left:2px; padding:1px 6px; }
   @media (max-width:768px){
     .wh-hero{ grid-template-columns:1fr; }
     .wh-fx{ height:80px; }
@@ -1645,6 +1649,7 @@ function homePortalTasks(){   // 인사포털이 만든 일. n의 합 = 왼쪽 �
   const out = [], add = (n, title, nav, tab, badge)=>{ if(n) out.push({ n, title:n>1 ? `${title} ${n}건` : title, nav, tab, badge }); };
   add(TODO.p1(), '새 급여명세서 확인', 'pay', 'p1', '새 명세서');
   add(TODO.p2(), '연봉계약서 서명', 'pay', 'p2', '서명 대기');
+  add(TODO.p3(), '새 원천징수영수증 확인', 'pay', 'p3', '새 영수증');
   add(AUTH.live ? KPI_LIVE.inbox.length : kpiWaiting().length, AUTH.live ? '처리할 KPI' : '팀원 KPI 승인', 'perf', 'e1', AUTH.live ? '확정 대기' : '승인 대기');   // 실제 로그인: 처리함 그대로 (HR이 대신 처리할 것 · 대표이사 차례의 본부장도 들어가 "팀원"이 아니다)
   add(AUTH.live ? kpiLiveBack() : kpiSheets[kpiRole]?.rejectNote ? 1 : 0, '반려된 KPI 다시 작성', 'perf', 'e1', AUTH.live ? '돌려받음' : '반려');
   add(AUTH.live ? 0 : kvMemoTodo(kvMe()), '확인 메모 확인', 'perf', 'e1', '확인 대기');   // 실제 로그인에는 확인 메모가 아직 없다 (TODO.e1 과 같게)
@@ -2304,7 +2309,7 @@ function wsNotice(msg){   // 아래쪽 알림(되돌리기 알림과 같은 자�
   d.innerHTML = `<span>${escapeHtml(msg)}</span><button type="button" onclick="this.parentNode.remove()">닫기</button>`;
   document.body.appendChild(d); setTimeout(()=>d.remove(), 8000);
 }
-document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='visible' && AUTH.live){ wsPull(false); payWake(); } });   // 다른 기기에서 고친 업무 · 그사이 공개된 급여명세서
+document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='visible' && AUTH.live){ wsPull(false); payWake(); whWake(); } });   // 다른 기기에서 고친 업무 · 그사이 공개된 급여명세서 · 원천징수영수증
 function wsSyncSelfCheck(){   // 브라우저 콘솔에서 wsSyncSelfCheck() 실행
   const ok = (c, msg)=>{ if(!c) throw new Error('wsSyncSelfCheck 실패: '+msg); };
   const srv = [{ id:1, title:'보고', due:'2026-10-20' }, { id:2, title:'회의', due:'' }];
@@ -5983,9 +5988,9 @@ async function payLoadMine(){   // 메뉴 숫자용: 내 공개된 명세서 (�
     if(r.ok) PAY_LIVE.mine = (await r.json()).slips.map(payNorm);
   } catch(e){}
 }
-function payPickerLive(key){   // 실제 로그인 HR: 볼 직원 (맨 위 '나' + 구성원 설정 명단). onchange는 payViewKey=로 시작해야 사용법 안내가 찾는다
+function payPickerLive(key, v = 'payViewKey', then = 'payOpen=null; payYear=null'){   // 실제 로그인 HR: 볼 직원 (맨 위 '나' + 구성원 설정 명단). onchange는 v=(payViewKey · 원천징수영수증은 whViewKey)로 시작해야 사용법 안내가 찾는다
   const list = MS_LIVE.state==='ok' ? MS_LIVE.list.filter(m=>!m.me) : [];
-  return `<div class="card" style="margin-bottom:14px;"><div class="field" style="max-width:320px;"><label>볼 직원 (HR)</label><select onchange="payViewKey=this.value===''?null:+this.value; payOpen=null; payYear=null; renderContent()"><option value="" ${key===null?'selected':''}>나</option>${list.map(m=>`<option value="${m.id}" ${m.id===key?'selected':''}>${escapeHtml(m.name)} ${escapeHtml(m.team || m.division)}${m.active===false ? ' (비활성)' : ''}</option>`).join('')}</select></div></div>`;
+  return `<div class="card" style="margin-bottom:14px;"><div class="field" style="max-width:320px;"><label>볼 직원 (HR)</label><select onchange="${v}=this.value===''?null:+this.value; ${then}; renderContent()"><option value="" ${key===null?'selected':''}>나</option>${list.map(m=>`<option value="${m.id}" ${m.id===key?'selected':''}>${escapeHtml(m.name)} ${escapeHtml(m.team || m.division)}${m.active===false ? ' (비활성)' : ''}</option>`).join('')}</select></div></div>`;
 }
 function payContent(){
   const role = kpiRole, live = AUTH.live;
@@ -6024,15 +6029,17 @@ function payContent(){
     <div class="card" style="margin-bottom:14px;"><div class="card-title">${payYear}년 급여 수령 현황</div>${payYearChart(slips, payYear)}</div>
     ${open ? payDetail(open) : ''}`;
 }
-async function payWake(){   // 실제 로그인: 화면을 다시 볼 때 — 그사이 HR이 공개한 달을 메뉴 숫자와 열려 있는 내 명세서 화면에 (오래 열어 둔 휴대폰·PC)
-  const key = ()=>JSON.stringify(PAY_LIVE.mine.map(s=>[s.ym, s.revised, s.seen])), was = key();
-  await payLoadMine();
+async function liveWake(L, loadMine, tab, sig){   // 실제 로그인: 화면을 다시 볼 때 — 그사이 HR이 공개한 것을 메뉴 숫자와 열려 있는 내 화면에 (오래 열어 둔 휴대폰·PC). L = PAY_LIVE · WH_LIVE
+  const key = ()=>JSON.stringify(L.mine.map(sig)), was = key();
+  await loadMine();
   if(key()===was) return;   // 바뀐 것이 없으면 다시 그리지 않는다
   renderSidebar();
-  if(PAY_LIVE.who!==null) return;
-  PAY_LIVE.state = '';   // 내 명세서 화면은 새로 받는다
-  if(currentTab.id==='p1' && !document.activeElement?.matches('input, textarea')) renderContent();   // 적는 중에는 다시 그리지 않는다
+  if(L.who!==null) return;
+  L.state = '';   // 내 화면은 새로 받는다
+  if(currentTab.id===tab && !document.activeElement?.matches('input, textarea')) renderContent();   // 적는 중에는 다시 그리지 않는다
 }
+function payWake(){ return liveWake(PAY_LIVE, payLoadMine, 'p1', s=>[s.ym, s.revised, s.seen]); }
+function whWake(){ return liveWake(WH_LIVE, whFetchMine, 'p3', y=>[y.year, y.revised, y.seen]); }
 
 /* ----- HR: 급여대장 올리기 · 확인 · 공개 (2026-10-20 인사담당자 — 급여명세서 실제화) -----
    HR이 고른 급여대장(암호 엑셀)을 이 PC 화면 안에서 읽어(psRead) 직원과 맞추고(psMatch) 사람별 숫자만 서버에 올린다 — 파일과 암호는 보내지 않는다.
@@ -6647,55 +6654,173 @@ async function whSelfCheck(){   // 브라우저 콘솔에서 await whSelfCheck()
   const hp = Array.from({ length:5 }, (_, i)=>({ userId:100000000 + i, g:{ sum:{ gross:-99999999999, taxDecided:null, localDecided:1, taxPrepaid:null, localPrepaid:null, taxSettle:-1, localSettle:null }, pdfBytes:new Uint8Array(1300000) } })), hb = whBatches(hp, whSize);
   ok(hb.map(b=>b.length).join()==='2,2,1' && hb.every(b=>JSON.stringify({ mode:'some', reset:false, total:10000, people:b.map(whWire) }).length<=WH_BODY), '묶음 크기는 base64를 만들지 않고 세도 실제 본문이 한도 안');
   ok(whB64(Uint8Array.of(37, 80, 68, 70))==='JVBERg==' && atob(whB64(new Uint8Array(70000).fill(65))).length===70000, 'base64: 조각으로 나눠도 같다');
+  const keep = [AUTH.live, payShow, WH_LIVE.mine, wh.mem, whOrig];   // 넷째 부분: 직원 화면 요약 · 새 영수증 숫자 (상태는 끝나면 되돌린다)
+  try {
+    AUTH.live = false; payShow = true; whOrig = null;
+    const full = whSum(s), body = (o, who = 'emp')=>whBody({ year:2025, sum:{ ...full, ...o }, revised:false, seen:true, pdf:null }, who), steps = h=>(h.match(/class="wh-step/g) || []).length;
+    const h = body({});
+    ok(full.taxSettle===-2291660 && full.localSettle===-229070 && h.includes('2,520,730원 돌려받아요') && h.includes('wh-fly') && steps(h)===4 && h.includes('실효세율 3.3%') && h.includes('자세한 공제 내역은 원본 PDF에서 확인해 주세요.') && !h.includes('공제받은 주요 항목'), '요약: 맨 위 = 차감 소득세 + 지방 · 흐름 넷 · 실효세율 · 공제 항목 대신 원본 안내');
+    const nd = body({ taxDecided:null });
+    ok(!nd.includes('② 결정세액') && !nd.includes('실효세율') && steps(nd)===3 && nd.includes('돌려받아요'), '결정 소득세를 못 읽으면 ② 줄 · 실효세율을 숨긴다');
+    const ns = body({ taxSettle:null });
+    ok(ns.includes('요약을 만들지 못했습니다. 원본 PDF를 확인해 주세요.') && !/wh-fly|wh-heart|pay-eye|환급|추가 납부/.test(ns) && steps(ns)===3, '차감을 못 읽으면 맨 위 효과 · 금액 · ④ 줄 없이 안내만');
+    ok(!body({ gross:null, taxDecided:null, localDecided:null, taxPrepaid:null, localPrepaid:null, taxSettle:null, localSettle:null }).includes('wh-flow'), '다 못 읽으면 흐름 줄이 없다');
+    const zero = body({ taxSettle:0, localSettle:0 }), extra = body({ taxSettle:1000, localSettle:100 });
+    ok(zero.includes('돌려받거나 더 낼 세금이 없습니다') && !/wh-fly|wh-heart/.test(zero) && extra.includes('1,100원 더 냈어요') && extra.includes('wh-heart') && extra.includes('② − ③ 추가 납부'), '0원은 효과 없이 · 추가 납부는 토닥토닥');
+    ok(h.includes('시연에는 원본 PDF가 없습니다') && !h.includes('whViewer('), '시연 예시 자료로 올린 해: 원본 단추 대신 안내');
+    ok(Object.keys(WH_DATA).every(k=>whRows(k).every(r=>r.demo && whSettle(r)===r.demo.settle && whBody(r, k).includes('공제받은 주요 항목'))), '시연 가상 금액도 같은 길 — 차감 합 = whSummary.settle, 공제 항목은 그대로');
+    wh.mem = { years:{ 2025:{ year:2025, status:'OPEN' }, 2026:{ year:2026, status:'DRAFT' } }, rows:{ 2025:{ emp:{ sum:full, pdf:null, revised:true, seen:false } }, 2026:{ emp:{ sum:full, pdf:null, revised:false, seen:false } } } };
+    const mr = whRows('emp');
+    ok(mr.map(r=>r.year).join()==='2025,2024,2023' && !mr[0].demo && mr[0].revised && mr[1].demo, '시연: 올려 공개한 해는 가상 해 대신 · 공개 전 해는 보이지 않는다');
+    AUTH.live = true;
+    const lv = whBody({ year:2025, sum:full, revised:false, seen:true }, null), hr = whBody({ year:2025, sum:full, revised:false, seen:true }, 12);
+    ok(lv.includes('whViewer(2025, null)') && lv.includes('whDown(2025, null)') === (navigator.standalone!==true) && hr.includes('whViewer(2025, 12)') && hr.includes('payViewKey=12;'), '실제: 원본 보기 · 내려받기 (본인 null · HR이 고른 직원 번호)');
+    ok(lv.includes('주민등록번호가 들어 있어요. 여럿이 쓰는 PC라면 내려받은 파일을 지워 주세요.') === lv.includes('whDown('), '내려받기 단추 옆에 주민등록번호 안내');
+    WH_LIVE.mine = [{ year:2025, seen:false }, { year:2024, seen:true }];
+    const t = homePortalTasks().find(x=>x.title==='새 원천징수영수증 확인');
+    ok(TODO.p3()===1 && t && t.n===1 && t.nav==='pay' && t.tab==='p3', '새 영수증 숫자 = 공개됐는데 아직 안 연 해 · 홈 오늘의 업무에 같은 수');
+    AUTH.live = false; ok(TODO.p3()===0, '시연에는 새 영수증이 없다');
+  } finally { [AUTH.live, payShow, WH_LIVE.mine, wh.mem, whOrig] = keep; }
   return 'whSelfCheck 통과';
 }
 
-/* ----- 화면 ----- */
-let whYear = null, whViewKey = null;
+/* ----- 화면 -----
+   요약은 서버 요약(SUM) 모양 하나로 그린다(whBody). 시연 가상 금액(WH_DATA)도 SUM으로 바꿔 같은 길로 — 공제 항목 목록만 시연에 남는다.
+   실제 로그인: 본인은 공개된 해만(GET /api/withholding), HR은 "볼 직원"을 골라 공개 전 해까지(?user=, 열람 기록). 못 읽은 숫자(null)는 그 줄을 숨긴다(스펙 4.2).
+   시연: WH_DATA + 시연 올리기로 올려 공개한 해(같은 해면 올린 것 — 급여명세서 paySlipsFor와 같은 규칙). 원본 PDF는 "원본 보기"를 누를 때만 받아 화면 안에 그린다 */
+let whYear = null, whViewKey = null, whOrig = null;   // whViewKey: 시연 = 역할 열쇠 · 실제 = null(본인) 또는 HR이 고른 직원 번호 (payViewKey와 같다) / whOrig: 열어 둔 원본 { year, who, bytes, state } — 열려 있는 동안만 PDF를 기억한다(다시 그릴 때 또 받지 않게)
+const WH_LIVE = { state:'', who:null, years:[], mine:[] };   // 실제 로그인: 지금 화면의 해 목록(years, who = null 본인 · 직원 번호) + 내 공개된 해(mine, 메뉴 숫자) — PAY_LIVE와 같은 방식
+function whSum(s){ const t10 = x=>Math.trunc(x/10)*10; return { gross:s.gross, taxDecided:s.decided, localDecided:s.decidedLocal, taxPrepaid:s.prepaid, localPrepaid:s.prepaidLocal, taxSettle:t10(s.decided - s.prepaid), localSettle:t10(s.decidedLocal - s.prepaidLocal) }; }   // 시연 요약(whSummary) → 서버 요약 모양 (차감은 칸마다 10원 미만 절사 — whSummary.settle과 같다)
+function whRows(key){   // 시연: 가상 해(WH_DATA) + 시연 올리기로 올려 공개한 해(같은 해면 올린 것) — 최근 해부터
+  const mem = Object.values(wh.mem.years).filter(y=>y.status==='OPEN' && wh.mem.rows[y.year]?.[key]).map(y=>({ year:y.year, ...wh.mem.rows[y.year][key] }));
+  const demo = whYears(key).filter(y=>!mem.some(m=>m.year===y)).map(y=>{ const s = whSummary(y, WH_DATA[key][y]); return { year:y, sum:whSum(s), demo:s }; });
+  return [...mem, ...demo].sort((a, b)=>b.year-a.year);
+}
 function whContent(){
-  const role = kpiRole;
-  if(kpiIsHr(role) && wh.view==='admin') return (AUTH.live ? '' : roleSwitcher()) + whSwitch() + (kpiMsg ? kpiNote(kpiMsg.msg, kpiMsg.type) : '') + whAdmin();   // HR은 두 화면을 오간다 (급여명세서 payContent와 같다)
-  if(!whViewKey || !payCanView(role, whViewKey)) whViewKey = role;
-  const key = whViewKey, years = whYears(key);
-  if(!years.includes(whYear)) whYear = years[0];
-  const won = n=>payShow ? payWon(n) : PAY_MASK;
-  const picker = kpiIsHr(role) ? `<div class="card" style="margin-bottom:14px;"><div class="field" style="max-width:320px;"><label>볼 직원 (HR)</label><select onchange="whViewKey=this.value; whYear=null; renderContent()">${Object.keys(PAY_PEOPLE).map(k=>`<option value="${k}" ${k===key?'selected':''}>${escapeHtml(KPI_USERS[k].name)} ${escapeHtml(KPI_USERS[k].title)}</option>`).join('')}</select></div></div>` : '';
-  if(!years.length) return `${roleSwitcher()}${whSwitch()}${picker}<div class="card"><div class="placeholder-note" style="margin:0;">아직 등록된 원천징수영수증이 없습니다. 연말정산이 끝나면 HR이 올립니다.</div></div>`;
-  const s = whSummary(whYear, WH_DATA[key][whYear]), amt = Math.abs(s.settle);
-  const yearBtns = years.map(y=>`<button type="button" class="pay-year${y===whYear?' on':''}" onclick="whYear=${y}; renderContent()" aria-pressed="${y===whYear}">${y}년 귀속</button>`).join('');
-  const fx = s.refund
-    ? `<img class="wh-fly" src="img/pay/money-wings.png" alt="">${[18,46,74].map((x,i)=>`<img class="pay-coin" src="img/pay/coin.png" alt="" style="left:${x}%; animation-delay:${i*0.45}s">`).join('')}`
-    : `<img class="wh-heart" src="img/pay/heart.png" alt="">`;
-  const deds = Object.entries(s.deductions).map(([k,v])=>`<div class="wh-row"><span>${escapeHtml(k)}</span><span>${won(v)}</span></div>`).join('');
-  return `${roleSwitcher()}${whSwitch()}${picker}
+  const role = kpiRole, live = AUTH.live, head = (live ? '' : roleSwitcher()) + whSwitch();   // 실제 로그인에는 시연용 역할 전환 줄이 없다
+  if(kpiIsHr(role) && wh.view==='admin') return head + (kpiMsg ? kpiNote(kpiMsg.msg, kpiMsg.type) : '') + whAdmin();   // HR은 두 화면을 오간다 (급여명세서 payContent와 같다)
+  let picker = '', rows;
+  if(live){
+    if(typeof whViewKey!=='number' || !kpiIsHr(role)) whViewKey = null;   // 직원이 남의 번호를 가진 경우는 본인으로
+    if(kpiIsHr(role)){ if(!MS_LIVE.state) msLoad(); picker = payPickerLive(whViewKey, 'whViewKey', 'whYear=null'); }
+    if(!WH_LIVE.state || WH_LIVE.who!==whViewKey) whFetch(whViewKey);
+    if(WH_LIVE.state!=='ok') return head + picker + kpiNote(WH_LIVE.state==='err' ? '원천징수영수증을 불러오지 못했습니다. 잠시 뒤 새로 고쳐 주세요.' : '원천징수영수증을 불러오는 중입니다…', WH_LIVE.state==='err' ? 'danger' : 'info');
+    rows = WH_LIVE.years;
+  } else {
+    if(!whViewKey || !payCanView(role, whViewKey)) whViewKey = role;
+    picker = kpiIsHr(role) ? `<div class="card" style="margin-bottom:14px;"><div class="field" style="max-width:320px;"><label>볼 직원 (HR)</label><select onchange="whViewKey=this.value; whYear=null; renderContent()">${Object.keys(PAY_PEOPLE).map(k=>`<option value="${k}" ${k===whViewKey?'selected':''}>${escapeHtml(KPI_USERS[k].name)} ${escapeHtml(KPI_USERS[k].title)}</option>`).join('')}</select></div></div>` : '';
+    rows = whRows(whViewKey);
+  }
+  const key = whViewKey;
+  if(!rows.length) return `${head}${picker}<div class="card"><div class="placeholder-note" style="margin:0;">${!live ? '아직 등록된 원천징수영수증이 없습니다. 연말정산이 끝나면 HR이 올립니다.' : key===null ? '아직 공개된 원천징수영수증이 없습니다. 연말정산이 끝나면 HR이 올립니다.' : '이 직원의 원천징수영수증이 없습니다.'}</div></div>`;
+  if(!rows.some(r=>r.year===whYear)) whYear = rows[0].year;
+  if(whOrig && (whOrig.year!==whYear || whOrig.who!==key)) whOrig = null;   // 다른 해 · 직원으로 옮기면 원본은 닫는다(받아 둔 PDF도 버린다)
+  const r = rows.find(x=>x.year===whYear), name = !live ? KPI_USERS[key].name : key===null ? AUTH.me.name : MS_LIVE.list.find(m=>m.id===key)?.name || '';
+  const yearBtns = rows.map(x=>{ const tags = payBadges(x) + (live && key===null && x.seen===false ? '<span class="badge info">새 영수증</span>' : '');   // 수정됨 · 공개 전(HR이 남의 것을 볼 때) · 새 영수증(내 것 중 아직 안 연 해 — 메뉴 숫자와 같은 것)
+    return `<button type="button" class="pay-year${x.year===whYear?' on':''}" onclick="whYear=${x.year}; renderContent()" aria-pressed="${x.year===whYear}">${x.year}년 귀속${tags ? ' '+tags : ''}</button>`; }).join('');
+  if(live && key===null && !r.seen) whSeen(r);   // 화면에 보인 해 = 연 해. 표시는 이번에 그린 것까지 남고 다음에 사라진다
+  return `${head}${picker}
     <div class="card" style="margin-bottom:14px;">
-      <div class="card-title"><span>원천징수영수증 <span style="font-weight:500; color:var(--text-secondary);">${escapeHtml(KPI_USERS[key].name)} · 근로소득 연말정산</span></span><span class="pay-years" role="group" aria-label="귀속연도 선택">${yearBtns}</span></div>
-      <section class="wh-hero ${s.refund?'refund':'extra'}" aria-label="연말정산 결과">
-        <div>
-          <div class="wh-lead">${s.year}년 연말정산 결과 · ${s.settleMonth}에서 정산</div>
-          <div class="pay-amt-row"><span class="wh-big">${won(amt)} ${s.refund?'돌려받아요':'더 냈어요'}</span>
-            <button type="button" class="pay-eye" onclick="payShow=!payShow; renderContent()" aria-pressed="${payShow}" aria-label="${payShow?'금액 가리기':'금액 보기'}">${icon(payShow?'eyeOff':'eye')}</button></div>
-          <div class="wh-lead">${s.refund ? '미리 낸 세금이 실제 세금보다 많았어요. 차액을 급여와 함께 돌려받아요.' : '토닥토닥, 미리 낸 세금이 조금 모자랐어요. 차액은 급여에서 정산돼요.'}</div>
-        </div>
-        <div class="wh-fx" aria-hidden="true">${fx}</div>
-      </section>
-      <div class="wh-flow">
-        <div class="wh-step"><span>① 총급여 (급여 + 상여)</span><b>${won(s.gross)}</b></div>
-        <div class="wh-step"><span>② 결정세액 · 실제 세금</span><b>${won(s.decided + s.decidedLocal)}</b><small>소득세 ${won(s.decided)} + 지방 ${won(s.decidedLocal)}</small></div>
-        <div class="wh-step"><span>③ 미리 낸 세금 (매월 공제)</span><b>${won(s.prepaid + s.prepaidLocal)}</b><small>소득세 ${won(s.prepaid)} + 지방 ${won(s.prepaidLocal)}</small></div>
-        <div class="wh-step ${s.refund?'refund':'extra'}"><span>${s.refund?'③ − ② 환급':'② − ③ 추가 납부'}</span><b>${s.refund?'+':'−'}${won(amt)}</b></div>
-      </div>
-      <div class="wh-detail">
-        <div class="wh-head"><b>공제받은 주요 항목</b><span class="list-sub" style="margin:0;">실효세율 ${s.rate}%</span></div>
-        ${deds}
-        <div class="wh-actions">
-          <button class="btn sm" onclick="kpiFlash('시연 모드에서는 원본 PDF가 없습니다. 운영에서는 HR이 위하고 PDF를 올리면 여기서 내려받을 수 있습니다.', 'warning')">${icon('download')} 원본 PDF 내려받기</button>
-          <button class="btn sm" onclick="payYear=${s.year}; payViewKey='${key}'; goTo('pay','p1')">${s.year}년 급여명세서 보기</button>
-        </div>
-      </div>
+      <div class="card-title"><span>원천징수영수증 <span style="font-weight:500; color:var(--text-secondary);">${escapeHtml(name)} · 근로소득 연말정산</span></span><span class="pay-years" role="group" aria-label="귀속연도 선택">${yearBtns}</span></div>
+      ${whBody(r, key)}
     </div>
     ${kpiMsg ? kpiNote(kpiMsg.msg, kpiMsg.type) : ''}
-    <div class="list-sub">시연용 가상 금액입니다. 원본 서식에는 주민등록번호·주소·계좌번호가 있어 화면에는 요약만 보여줍니다.</div>`;
+    ${r.demo ? '<div class="list-sub">시연용 가상 금액입니다. 원본 서식에는 주민등록번호·주소·계좌번호가 있어 화면에는 요약만 보여줍니다.</div>' : !live ? '<div class="list-sub">시연에서 올린 영수증입니다. 새로 고치면 사라집니다.</div>' : key===null ? '' : '<div class="list-sub">다른 직원을 고르면 열람 기록이 남고, 공개 전인 해도 보입니다.</div>'}`;
+}
+function whBody(r, who){   // 한 해의 요약 + 원본. r = { year, sum, revised, seen, status?, pdf?(시연에서 올린 것), demo?(whSummary — 공제 항목) }. 못 읽은 칸(null)은 그 줄을 숨기고 짐작해 채우지 않는다
+  const s = r.sum, d = r.demo, won = n=>payShow ? payWon(n) : PAY_MASK, two = (a, b)=>a===null || b===null ? null : a + b, lit = v=>typeof v==='string' ? `'${v}'` : String(v);   // lit: onclick 안의 볼 사람 (null · 번호 · 시연 열쇠)
+  const st = whSettle(r), amt = Math.abs(st), refund = st<0, dec = two(s.taxDecided, s.localDecided), pre = two(s.taxPrepaid, s.localPrepaid);
+  const rate = s.gross && s.taxDecided!==null ? Math.round(s.taxDecided/s.gross*1000)/10 : null;   // 실효세율 = 결정 소득세 ÷ 총급여
+  const lead = d ? `${r.year}년 연말정산 결과 · ${d.settleMonth}에서 정산` : `${r.year}년 귀속 연말정산 결과`;
+  const fx = refund
+    ? `<img class="wh-fly" src="img/pay/money-wings.png" alt="">${[18,46,74].map((x,i)=>`<img class="pay-coin" src="img/pay/coin.png" alt="" style="left:${x}%; animation-delay:${i*0.45}s">`).join('')}`
+    : `<img class="wh-heart" src="img/pay/heart.png" alt="">`;
+  const hero = !st ? `<section class="wh-hero none" aria-label="연말정산 결과"><div><div class="wh-lead">${lead}</div><div class="wh-none">${st===null ? '요약을 만들지 못했습니다. 원본 PDF를 확인해 주세요.' : '돌려받거나 더 낼 세금이 없습니다.'}</div></div></section>`   // 환급/추가를 못 읽었으면 효과 없이 안내만
+    : `<section class="wh-hero ${refund?'refund':'extra'}" aria-label="연말정산 결과">
+        <div>
+          <div class="wh-lead">${lead}</div>
+          <div class="pay-amt-row"><span class="wh-big">${won(amt)} ${refund?'돌려받아요':'더 냈어요'}</span>
+            <button type="button" class="pay-eye" onclick="payShow=!payShow; renderContent()" aria-pressed="${payShow}" aria-label="${payShow?'금액 가리기':'금액 보기'}">${icon(payShow?'eyeOff':'eye')}</button></div>
+          <div class="wh-lead">${refund ? '미리 낸 세금이 실제 세금보다 많았어요. 차액을 급여와 함께 돌려받아요.' : '토닥토닥, 미리 낸 세금이 조금 모자랐어요. 차액은 급여에서 정산돼요.'}</div>
+        </div>
+        <div class="wh-fx" aria-hidden="true">${fx}</div>
+      </section>`;
+  const steps = [
+    s.gross!==null && ['① 총급여 (급여 + 상여)', won(s.gross)],
+    dec!==null && ['② 결정세액 · 실제 세금', won(dec), `소득세 ${won(s.taxDecided)} + 지방 ${won(s.localDecided)}`],
+    pre!==null && ['③ 미리 낸 세금 (매월 공제)', won(pre), `소득세 ${won(s.taxPrepaid)} + 지방 ${won(s.localPrepaid)}`],
+    !!st && [refund ? '③ − ② 환급' : '② − ③ 추가 납부', (refund ? '+' : '−') + won(amt), '', refund ? 'refund' : 'extra'],
+  ].filter(Boolean).map(([k, v, sm, c])=>`<div class="wh-step${c ? ' '+c : ''}"><span>${k}</span><b>${v}</b>${sm ? `<small>${sm}</small>` : ''}</div>`).join('');
+  const o = whOrig, open = !!o, live = AUTH.live;
+  const pdf = d ? `<button class="btn sm" onclick="kpiFlash('시연 모드에서는 원본 PDF가 없습니다. 운영에서는 HR이 위하고 PDF를 올리면 여기서 내려받을 수 있습니다.', 'warning')">${icon('download')} 원본 PDF 내려받기</button>`
+    : !live && !r.pdf ? '<span class="list-sub" style="margin:0; align-self:center;">시연에는 원본 PDF가 없습니다.</span>'   // 시연 예시 자료로 올린 해
+    : `<button type="button" class="btn sm" onclick="whViewer(${r.year}, ${lit(who)})" aria-expanded="${open}">${icon('eye')} ${open ? '원본 PDF 닫기' : '원본 PDF 보기'}</button>`
+      + (navigator.standalone===true ? '<span class="list-sub" style="margin:0; align-self:center;">PC에서 내려받을 수 있어요</span>'   // 아이폰 홈 화면 앱은 내려받기가 잘 안 된다
+        : `<button type="button" class="btn sm" onclick="whDown(${r.year}, ${lit(who)})">${icon('download')} 내려받기</button>`);
+  const warn = pdf.includes('whDown(') ? '<div class="list-sub" style="margin:6px 0 0;">주민등록번호가 들어 있어요. 여럿이 쓰는 PC라면 내려받은 파일을 지워 주세요.</div>' : '';
+  const viewer = !open ? '' : o.state==='loading' ? kpiNote('원본 PDF를 불러오는 중입니다…', 'info') : o.state==='err' ? kpiNote('원본 PDF를 불러오지 못했습니다. 잠시 뒤 다시 해 주세요.', 'danger')
+    : `<div id="whPdf" class="wh-pages" role="group" aria-label="원본 PDF"></div><div class="wh-actions"><button type="button" class="btn sm" onclick="whOrig=null; renderContent()">닫기</button></div>`;
+  if(o?.state==='ok') setTimeout(whOrigDraw, 0);   // 그린 뒤에 쪽을 채운다
+  return `${hero}${steps ? `<div class="wh-flow">${steps}</div>` : ''}
+      <div class="wh-detail">
+        <div class="wh-head"><b>${d ? '공제받은 주요 항목' : '원본 PDF'}</b><span class="list-sub" style="margin:0;">${rate===null ? '' : `실효세율 ${rate}%`}</span></div>
+        ${d ? Object.entries(d.deductions).map(([k,v])=>`<div class="wh-row"><span>${escapeHtml(k)}</span><span>${won(v)}</span></div>`).join('') : '<div class="list-sub" style="margin:0;">자세한 공제 내역은 원본 PDF에서 확인해 주세요.</div>'}
+        <div class="wh-actions">
+          ${pdf}
+          <button class="btn sm" onclick="payYear=${r.year}; payViewKey=${lit(who)}; goTo('pay','p1')">${r.year}년 급여명세서 보기</button>
+        </div>
+        ${warn}${open ? `<div class="wh-orig">${viewer}</div>` : ''}
+      </div>`;
+}
+async function whFetch(who){   // 실제 로그인: 지금 화면의 해 목록 — who = null 본인(공개된 해만) · 직원 번호 = HR이 고른 직원(공개 전 해도, 서버가 열람 기록). 끝나면 다시 그린다 (payLoad와 같은 방식)
+  WH_LIVE.state = 'loading'; WH_LIVE.who = who; WH_LIVE.years = [];
+  try {
+    const r = await fetch('/api/withholding' + (who===null ? '' : '?user='+who));
+    if(!r.ok) throw new Error(r.status);
+    const years = (await r.json()).years;
+    if(WH_LIVE.who!==who) return;   // 기다리는 사이 다른 직원을 골랐다 — 늦게 온 답은 버린다
+    WH_LIVE.years = years; WH_LIVE.state = 'ok';
+    if(who===null) WH_LIVE.mine = years;
+  } catch(e){ if(WH_LIVE.who!==who) return; WH_LIVE.state = 'err'; }
+  if(currentTab.id==='p3') renderContent();
+}
+async function whFetchMine(){   // 메뉴 숫자용: 내 공개된 해 (로그인 직후 · 화면을 다시 볼 때). 못 받으면 숫자만 0이다
+  try {
+    const r = await fetch('/api/withholding');
+    if(r.ok) WH_LIVE.mine = (await r.json()).years;
+  } catch(e){}
+}
+function whSeen(r){   // 내 영수증의 해를 처음 열면 — paySeen과 같다: 낙관적으로 봤음(화면 목록 · 내 목록) → 메뉴 숫자를 바로 줄이고 서버에는 알리기만. 화면을 그리는 중에 불러서 메뉴는 renderContent가 다시 그린다
+  r.seen = true;
+  const t = WH_LIVE.mine.find(x=>x.year===r.year); if(t) t.seen = true;
+  fetch(`/api/withholding/${r.year}/seen`, { method:'POST' }).catch(()=>{});
+}
+function whLiveDone(){ wh.state = ''; WH_LIVE.state = ''; whOrig = null; whFetchMine().then(renderSidebar); }   // 실제: 올리기 · 공개 · 내리기 뒤 — 현황 · 고른 직원 화면 · 내 메뉴 숫자를 새로 (psLiveDone과 같다)
+async function whPdfBytes(year, who){   // 원본 PDF 바이트 — 실제는 서버(HR이 고른 직원은 ?user= — 열람 기록), 시연은 올린 바이트
+  if(!AUTH.live) return wh.mem.rows[year]?.[who]?.pdf || null;
+  try { const r = await fetch(`/api/withholding/${year}/pdf` + (who===null ? '' : '?user='+who)); return r.ok ? new Uint8Array(await r.arrayBuffer()) : null; } catch(e){ return null; }
+}
+async function whViewer(year, who){   // "원본 PDF 보기": 누를 때 받아 화면 안에 쪽마다 그린다(새 탭은 아이폰 홈 화면 앱에서 로그인 밖으로 나간다 — 스펙 4.2). 다시 누르면 닫는다
+  if(whOrig){ whOrig = null; return renderContent(); }
+  const o = whOrig = { year, who, bytes:null, state:'loading' };
+  renderContent();
+  const bytes = await whPdfBytes(year, who);
+  if(whOrig!==o) return;   // 기다리는 사이 닫았거나 다른 해 · 직원으로 옮겼다
+  Object.assign(o, bytes ? { bytes, state:'ok' } : { state:'err' });
+  if(currentTab.id==='p3') renderContent();
+}
+function whOrigDraw(){   // 화면을 다시 그리면 상자가 새로 생긴다 — 받아 둔 바이트로 다시 그린다(서버에 다시 묻지 않는다). pdf.js 문서는 whDrawPdf가 다 그린 뒤 닫는다
+  const o = whOrig, box = document.getElementById('whPdf');
+  if(!o || o.state!=='ok' || !box || box.dataset.on) return;
+  box.dataset.on = '1';
+  whDrawPdf(o.bytes, box).catch(()=>{ if(whOrig!==o) return; o.state = 'err'; if(currentTab.id==='p3') renderContent(); });
+}
+async function whDown(year, who){   // 내려받기 — 파일 이름에 실명을 넣지 않는다(PC에 남는 이름). 열어 둔 원본이 있으면 그 바이트로
+  const o = whOrig, bytes = o && o.year===year && o.who===who && o.bytes || await whPdfBytes(year, who);
+  if(!bytes) return kpiFlash('원본 PDF를 내려받지 못했습니다. 잠시 뒤 다시 해 주세요.', 'danger');
+  const url = URL.createObjectURL(new Blob([bytes], { type:'application/pdf' })), a = Object.assign(document.createElement('a'), { href:url, download:`원천징수영수증_${year}귀속.pdf` });
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url), 1000);   // 내려받기가 시작된 뒤에 버린다 (바로 버리면 막히는 브라우저가 있다)
 }
 
 /* ----- HR: 원천징수영수증 올리기 · 확인 · 공개 (2026-10-21 인사담당자 — 원천징수영수증 실제화, 스펙 4.1 · 4.7 · 4.8 · 6) -----
@@ -6703,7 +6828,7 @@ function whContent(){
    사람마다 그 사람 쪽만 떼어 만든 PDF와 요약 숫자를 서버에 올린다 — zip 파일 · 암호 · 주민번호 비교 결과는 보내지 않는다.
    올리는 방식 둘: 해 전체(그 해를 지우고 새로 — 공개 중이면 안 됨) / 사람만(바꾸기 · 더하기 — 공개 중이면 그 사람에게 바로 보여서 모든 사람의 첫 쪽 그림 + "한 사람씩 확인했어요" 체크).
    시연(서버 없음)은 wh.mem에만 둔다 — 새로 고치면 사라진다 */
-const wh = { view:'me', years:[], ready:true, state:'', pick:null, mem:{ years:{}, rows:{} }, prev:null, ask:null };   // view: HR 화면 'me' 내 원천징수영수증 · 'admin' 올리기·공개 / years·ready·state: 실제 해 목록(ps와 같은 방식) / pick: 확인 창 / mem: 시연 기억 — years[해] · rows[해][시연 열쇠] = { sum, pdf, revised, seen } / prev: 미리 보기 창 / ask: 누른 단추 { mode:'all'|'some', year } — 암호 창을 거쳐도 남게
+const wh = { view:'me', years:[], ready:true, state:'', pick:null, mem:{ years:{}, rows:{} }, prev:null, ask:null, run:null };   // view: HR 화면 'me' 내 원천징수영수증 · 'admin' 올리기·공개 / years·ready·state: 실제 해 목록(ps와 같은 방식) / pick: 확인 창 / mem: 시연 기억 — years[해] · rows[해][시연 열쇠] = { sum, pdf, revised, seen } / prev: 미리 보기 창 / ask: 누른 단추 { mode:'all'|'some', year } — 암호 창을 거쳐도 남게 / run: 지금 읽는 중인 whStage 표시
 const WH_WHY = { NONE:'명단에서 이름을 찾지 못했습니다', SAME:'이름 후보가 여럿입니다 (같은 이름 포함)', TWICE:'다른 사람과 같은 직원으로 맞았습니다', OUT:'퇴사(비활성) 직원입니다 — 올리지 않습니다' };   // whMatch의 why
 const WH_PDF_MAX = 3000000, WH_BODY = 4500000, WH_BATCH = 200;   // 서버(withholding.py)의 한 사람 PDF 한도 · 한 묶음 본문(서버 한도 4,700,000에서 여유를 둔다) · 한 묶음 사람 수
 const WH_DEMO_PEOPLE = [['wh1', '가상일', '01-01'], ['wh2', '가상이', '02-02'], ['wh3', '가상삼', '']].map(([id, name, birthday])=>({ id, name, team:'시험용 가상 인물', division:'', active:true, birthday }));   // tools/wh_fixtures.py receipt-zip의 가상 3명 — 시연 맞추기 명단에만 둔다 (생일: 주민번호와 같음 · 다름 · 없음)
@@ -6775,7 +6900,7 @@ async function whStage(fileName, files, how = {}){   // PDF(files: [{ name, byte
   whDrop();
   orgModal(`<div id="whRead"><div class="card-title"><span>원천징수영수증 읽는 중</span></div><div class="list-sub" id="whReadN" role="status" style="margin:0;">PDF를 여는 중입니다…</div>
     <div style="display:flex; justify-content:flex-end; margin-top:12px;"><button type="button" class="btn" onclick="orgCloseModal()">취소</button></div></div>`);   // 취소 = 바깥 · Esc와 같다 (창이 없어지면 그만 읽는다)
-  const docs = [], out = [], stop = ()=>!document.getElementById('whRead');   // 읽는 창을 닫으면(바깥 · Esc) 그만 읽는다
+  const run = wh.run = {}, docs = [], out = [], stop = ()=>wh.run!==run || !document.getElementById('whRead');   // 읽는 창을 닫으면(바깥 · Esc) 그만 읽는다. run: 취소하고 곧바로 다시 고르면 새 창에도 #whRead가 있어 옛 읽기가 이어 가지 않게(이번 읽기 표시)
   try {
     for(const f of files) docs.push(f.bytes ? await whPdfOpen(f.bytes) : null);
     const total = docs.reduce((t, d)=>t + (d ? d.numPages : 0), 0); let n = 0;
@@ -6797,7 +6922,7 @@ async function whStage(fileName, files, how = {}){   // PDF(files: [{ name, byte
     if(stop()) throw new Error('STOP');
   } catch(e){
     docs.forEach(d=>d?.destroy());
-    if(e.message==='STOP') return;
+    if(e.message==='STOP' || wh.run!==run) return;   // 다른 읽기가 시작됐으면 그 창을 닫거나 알림을 띄우지 않는다
     orgCloseModal();
     return kpiFlash({ LIB:'PDF 도구를 불러오지 못했습니다. 새로 고친 뒤 다시 해 주세요.', LIST:'직원 명단이나 영수증 현황을 불러오지 못했습니다. 잠시 뒤 다시 해 주세요.' }[e.message] || 'PDF를 읽지 못했습니다. 위하고에서 내려받은 원천징수영수증 PDF인지 확인해 주세요.', 'danger');
   }
@@ -6985,7 +7110,7 @@ async function whUpload(){   // 확인 창의 올리기: 사람별 PDF를 만들
       if(!r || !r.ok){ fail = j.error || '올리지 못했습니다. 인터넷 연결을 확인하고 잠시 뒤 다시 해 주세요.'; break; }
       done += part.length;
     }
-    k.busy = false; wh.state = ''; await whYearsLoad();   // 그사이 공개된 해일 수 있다 — 현황과 창의 안내를 새로
+    k.busy = false; whLiveDone(); await whYearsLoad();   // 그사이 공개된 해일 수 있다 — 현황과 창의 안내를 새로 (공개 중인 해에 사람만 올렸으면 내 영수증 숫자도)
     if(fail){
       const msg = !done ? fail : k.mode==='all' ? `올리다 멈춤 — 다시 올려 주세요 (${done}/${n}명까지 올라갔습니다). ${fail}` : `${done}/${n}명까지 올라갔습니다 — 다시 올려 주세요. ${fail}`;   // 첫 묶음이 거절되면 서버는 아무것도 바꾸지 않았다
       if(!ours()) return kpiFlash(escapeHtml(msg), 'danger');
@@ -7013,7 +7138,7 @@ async function whSetOpen(year, open){   // 공개(직원 본인에게 보임) ·
   if(AUTH.live){
     let r = null, j = {};
     try { r = await fetch(`/api/withholding/${year}/${open ? 'open' : 'close'}`, { method:'POST' }); j = await r.json().catch(()=>({})); } catch(e){}
-    wh.state = '';   // 현황은 새로 받는다
+    whLiveDone();   // 현황 · 내 영수증 숫자는 새로 받는다
     if(!r || !r.ok) return kpiFlash(escapeHtml(j.error || '바꾸지 못했습니다. 잠시 뒤 다시 해 주세요.'), 'danger');
   } else {
     const y = wh.mem.years[year]; if(!y) return;
@@ -8797,6 +8922,7 @@ function evTodo(part){   // 평가 진행에서 처리할 일 (평가가 시작�
 const TODO = {
   p1: ()=>AUTH.live ? PAY_LIVE.mine.filter(s=>!s.seen).length : 0,   // 공개됐는데 아직 안 연 내 급여명세서 (실제 로그인만 — 시연에는 새 명세서가 없다)
   p2: ()=>{ const me = ctActor(kpiRole), c = me && ctActive(ctContracts, me.pid); return c && c.status==='SENT' ? 1 : 0; },   // 서명할 연봉계약서
+  p3: ()=>AUTH.live ? WH_LIVE.mine.filter(y=>!y.seen).length : 0,   // 공개됐는데 아직 안 연 내 원천징수영수증 (실제 로그인만 — 급여명세서 p1과 같다)
   e1: ()=>AUTH.live ? KPI_LIVE.inbox.length + kpiLiveBack()   // 실제 로그인: 처리할 KPI + 돌려보내진 내 계획서 (아직 안 불렀으면 0)
     : kpiWaiting().length + (kpiSheets[kpiRole]?.rejectNote ? 1 : 0) + kvMemoTodo(kvMe()),   // 승인할 KPI + 반려되어 다시 쓸 내 KPI + 확인할 메모
   e4: ()=>kvCanUse() ? kvReplyTodo(kvMe()) : 0,   // 내가 쓴 메모에 새 답글이 온 사람 수
@@ -8887,6 +9013,7 @@ function selectTab(id){
 }
 function goTo(navId, tabId){
   if(navId==='pay' && tabId==='p1') ps.view = 'me';   // 홈 "새 급여명세서 확인" · 빠른 서비스 · 원천징수영수증의 "급여명세서 보기"는 HR도 내 명세서 화면으로
+  if(navId==='pay' && tabId==='p3') wh.view = 'me';   // 홈 "새 원천징수영수증 확인"도 HR은 내 영수증 화면으로
   if(selectNav(navId) === false) return;   // 휴대폰에서 막힌 메뉴 — 안내창만 뜬다
   if(tabId) selectTab(tabId);
 }
@@ -8982,6 +9109,13 @@ const TOURS = {   // 단계: el = 가리킬 곳(여러 개면 묶어서, 배열�
     { el:'.pay-eye', title:'금액 보기', body:'금액은 가려져 있습니다. <b>눈 모양</b>을 누르면 보이고, 다시 누르면 가려집니다.' },
     { el:'.pay-years, .pay-mgrid', title:'연도 · 월 고르기', body:'연도를 고르고 <b>월</b>을 누르면 아래에 그달 명세서가 열립니다.' + (AUTH.live ? ' 새로 공개된 달에는 <b>새 명세서</b> 표시가 붙고, 열어 보면 사라집니다.' : '') + ' 열린 명세서는 <b>인쇄 / PDF 저장</b>으로 보관할 수 있습니다.' },
     { el:'#paySlip .card-title', title:'인쇄 · PDF 저장', body:'오른쪽 단추로 이 명세서를 <b>인쇄하거나 PDF로 저장</b>합니다.' },
+  ]},
+  wh:{ label:'원천징수영수증 보는 법', tab:'p3', steps:()=>[
+    { el:'#whSeg', title:'화면 고르기 (HR)', body:'<b>내 원천징수영수증</b>은 내 것과 직원별 영수증을 보는 화면, <b>영수증 올리기 · 공개</b>는 NAS의 zip을 올리고 공개하는 화면입니다.' },
+    { el:'#whUp', title:'영수증 올리기 (HR)', body:'NAS의 <b>원천징수영수증 zip</b>을 고르고 압축 암호를 넣습니다. 파일은 이 PC 화면 안에서만 풀고, 확인 창에서 사람 · 금액 · 직원 맞추기를 본 뒤 올립니다. 올린 해는 <b>공개</b>를 눌러야 직원에게 보입니다.' },
+    { el:'select[onchange^="whViewKey"]', title:'볼 직원 고르기 (HR)', body:'HR은 직원을 골라 그 사람의 영수증을 볼 수 있습니다. 직원은 본인 것만 봅니다.' },
+    { el:'.wh-hero', title:'연말정산 결과', body:'<b>돌려받는 돈</b>(환급)인지 <b>더 낼 돈</b>(추가 납부)인지 맨 위에 크게 나옵니다. 금액은 <b>눈 모양</b>을 눌러야 보입니다.' + (AUTH.live ? ' 새로 공개된 해에는 <b>새 영수증</b> 표시가 붙고, 열어 보면 사라집니다.' : '') },
+    { el:'[onclick^="whViewer"]', title:'원본 PDF 보기', body:'누르면 이 화면 안에 원본이 쪽마다 열립니다. 자세한 공제 내역은 원본에서 확인합니다. <b>내려받기</b>로 PC에 저장할 수 있습니다.' },
   ]},
   ct:{ label:'연봉계약서 서명 방법', tab:'p2', steps:()=>[
     { el:'#ctScroll.gated', title:'내용 확인', body:'계약 내용을 <b>끝까지</b> 내려 읽어 주세요. 끝까지 읽어야 서명 칸이 열립니다.' },
@@ -9157,6 +9291,7 @@ function authLock(kind){   // 로그아웃 · 세션 끝(401)에도 부른다 �
   document.getElementById('contentArea').innerHTML = '';   // #payAmt 도 사라져 payTick 이 멈춘다
   orgCloseModal(true);   // 급여대장 확인 창 · 미리 보기 등
   ps.pick = null; ps.prev = null; Object.assign(PAY_LIVE, { state:'', who:null, slips:[], mine:[] });
+  Object.assign(WH_LIVE, { state:'', who:null, years:[], mine:[] }); whOrig = null;   // 받아 둔 원천징수영수증 원본(주민등록번호가 있다)도 버린다
   if(kind==='login' && isPhone()) kind = 'phone';
   const [title, body] = AUTH_TEXT[kind];
   let el = document.getElementById('authLock');
@@ -9186,7 +9321,7 @@ async function authBoot(){
   AUTH.live = true; AUTH.me = me;
   kpiSetRole(authRole(AUTH.me));
   await wsPull(true);   // 나의 업무 · 나의 일상을 서버에서 (이 기기에 적어 둔 것은 처음 한 번 합친다)
-  await payLoadMine();   // 메뉴 숫자용: 공개됐는데 아직 안 연 내 급여명세서
+  await Promise.all([payLoadMine(), whFetchMine()]);   // 메뉴 숫자용: 공개됐는데 아직 안 연 내 급여명세서 · 원천징수영수증
   kpiLiveLoad();   // 메뉴 · 홈의 처리할 KPI 숫자 — 기다리지 않는다 (다 오면 다시 그린다)
   renderSidebar(); renderContent();
   if(code) installNotice(null, true);   // 방금 등록한 휴대폰: 홈 화면에 추가하는 순서
