@@ -170,7 +170,7 @@ HR 화면은 단추 둘로 나눈다: **내 원천징수영수증** / **영수�
 ## 5. 서버
 
 - 새 파일 `backend/withholding.py`(Flask blueprint). 급여명세서 `payslip.py`의 잠금(`HR_PAY_KEY`, AES-GCM, 해·직원·종류를 함께 묶음 aad)·권한·감사로그 방식을 그대로 따른다.
-- DB: `012_withholding.sql`(서버 DB 판 12). 번호는 merge 순서대로여야 한다 — KPI 2단계가 먼저 merge되면 그 뒤 번호로 바꾼다(CI `check_file_numbers`가 지킨다).
+- DB: `013_withholding.sql`(서버 DB 판 13). 번호는 merge 순서대로여야 한다(CI `check_file_numbers`가 지킨다) — 처음엔 `012_withholding.sql`(판 12)이었는데 KPI 2단계 ①(#167, `012_kpi_progress.sql`)이 먼저 merge되어 013으로 바꿨다.
   - `withholding_years`: 귀속연도(PK, 2000~2099) · 상태(DRAFT/OPEN) · 해 전체 올리기 중 남은 사람 수(`pending`, 0 = 다 받음) · 올린 때/사람 · 공개한 때/사람.
   - `withholding`: (귀속연도, 직원) PK · 요약(잠금) · PDF(잠금) · `revised`(사람마다) · 올린 때 · seen_at. 직원 삭제는 RESTRICT.
 - **올리기는 여러 번에 나눠 보낸다** — nginx 본문 한도가 5MB이고 PDF는 한 사람 수백 KB다.

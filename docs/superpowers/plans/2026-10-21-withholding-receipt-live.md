@@ -1,5 +1,7 @@
 # 원천징수영수증 실제화 Implementation Plan
 
+(2026-10-21 main #167 KPI 2단계 ①이 판 12 `012_kpi_progress.sql`을 먼저 써서, 이 계획의 DB는 판 13 `013_withholding.sql`로 합쳤다 — 아래의 012 · 판 12는 013 · 판 13으로 읽는다)
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** HR이 NAS의 암호 zip(원천징수영수증 PDF)을 포털에서 골라 올리면 사람별 PDF·요약이 잠겨 저장되고, HR이 공개하면 직원이 본인 것만 요약 + 원본 PDF로 본다.
