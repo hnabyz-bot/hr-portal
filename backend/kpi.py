@@ -16,11 +16,11 @@ app.py 가 bp 를 붙인다. 세션 검사는 auth._guard 가 모든 /api/* 에 
   POST /api/kpi/plans/<uid>/unlock  수정 요청 풀어 주기 (CHANGE_REQUESTED → DRAFT, 초안 = 마지막 확정본 + 지금 실제 기한, 기다리던 일정 변경 요청은 취소)
   POST /api/kpi/plans/<uid>/reject  {"note"} 수정 요청 거절 (CHANGE_REQUESTED → CONFIRMED)
   GET  /api/kpi/inbox               내가 처리할 것 {"items": […], "team": {상태: 수}} — 계획서(kind PLAN) · 일정 변경(kind SCHED), 오래된 것부터. HR 은 관리자가 없는 것 · 맡겨진 것도 proxy 로
-  GET  /api/kpi/admin               ?year= 사람마다 상태 · 바로 위 관리자 · 사람별 기간 (HR)
+  GET  /api/kpi/admin               ?year= 사람마다 상태 · 바로 위 관리자 · 사람별 기간 · 알람 기준(alarmGap) (HR)
   POST /api/kpi/admin/window        {"userId", "year", "editFrom", "editTo"} | {"userId", "year", "clear": true} 한 사람만의 작성 기간 (HR)
   GET/POST /api/kpi/delegation      {"on": bool} 대표이사 몫을 HR 에 맡기기 — 대표이사 본인만
 
-  GET  /api/kpi/progress/<uid>      ?year= 그 사람 그해 진행 기록 + 계산한 숫자 + 월간 확인(checkStep · checks) — 보는 범위는 plans 와 같다. 그해 확정본이 없으면 404
+  GET  /api/kpi/progress/<uid>      ?year= 그 사람 그해 진행 기록 + 계산한 숫자 + 월간 확인(checkStep · checks) + 알람 기준(gap) · 부진 알람(alarm) + 실행목표마다 끈 알람(mute) — 보는 범위는 plans 와 같다. 그해 확정본이 없으면 404
   POST /api/kpi/me/progress         {"year", "rid", "actual"?, "pct"?, "why"?} 실적 · 진행률 · 늦어지는 이유 (보낸 칸만 바꾼다)
   POST /api/kpi/me/month            {"year", "rid", "month", "text", "link"} 정기 실행목표의 월 한 줄 (text "" 는 지움)
   POST /api/kpi/me/result           {"year", "sid", "text", "link"} 비정기 일정의 결과 한 줄 (text "" 는 지움)
@@ -39,6 +39,12 @@ app.py 가 bp 를 붙인다. 세션 검사는 auth._guard 가 모든 /api/* 에 
   POST /api/kpi/memo-reply/<rpid>/delete  단 사람이 단 날에만 지운다
   POST /api/kpi/memos/<uid>/seen    {"year"} 내가 쓴 그 사람의 메모 모두 '새 답글을 보았다' (seen_at = 지금)
 
+  POST /api/kpi/me/mute             {"year", "rid", "why", "month"?, "text"?} 늦은 실행목표의 부진 알람을 고른 달 말일까지 끈다 (본인만 · 올해 것만 · 이미 끈 줄은 바꿔 끈다)
+  POST /api/kpi/plans/<uid>/unmute  {"year", "rid"} 알람을 다시 켠다 — 본인 · 바로 위 관리자 (HR 대신 없음)
+  POST /api/kpi/admin/alarm         {"year", "gap"} 그해 부진 알람 기준 (1~100 정수, 기본 20) (HR) · GET /api/kpi/admin 의 alarmGap 으로 읽는다
+  GET  /api/kpi/biz-plan            ?year= 그해 경영계획 {"year", "goals": [{"goal", "detail"}]} — 대표이사 · 본부장 · HR 만
+  POST /api/kpi/admin/biz-plan      {"year", "goals": [{"goal", "detail"}]} 그해 경영계획 목표를 통째로 바꾼다 (HR)
+
 남의 KPI(계획서 · 진행 기록)를 보는 범위는 _sees 한 곳: HR · 본인 · 바로 위 관리자, 그리고 팀장 = 팀원, 본부장 = 본부의 팀장 · 팀원, 대표이사 = 본부장 · 팀장과 자기가 바로 위 관리자인 사람('임원' 소속 · 직속 팀장 등) (팀원은 못 본다).
 본인 쓰기는 서버가 늘 같은 순서로 다시 본다: KPI 작성 대상 403 → 작성 기간 403 → 상태 409 → 내용 400.
 관리자 처리는: 처리 권한 403 → 계획서 주인의 작성 기간 403 → 상태 409 → 사유 400. 권한은 요청마다 명단에서 새로 계산한다 (decider).
@@ -51,6 +57,10 @@ app.py 가 bp 를 붙인다. 세션 검사는 auth._guard 가 모든 /api/* 에 
 확인 메모 쓰기는: 지금 바로 위 관리자가 아니거나 그 관리자가 대표이사 403 → 해(올해 정수) 400 → 그해 확정본 404 → 글 1~200자 400.
 메모 고치기 · 지우기는: 메모 404 → 쓴 사람이 아님 403 → 쓴 날(한국)이 아님 403 → (고치기) 글 400. 답글 달기는: 메모 404 → 본인도 쓴 사람도 아님 403 → 글 400.
 답글 지우기는: 답글 404 → 단 사람이 아님 403 → 단 날이 아님 403. 확인했습니다는: 메모 404 → 본인이 아님 403 (이미 확인했으면 200). 메모 일은 감사로그를 남기지 않는다 (내용 문장이라서).
+메모 고치기 · 지우기 · 답글 달기 · 답글 지우기 · 확인했습니다는 모두 지금도 그 사람의 KPI 를 볼 수 있어야 한다 (팀을 옮겨 못 보게 된 옛 관리자는 쓰지 못한다 — 위 "쓴 사람이 아님/둘 다 아님" 403 바로 뒤, 쓴 날 403 앞에서 보고 문구는 GET 과 같다).
+알람 끄기는: KPI 작성 대상 403 → 해 400 → 확정본 404 → 기록 기간 403 → 올해가 아님 400 → 실행목표 400 → 이유 · 달 400 → (직접 적기) 글 1~50자 400. 다시 켜기는: 본인도 바로 위 관리자도 아님 403 → 해 400 → 실행목표 번호 400 (없는 줄은 200).
+알람 기준은: HR 이 아님 403 → 해(2026~2100 정수) · 기준(1~100 정수) 400. 경영계획 보기는: 대표이사 · 본부장 · HR 이 아님 403 → 해 400. 경영계획 넣기는: HR 이 아님 403 → 해 400 → 목록 · 개수 · 글자 수 400 → 쓸 수 없는 글자 400.
+알람 기준 · 경영계획의 처리만 감사로그를 남긴다 (KPI_ALARM_SET 해 · 기준, KPI_BIZ_PLAN_SET 해 · 목표 개수 — 목표 문장은 넣지 않는다). 알람 끄기는 남기지 않는다 (본인 설정).
 감사로그에는 행동 이름 · 대상 · 해(· 판 · 일정과 옛 · 새 기한 · 확인한 달)만 남긴다 — 계획서 · 사유 문장은 넣지 않는다. 임시 저장은 남기지 않는다. HR 이 대신 하면 on_behalf_of.
 """
 
@@ -74,7 +84,7 @@ from hr_eval.domain.kpi_plan import (
 from hr_eval.domain.kpi_progress import (
     LINK_MAX, NOTE_MAX, WHY_MAX, effective_dues, item_expected, item_pct, month_state, overall, records_open, sched_state, task_title, valid_link,
 )
-from hr_eval.domain.kpi_review import MEMO_MAX, month_summary, same_kst_day
+from hr_eval.domain.kpi_review import GAP_DEFAULT, MEMO_MAX, MUTE_TEXT_MAX, alarm, clean_biz_plan, is_muted, month_summary, mute_until, same_kst_day
 from hr_eval.domain.models import Actor, AuditEntry, Role
 from hr_eval.domain.org import Dept, Person, manager_of, target_of
 
@@ -304,6 +314,12 @@ def _year_json(conn: sqlite3.Connection, year: int) -> dict:
     return {"year": year, "editFrom": row[0], "editTo": row[1], "evalStart": row[2]}
 
 
+def _gap(conn: sqlite3.Connection, year: int) -> int:
+    """그해 부진 알람 기준(퍼센트포인트). 기간 줄이 없는 해는 기본값."""
+    row = conn.execute("SELECT alarm_gap FROM kpi_years WHERE year = ?", (year,)).fetchone()
+    return row[0] if row else GAP_DEFAULT
+
+
 def _iso_date(v: object) -> str | None:
     """빈 값(null · "") → None, YYYY-MM-DD 로 쓴 실제 날짜 → 그대로. 그 밖은 ValueError."""
     if v is None or v == "":
@@ -341,7 +357,7 @@ def year_get() -> Response:
 @bp.post("/api/kpi/admin/year")
 def year_set() -> Response:
     """{"year", "editFrom", "editTo", "evalStart"} — 날짜는 YYYY-MM-DD, 셋 다 그해 안. editFrom · editTo 는 둘 다 쓰거나 둘 다 비운다(= 기간 닫기).
-    evalStart(평가 시작일)는 비워도 된다. 그 해의 줄을 통째로 바꾼다."""
+    evalStart(평가 시작일)는 비워도 된다. 그 해의 기간 칸을 통째로 바꾼다 (알람 기준 · 경영계획은 건드리지 않는다)."""
     if (denied := auth._hr_only()) is not None:
         return denied
     b = _body()
@@ -481,6 +497,9 @@ def _sees(uid: int, people: list[Person], depts: list[Dept]) -> bool:
     return owner is not None and bool(can(me, Act.VIEW_KPI, target_of(owner, depts)))
 
 
+NO_VIEW = "이 KPI를 볼 권한이 없습니다."
+
+
 def _can_view(conn: sqlite3.Connection, uid: int) -> bool:
     return _sees(uid, *load_org(conn))
 
@@ -501,7 +520,7 @@ def plan_get(uid: int) -> Response:
     """볼 수 있는 사람만 (_sees: 주인 · 바로 위 관리자 · HR · 본부장 · 대표이사). GET /api/kpi/me 의 plan 과 같은 모양 + {"owner": {"id", "name", "dept"}}. 계획서가 없으면 404."""
     conn = auth._db()
     if not _can_view(conn, uid):
-        return jsonify(error="이 KPI를 볼 권한이 없습니다."), 403
+        return jsonify(error=NO_VIEW), 403
     plan = plan_json(conn, uid, plan_year())
     if plan is None:
         return jsonify(error="아직 작성한 KPI가 없습니다."), 404
@@ -564,7 +583,7 @@ def inbox() -> Response:
 # ---------------- 사람별 작성 기간 · 전체 보기 (HR) ----------------
 @bp.get("/api/kpi/admin")
 def admin_list() -> Response:
-    """?year= (없으면 올해) → {"year", "window": {"from", "to", "evalStart", "open"}, "people": […]} — KPI 작성이 켜진 활성 직원 전원.
+    """?year= (없으면 올해) → {"year", "alarmGap", "window": {"from", "to", "evalStart", "open"}, "people": […]} — KPI 작성이 켜진 활성 직원 전원. alarmGap = 그해 부진 알람 기준.
     window.open = 그해 기간이 오늘(한국 날짜) 열려 있나 (평가 시작일부터는 닫힘).
     사람마다 status ("NONE" = 계획서 없음) · confirmedVersion · manager {"id", "name"} | null · window (그 사람만의 기간이 있을 때만, 없으면 null) ·
     canAct (이 HR 이 확정 · 돌려보내기 · 해제 · 거절할 수 있나 — 처리 요청의 decider 와 같은 판단. 본인 것 · 맡기지 않은 대표이사 몫은 false)."""
@@ -587,7 +606,7 @@ def admin_list() -> Response:
                     "status": status or "NONE", "confirmedVersion": version,
                     "window": _window_json(year_row, own[uid]) if uid in own else None, "canAct": _decide(g.actor, uid, boss, ceos)[0]})
     ys = year_row or (None, None, None)
-    return jsonify(year=year, window={"from": ys[0], "to": ys[1], "evalStart": ys[2], "open": window_open(auth._today(), year_row, None)}, people=out)
+    return jsonify(year=year, alarmGap=_gap(conn, year), window={"from": ys[0], "to": ys[1], "evalStart": ys[2], "open": window_open(auth._today(), year_row, None)}, people=out)
 
 
 @bp.post("/api/kpi/admin/window")
@@ -709,6 +728,8 @@ def progress_json(conn: sqlite3.Connection, uid: int, year: int, org: tuple[list
     (returned = 가장 늦게 요청한 것이 돌려보내진 경우, 지금 확정본이 확정된 뒤에 돌려보낸 것만 — 수정 → 다시 확정한 뒤에는 옛 줄을 안 보인다).
     total · totalExpected = 가중 평균, todo = 지금 할 일 수, next = 결과가 없고 실제 기한이 오늘 이후인 가장 가까운 일정.
     checkStep = 월간 확인 단계가 있나 (바로 위 관리자가 있고 대표이사가 아니다), checks = 확인한 달 {"3": 확인한 시각, …} (그해 전부).
+    items 마다 mute = 지금 꺼져 있는 알람 {"why", "text", "until"(끄는 마지막 달), "at"} | null (기한이 지난 줄은 null — 줄은 지우지 않는다),
+    gap = 그해 부진 알람 기준, alarm = 끄지 않은 실행목표만 따진 부진 알람 {"slow", "pct", "expected"} (total · totalExpected 는 끈 것도 포함한 그대로).
     org = (명단, 부서) — 사람 여럿을 읽는 쪽이 한 번 읽은 것을 넘긴다. 없으면 여기서 읽는다."""
     versions = _versions(conn, uid, year)
     if not versions:
@@ -717,6 +738,7 @@ def progress_json(conn: sqlite3.Connection, uid: int, year: int, org: tuple[list
     first, dues, hire = _first_months(year, versions), _dues(conn, uid, year), _hire(conn, uid)
     own = (uid, year)
     prog = {r[0]: r[1:] for r in conn.execute("SELECT rid, actual, pct, why, updated_at FROM kpi_progress WHERE user_id = ? AND year = ?", own)}
+    mutes = {r[0]: r[1:] for r in conn.execute("SELECT rid, why, text, until_month, set_at FROM kpi_mutes WHERE user_id = ? AND year = ?", own)}
     notes = {(r[0], r[1]): r[2:] for r in conn.execute("SELECT rid, month, text, link, updated_at FROM kpi_month_notes WHERE user_id = ? AND year = ?", own)}
     results = {r[0]: r[1:] for r in conn.execute("SELECT sid, text, link, updated_at FROM kpi_results WHERE user_id = ? AND year = ?", own)}
     changes = conn.execute("SELECT id, sid, to_due, reason, status, note, requested_at, decided_at FROM kpi_sched_changes"
@@ -758,14 +780,18 @@ def progress_json(conn: sqlite3.Connection, uid: int, year: int, org: tuple[list
                     "pending": {"id": c[0], "to": c[2], "reason": c[3], "at": c[6]} if c else None,
                     "returned": {"to": lc[2], "note": lc[5], "at": lc[7]} if lc and lc[4] == "RETURNED" and lc[7] >= confirmed_at else None})
         out["value"], out["expected"] = item_pct(it, actual, pct, done), item_expected(it, year, today, dues)
+        mute = mutes.get(rid)
+        out["mute"] = {"why": mute[0], "text": mute[1], "until": mute[2], "at": mute[3]} if mute and is_muted(year, mute[2], today) else None
         values.append(out["value"])
         expects.append(out["expected"])
         items.append(out)
     checks = {str(r[0]): r[1] for r in conn.execute("SELECT month, checked_at FROM kpi_month_checks WHERE user_id = ? AND year = ? ORDER BY month", own)}
+    gap = _gap(conn, year)
     return {"year": year, "version": version, "open": records_open(year, today), "schedOpen": _sched_open(conn, year),
             "items": items, "total": overall(rows, values), "totalExpected": overall(rows, expects),
             "todo": {"months": cur + prev, "prev": prev, "results": late}, "next": nxt,
-            "checkStep": _step(uid, *(org or load_org(conn))), "checks": checks}
+            "checkStep": _step(uid, *(org or load_org(conn))), "checks": checks,
+            "gap": gap, "alarm": alarm(rows, values, expects, [i["mute"] is not None for i in items], gap)}
 
 
 @bp.get(f"/api/kpi/progress/{UID}")
@@ -774,7 +800,7 @@ def progress_get(uid: int) -> Response:
     conn = auth._db()
     org = load_org(conn)  # 명단은 한 번만 읽어 보는 범위와 확인 단계에 같이 쓴다
     if not _sees(uid, *org):
-        return jsonify(error="이 KPI를 볼 권한이 없습니다."), 403
+        return jsonify(error=NO_VIEW), 403
     year = _year_arg()
     with _txn(conn):  # 표 여럿을 읽는 동안 다른 요청이 끼어들지 않게
         out = progress_json(conn, uid, year, org)
@@ -977,10 +1003,18 @@ def _by(name: str, title: str | None) -> str:
     return f"{name} {title}" if title else name
 
 
-def _mine_today(author_id: int, created_at: str, only: str) -> None:
-    """고치거나 지울 수 있는 사람: 쓴 사람 본인(아니면 403 only) → 쓴 날(한국 날짜)에만(아니면 403)."""
+def _may_view(conn: sqlite3.Connection, owner_id: int) -> None:
+    """메모 일을 하는 사람이 지금도 그 사람의 KPI 를 볼 수 있어야 한다 — 팀을 옮겨 못 보게 된 옛 관리자가 읽지도 못하는 메모란에 쓰지 못하게. 아니면 403 (GET 과 같은 문구).
+    본인은 늘 자기 KPI 를 볼 수 있어서 '확인했습니다' 에서는 걸리지 않는다 (규칙이 한 곳에서 같게 읽히도록 거기서도 부른다)."""
+    if not _can_view(conn, owner_id):
+        raise _Refuse(NO_VIEW, 403)
+
+
+def _mine_today(conn: sqlite3.Connection, owner_id: int, author_id: int, created_at: str, only: str) -> None:
+    """고치거나 지울 수 있는 사람: 쓴 사람 본인(아니면 403 only) → 지금도 그 사람의 KPI 를 볼 수 있음(아니면 403) → 쓴 날(한국 날짜)에만(아니면 403)."""
     if author_id != g.actor.user_id:
         raise _Refuse(only, 403)
+    _may_view(conn, owner_id)
     if not same_kst_day(created_at, auth._today()):
         raise _Refuse(ONLY_TODAY, 403)
 
@@ -1003,7 +1037,7 @@ def memos_get(uid: int) -> Response:
     conn, me, year, today = auth._db(), g.actor.user_id, plan_year(), auth._today()
     org = load_org(conn)
     if not _sees(uid, *org):
-        return jsonify(error="이 KPI를 볼 권한이 없습니다."), 403
+        return jsonify(error=NO_VIEW), 403
     boss = _writer_of(uid, *org)
     with _txn(conn):  # 표 여럿을 읽는 동안 다른 요청이 끼어들지 않게
         writer = conn.execute("SELECT id, name, title FROM users WHERE id = ?", (boss,)).fetchone() if boss is not None else None
@@ -1049,12 +1083,12 @@ def memo_add(uid: int) -> Response:
 
 @bp.post(f"/api/kpi/memo/{MID}/edit")
 def memo_edit(mid: int) -> Response:
-    """{"text"} 쓴 사람이 쓴 날에만. 순서: 메모 404 → 쓴 사람이 아님 403 → 쓴 날(한국)이 아님 403 → 글 400.
+    """{"text"} 쓴 사람이 쓴 날에만. 순서: 메모 404 → 쓴 사람이 아님 403 → 지금은 그 사람의 KPI 를 못 봄 403 → 쓴 날(한국)이 아님 403 → 글 400.
     고치면 edited_at = 지금, ack_at = 비움 (본인이 다시 확인한다). 답글은 그대로."""
     text, conn = _body().get("text"), auth._db()
     with _txn(conn):
-        _, author, created, _ = _memo(conn, mid)
-        _mine_today(author, created, "쓴 사람만 고치거나 지울 수 있습니다.")
+        owner, author, created, _ = _memo(conn, mid)
+        _mine_today(conn, owner, author, created, "쓴 사람만 고치거나 지울 수 있습니다.")
         conn.execute("UPDATE kpi_memos SET text = ?, edited_at = ?, ack_at = NULL WHERE id = ?", (_memo_text(text, "메모"), auth._iso(auth._now()), mid))
     return jsonify(ok=True)
 
@@ -1064,20 +1098,21 @@ def memo_delete(mid: int) -> Response:
     """쓴 사람이 쓴 날에만 (edit 과 같은 순서). 답글도 함께 지워진다 (DB CASCADE)."""
     conn = auth._db()
     with _txn(conn):
-        _, author, created, _ = _memo(conn, mid)
-        _mine_today(author, created, "쓴 사람만 고치거나 지울 수 있습니다.")
+        owner, author, created, _ = _memo(conn, mid)
+        _mine_today(conn, owner, author, created, "쓴 사람만 고치거나 지울 수 있습니다.")
         conn.execute("DELETE FROM kpi_memos WHERE id = ?", (mid,))
     return jsonify(ok=True)
 
 
 @bp.post(f"/api/kpi/memo/{MID}/ack")
 def memo_ack(mid: int) -> Response:
-    """'확인했습니다' — 본인만. 순서: 메모 404 → 본인이 아님 403 → 이미 확인했으면 아무것도 바꾸지 않고 200 → ack_at = 지금. 취소는 없다."""
+    """'확인했습니다' — 본인만. 순서: 메모 404 → 본인이 아님 403 → (볼 수 있나 403) → 이미 확인했으면 아무것도 바꾸지 않고 200 → ack_at = 지금. 취소는 없다."""
     conn = auth._db()
     with _txn(conn):
         owner, _, _, ack = _memo(conn, mid)
         if owner != g.actor.user_id:
             raise _Refuse("본인만 확인할 수 있습니다.", 403)
+        _may_view(conn, owner)
         if ack is None:
             conn.execute("UPDATE kpi_memos SET ack_at = ? WHERE id = ?", (auth._iso(auth._now()), mid))
     return jsonify(ok=True)
@@ -1085,13 +1120,14 @@ def memo_ack(mid: int) -> Response:
 
 @bp.post(f"/api/kpi/memo/{MID}/reply")
 def memo_reply(mid: int) -> Response:
-    """{"text"} → {"ok": true, "id"}. 본인과 그 메모를 쓴 사람만. 순서: 메모 404 → 둘 다 아님 403 → 글 400.
+    """{"text"} → {"ok": true, "id"}. 본인과 그 메모를 쓴 사람만. 순서: 메모 404 → 둘 다 아님 403 → 지금은 그 사람의 KPI 를 못 봄 403 → 글 400.
     본인의 답글은 확인한 것으로 친다 (ack_at 이 비었을 때만 지금으로), 쓴 사람의 답글은 ack_at 을 비운다 (본인이 다시 확인)."""
     text, conn, me = _body().get("text"), auth._db(), g.actor.user_id
     with _txn(conn):
         owner, author, _, ack = _memo(conn, mid)
         if me not in (owner, author):
             raise _Refuse("본인과 메모를 쓴 사람만 답글을 달 수 있습니다.", 403)
+        _may_view(conn, owner)
         text, now = _memo_text(text, "답글"), auth._iso(auth._now())
         cur = conn.execute("INSERT INTO kpi_memo_replies (memo_id, author_id, who, text, created_at) VALUES (?, ?, ?, ?, ?)",
                            (mid, me, "owner" if me == owner else "writer", text, now))
@@ -1104,13 +1140,13 @@ def memo_reply(mid: int) -> Response:
 
 @bp.post(f"/api/kpi/memo-reply/{RPID}/delete")
 def memo_reply_delete(rpid: int) -> Response:
-    """단 사람이 단 날에만. 순서: 답글 404 → 단 사람이 아님 403 → 단 날(한국)이 아님 403."""
+    """단 사람이 단 날에만. 순서: 답글 404 → 단 사람이 아님 403 → 지금은 그 사람의 KPI 를 못 봄 403 → 단 날(한국)이 아님 403."""
     conn = auth._db()
     with _txn(conn):
-        row = conn.execute("SELECT author_id, created_at FROM kpi_memo_replies WHERE id = ?", (rpid,)).fetchone()
+        row = conn.execute("SELECT m.user_id, r.author_id, r.created_at FROM kpi_memo_replies r JOIN kpi_memos m ON m.id = r.memo_id WHERE r.id = ?", (rpid,)).fetchone()
         if row is None:
             raise _Refuse("답글을 찾을 수 없습니다.", 404)
-        _mine_today(*row, "단 사람만 지울 수 있습니다.")
+        _mine_today(conn, *row, "단 사람만 지울 수 있습니다.")
         conn.execute("DELETE FROM kpi_memo_replies WHERE id = ?", (rpid,))
     return jsonify(ok=True)
 
@@ -1125,6 +1161,105 @@ def memos_seen(uid: int) -> Response:
     with _txn(conn):
         conn.execute("UPDATE kpi_memos SET seen_at = ? WHERE user_id = ? AND year = ? AND author_id = ?",
                      (auth._iso(auth._now()), uid, year, g.actor.user_id))
+    return jsonify(ok=True)
+
+
+# ---------------- 알람 끄기 · 알람 기준 · 경영계획 (2단계 ②, 2026-10-21) ----------------
+@bp.post("/api/kpi/me/mute")
+def mute_set() -> Response:
+    """{"year", "rid", "why": "year"|"month"|"wait"|"etc", "month"?, "text"?} → {"ok": true}. 내 실행목표 하나의 부진 알람을 고른 달 말일까지 끈다 (본인만 — 본문의 사람 번호는 보지 않는다).
+    why "year" 는 12월까지, 그 밖은 month(이번 달~12월 정수)까지. text 는 "etc"(직접 적기)일 때만 1~50자, 다른 이유로 보낸 글은 버린다. 이미 끈 줄은 바꿔 끈다 (줄 하나).
+    서버가 보는 순서: KPI 작성 대상 403 → 해 400 → 그해 확정본 404 → 기록 기간 403 → 올해가 아님 400 → 지금 확정본에 없는 실행목표 400 → 이유 · 달 400 → (etc) 글 400.
+    작성 기간 · 계획서 상태는 보지 않는다. 감사로그는 남기지 않는다 (본인 설정)."""
+    b = _body()
+    with _record() as m:
+        if m.year != plan_year():  # 지난해 알람은 이미 다시 켜져 있다
+            raise _Refuse("올해 KPI만 알람을 끌 수 있습니다.", 400)
+        it = _item(m, b.get("rid"))
+        why = b.get("why")
+        try:
+            until = mute_until(why, b.get("month"), auth._today())
+        except ValueError as e:  # 쉬운 문구가 그대로 들어 있다
+            raise _Refuse(str(e), 400) from None
+        text = None
+        if why == "etc":
+            text = _line(b.get("text", ""), "직접 적은 이유", MUTE_TEXT_MAX)  # 글을 안 보낸 것은 빈 글과 같다
+            if not text:
+                raise _Refuse(f"직접 적은 이유를 1~{MUTE_TEXT_MAX}자로 써 주세요.", 400)
+        m.conn.execute("INSERT OR REPLACE INTO kpi_mutes (user_id, year, rid, why, text, until_month, set_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                       (m.uid, m.year, it["rid"], why, text, until, m.now))
+    return jsonify(ok=True)
+
+
+@bp.post(f"/api/kpi/plans/{UID}/unmute")
+def unmute(uid: int) -> Response:
+    """{"year", "rid"} → {"ok": true}. 알람을 다시 켠다 (끈 줄을 지운다) — 본인과 바로 위 관리자만 (HR 은 대신하지 못하고, 대표이사 맡김과도 상관없다).
+    순서: 본인도 바로 위 관리자도 아님 403 → 해(2026~2100 정수) 400 → 실행목표 번호 400. 끄지 않은 줄을 켜려 해도 200 (아무 일 없음). 감사로그는 남기지 않는다."""
+    b = _body()
+    year, rid, conn = b.get("year"), b.get("rid"), auth._db()
+    with _txn(conn):
+        if uid != g.actor.user_id and manager_of(uid, *load_org(conn)) != g.actor.user_id:
+            raise _Refuse("본인과 바로 위 관리자만 다시 켤 수 있습니다.", 403)
+        if type(year) is not int or year not in YEARS:
+            raise _Refuse("해가 올바르지 않습니다.", 400)
+        if type(rid) is not int or not 0 < rid <= 2147483647:  # SQLite 정수보다 큰 수는 묶다가 서버 오류가 나므로 먼저
+            raise _Refuse("실행목표 번호가 올바르지 않습니다.", 400)
+        conn.execute("DELETE FROM kpi_mutes WHERE user_id = ? AND year = ? AND rid = ?", (uid, year, rid))
+    return jsonify(ok=True)
+
+
+@bp.post("/api/kpi/admin/alarm")
+def alarm_set() -> Response:
+    """{"year", "gap"} → {"ok": true}. 그해 부진 알람 기준(퍼센트포인트) — HR 만. 해는 2026~2100 정수, 기준은 1~100 정수(참/거짓 · 소수 아님), 아니면 400.
+    그해 줄이 없으면 기간 없이 만든다 (있으면 이 칸만 바꾼다). 감사로그 KPI_ALARM_SET — 해 · 기준."""
+    if (denied := auth._hr_only()) is not None:
+        return denied
+    b = _body()
+    year, gap = b.get("year"), b.get("gap")
+    if not (type(year) is int and year in YEARS and type(gap) is int and 1 <= gap <= 100):
+        raise _Refuse("해(2026~2100)와 알람 기준(1~100 사이 정수)을 확인해 주세요.", 400)
+    conn = auth._db()
+    with _txn(conn):
+        conn.execute("INSERT INTO kpi_years (year, alarm_gap, updated_at, updated_by) VALUES (?, ?, ?, ?)"
+                     " ON CONFLICT (year) DO UPDATE SET alarm_gap = excluded.alarm_gap, updated_at = excluded.updated_at, updated_by = excluded.updated_by",
+                     (year, gap, auth._iso(auth._now()), g.actor.user_id))
+        auth._audit(conn, AuditEntry.by(g.actor, action="KPI_ALARM_SET", entity_type="kpi_year", entity_id=year, after_data={"year": year, "gap": gap}))
+    return jsonify(ok=True)
+
+
+@bp.get("/api/kpi/biz-plan")
+def biz_get() -> Response:
+    """?year= (없으면 올해) → {"year", "goals": [{"goal", "detail"}]} (아직 없으면 빈 목록). 대표이사 · 본부장 · HR 만 — 아니면 해를 보기 전에 403."""
+    if not (g.actor.is_hr or g.actor.position in (Role.CEO, Role.DIVISION_HEAD)):
+        return jsonify(error="경영계획 목표는 대표이사 · 본부장 · HR만 봅니다."), 403
+    year = _year_arg()
+    row = auth._db().execute("SELECT biz_plan FROM kpi_years WHERE year = ?", (year,)).fetchone()
+    return jsonify(year=year, goals=json.loads(row[0]) if row and row[0] else [])
+
+
+@bp.post("/api/kpi/admin/biz-plan")
+def biz_set() -> Response:
+    """{"year", "goals": [{"goal", "detail"}]} → {"ok": true}. 그해 경영계획 목표를 통째로 바꾼다 — HR 만. 순서: 해 400 → 목록 · 개수(20) · 글자 수(목표 60 · 내용 300) 400 → 쓸 수 없는 글자 400.
+    앞뒤 공백을 빼고 둘 다 빈 줄은 버린 채 저장한다 (비워서 보내면 비운다). 그해 줄이 없으면 기간 없이 만든다. 감사로그 KPI_BIZ_PLAN_SET — 해 · 목표 개수만 (목표 문장은 넣지 않는다)."""
+    if (denied := auth._hr_only()) is not None:
+        return denied
+    b = _body()
+    year = b.get("year")
+    if type(year) is not int or year not in YEARS:
+        raise _Refuse("해가 올바르지 않습니다.", 400)
+    try:
+        goals = clean_biz_plan(b.get("goals"))
+    except ValueError as e:  # 쉬운 문구가 그대로 들어 있다
+        raise _Refuse(str(e), 400) from None
+    for row in goals:
+        _chars(row["goal"], "경영계획 목표")
+        _chars(row["detail"], "경영계획 내용")
+    conn = auth._db()
+    with _txn(conn):
+        conn.execute("INSERT INTO kpi_years (year, biz_plan, updated_at, updated_by) VALUES (?, ?, ?, ?)"
+                     " ON CONFLICT (year) DO UPDATE SET biz_plan = excluded.biz_plan, updated_at = excluded.updated_at, updated_by = excluded.updated_by",
+                     (year, json.dumps(goals, ensure_ascii=False), auth._iso(auth._now()), g.actor.user_id))
+        auth._audit(conn, AuditEntry.by(g.actor, action="KPI_BIZ_PLAN_SET", entity_type="kpi_year", entity_id=year, after_data={"year": year, "count": len(goals)}))
     return jsonify(ok=True)
 
 

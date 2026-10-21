@@ -1613,8 +1613,8 @@ def check_kpi_progress(hr) -> None:
         exp_reg = days / (date(year + 1, 1, 1) - date(year, 1, 1)).days * 100
         r1, r2, r3 = row(p, 1), row(p, 2), row(p, 3)
         ok(p["year"] == year and p["version"] == 1 and p["open"] is True and p["schedOpen"] is True and [i["rid"] for i in p["items"]] == [1, 2, 3]
-           and set(p) == {"year", "version", "open", "schedOpen", "items", "total", "totalExpected", "todo", "next", "checkStep", "checks"},
-           "읽기: 해 · 판 · 기록 기간 · 일정 변경 기간 · 행 순서 · 월간 확인 단계 · 확인한 달")
+           and set(p) == {"year", "version", "open", "schedOpen", "items", "total", "totalExpected", "todo", "next", "checkStep", "checks", "gap", "alarm"},
+           "읽기: 해 · 판 · 기록 기간 · 일정 변경 기간 · 행 순서 · 월간 확인 단계 · 확인한 달 · 알람 기준 · 부진 알람")
         ok(base(r1) == {"rid": 1, "kind": "reg", "action": "가상 정기 업무 1", "weight": 40, "target": 12, "unit": "건", "actual": None, "pct": None, "why": None, "at": None}
            and base(r2) == {"rid": 2, "kind": "reg", "action": "가상 정기 업무 2", "weight": 30, "target": None, "unit": "", "actual": None, "pct": None, "why": None, "at": None}
            and base(r3) == {"rid": 3, "kind": "irr", "action": "가상 비정기 업무", "weight": 30, "target": None, "unit": "", "actual": None, "pct": None, "why": None, "at": None}
@@ -2669,10 +2669,14 @@ def check_kpi_review(hr) -> None:
         ok(hit(memo_do(LEAD, m5, "delete"), 200, {"ok": True}) and memo_row(m5) == [] and n_replies(m5) == 0
            and q("SELECT COUNT(*) FROM kpi_memo_replies")[0][0] == n_all - 2, "메모를_지우면_답글도: 같은 날 지우면 두 표 모두 비고 다른 메모의 답글은 그대로")
         ok(memo_do(LEAD, m5, "delete").status_code == 404 and memo_do(EMP, m5, "ack").status_code == 404, "(이미 지운 메모는 404)")
+        ids = [m["id"] for m in view(EMP, LEAD)["memos"]]
+        ok(len(ids) >= 3 and ids == sorted(ids, reverse=True) and [m["id"] for m in view(EMP, EMP)["memos"]] == ids,
+           "메모는_새것부터: GET 은 id 가 큰 것(새것)부터 — 여러 개일 때 (본인 화면도 같은 순서)")
 
         # 팀을 옮기면 — 쓰는 사람은 지금 바로 위 관리자, 옛 메모는 그대로
         at(9, 3)
         m6 = memo_post(LEAD2, EMP2, "가상 다른 팀 메모").json["id"]
+        rp6 = memo_do(LEAD2, m6, "reply", text="가상 옛 팀장 답글").json["id"]  # 옛 팀장이 같은 날 단 답글 (아래에서 팀을 옮긴 동안 지워 본다)
         x("UPDATE users SET department_id = 72 WHERE id = ?", EMP2)  # 팀 A 로
         try:
             j = view(EMP2, LEAD)
@@ -2680,15 +2684,230 @@ def check_kpi_review(hr) -> None:
                and j["memos"][0]["canEdit"] is False and hit(memos(EMP2, LEAD2), 403, NO_VIEW) and hit(memo_post(LEAD2, EMP2), 403, NOT_WRITER)
                and memo_post(LEAD, EMP2, "가상 새 팀장 메모").status_code == 200,
                "팀을_옮기면_새_관리자가_쓴다: 새 팀장이 role writer · 옛 메모를 읽음(고치기 거짓) · 옛 팀장은 읽기도 쓰기도 403")
+            ok(all(hit(memo_do(LEAD2, m6, w, **b), 403, NO_VIEW) for w, b in (("reply", {"text": "가상 끼어들기"}), ("edit", {"text": "가상 옛 팀장의 손"}), ("delete", {})))
+               and hit(rp_del(LEAD2, rp6), 403, NO_VIEW) and memo_row(m6)[0][0] == "가상 다른 팀 메모" and n_replies(m6) == 1,
+               "옛_관리자는_못_본_뒤_쓰지_못한다: 팀을 옮긴 사람의 메모에 옛 팀장은 쓴 날이어도 답글 · 고치기 · 지우기 · 답글 지우기 403 (GET 과 같은 문구) — 아무것도 안 바뀜")
+            r = memo_do(EMP2, m6, "reply", text="가상 본인 답글")
+            ok(r.status_code == 200 and hit(memo_do(EMP2, m6, "ack"), 200, {"ok": True}) and memo_row(m6)[0][2] is not None and n_replies(m6) == 2
+               and hit(rp_del(EMP2, r.json["id"]), 200, {"ok": True}) and n_replies(m6) == 1, "본인은 팀을 옮긴 뒤에도 답글 · 확인 · 자기 답글 지우기가 됨")
         finally:
             x("UPDATE users SET department_id = 73 WHERE id = ?", EMP2)  # 원래대로 (팀 B)
-        ok(hit(memo_do(LEAD2, m6, "edit", text="가상 고친 다른 팀 메모"), 200, {"ok": True}) and memo_row(m6)[0][0] == "가상 고친 다른 팀 메모",
-           "(쓴 사람은 팀을 옮겨도 쓴 날에는 자기 메모를 고침)")
+        ok(hit(memo_do(LEAD2, m6, "edit", text="가상 고친 다른 팀 메모"), 200, {"ok": True}) and memo_row(m6)[0][0] == "가상 고친 다른 팀 메모"
+           and hit(rp_del(LEAD2, rp6), 200, {"ok": True}) and n_replies(m6) == 0,
+           "(다시 같은 팀이 되면 쓴 사람은 쓴 날에 자기 메모를 고치고 자기 답글을 지움 — 팀이 다른 동안에는 못 함)")
 
         # 감사로그는 남기지 않는다
         ok(n_audit() == audit0
            and q("SELECT COUNT(*) FROM audit_logs WHERE action LIKE '%MEMO%' OR entity_type LIKE '%memo%'")[0][0] == 0,
            "감사로그_없음: 메모 · 답글 · 확인 · 본 때 일을 아무리 해도 audit_logs 줄 수가 그대로")
+
+        # ---- 알람 끄기 · 부진 · 알람 기준 · 경영계획 (2단계 ②, Task 5) ----
+        mute = lambda who, rid, why="year", **over: c(who).post("/api/kpi/me/mute", base_url=BASE, headers=ORIGIN,  # noqa: E731
+                                                               json={"year": year, "rid": rid, "why": why, **over})
+        unmute = lambda who, uid, rid=1, **over: c(who).post(f"/api/kpi/plans/{uid}/unmute", base_url=BASE, headers=ORIGIN,  # noqa: E731
+                                                            json={"year": year, "rid": rid, **over})
+        gap_set = lambda who, gap, y=None: c(who).post("/api/kpi/admin/alarm", base_url=BASE, headers=ORIGIN,  # noqa: E731
+                                                       json={"year": y or year, "gap": gap})
+        biz_get = lambda who, y=None: c(who).get(f"/api/kpi/biz-plan?year={y or year}", base_url=BASE)  # noqa: E731
+        biz_set = lambda who, goals, y=None: c(who).post("/api/kpi/admin/biz-plan", base_url=BASE, headers=ORIGIN,  # noqa: E731
+                                                         json={"year": y or year, "goals": goals})
+        goal = lambda g, d="": {"goal": g, "detail": d}  # noqa: E731
+        row_of = lambda uid, rid: next(i for i in prog(uid).json["items"] if i["rid"] == rid)  # noqa: E731
+        mute_of = lambda uid, rid: row_of(uid, rid)["mute"]  # noqa: E731
+        alarm_of = lambda uid: prog(uid).json["alarm"]  # noqa: E731
+        mutes = lambda uid: q("SELECT rid, why, text, until_month, set_at FROM kpi_mutes WHERE user_id = ? ORDER BY rid", uid)  # noqa: E731
+        year_row = lambda y: q("SELECT edit_from, edit_to, eval_start, alarm_gap, biz_plan, updated_by, updated_at FROM kpi_years WHERE year = ?", y)  # noqa: E731
+        biz_db = lambda y: next(iter(q("SELECT biz_plan FROM kpi_years WHERE year = ?", y)), (None,))[0]  # noqa: E731
+        admin_gap = lambda y: c(HR).get(f"/api/kpi/admin?year={y}", base_url=BASE).json["alarmGap"]  # noqa: E731
+        BAD_MONTH, BAD_WHY, NO_RID = {"error": "이번 달부터 12월 사이에서 골라 주세요."}, {"error": "이유를 하나 골라 주세요."}, {"error": "지금 확정본에 없는 실행목표입니다."}
+        NOT_UNMUTER, NOT_HR = {"error": "본인과 바로 위 관리자만 다시 켤 수 있습니다."}, {"error": "HR만 할 수 있습니다."}
+        BAD_GAP = {"error": "해(2026~2100)와 알람 기준(1~100 사이 정수)을 확인해 주세요."}
+        NO_BIZ = {"error": "경영계획 목표는 대표이사 · 본부장 · HR만 봅니다."}
+        S, Y2 = LEAD2, 2099  # S = 숫자를 따져 볼 사람 (바로 위 관리자는 본부장, 진행 기록이 아직 없음) · Y2 = 기간 줄이 없는 먼 해
+        had_row = bool(year_row(year))
+        at(10, 15)  # 한국 10월 15일 12시
+        ndays = (date(year + 1, 1, 1) - date(year, 1, 1)).days
+        exp_reg = ((date(year, 10, 15) - date(year, 1, 1)).days + 1) / ndays * 100  # 정기 업무의 기대 진행률 (78~79%) · 늦은 비정기 업무(일정 둘 다 14일 넘게 지남)는 100%
+        ok(anon.post("/api/kpi/me/mute", base_url=BASE, headers=ORIGIN, json={"year": year, "rid": 1, "why": "year"}).status_code == 401
+           and anon.post(f"/api/kpi/plans/{EMP}/unmute", base_url=BASE, headers=ORIGIN, json={"year": year, "rid": 1}).status_code == 401
+           and anon.post("/api/kpi/admin/alarm", base_url=BASE, headers=ORIGIN, json={"year": year, "gap": 30}).status_code == 401
+           and anon.get(f"/api/kpi/biz-plan?year={year}", base_url=BASE).status_code == 401
+           and anon.post("/api/kpi/admin/biz-plan", base_url=BASE, headers=ORIGIN, json={"year": year, "goals": []}).status_code == 401, "로그인 없이는 401 (알람 · 경영계획)")
+        p = prog(S).json
+        ok(p["gap"] == 20 and all(i["mute"] is None for i in p["items"]) and set(p["alarm"]) == {"slow", "pct", "expected"}
+           and p["alarm"]["slow"] is True and p["alarm"]["pct"] == 0 and abs(p["alarm"]["expected"] - (0.7 * exp_reg + 30)) < 1e-9,
+           "진행 기록에 gap(기본 20) · alarm · 실행목표마다 mute(없으면 null): 아무것도 안 쓴 사람은 부진")
+
+        # 알람 끄기는 본인이
+        r = mute(S, 3)
+        ok(hit(r, 200, {"ok": True}) and mutes(S) == [(3, "year", None, 12, z(10, 15))]
+           and mute_of(S, 3) == {"why": "year", "text": None, "until": 12, "at": z(10, 15)} and mute_of(S, 1) is None and mute_of(S, 2) is None,
+           "알람_끄기는_본인이: 본인이 끄면 그 실행목표에만 mute 가 붙음 (올해 안 = 12월까지) — 끈 이유 · 끈 시각")
+        ok(row_of(S, 3)["mute"] is not None and row_of(S, 3)["mute"] == prog(S, HEAD).json["items"][2]["mute"] == prog(S, HR).json["items"][2]["mute"],
+           "(볼 수 있는 윗사람 · HR 에게도 같은 mute 가 보임)")
+        r = c(LEAD).post("/api/kpi/me/mute", base_url=BASE, headers=ORIGIN, json={"year": year, "rid": 1, "why": "year", "userId": S})
+        ok(r.status_code == 200 and mutes(LEAD) == [(1, "year", None, 12, z(10, 15))] and mutes(S) == [(3, "year", None, 12, z(10, 15))] and mutes(EMP) == [],
+           "남의_알람은_못_끈다: 팀장이 본문에 사람 번호를 실어 보내도 (본문의 번호는 보지 않음) 팀장 자기 계획서의 알람만 꺼짐")
+        x("DELETE FROM kpi_mutes WHERE user_id = ?", LEAD)
+        ok(hit(mute(PEER2, 1), 404, NO_PLAN) and mutes(PEER2) == [], "확정본이 없는 사람이 같은 본문을 보내면 404 (남의 알람을 끌 길이 없음)")
+
+        # 끈 항목은 빼고 따진다
+        ok(put(S, "progress", {"rid": 1, "actual": 12}).status_code == 200 and put(S, "progress", {"rid": 2, "pct": 50}).status_code == 200
+           and (a := alarm_of(S))["slow"] is False and abs(a["pct"] - 5500 / 70) < 1e-9 and abs(a["expected"] - exp_reg) < 1e-9,
+           "(실적 12건 · 진행률 50% 를 씀 — 늦은 비정기 업무(막대 0)를 끈 채로는 남은 둘만 따져 진행률 78.6 ≈ 기대 78.9 → 부진 아님)")
+        ok(hit(unmute(S, S, 3), 200, {"ok": True}) and mutes(S) == [] and mute_of(S, 3) is None
+           and (a := alarm_of(S))["slow"] is True and abs(a["pct"] - 55) < 1e-9 and abs(a["expected"] - (0.7 * exp_reg + 30)) < 1e-9,
+           "끈_항목은_빼고_따진다: 그 항목을 켜면 진행률 55 ≪ 기대 85 → 부진 (alarm.slow 거짓 → 참)")
+        ok(mute(S, 3).status_code == 200 and alarm_of(S)["slow"] is False, "(다시 끄면 거짓)")
+        ok(prog(S).json["total"] == 55 and mute(S, 1).status_code == 200 and mute(S, 2).status_code == 200
+           and alarm_of(S) == {"slow": False, "pct": None, "expected": None} and prog(S).json["total"] == 55,
+           "다 끄면 pct · expected 가 null (부진 아님) — 종합 진행률(total)은 끈 항목을 포함한 그대로")
+
+        # 알람 끄기 검사
+        before = mutes(S)
+        ok(all(hit(mute(S, 1, "month", month=m), 400, BAD_MONTH) for m in (9, 1, 13, 0, -1, "10", 10.0, True, None, [10]))
+           and hit(mute(S, 1, "month"), 400, BAD_MONTH) and hit(mute(S, 1, "wait", month=9), 400, BAD_MONTH) and hit(mute(S, 2, "etc", text="가상"), 400, BAD_MONTH),
+           "알람_끄기_검사: 지난달 · 13월 · 숫자가 아닌 달 · 달 없음은 400")
+        ok(all(hit(mute(S, 1, w), 400, BAD_WHY) for w in (None, "", "foo", "YEAR", 1, True, ["year"], {"a": 1}))
+           and hit(c(S).post("/api/kpi/me/mute", base_url=BASE, headers=ORIGIN, json={"year": year, "rid": 1}), 400, BAD_WHY), "이유 없음 · 모르는 이유는 400")
+        ok(hit(mute(S, 2, "etc", month=12), 400, {"error": "직접 적은 이유를 1~50자로 써 주세요."})
+           and hit(mute(S, 2, "etc", month=12, text="   \n "), 400, {"error": "직접 적은 이유를 1~50자로 써 주세요."})
+           and hit(mute(S, 2, "etc", month=12, text="가" * 51), 400, {"error": "직접 적은 이유: 50자 안으로 써 주세요."})
+           and all(mute(S, 2, "etc", month=12, text=t).status_code == 400 for t in (None, "가\x00나", "\ud800", 5, ["가"])),
+           "직접 적기(etc): 글 없음 · 51자 · 제어문자 · 글이 아닌 것은 400")
+        ok(hit(mute(S, 99), 400, NO_RID) and all(hit(mute(S, rid), 400, NO_RID) for rid in (0, -1, "1", True, 1.0, None, [1], 10 ** 30))
+           and hit(c(S).post("/api/kpi/me/mute", base_url=BASE, headers=ORIGIN, json={"year": year, "why": "year"}), 400, NO_RID),
+           "지금 확정본에 없는 rid (숫자가 아니거나 참/거짓 포함)는 400")
+        ok(hit(mute(S, 99, "foo"), 400, NO_RID) and hit(mute(S, 2, "etc", month=99, text=""), 400, BAD_MONTH),
+           "순서: 실행목표 400 → 이유 · 달 400 → 직접 쓴 글 400")
+        ok(hit(mute(CEO, 1), 403, {"error": "KPI 작성 대상이 아닙니다."}) and hit(mute(CEO, 99, "foo", year=1), 403, {"error": "KPI 작성 대상이 아닙니다."}),
+           "작성 대상이 아닌 사람(대표이사)은 403 — 해 · 실행목표 400 보다 먼저")
+        ok(all(hit(mute(S, 1, year=y), 400, BAD_YEAR) for y in (1, True, "%d" % year, None, 2101)) and hit(mute(S, 1, year=year + 1), 404, NO_PLAN)
+           and mutes(S) == before, "해가 이상하면 400 → 그해 확정본이 없으면 404 — 아무것도 안 바뀜")
+        r = mute(S, 2, "etc", month=12, text="  " + "가" * 50 + " \n")
+        ok(r.status_code == 200 and mutes(S) == [before[0], (2, "etc", "가" * 50, 12, z(10, 15)), before[2]]
+           and mute_of(S, 2) == {"why": "etc", "text": "가" * 50, "until": 12, "at": z(10, 15)}, "50자 (앞뒤 공백은 뺌)까지 됨 — 이미 끈 줄은 바꿔 끔 (줄 하나)")
+
+        # 부진은 반올림한 숫자로 (정기 업무 하나만 따지게 나머지 둘은 끈 채로)
+        ok(hit(unmute(S, S, 1), 200, {"ok": True}) and put(S, "progress", {"rid": 1, "actual": 7.128}).status_code == 200
+           and hit(gap_set(HR, 20), 200, {"ok": True}) and 78.5 <= (a := alarm_of(S))["expected"] < 79.5 and 59 <= a["pct"] < 59.5 and a["expected"] - a["pct"] < 20,
+           "(준비: 기대 78.9 안팎 · 진행률 59.4 안팎 — 반올림 전 차이는 20 이 안 됨)")
+        ok(alarm_of(S)["slow"] is True and prog(S).json["gap"] == 20, "부진은_반올림한_숫자로: 기준 20 — 반올림해 79 − 59 = 20 이라 부진 (반올림 전 차이 19.5 로는 부진이 아님)")
+        ok(gap_set(HR, 21).status_code == 200 and alarm_of(S)["slow"] is False and prog(S).json["gap"] == 21, "기준 21 이면 부진 아님")
+        ok(put(S, "progress", {"rid": 1, "actual": 7.2}).status_code == 200 and 59.9 < alarm_of(S)["pct"] < 60.1 and gap_set(HR, 20).status_code == 200
+           and alarm_of(S)["slow"] is False and gap_set(HR, 19).status_code == 200 and alarm_of(S)["slow"] is True,
+           "진행률 60 이면 차이 19: 기준 20 은 아님 · 기준 19 는 부진 (차이가 정확히 기준일 때 참)")
+
+        # 고른 달 말일까지
+        r = mute(S, 1, "month", month=10, text="가상 버려지는 글")
+        ok(r.status_code == 200 and mutes(S)[0] == (1, "month", None, 10, z(10, 15)), "(이번 달=10월까지 끔 — 직접 적기가 아니면 보낸 글은 버림)")
+        at(10, 31, 14, 59)  # 한국 10월 31일 23시 59분
+        ok(mute_of(S, 1) == {"why": "month", "text": None, "until": 10, "at": z(10, 15)} and alarm_of(S) == {"slow": False, "pct": None, "expected": None},
+           "고른_달_말일까지: 한국 10/31 23:59 에는 아직 꺼져 있음 (셋 다 꺼져 있어 알람 없음)")
+        at(10, 31, 15, 0)  # 한국 11월 1일 0시
+        ok(mute_of(S, 1) is None and mutes(S)[0] == (1, "month", None, 10, z(10, 15)) and mute_of(S, 3) is not None and alarm_of(S)["pct"] is not None,
+           "한국 11/1 0시부터 다시 켜짐 (줄은 DB 에 남음) — 올해 안으로 끈 것은 그대로 · 켜진 항목만 따짐")
+
+        # 본인과 팀장이 다시 켠다
+        at(11, 2)
+        ok(mute(EMP, 1).status_code == 200 and mute(EMP, 3, "month", month=11).status_code == 200 and [m[0] for m in mutes(EMP)] == [1, 3], "(팀원이 두 항목의 알람을 끔)")
+        ok(all(hit(unmute(w, EMP), 403, NOT_UNMUTER) for w in (HR, HEAD, CEO, EMP2, LEAD2)) and [m[0] for m in mutes(EMP)] == [1, 3],
+           "본인과_팀장이_다시_켠다: HR · 본부장(윗사람) · 대표이사 · 다른 사람은 403 — 줄 그대로")
+        ok(c(CEO).post("/api/kpi/delegation", base_url=BASE, headers=ORIGIN, json={"on": True}).json == {"ok": True, "on": True}
+           and hit(unmute(HR, EMP), 403, NOT_UNMUTER) and len(mutes(EMP)) == 2, "대표이사가 HR 에 맡김을 켜도 HR 은 403 (같은 문구)")
+        c(CEO).post("/api/kpi/delegation", base_url=BASE, headers=ORIGIN, json={"on": False})
+        ok(hit(unmute(HR, EMP, year=1), 403, NOT_UNMUTER) and hit(unmute(LEAD, EMP, year=1), 400, BAD_YEAR) and hit(unmute(LEAD, EMP, year=True), 400, BAD_YEAR)
+           and all(hit(unmute(LEAD, EMP, rid), 400, {"error": "실행목표 번호가 올바르지 않습니다."}) for rid in (None, "1", True, 1.5, [1], 10 ** 30, 0, -1))
+           and len(mutes(EMP)) == 2, "순서: 다시 켤 수 있는 사람이 아님 403 → 해 400 → 실행목표 번호 400")
+        ok(hit(unmute(LEAD, EMP, 1), 200, {"ok": True}) and [m[0] for m in mutes(EMP)] == [3] and mute_of(EMP, 1) is None and mute_of(EMP, 3) is not None, "팀장(바로 위 관리자)이 다시 켬")
+        ok(hit(unmute(EMP, EMP, 3), 200, {"ok": True}) and mutes(EMP) == [], "본인이 다시 켬")
+        ok(hit(unmute(EMP, EMP, 3), 200, {"ok": True}) and hit(unmute(LEAD, EMP, 99), 200, {"ok": True}), "꺼 두지 않은 줄을 켜려 해도 200 (아무 일 없음)")
+        ok(mute(EMP2, 1).status_code == 200 and hit(unmute(LEAD, EMP2), 403, NOT_UNMUTER) and hit(unmute(LEAD2, EMP2), 200, {"ok": True}) and mutes(EMP2) == [],
+           "바로 위 관리자는 지금 기준: 팀을 옮긴 사람은 옛 팀장 403 · 새 팀장 200")
+        ok(mute(HEAD, 1).status_code == 200 and hit(unmute(HR, HEAD), 403, NOT_UNMUTER) and hit(unmute(CEO, HEAD), 200, {"ok": True}) and mutes(HEAD) == [],
+           "바로 위 관리자가 대표이사여도 다시 켤 수 있음 (HR 은 403)")
+
+        # 알람 기준은 HR이
+        ok(all(hit(gap_set(w, 30), 403, NOT_HR) for w in (LEAD, HEAD, CEO, EMP, LEAD2)) and hit(gap_set(LEAD, 0), 403, NOT_HR) and prog(S).json["gap"] == 19,
+           "알람_기준은_HR이: 팀장 · 본부장 · 대표이사 · 팀원은 403 (값이 이상해도 403 먼저) — 기준 그대로")
+        ok(all(hit(gap_set(HR, g), 400, BAD_GAP) for g in (0, 101, -1, "20", True, False, 20.5, 30.0, None, [20], {"a": 1}, 10 ** 30))
+           and all(c(HR).post("/api/kpi/admin/alarm", base_url=BASE, headers=ORIGIN, json={"year": y, "gap": 30}).json == BAD_GAP
+                   for y in (None, True, "%d" % year, 2025, 2101, year + 0.5, 0))
+           and c(HR).post("/api/kpi/admin/alarm", base_url=BASE, headers=ORIGIN, json={"gap": 30}).status_code == 400 and prog(S).json["gap"] == 19,
+           "기준이 1~100 정수가 아니거나 해가 2026~2100 정수가 아니면 400 (숫자 글자 · 참/거짓 · 소수 포함) — 기준 그대로")
+        ok(hit(gap_set(HR, 1), 200, {"ok": True}) and hit(gap_set(HR, 100), 200, {"ok": True}) and hit(gap_set(HR, 30), 200, {"ok": True})
+           and prog(S).json["gap"] == 30 and admin_gap(year) == 30 and prog(S, HEAD).json["gap"] == 30 and year_row(year)[0][3] == 30,
+           "HR 이 정함: 1 · 100 도 됨 — 진행 기록의 gap · /api/kpi/admin 의 alarmGap 이 30")
+        logs = q("SELECT actor_user_id, actor_is_hr, on_behalf_of, entity_type, entity_id, after_data FROM audit_logs WHERE action = 'KPI_ALARM_SET' ORDER BY id")
+        ok([json.loads(l[5])["gap"] for l in logs] == [20, 21, 20, 19, 1, 100, 30] and all(l[:5] == (HR, 1, None, "kpi_year", year) for l in logs)
+           and logs[-1][5] == json.dumps({"year": year, "gap": 30}), "감사로그 KPI_ALARM_SET: 바꾼 때마다 해 · 기준 (거절한 것은 안 남음)")
+        ok(year_row(Y2) == [] and admin_gap(Y2) == 20, "(먼 해는 기간 줄이 없음 — 기준은 기본 20)")
+        ok(hit(gap_set(HR, 45, Y2), 200, {"ok": True}) and year_row(Y2) == [(None, None, None, 45, None, HR, z(11, 2))] and admin_gap(Y2) == 45,
+           "기간 줄이 없던 해에도 정해짐: 날짜 없이 줄을 만들고 (기준 · 바꾼 때 · 바꾼 사람) 기간은 비어 있음")
+        ok(hit(biz_set(HR, [goal("가상 먼 해 목표")], Y2), 200, {"ok": True})
+           and c(HR).post("/api/kpi/admin/year", base_url=BASE, headers=ORIGIN,
+                          json={"year": Y2, "editFrom": f"{Y2}-03-01", "editTo": f"{Y2}-03-31", "evalStart": f"{Y2}-06-01"}).status_code == 200
+           and year_row(Y2)[0][:4] == (f"{Y2}-03-01", f"{Y2}-03-31", f"{Y2}-06-01", 45) and json.loads(year_row(Y2)[0][4]) == [goal("가상 먼 해 목표")] and admin_gap(Y2) == 45,
+           "그 뒤 POST /api/kpi/admin/year 로 기간을 바꿔도 알람 기준 45 · 경영계획이 남음")
+
+        # 경영계획은 대표이사 · 본부장 · HR만
+        ok(all(hit(biz_get(w), 403, NO_BIZ) for w in (LEAD, EMP, LEAD2, EMP2, DIRECT)) and c(LEAD).get("/api/kpi/biz-plan?year=abc", base_url=BASE).status_code == 403,
+           "경영계획은_대표이사_본부장_HR만: 팀장 · 팀원은 GET 403 (해가 이상해도 403 먼저)")
+        ok(all(hit(biz_get(w), 200, {"year": year, "goals": []}) for w in (CEO, HEAD, HR)) and c(HR).get("/api/kpi/biz-plan?year=abc", base_url=BASE).status_code == 400
+           and c(HR).get("/api/kpi/biz-plan?year=2025", base_url=BASE).status_code == 400, "대표이사 · 본부장 · HR 은 200 (아직 없으면 빈 목록) · 해가 이상하면 400")
+        ok(all(hit(biz_set(w, [goal("가상")]), 403, NOT_HR) for w in (LEAD, HEAD, CEO, EMP)) and biz_db(year) is None, "HR 아닌 사람의 저장은 403 — 아무것도 안 바뀜")
+        ok(hit(biz_set(HR, [goal(f"가상 목표 {i}") for i in range(21)]), 400, {"error": "목표는 20개까지 적을 수 있어요."})
+           and hit(biz_set(HR, [goal("", "가상 내용만")]), 400, {"error": "내용만 있는 줄이 있어요. 목표를 함께 적어 주세요."})
+           and hit(biz_set(HR, [goal("가" * 61)]), 400, {"error": "목표는 60자까지 적을 수 있어요."})
+           and hit(biz_set(HR, [goal("가", "나" * 301)]), 400, {"error": "내용은 300자까지 적을 수 있어요."}),
+           "경영계획_검사: 21개 · 목표 없이 내용 · 목표 61자 · 내용 301자는 400 (쉬운 문구)")
+        ok(all(biz_set(HR, [goal(g, d)]).status_code == 400 for g, d in (("가\x00나", ""), ("가", "나\x01다"), ("\ud800", ""), ("가", "\udfff"), ("가\x7f", "")))
+           and all(biz_set(HR, v).status_code == 400 for v in (None, "가", {"goal": "가", "detail": ""}, [None], ["가"], [{"goal": "가"}], [{"goal": 5, "detail": ""}], [{"goal": "가", "detail": None}]))
+           and c(HR).post("/api/kpi/admin/biz-plan", base_url=BASE, headers=ORIGIN, json={"goals": []}).status_code == 400
+           and all(c(HR).post("/api/kpi/admin/biz-plan", base_url=BASE, headers=ORIGIN, json={"year": y, "goals": []}).status_code == 400 for y in (True, "%d" % year, 2025, 2101))
+           and biz_db(year) is None, "제어문자 · 짝 없는 글자 · 목록이 아닌 것 · 줄 모양이 이상한 것 · 해가 이상한 것은 400 — 아무것도 안 바뀜")
+        r = biz_set(HR, [goal("가" * 60, "나" * 300)] + [goal(f"가상 목표 {i}") for i in range(19)])
+        ok(hit(r, 200, {"ok": True}) and len(json.loads(biz_db(year))) == 20 and len(biz_get(CEO).json["goals"]) == 20, "목표 20개 · 목표 60자 · 내용 300자까지 됨")
+        r = biz_set(HR, [goal("  가상 매출 목표  ", " 가상 내용 \n"), goal("  ", ""), goal("", "\n"), goal("가상 둘째 목표")])
+        want = [goal("가상 매출 목표", "가상 내용"), goal("가상 둘째 목표")]
+        ok(hit(r, 200, {"ok": True}) and json.loads(biz_db(year)) == want and all(hit(biz_get(w), 200, {"year": year, "goals": want}) for w in (CEO, HEAD, HR)),
+           "둘 다 빈 줄은 버리고 앞뒤 공백을 뺀 채 저장 — 대표이사 · 본부장 · HR 이 같은 목록을 읽음")
+        ok(hit(biz_set(HR, []), 200, {"ok": True}) and biz_db(year) == "[]" and hit(biz_get(CEO), 200, {"year": year, "goals": []}), "빈 목록으로 비울 수 있음")
+        logs = q("SELECT actor_user_id, actor_is_hr, entity_type, entity_id, after_data FROM audit_logs WHERE action = 'KPI_BIZ_PLAN_SET' ORDER BY id")
+        ok([(l[0], l[1], l[2], l[3]) for l in logs] == [(HR, 1, "kpi_year", Y2), (HR, 1, "kpi_year", year), (HR, 1, "kpi_year", year), (HR, 1, "kpi_year", year)]
+           and [json.loads(l[4]) for l in logs] == [{"year": Y2, "count": 1}, {"year": year, "count": 20}, {"year": year, "count": 2}, {"year": year, "count": 0}]
+           and not any("가상" in l[4] for l in logs), "감사로그 KPI_BIZ_PLAN_SET: 해 · 개수만 (목표 문장 없음)")
+
+        # 포털 화면에서만
+        snap = lambda: (mutes(S), year_row(year), biz_db(year), q("SELECT COUNT(*) FROM audit_logs WHERE action IN ('KPI_ALARM_SET', 'KPI_BIZ_PLAN_SET')")[0][0])  # noqa: E731
+        s0, plain = snap(), lambda who, path, body: c(who).post(path, base_url=BASE, headers={}, json=body)  # noqa: E731
+        ok(plain(S, "/api/kpi/me/mute", {"year": year, "rid": 2, "why": "year"}).status_code == 403
+           and plain(S, f"/api/kpi/plans/{S}/unmute", {"year": year, "rid": 3}).status_code == 403
+           and plain(HR, "/api/kpi/admin/alarm", {"year": year, "gap": 55}).status_code == 403
+           and plain(HR, "/api/kpi/admin/biz-plan", {"year": year, "goals": [goal("가상")]}).status_code == 403 and snap() == s0 and mutes(S)[2][0] == 3,
+           "포털 화면에서만 (Origin 없으면 403): 알람 끄기 · 다시 켜기 · 알람 기준 · 경영계획 모두 — 아무것도 안 바뀜")
+
+        # 올해가 아님 · 기록 기간
+        def next_jan(d):
+            """시계를 다음 해 1월 d일 (UTC 03:00 = 한국 정오)에 맞춘다."""
+            t = datetime(year + 1, 1, d, 3, 0, tzinfo=timezone.utc)
+            auth._now = lambda: t
+            jar.clear()
+
+        next_jan(5)  # 지난해 기록은 1월 7일까지 쓸 수 있지만 알람은 올해 것만 끈다
+        ok(hit(mute(S, 1), 400, {"error": "올해 KPI만 알람을 끌 수 있습니다."}) and mute_of(S, 3) is None and mutes(S)[2][:2] == (3, "year"),
+           "올해가 아니면 400 · 해가 바뀌면 올해 안으로 끈 알람도 다시 켜진 것으로 보임 (줄은 남음)")
+        next_jan(8)
+        ok(hit(mute(S, 1), 403, {"error": "기록 기간이 지났습니다."}), "기록 기간(다음 해 1월 7일)이 지나면 403 — 올해 아님 400 보다 먼저")
+
+        # 이 절이 만든 것을 치운다 (뒤 절이 같은 가상 조직을 이어 쓴다)
+        x("DELETE FROM kpi_mutes")
+        x("DELETE FROM kpi_progress WHERE user_id = ?", S)
+        x("DELETE FROM kpi_years WHERE year = ?", Y2)
+        if had_row:
+            x("UPDATE kpi_years SET alarm_gap = 20, biz_plan = NULL WHERE year = ?", year)
+        else:
+            x("DELETE FROM kpi_years WHERE year = ?", year)
     finally:
         auth._now = real_now
         x("DELETE FROM ceo_delegation WHERE ceo_user_id = ?", CEO)
