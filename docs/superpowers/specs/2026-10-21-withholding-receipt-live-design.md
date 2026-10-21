@@ -170,8 +170,8 @@ HR 화면은 단추 둘로 나눈다: **내 원천징수영수증** / **영수�
 - **올리기는 여러 번에 나눠 보낸다** — nginx 본문 한도가 5MB이고 PDF는 한 사람 수백 KB다.
   - **해 전체**: 첫 묶음에 `mode:"all"`·`reset`·전체 사람 수를 보내면 그 해의 줄을 지우고(공개 중이면 409) `pending`을 전체 수로 둔다. 묶음마다 `pending`을 줄인다. **`pending`이 0이어야 공개할 수 있다**(서버가 막는다) — 중간에 끊기면 HR 화면에 "올리다 멈춤 · 다시 올려 주세요".
   - **사람만**: `mode:"some"` — 그 해가 없으면 DRAFT로 만들고, 공개 중이어도 받는다. 묶음 안의 사람마다 한 줄씩 통째로 바꾸거나 더한다(한 사람의 요약과 PDF는 한 번에 바뀐다 — 반쯤 바뀐 사람이 없게). 이미 있던 사람을 공개 중인 해에서 바꾸면 그 줄 `revised=1`, `seen_at` 비움. 해 전체 올리기가 끝나지 않은(`pending>0`) 해에는 받지 않는다(409).
-- 받는 모양 검사: 요약 칸은 정수 또는 null, PDF는 `%PDF`로 시작하고 한 사람 5MB 이하(base64 전), 한 묶음 본문 4.5MB 이하, 직원은 활성 사용자.
-- 길: `GET /api/withholding`(본인: 공개된 해의 요약 목록, PDF 빼고) · `GET /api/withholding/<year>/pdf`(본인은 공개된 해만, HR은 `?user=`로 공개 전도 — 남의 것은 감사로그 `WITHHOLDING_VIEW`) · `GET /api/withholding/years`(HR) · `POST /api/withholding/<year>`(HR, 묶음) · `POST …/open` · `…/close` · `…/seen`. 응답은 `Cache-Control: no-store`. 직원이 `?user=`를 붙이면 본인 번호여도 403(급여명세서와 같다).
+- 받는 모양 검사: 요약 칸은 정수 또는 null, PDF는 `%PDF`로 시작하고 한 사람 3MB 이하(base64 전), 한 묶음 본문 4.7MB 이하(화면은 여유를 두고 4.5MB로 나눈다)·200명 이하, 해 전체 10,000명 이하, 직원은 활성 사용자.
+- 길: `GET /api/withholding`(본인: 공개된 해의 요약 목록, PDF 빼고) · `GET /api/withholding/<year>/pdf`(본인은 공개된 해만, HR은 `?user=`로 공개 전도 — 남의 것은 감사로그 `WITHHOLDING_VIEW`(요약) · `WITHHOLDING_PDF_VIEW`(PDF)) · `GET /api/withholding/years`(HR — 해마다 `year`·`status`·`people`·`pending`·`revised`·`uploadedAt`·`openedAt`과 **`users`: 그 해에 영수증이 있는 직원 번호 목록**. 번호만 — 이름·금액 없음. 사람만 올리기 확인 창이 "바꿈 · 더함"을 나누는 데 쓴다) · `POST /api/withholding/<year>`(HR, 묶음) · `POST …/open` · `…/close` · `…/seen`. 응답은 `Cache-Control: no-store`. 직원이 `?user=`를 붙이면 본인 번호여도 403(급여명세서와 같다).
 - `HR_PAY_KEY`가 없으면 올리기 503, 목록 `ready:false`(급여명세서와 같다).
 - 감사로그에는 해 · 사람 수 · 본 직원 번호만. 이름 · 금액 · 파일 이름은 넣지 않는다. 서버 로그도.
 
@@ -203,7 +203,7 @@ HR 화면은 단추 둘로 나눈다: **내 원천징수영수증** / **영수�
 
 ## 8. 검사
 
-- 화면: `whLiveSelfCheck()` — 작은 가짜 zip(ZipCrypto · AES-256 둘 다, 가상 인물)을 풀기, 첫 쪽 판단, 숫자 읽기(글자 견본), 맞추기 규칙(NONE·SAME·TWICE·OUT·대표이사 빼기), 막는 이유. `homeSelfCheck`·`todoSelfCheck`가 새 숫자를 함께 본다. 이 화면의 사용법(`TOURS`)도 고친다.
+- 화면: `await whSelfCheck()` — 작은 가짜 zip(ZipCrypto · AES-256 둘 다, 가상 인물)을 풀기, 첫 쪽 판단, 숫자 읽기(글자 견본), 맞추기 규칙(NONE·SAME·TWICE·OUT·대표이사 빼기), 막는 이유. 새 영수증 숫자(`TODO.p3` = 홈 오늘의 업무 수)도 `whSelfCheck`가 함께 본다. 이 화면의 사용법(`TOURS`)도 고친다.
 - 서버: `auth_check`에 `check_withholding`(잠금 · 공개/내리기 · 409 · 503 · 해 전체 묶음과 pending · 사람만 바꾸기/더하기와 사람별 revised·seen · 403 · 감사로그에 이름·금액 없음), `check_schema`에 표 검사.
 - 실제 파일: 4.8의 확인 파일로 인사담당자 PC에서.
 - 가짜 PDF는 reportlab으로 만든다(가상 이름). 실제 파일·실제 이름은 저장소에 넣지 않는다.
