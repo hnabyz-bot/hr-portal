@@ -2008,7 +2008,7 @@ def main() -> int:
     check_payslips(hr)
     check_withholding(hr)
 
-    acts ={r[0] for r in q("SELECT action FROM audit_logs")}
+    acts = {r[0] for r in q("SELECT action FROM audit_logs")}
     ok({"LOGIN", "HR_BOOTSTRAP"} <= acts, "감사로그 LOGIN 이 남음")
     ok(q("SELECT actor_position, actor_is_hr FROM audit_logs WHERE action = 'LOGIN' AND actor_user_id = 2 LIMIT 1")
        == [("TEAM_LEADER", 0)], "LOGIN 감사로그에 직책·HR 권한 두 칸")
