@@ -18,6 +18,7 @@
 - 감사로그 `after_data`에는 해 · 사람 수 · 모드만. 이름·금액·파일 이름 금지.
 - 못 읽은 숫자는 `null` — 0이나 다른 계산으로 채우지 않는다.
 - 비활성 직원에게는 올리지 않는다(서버도 400).
+- pdf.js 3.11.174의 CVE-2024-4367을 막으려고 PDF를 여는 모든 곳(`getDocument`)이 `WH_PDF_OPTS`(그 안에 `isEvalSupported:false`)를 쓴다.
 - pdf.js · pdf-lib는 판을 고정해 `public/vendor/pdfjs-3.11.174/`, `public/vendor/pdf-lib-1.17.1/`에서 준다(다른 회사 서버의 스크립트를 부르지 않는다). 직원 화면은 "원본 보기"를 누를 때만 pdf.js를 부른다.
 - 화면 글: "~해요"체가 아닌 기존 급여명세서 화면의 "~합니다/~해 주세요" 말투에 맞춘다. 직원에게 보이는 금액은 `payShow`(눈 모양)로 가린다.
 - HR 화면은 단추 둘: **내 원천징수영수증** / **영수증 올리기 · 공개** (`paySwitch`·`ctSwitch`와 같은 `.hr-seg` 모양).
@@ -102,13 +103,13 @@
 - Modify: `.ci/check-public.sh` (`ALLOWED_EXT`에 `bcmap`), `public/index.html` (`whLib()`)
 
 **Interfaces:**
-- Produces: `async function whLib(need = ['pdfjs']) -> { pdfjs, PDFLib }` — `need`에 `'pdflib'`이 있으면 pdf-lib도. 한 번 불러온 것은 다시 부르지 않는다(약속을 기억). `pdfjs.GlobalWorkerOptions.workerSrc = 'vendor/pdfjs-3.11.174/pdf.worker.min.js'`. 문서를 열 때 쓸 옵션 상수 `WH_PDF_OPTS = { cMapUrl:'vendor/pdfjs-3.11.174/cmaps/', cMapPacked:true }`.
+- Produces: `async function whLib(need = ['pdfjs']) -> { pdfjs, PDFLib }` — `need`에 `'pdflib'`이 있으면 pdf-lib도. 한 번 불러온 것은 다시 부르지 않는다(약속을 기억). `pdfjs.GlobalWorkerOptions.workerSrc = 'vendor/pdfjs-3.11.174/pdf.worker.min.js'`. 문서를 열 때 쓸 옵션 상수 `WH_PDF_OPTS = { cMapUrl:'vendor/pdfjs-3.11.174/cmaps/', cMapPacked:true, isEvalSupported:false }`(CVE-2024-4367 막기 — 바꾸지 않는다). `async function whPdfOpen(bytes: Uint8Array) -> PDFDocumentProxy` 한 곳에서 `getDocument({ data:bytes, ...WH_PDF_OPTS })` — 모든 곳이 이것으로 연다.
 
 - [ ] **Step 1: 내려받기 허락 받기** — 사용자에게 파일 이름 · 출처(`https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/…`, `https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js`, cmaps는 `https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/cmaps/…`) · 대략 크기(약 3MB)를 알리고 허락을 받는다.
 - [ ] **Step 2: 내려받고 원본 확인** — 받은 각 파일의 SHA-256을 cdnjs가 밝힌 값(`https://api.cdnjs.com/libraries/pdf.js/3.11.174?fields=sri`, `…/pdf-lib/1.17.1?fields=sri`의 sha512 → 받은 파일의 sha512 base64와 같아야 함)과 맞춘다. 다르면 멈추고 알린다. 각 js 맨 위에 라이선스 주석(Apache-2.0 · MIT)이 있는지 본다.
 - [ ] **Step 3: `check-public.sh`에 `bcmap` 더하고 실행** — `bash .ci/check-public.sh` 통과.
 - [ ] **Step 4: `whLib` 쓰기** — `<script>`를 붙여 불러오고 `window.pdfjsLib`·`window.PDFLib`를 돌려준다. 실패하면 Error('LIB').
-- [ ] **Step 5: 확인** — 미리보기(8765)에서 콘솔 `await whLib(['pdfjs','pdflib'])` → 둘 다 있음, 네트워크에 다른 회사 주소 없음.
+- [ ] **Step 5: 확인** — 미리보기(8765)에서 콘솔 `await whLib(['pdfjs','pdflib'])` → 둘 다 있음, 네트워크에 다른 회사 주소 없음. `WH_PDF_OPTS.isEvalSupported === false`를 `whSelfCheck`(Task 4에서 만든다)에 한 줄로 넣는다 — 그 전이면 Task 4에서.
 - [ ] **Step 6: Commit** — `git add public/vendor .ci/check-public.sh public/index.html && git commit -m "원천징수영수증: pdf.js 3.11.174 · pdf-lib 1.17.1 (우리 서버에서)"`
 
 ### Task 4: zip 풀기 (브라우저)
@@ -177,12 +178,13 @@
 - Produces:
   - `const wh = { view:'me', years:[], ready:true, state:'', pick:null, mem:{ years:{}, rows:{} }, prev:null }` — `view`: HR 화면 'me' | 'admin'. `mem.years[y] = { year, status, pending:0, people, revised, uploadedAt, openedAt }`, `mem.rows[y][키] = { sum, pdf:Uint8Array, revised, seen }`(시연 키 = 시연 역할 열쇠).
   - `wh.pick = { file, mode:'all'|'some', year, groups:[{ file, from, to, flat, name, sum, check, pdfBytes:null }], to:[id|null|'skip'], why:[…], bday:[…], orphans, skipped:{ other:n }, err:'', busy:false }`
-  - `whBlock() -> string` (빈 글자 = 올릴 수 있다): 고른 파일 없음 · 주인 없는 쪽 · 귀속연도(2000~2099 정수) · `mode:'all'`인데 공개 중인 해 · `pending>0`인 해에 사람만 · 고르지 않은 줄 · 같은 직원 두 줄(TWICE를 그대로 둠) · 올릴 사람 0명 · 한 사람 PDF가 3,000,000바이트 초과.
+  - `wh.pick`에 `zipcrypto:boolean`(ZipCrypto로 걸린 항목이 있었나 — 경고용), `seenAll:boolean`(사람만 올리기의 "이름과 그림을 한 사람씩 확인했어요" 체크) 칸을 더한다.
+  - `whBlock() -> string` (빈 글자 = 올릴 수 있다): 고른 파일 없음 · 주인 없는 쪽 · 귀속연도(2000~2099 정수) · `mode:'all'`인데 공개 중인 해 · `pending>0`인 해에 사람만 · 고르지 않은 줄 · 같은 직원 두 줄(TWICE를 그대로 둠) · 올릴 사람 0명 · 한 사람 PDF가 3,000,000바이트 초과 · **`mode:'some'`인데 `seenAll` 거짓**("이름과 첫 쪽 그림을 한 사람씩 확인한 뒤 체크해 주세요").
   - `whSwitch() -> string` — `id="whSeg"`, 단추 '내 원천징수영수증' / '영수증 올리기 · 공개'.
 
 - [ ] **Step 1: `rzLoad` 가지** — `kind==='wh'`이면 `rzLocked` 검사 전에 `return whLoad(file, pw)`; `rzPick('wh')`는 `accept='.zip'`; `rzAskPw`의 안내 글은 `kind==='wh'`이면 "반디집에서 건 <b>압축 암호</b>를 넣습니다. 암호는 이 파일을 여는 데만 쓰고 어디에도 저장하지 않습니다.", 제목 "암호가 걸린 압축 파일입니다". `whLoad`: `whKind`가 zip이 아니면 안내(7z·알집 = "반디집에서 <b>zip</b> 형식으로 다시 압축해 주세요", PDF = "PDF를 암호 zip으로 묶어 올려 주세요") / 목록에 암호 걸린 항목이 있고 `pw==null`이면 `rzAskPw('wh', file)` / Error('PW')면 `rzAskPw('wh', file, '암호가 맞지 않습니다. 다시 넣어 주세요.')` / PDF 0개면 안내 / 그 밖은 `whStage(file.name, pdfs, encrypted)`. 암호는 `whZipRead`에 넘긴 뒤 들고 있지 않는다.
 - [ ] **Step 2: `whStage`** — `whLib(['pdfjs'])` → PDF마다 쪽 글자(`getTextContent` → `whLines`) → `whSplit` → 사람마다 `whNums`(첫 쪽, 다음 쪽) → `whMatch`(명단 = 실제 `MS_LIVE.list` 활성 + 비활성(OUT 판단용), 시연 = `psMembers()`와 같은 모양으로 시연 인물). 쪽 수가 많으면 "읽는 중… n/N쪽" 창. 귀속연도 기본 = 올해−1.
-- [ ] **Step 3: `whConfirm`** — 스펙 4.7: 맨 위 모드(해 전체/사람만 — 큰 글씨) · 귀속연도 칸 · PDF·사람·맞춘·못 맞춘 수 · 환급 합계·추가납부 합계("위하고 합계와 같은지 확인해 주세요") · 숫자를 못 읽은 사람 수 · 생일이 다른 사람 수 · 공개 중인 해 + 사람만이면 "이 N명에게 바로 보이고 '수정됨'이 붙어요", 사람만이면 "바꿈 n · 더함 m". 맞춘 사람 줄(접힘) / 못 맞춘 사람: 첫 쪽 작은 그림(pdf.js `render` 폭 160px 캔버스) + 직원 고르기 + "이번에서 빼기". "읽은 모양 보기"(접힘): 사람마다 `결정세액 찾음/못 찾음 · 금액 n개 · 자릿수`, 기납부·차감·총급여도 — 이름·금액 없이(스펙 4.8). 단추·안내는 `whBlock()`만 본다. 날짜·숫자 칸은 `psSync`처럼 바뀌는 곳만 고친다.
+- [ ] **Step 3: `whConfirm`** — 스펙 4.7: 맨 위 모드(해 전체/사람만 — 큰 글씨) · 귀속연도 칸 · PDF·사람·맞춘·못 맞춘 수 · 환급 합계·추가납부 합계("위하고 합계와 같은지 확인해 주세요") · 숫자를 못 읽은 사람 수 · 생일이 다른 사람 수 · 공개 중인 해 + 사람만이면 "이 N명에게 바로 보이고 '수정됨'이 붙어요", 사람만이면 "바꿈 n · 더함 m". 맞춘 사람 줄(접힘) / 못 맞춘 사람: 첫 쪽 작은 그림(pdf.js `render` 폭 160px 캔버스) + 직원 고르기 + "이번에서 빼기". **사람만 올리기**: 맞춘 사람도 접지 않고 모두 이름 + 첫 쪽 그림, 맨 아래 체크 "이름과 그림을 한 사람씩 확인했어요"(`wh.pick.seenAll`, 고르기를 바꾸면 다시 꺼짐). `wh.pick.zipcrypto`면 경고 "옛 암호 방식(ZipCrypto)이에요. 반디집에서 암호화 방식을 AES256으로 골라 다시 압축하면 더 안전해요"(막지 않음). "읽은 모양 보기"(접힘): 사람마다 `결정세액 찾음/못 찾음 · 금액 n개 · 자릿수`, 기납부·차감·총급여도 — 이름·금액 없이(스펙 4.8). 단추·안내는 `whBlock()`만 본다. 날짜·숫자 칸은 `psSync`처럼 바뀌는 곳만 고친다.
 - [ ] **Step 4: `whUpload`** — `whLib(['pdflib'])`로 사람마다 `PDFDocument.create()` + `copyPages(원본, from..to)` → 바이트. 실제: 사람을 본문 4,500,000바이트 이하 묶음으로 나눠 `POST /api/withholding/<year>`(첫 묶음 `reset: mode==='all'`, `total` = 올릴 사람 수), 하나라도 실패하면 창에 이유(창을 닫지 않음) + 해 전체였으면 "올리다 멈춤 — 다시 올려 주세요". 시연: `wh.mem`에 같은 규칙(해 전체 = 지우고 넣기·OPEN이면 거부 / 사람만 = 바꾸기·더하기, 공개된 적 있으면 revised). 끝나면 `kpiFlash('… N명 원천징수영수증을 올렸습니다. 아직 공개 전입니다.')`(사람만+공개 중이면 "바로 보입니다").
 - [ ] **Step 5: `whAdmin` · `whOpenAsk` · `whSetOpen` · `whPreview`** — `psAdmin`과 같은 표: 귀속연도 · 인원 · 상태(공개됨·공개 전·"올리다 멈춤 n명 남음") · 수정 n명 · 단추(미리 보기 / 공개·공개 내리기 / 해 전체 다시 올리기). 맨 위 도구: `id="whUp"` "해 전체 올리기"(`wh.pick` 모드 all로 `rzPick('wh')`), "사람만 바꾸기 · 더하기", 시연이면 "시연: 예시 자료로 올려 보기"(가짜 zip 없이 `whStage`에 글자 견본 쪽을 넘기는 길 — 그림은 "시연" 상자). 열쇠 없음이면 급여명세서와 같은 경고.
 - [ ] **Step 6: 확인** — 미리보기(8765, 시연)에서 HR 역할 → 원천징수영수증 → 영수증 올리기 · 공개 → `python tools/wh_fixtures.py receipt-zip <스크래치패드 폴더>`가 만든 가짜 zip(가상 3명, 첫 쪽들에 '가상대표', 쪽 4·5·3, 숫자 견본 모양, ZipCrypto와 AES 각각)을 골라 → 암호 → 확인 창: 3명 맞음, 환급/추가 합계가 스크립트가 출력한 값과 같음, 숫자 못 읽음 0 → 올리기 → 공개 → 사람만으로 1명 바꾸기. 틀린 암호·7z 가짜 파일·암호 없는 zip도 한 번씩. 화면을 찍어 본다.
@@ -198,7 +200,7 @@
 - Produces: `const WH_LIVE = { state:'', who:null, years:[], mine:[] }`(`PAY_LIVE`와 같은 방식) · `async whLoad…`는 Task 6과 이름이 겹치지 않게 `whFetch(who)`(지금 화면) · `whFetchMine()`(메뉴 숫자) · `whViewer(year, who)` · `TODO.p3 = ()=>AUTH.live ? WH_LIVE.mine.filter(y=>!y.seen).length : 0`.
 
 - [ ] **Step 1: 요약 화면** — 실제 로그인이면 서버 해 목록으로 지금 화면 모양을 그린다: 맨 위 = `taxSettle + localSettle`(둘 다 null이면 효과 없이 "요약을 만들지 못했습니다. 원본 PDF를 확인해 주세요."), 흐름 줄은 값이 있는 것만(① 총급여 ② 결정세액 = 소득세+지방, 둘 중 하나라도 null이면 그 줄 숨김 ③ 미리 낸 세금 ④ 환급/추가), 실효세율은 총급여·결정 소득세가 있을 때만. "공제받은 주요 항목" 대신 "자세한 공제 내역은 원본 PDF에서 확인해 주세요." 수정됨·새 영수증 표시는 급여명세서 `payBadges`와 같은 모양. 처음 연 해는 `/seen`(낙관적으로 숫자 먼저 줄임 — `paySeen`과 같은 방식).
-- [ ] **Step 2: 원본 보기 · 내려받기** — "원본 PDF 보기" → `whViewer`: PDF를 받아(`fetch …/pdf`) `whLib(['pdfjs'])`로 쪽마다 캔버스(카드 폭, 기기 화소 비율 반영)를 화면 안에 차례로 그린다 + "닫기". "내려받기"는 Blob + `<a download="원천징수영수증_${year}귀속.pdf">`, 아이폰 홈 화면 앱(`navigator.standalone===true`)이면 단추 대신 "PC에서 내려받을 수 있어요".
+- [ ] **Step 2: 원본 보기 · 내려받기** — "원본 PDF 보기" → `whViewer`: PDF를 받아(`fetch …/pdf`) `whLib(['pdfjs'])`로 쪽마다 캔버스(카드 폭, 기기 화소 비율 반영)를 화면 안에 차례로 그린다 + "닫기". "내려받기"는 Blob + `<a download="원천징수영수증_${year}귀속.pdf">`, 아이폰 홈 화면 앱(`navigator.standalone===true`)이면 단추 대신 "PC에서 내려받을 수 있어요". 단추 옆 한 줄: "주민등록번호가 들어 있어요. 여럿이 쓰는 PC라면 내려받은 파일을 지워 주세요." PDF는 `whPdfOpen`으로만 연다.
 - [ ] **Step 3: HR이 직원 고르기** — '내 원천징수영수증' 화면에 `payPickerLive`와 같은 고르기(직원을 고르면 `?user=`, 공개 전 해도, 상태 표시).
 - [ ] **Step 4: 메뉴 숫자** — `TODO.p3`, `homePortalTasks`에 `add(TODO.p3(), '새 원천징수영수증 확인', 'pay', 'p3', …)`, 로그인 직후 `whFetchMine()`(급여명세서 `payLoadMine`을 부르는 자리 옆), 화면을 다시 볼 때(`payWake` 옆) 새로.
 - [ ] **Step 5: 사용법** — `TOURS`에 `wh:{ label:'원천징수영수증 보는 법', tab:'p3', steps }` — `#whSeg`(HR) · `#whUp`(HR) · 맨 위 금액 · 원본 보기 단추. 안내할 칸이 없으면 단계가 빠지는 기존 규칙을 따른다.
