@@ -103,6 +103,11 @@ def apply_schema(path: str) -> sqlite3.Connection | None:
         "game_saves",
         "game_scores",
         "game_gifts",
+        "kpi_years",
+        "kpi_windows",
+        "kpi_plans",
+        "kpi_versions",
+        "ceo_delegation",
     }
     missing = expected - tables
     _report(not missing, f"테이블 {len(expected)}개 생성", f"누락: {sorted(missing)}")
@@ -629,10 +634,100 @@ def check_login_tables(conn: sqlite3.Connection) -> None:
         ok, _ = _rejects(conn, f"UPDATE users SET hiworks_mail_no = '{bad}' WHERE id = {user}")
         _report(ok, f"회사 번호 '{bad}' 거부")
 
+    print("22. KPI 계획서 (010)")
+    # 맡은 부서 — 하이웍스에서 본부장이 '임원' 부서에 들어가도 맡은 본부를 따로 둔다
+    conn.execute(f"UPDATE users SET led_department_id = {div} WHERE id = {user}")
+    _report(True, "맡은 부서 저장")
+    ok, msg = _rejects(conn, f"UPDATE users SET led_department_id = 9999 WHERE id = {user}")
+    _report(ok and "FOREIGN KEY" in msg, "없는 부서를 맡은 부서로 적으면 거부", msg)
+
+    # 해마다 KPI 작성 기간 (인사담당자가 정한다)
+    yr = "INSERT INTO kpi_years (year, edit_from, edit_to, eval_start, updated_at) VALUES (?, ?, ?, ?, '2027-03-02T09:00:00Z')"
+    conn.execute(yr, (2027, "2027-01-05", "2027-01-20", "2027-02-01"))
+    _report(True, "2027년 KPI 작성 기간 저장")
+    conn.execute(yr, (2029, None, None, None))
+    _report(True, "기간을 아직 안 정한 해도 저장 (둘 다 비움)")
+    for args, why in (((2028, "2027-01-05", None, None), "시작일만 있는 기간"), ((2028, None, "2027-01-20", None), "종료일만 있는 기간"),
+                      ((2028, "2027-01-20", "2027-01-05", None), "종료일이 시작일보다 앞선 기간"),
+                      ((2028, "2027-01-05", "2027-02-30", None), "없는 종료일 2027-02-30"), ((2028, "2027-02-30", "2027-03-05", None), "없는 시작일 2027-02-30"),
+                      ((2028, "2027-1-5", "2027-01-20", None), "날짜 모양이 아닌 시작일"),
+                      ((2025, None, None, None), "2026 이전 해"), ((2101, None, None, None), "2100 이후 해")):
+        ok, msg = _rejects(conn, yr, args)
+        _report(ok and "CHECK" in msg, f"작성 기간 {why} 거부", msg)
+    ok, msg = _rejects(conn, yr, (2027, None, None, None))
+    _report(ok and "UNIQUE" in msg, "같은 해 작성 기간 두 줄 거부", msg)
+
+    # 한 사람만 따로 연 기간
+    wd = "INSERT INTO kpi_windows (user_id, year, edit_from, edit_to, set_by, set_at) VALUES ({u}, ?, ?, ?, {u}, '2027-03-02T09:00:00Z')"
+    conn.execute(wd.format(u=user), (2027, "2027-03-01", "2027-03-10"))
+    _report(True, "한 사람만 따로 연 기간 저장")
+    ok, msg = _rejects(conn, wd.format(u=user), (2027, "2027-04-01", "2027-04-10"))
+    _report(ok and "UNIQUE" in msg, "같은 사람 같은 해 따로 연 기간 두 줄 거부", msg)
+    ok, msg = _rejects(conn, wd.format(u=9999), (2027, "2027-03-01", "2027-03-10"))
+    _report(ok and "FOREIGN KEY" in msg, "없는 직원의 따로 연 기간 거부", msg)
+
+    # 계획서 — 한 사람 한 해에 한 줄
+    pl = ("INSERT INTO kpi_plans (user_id, year, status, draft, confirmed_version, note, note_kind, change_reason, updated_at)"
+          " VALUES ({u}, ?, ?, ?, ?, ?, ?, ?, '2027-03-02T09:00:00Z')")
+    conn.execute(pl.format(u=user), (2027, "DRAFT", "[]", None, None, None, None))
+    _report(True, "작성 중 계획서 저장 (빈 목록)")
+    conn.execute(pl.format(u=user), (2029, "DRAFT", "[]", None, "가상 돌려보낸 사유", "RETURNED", None))
+    _report(True, "돌려보낸 사유가 붙은 작성 중 계획서 저장")
+    conn.execute(f"UPDATE kpi_plans SET status = 'SUBMITTED', submitted_at = '2027-03-03T09:00:00Z' WHERE user_id = {user} AND year = 2029")
+    _report(True, "계획서를 제출 상태로 바꿈")
+    conn.execute(pl.format(u=user), (2030, "CHANGE_REQUESTED", "[]", 1, None, None, "가상 수정 요청 사유"))
+    _report(True, "수정 요청 계획서 저장 (확정본 판 + 사유)")
+    for args, why in ((("APPROVED", "[]", None, None, None, None), "상태 APPROVED"),
+                      (("CONFIRMED", "[]", None, None, None, None), "확정인데 확정본 판이 없음"),
+                      (("CHANGE_REQUESTED", "[]", 1, None, None, None), "수정 요청인데 사유가 없음"),
+                      (("SUBMITTED", "[]", 0, None, None, None), "확정본 판 번호 0"),
+                      (("DRAFT", "[]", None, "가상", None, None), "종류 없이 메모만 있음"),
+                      (("DRAFT", "[]", None, None, "RETURNED", None), "메모 없이 종류만 있음"),
+                      (("DRAFT", "[]", None, "가상", "OTHER", None), "돌려보내기·거절이 아닌 메모 종류"),
+                      (("DRAFT", "{}", None, None, None, None), "목록이 아닌 JSON 초안"), (("DRAFT", "[", None, None, None, None), "깨진 JSON 초안")):
+        ok, msg = _rejects(conn, pl.format(u=user), (2028,) + args)
+        _report(ok and "CHECK" in msg, f"계획서 {why} 거부", msg)
+    ok, msg = _rejects(conn, pl.format(u=9999), (2028, "DRAFT", "[]", None, None, None, None))
+    _report(ok and "FOREIGN KEY" in msg, "없는 직원의 계획서 거부", msg)
+    ok, msg = _rejects(conn, pl.format(u=user), (2027, "DRAFT", "[]", None, None, None, None))
+    _report(ok and "UNIQUE" in msg, "같은 사람 같은 해 계획서 두 줄 거부", msg)
+
+    # 확정본 — 판이 쌓이기만 하고 고치거나 지울 수 없다
+    boss = conn.execute("SELECT id FROM users WHERE employee_no='T020'").fetchone()[0]
+    vs = "INSERT INTO kpi_versions (user_id, year, version, content, confirmed_at, confirmed_by, on_behalf_of) VALUES ({u}, ?, ?, ?, '2027-03-05T09:00:00Z', {u}, ?)"
+    conn.execute(vs.format(u=user), (2027, 1, "[]", None))
+    _report(True, "확정본 판 1 저장")
+    conn.execute(f"UPDATE kpi_plans SET status = 'CONFIRMED', confirmed_version = 1 WHERE user_id = {user} AND year = 2027")
+    _report(True, "계획서를 확정(CONFIRMED · 확정본 판 1)으로 바꿈")
+    conn.execute(vs.format(u=user), (2027, 2, "[]", boss))
+    _report(True, "다른 사람이 대신 확정한 판 2 저장 (대신한 사람 기록)")
+    for args, why, word in (((2027, 0, "[]", None), "판 0", "CHECK"), ((2027, 3, "{}", None), "목록이 아닌 JSON 내용", "CHECK"),
+                      ((2027, 3, "[", None), "깨진 JSON 내용", "CHECK"), ((2027, 1, "[]", None), "같은 판 두 번 저장", "UNIQUE"),
+                      ((2031, 1, "[]", None), "없는 계획서에 붙이기", "FOREIGN KEY"), ((2027, 3, "[]", 9999), "없는 사람이 대신한 것으로 적기", "FOREIGN KEY")):
+        ok, msg = _rejects(conn, vs.format(u=user), args)
+        _report(ok and word in msg, f"확정본 {why} 거부", msg)
+    ok, msg = _rejects(conn, "INSERT INTO kpi_versions (user_id, year, version, content, confirmed_at, confirmed_by) VALUES (" + user + ", 2027, 3, '[]', '2027-03-05T09:00:00Z', 9999)")
+    _report(ok and "FOREIGN KEY" in msg, "없는 사람이 확정한 확정본 거부", msg)
+    ok, msg = _rejects(conn, f"UPDATE kpi_versions SET content = '[1]' WHERE user_id = {user} AND year = 2027 AND version = 1")
+    _report(ok and "확정본" in msg, "확정본 고치기 거부", msg)
+    ok, msg = _rejects(conn, f"DELETE FROM kpi_versions WHERE user_id = {user} AND year = 2027 AND version = 1")
+    _report(ok and "확정본" in msg, "확정본 지우기 거부", msg)
+    ok, msg = _rejects(conn, f"DELETE FROM kpi_plans WHERE user_id = {user} AND year = 2027")
+    _report(ok and "FOREIGN KEY" in msg, "확정본이 있는 계획서 지우기 거부", msg)
+
+    # 대표이사 "HR에 맡기기" — 줄이 있으면 켜진 것
+    cd = "INSERT INTO ceo_delegation (ceo_user_id, since) VALUES ({u}, '2027-03-02T09:00:00Z')"
+    conn.execute(cd.format(u=user))
+    _report(True, "HR에 맡기기 켜기 (줄 하나)")
+    ok, msg = _rejects(conn, cd.format(u=user))
+    _report(ok and "UNIQUE" in msg, "이미 켠 사람이 또 켜기 거부", msg)
+    ok, msg = _rejects(conn, cd.format(u=9999))
+    _report(ok and "FOREIGN KEY" in msg, "없는 직원의 맡기기 거부", msg)
+
 
 def check_payslip_tables(conn: sqlite3.Connection) -> None:
     """급여명세서 표 (011). 금액·이름은 전부 가상 — data 는 잠근 글(nonce 12 + 내용 + 태그 16바이트)을 흉내 낸 아무 바이트."""
-    print("22. 급여명세서 (011)")
+    print("23. 급여명세서 (011)")
     up = conn.execute("SELECT id FROM users WHERE employee_no='T001'").fetchone()[0]
     emp = conn.execute(
         "INSERT INTO users (employee_no, name, email, department_id)"
