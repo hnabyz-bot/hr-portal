@@ -112,6 +112,10 @@ def apply_schema(path: str) -> sqlite3.Connection | None:
         "kpi_month_notes",
         "kpi_results",
         "kpi_sched_changes",
+        "kpi_month_checks",
+        "kpi_memos",
+        "kpi_memo_replies",
+        "kpi_mutes",
     }
     missing = expected - tables
     _report(not missing, f"테이블 {len(expected)}개 생성", f"누락: {sorted(missing)}")
@@ -875,6 +879,126 @@ def check_kpi_progress_tables(conn: sqlite3.Connection) -> None:
         conn.execute(f"DELETE FROM {tbl} WHERE user_id = {user} AND year = 2029")
 
 
+def check_kpi_review_tables(conn: sqlite3.Connection) -> None:
+    """KPI 현황 · 월간 확인 표 (013) + kpi_years 에 더한 알람 기준 · 경영계획 칸. 계획서는 22 절(check_login_tables)이 만든 것을 쓴다."""
+    print("25. KPI 현황 · 월간 확인 (013)")
+    uid = conn.execute("SELECT id FROM users WHERE employee_no='T001'").fetchone()[0]
+    user = "(SELECT id FROM users WHERE employee_no='T001')"
+    boss = conn.execute("SELECT id FROM users WHERE employee_no='T020'").fetchone()[0]
+    ver = conn.execute("PRAGMA user_version").fetchone()[0]
+    _report(ver >= 13, f"판 번호가 13 이상 — {ver}", f"실제 {ver}")
+    # 계획서는 22 절에서 만든 것을 쓴다: 2027 확정 · 2029 제출 · 2030 수정 요청 / 2028 · 2031 은 계획서가 없다.
+    T = "'2027-03-02T09:00:00Z'"
+    ln = lambda n: "가" * n  # 글자 수 맞춘 가상 문장
+
+    # 알람 기준 (해마다, 기본 20) · 경영계획 (목표 목록 JSON)
+    row = conn.execute("SELECT alarm_gap, biz_plan FROM kpi_years WHERE year = 2027").fetchone()
+    _report(row == (20, None), "이미 있던 해 줄은 알람 기준 20 · 경영계획 비어 있음", f"실제 {row}")
+    conn.execute("INSERT INTO kpi_years (year, edit_from, edit_to, eval_start, updated_at) VALUES (2032, NULL, NULL, NULL, " + T + ")")
+    gap = conn.execute("SELECT alarm_gap FROM kpi_years WHERE year = 2032").fetchone()[0]
+    _report(gap == 20, "기간 줄을 새로 넣으면 알람 기준이 20", f"실제 {gap}")
+    for g in (1, 100):
+        conn.execute("UPDATE kpi_years SET alarm_gap = ? WHERE year = 2027", (g,))
+    _report(True, "알람 기준 경계값 저장 (1 · 100)")
+    for g, why, word in ((0, "0", "CHECK"), (101, "101", "CHECK"), (-5, "-5", "CHECK"), (None, "비어 있음(NULL)", "NOT NULL")):
+        ok, msg = _rejects(conn, "UPDATE kpi_years SET alarm_gap = ? WHERE year = 2027", (g,))
+        _report(ok and word in msg, f"알람 기준 {why} 거부", msg)
+    conn.execute("UPDATE kpi_years SET alarm_gap = 20 WHERE year = 2027")
+    for bp in ('[{"goal": "가상 목표", "detail": "가상 내용"}]', "[]"):
+        conn.execute("UPDATE kpi_years SET biz_plan = ? WHERE year = 2027", (bp,))
+    conn.execute("UPDATE kpi_years SET biz_plan = NULL WHERE year = 2027")
+    _report(True, "경영계획 저장 (목표 목록 / 빈 목록 / 다시 비움)")
+    for bp, why in (("{}", "목록이 아닌 JSON"), ('"가상"', "글자 JSON"), ("[", "깨진 JSON")):
+        ok, msg = _rejects(conn, "UPDATE kpi_years SET biz_plan = ? WHERE year = 2027", (bp,))
+        _report(ok and "CHECK" in msg, f"경영계획 {why} 거부", msg)
+
+    # 월간 확인 — 한 사람 한 해 한 달에 한 줄
+    mc = "INSERT INTO kpi_month_checks (user_id, year, month, checked_at, checked_by) VALUES ({u}, ?, ?, " + T + ", ?)"
+    for m in (1, 3, 12):
+        conn.execute(mc.format(u=user), (2027, m, boss))
+    _report(True, "월간 확인 저장 (1월 · 3월 · 12월)")
+    for args, why, word in (((2027, 13, boss), "13월", "CHECK"), ((2027, 0, boss), "0월", "CHECK"),
+                            ((2027, 3, boss), "같은 사람 같은 해 같은 달 두 줄", "UNIQUE"),
+                            ((2027, 4, 9999), "없는 사람이 확인한 것으로 적기", "FOREIGN KEY"),
+                            ((2027, 4, None), "확인한 사람 비움", "NOT NULL"),
+                            ((2031, 4, boss), "계획서 없는 (직원, 해)", "FOREIGN KEY")):
+        ok, msg = _rejects(conn, mc.format(u=user), args)
+        _report(ok and word in msg, f"월간 확인 {why} 거부", msg)
+
+    # 확인 메모 — 바로 위 관리자가 쓰고, 본인이 확인했다고 누르면 ack_at 이 찬다
+    mm = "INSERT INTO kpi_memos (user_id, year, author_id, text, created_at) VALUES ({u}, ?, ?, ?, " + T + ")"
+    memo = conn.execute(mm.format(u=user) + " RETURNING id", (2027, boss, "가상 메모")).fetchone()[0]
+    conn.execute(mm.format(u=user), (2027, boss, ln(200)))
+    _report(True, "확인 메모 저장 (짧은 글 / 200자)")
+    left = conn.execute("SELECT edited_at, ack_at, seen_at FROM kpi_memos WHERE id = ?", (memo,)).fetchone()
+    _report(left == (None, None, None), "처음엔 고친 때 · 확인한 때 · 답글 본 때가 모두 비어 있음", f"실제 {left}")
+    for args, why, word in (((2027, boss, ""), "빈 글", "CHECK"), ((2027, boss, ln(201)), "201자 글", "CHECK"),
+                            ((2027, uid, "가상 메모"), "본인이 본인에게 쓴 메모", "CHECK"),
+                            ((2027, 9999, "가상 메모"), "없는 사람이 쓴 메모", "FOREIGN KEY"),
+                            ((2031, boss, "가상 메모"), "계획서 없는 (직원, 해)", "FOREIGN KEY")):
+        ok, msg = _rejects(conn, mm.format(u=user), args)
+        _report(ok and word in msg, f"확인 메모 {why} 거부", msg)
+    idx = [r[0] for r in conn.execute("SELECT name FROM pragma_index_info('kpi_memos_owner') ORDER BY seqno").fetchall()]
+    _report(idx == ["user_id", "year"], "본인 · 해별 메모 찾기 색인 (kpi_memos_owner)", f"실제 {idx}")
+
+    # 답글 — 본인('owner')과 쓴 사람('writer')이 주고받는다
+    rp = "INSERT INTO kpi_memo_replies (memo_id, author_id, who, text, created_at) VALUES (?, ?, ?, ?, " + T + ")"
+    conn.execute(rp, (memo, uid, "owner", "가상 답글"))
+    conn.execute(rp, (memo, boss, "writer", ln(200)))
+    _report(True, "답글 저장 (본인 / 쓴 사람 · 200자)")
+    for args, why, word in (((memo, boss, "boss", "가상 답글"), "정해진 것이 아닌 who('boss')", "CHECK"),
+                            ((memo, uid, "owner", ""), "빈 글", "CHECK"), ((memo, uid, "owner", ln(201)), "201자 글", "CHECK"),
+                            ((9999, uid, "owner", "가상 답글"), "없는 메모에 단 답글", "FOREIGN KEY"),
+                            ((memo, 9999, "owner", "가상 답글"), "없는 사람이 쓴 답글", "FOREIGN KEY")):
+        ok, msg = _rejects(conn, rp, args)
+        _report(ok and word in msg, f"답글 {why} 거부", msg)
+    # 글쓴이는 지울 수 없다 (RESTRICT) — 다른 데 쓰이지 않는 새 사람으로 확인한다
+    writer = conn.execute(
+        "INSERT INTO users (employee_no, name, email, department_id)"
+        " VALUES ('T032', '가상메모작성자', 't032@example.invalid', (SELECT id FROM departments WHERE code='DIV1')) RETURNING id"
+    ).fetchone()[0]
+    conn.execute(rp, (memo, writer, "writer", "가상 답글"))
+    ok, msg = _rejects(conn, "DELETE FROM users WHERE id = ?", (writer,))
+    _report(ok and "FOREIGN KEY" in msg, "답글을 쓴 사람은 지울 수 없음 (RESTRICT)", msg)
+    conn.execute("DELETE FROM kpi_memo_replies WHERE author_id = ?", (writer,))
+    conn.execute(mm.format(u=user), (2027, writer, "가상 메모"))
+    ok, msg = _rejects(conn, "DELETE FROM users WHERE id = ?", (writer,))
+    _report(ok and "FOREIGN KEY" in msg, "메모를 쓴 사람은 지울 수 없음 (RESTRICT)", msg)
+    conn.execute("DELETE FROM kpi_memos WHERE author_id = ?", (writer,))
+    conn.execute("DELETE FROM users WHERE id = ?", (writer,))
+    # 메모를 지우면 그 답글도 함께 지워진다
+    n = conn.execute("SELECT count(*) FROM kpi_memo_replies WHERE memo_id = ?", (memo,)).fetchone()[0]
+    conn.execute("DELETE FROM kpi_memos WHERE id = ?", (memo,))
+    gone = conn.execute("SELECT count(*) FROM kpi_memo_replies WHERE memo_id = ?", (memo,)).fetchone()[0]
+    _report(n == 2 and gone == 0, "메모를 지우면 답글도 함께 지워짐 (CASCADE)", f"답글 {n} → {gone}")
+
+    # 알람 끄기 — 실행목표 하나에 한 줄. why 글자는 화면 KV_MUTE 의 열쇠와 같다.
+    mt = "INSERT INTO kpi_mutes (user_id, year, rid, why, text, until_month, set_at) VALUES ({u}, ?, ?, ?, ?, ?, " + T + ")"
+    for args in ((2027, 1, "month", None, 6), (2027, 2, "year", None, 12), (2027, 3, "wait", None, 3),
+                 (2027, 4, "etc", "가상 이유", 5), (2027, 5, "etc", ln(50), 4)):
+        conn.execute(mt.format(u=user), args)
+    _report(True, "알람 끄기 저장 (이번 달까지 · 올해 · 기다리는 중 · 직접 적기 / 50자)")
+    for args, why, word in (((2027, 6, "etc", None, 5), "'직접 적기'인데 글이 없음", "CHECK"),
+                            ((2027, 6, "wait", "가상", 5), "'직접 적기'가 아닌데 글이 있음", "CHECK"),
+                            ((2027, 6, "year", None, 11), "'올해'인데 11월까지", "CHECK"),
+                            ((2027, 6, "other", None, 5), "정해진 것이 아닌 이유", "CHECK"),
+                            ((2027, 6, "etc", "", 5), "빈 글", "CHECK"), ((2027, 6, "etc", ln(51), 5), "51자 글", "CHECK"),
+                            ((2027, 6, "month", None, 13), "13월까지", "CHECK"), ((2027, 6, "month", None, 0), "0월까지", "CHECK"),
+                            ((2027, 0, "month", None, 5), "실행목표 번호 0", "CHECK"),
+                            ((2027, 1, "month", None, 5), "같은 실행목표 두 줄", "UNIQUE"),
+                            ((2031, 6, "month", None, 5), "계획서 없는 (직원, 해)", "FOREIGN KEY")):
+        ok, msg = _rejects(conn, mt.format(u=user), args)
+        _report(ok and word in msg, f"알람 끄기 {why} 거부", msg)
+
+    # 기록이 달린 계획서는 지워지지 않는다 (RESTRICT) — 표마다 하나씩, 방금 넣은 줄은 바로 치운다
+    for tbl, ins, args in (("kpi_month_checks", mc, (2029, 5, boss)), ("kpi_memos", mm, (2029, boss, "가상 메모")),
+                           ("kpi_mutes", mt, (2029, 1, "month", None, 5))):
+        conn.execute(ins.format(u=user), args)
+        ok, msg = _rejects(conn, f"DELETE FROM kpi_plans WHERE user_id = {user} AND year = 2029")
+        _report(ok and "FOREIGN KEY" in msg, f"{tbl} 기록이 있는 계획서 지우기 거부", msg)
+        conn.execute(f"DELETE FROM {tbl} WHERE user_id = {user} AND year = 2029")
+
+
 def main() -> int:
     print("=" * 62)
     print("SQLite 스키마 적용 + 제약조건 동작 검사")
@@ -897,6 +1021,7 @@ def main() -> int:
             check_login_tables(conn)
             check_payslip_tables(conn)
             check_kpi_progress_tables(conn)
+            check_kpi_review_tables(conn)
         finally:
             conn.close()
 
