@@ -13,6 +13,7 @@ app.py 가 register(app) 로 붙인다.
   POST /api/members/<id>/org      조직도에서 빼기 · 다시 보이기 (HR) — DB 에서 지우지 않는다
   POST /api/members/contacts      HR 이 넣는 사람 정보 (HR) — 비상연락망(직급·내선·연락처·메일)과 입사일·생일. 화면이 이름으로 맞춘 뒤 보낸다
   POST /api/members/<id>/privacy  그 사람의 생일 알림 끄기·켜기 (HR) — 포털을 아직 못 쓰는 직원이 부탁할 때
+  POST /api/members/<id>/employee-no  {"no": ""} 사원코드 지우기 (HR) — 급여명세서를 올릴 때 잘못 맞춘 직원에게서. 다음에 올릴 때 다시 붙는다
   POST /api/members/mail-nos      하이웍스 메일 받는 사람 채우기용 회사 번호 (HR) — 하이웍스 로그인 브라우저에서 가져온 짝
   GET  /api/org                   조직도 명단 (로그인한 누구나) — 필요한 칸만, 비공개 휴대폰은 본인·HR 에게만
   POST /api/me/privacy            내 휴대폰 공개 · 생일 알림 (본인)
@@ -659,6 +660,26 @@ def members_privacy(user_id: int) -> Response:
     if (denied := _hr_only()) is not None:
         return denied
     return _privacy(user_id, ("birthday_public",))
+
+
+@bp.post("/api/members/<int:user_id>/employee-no")
+def members_employee_no(user_id: int) -> Response:
+    """{"no": ""} 사원코드 지우기 (HR, 2026-10-21) — 급여명세서를 올릴 때 직원을 잘못 골라 남의 사원코드가 붙었을 때.
+    지우기만 한다 — 다음에 올릴 때 맞는 직원에게 다시 붙는다(payslip._store). 감사로그에는 앞뒤 사원코드만."""
+    if (denied := _hr_only()) is not None:
+        return denied
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict) or body.get("no") != "":
+        return jsonify(error='no 는 빈 글자("")만 됩니다 — 지우기.'), 400
+    conn = _db()
+    row = conn.execute("SELECT employee_no FROM users WHERE id = ?", (user_id,)).fetchone()
+    if not row:
+        return jsonify(error="명단에 없는 사람입니다."), 404
+    if row[0] is not None:  # 이미 비어 있으면 그대로 (감사로그도 없음)
+        conn.execute("UPDATE users SET employee_no = NULL WHERE id = ?", (user_id,))
+        _audit(conn, AuditEntry.by(g.actor, action="MEMBER_EMPLOYEE_NO", entity_type="user", entity_id=user_id,
+                                   before_data={"no": row[0]}, after_data={"no": None}))
+    return jsonify(ok=True)
 
 
 @bp.post("/api/members/<int:user_id>/org")

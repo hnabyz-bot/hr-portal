@@ -567,6 +567,7 @@ def check_payslips(hr) -> None:
     """급여명세서 (2026-10-20): 잠가 저장 · HR 올리기·공개·내리기 · 본인은 공개된 것만 · 열쇠가 없으면 503. 사람·금액은 전부 가짜."""
     import base64
     import copy
+    import unittest
 
     print("급여명세서")
     emp, lead = app.test_client(), app.test_client()
@@ -628,11 +629,20 @@ def check_payslips(hr) -> None:
                 return False
 
         ok(opens("2026-05", 3) and not opens("2026-05", 10) and not opens("2026-06", 3), "열쇠로 풀리고, 다른 직원·다른 달 자리로 옮기면 안 풀림 (aad)")
+        a, b = (payslip.seal(raw_key, "2026-05", 3, body_of(one)) for _ in range(2))
+        ok(a[:12] != b[:12] and a[12:] != b[12:], "같은 내용을 두 번 잠가도 nonce(앞 12바이트)가 달라 잠긴 글이 다름")
+
+        def skipped(path, ym, uid):  # 안 풀리는 줄: 빈 목록 + 서버 로그 한 줄(달 · 직원 번호만). 로그는 잡아 두어 검사 출력에 ERROR 가 섞이지 않게
+            with unittest.TestCase().assertLogs("payslip", "ERROR") as cm:
+                r = get(hr, path)
+            return (r.json == {"slips": []} and [(rec.args, rec.levelname) for rec in cm.records] == [((ym, uid), "ERROR")]
+                    and not any(w in cm.output[0] for w in ("가상", "기본급", "2500000", "A001")))
+
         x("UPDATE payslips SET data = ? WHERE ym = '2026-05' AND user_id = 10", blobs[0])  # 한 사람의 줄을 다른 사람 자리에 붙여 본다
-        ok(get(hr, "/api/payslips?user=10").json == {"slips": []}, "옮겨 붙인 줄은 보여 주지 않음 (건너뜀)")
+        ok(skipped("/api/payslips?user=10", "2026-05", 10), "옮겨 붙인 줄은 보여 주지 않음 (건너뜀) · 서버 로그에는 달 · 직원 번호만")
         x("UPDATE payslips SET data = ? WHERE ym = '2026-05' AND user_id = 10", blobs[1])
         os.environ["HR_PAY_KEY"] = base64.b64encode(bytes(range(1, 33))).decode()
-        ok(get(hr, "/api/payslips?user=3").json == {"slips": []}, "열쇠가 바뀌어 안 풀리는 줄도 건너뜀 (오류 아님)")
+        ok(skipped("/api/payslips?user=3", "2026-05", 3), "열쇠가 바뀌어 안 풀리는 줄도 건너뜀 (오류 아님) · 서버 로그에는 달 · 직원 번호만")
         os.environ["HR_PAY_KEY"] = key
         q_views = lambda: q("SELECT actor_user_id, entity_type, entity_id, after_data FROM audit_logs WHERE action = 'PAYSLIP_VIEW' ORDER BY id")  # noqa: E731
 
@@ -660,6 +670,11 @@ def check_payslips(hr) -> None:
         ok(post(lead, "/api/payslips/2026-05/seen").status_code == 404 and post(emp, "/api/payslips/2026-04/seen").status_code == 404
            and post(emp, "/api/payslips/abc/seen").status_code == 404, "본인 명세서가 아니거나 없는 달의 '봤음'은 404")
         ok(get(hr, "/api/payslips?user=3").json["slips"][0]["status"] == "OPEN", "HR 이 보는 남의 줄에는 status")
+        os.environ.pop("HR_PAY_KEY")  # 공개 중인 달이 있는데 서버 설정에서 열쇠가 빠졌을 때
+        r, m = get(emp), months().json
+        ok(r.status_code == 200 and r.json == {"slips": []} and m["ready"] is False and m["months"][0]["status"] == "OPEN",
+           "공개 중인 달이 있어도 열쇠가 없으면 직원 목록은 빈 목록(200) · HR 달 목록 ready 거짓")
+        os.environ["HR_PAY_KEY"] = key
 
         print("  - 공개 중 다시 올리기 · 내리기")
         before = snap()
@@ -715,6 +730,8 @@ def check_payslips(hr) -> None:
             ("2001장", "2026-07", "2026-08-20", [one] * 2001),
             ("귀속 월 2026-13", "2026-13", "2026-08-20", [one, two]),
             ("귀속 월 모양", "2026-5", "2026-08-20", [one, two]),
+            ("귀속 월 다른 나라 숫자", "202٦-05", "2026-08-20", [one, two]),  # \d 였을 때는 DB 검사에서 500
+            ("지급일 다른 나라 숫자", "2026-07", "202٦-08-20", [one, two]),
             ("지급일 2026-02-30", "2026-07", "2026-02-30", [one, two]),
             ("지급일 모양", "2026-07", "2026-8-20", [one, two]),
             ("지급일 없음", "2026-07", None, [one, two]),
@@ -768,6 +785,24 @@ def check_payslips(hr) -> None:
         ok({"PAYSLIP_UPLOAD", "PAYSLIP_OPEN", "PAYSLIP_CLOSE", "PAYSLIP_VIEW"} <= {a[0] for a in logs}, "감사로그 PAYSLIP_UPLOAD · OPEN · CLOSE · VIEW")
         ok(all(set(json.loads(a[3])) == {"ym", "people"} for a in logs if a[0] != "PAYSLIP_VIEW"), "올리기·공개·내리기 감사로그에는 달과 인원 수만")
         ok(not any(w in str(logs) for w in ("가상", "2500000", "3123456", "기본급", "A001", "A002")), "감사로그에 금액·이름·사원코드 없음")
+
+        print("  - 사원코드 지우기 (직원을 잘못 골라 남의 코드가 붙었을 때)")
+        clear = lambda c, uid, body={"no": ""}: post(c, f"/api/members/{uid}/employee-no", body)  # noqa: E731
+        code_of = lambda uid: q("SELECT employee_no FROM users WHERE id = ?", uid)  # noqa: E731
+        audit = lambda: q("SELECT actor_user_id, entity_type, entity_id, before_data, after_data FROM audit_logs WHERE action = 'MEMBER_EMPLOYEE_NO'")  # noqa: E731
+        r = up(hr, "2026-09", [slip(11, "A001")], "2026-10-20")
+        ok(r.status_code == 400 and "구성원 설정에서 그 직원의 사원코드를 지운 뒤" in r.json["error"], "남의 코드로 올리면 400 + 고치는 길 안내")
+        ok(clear(emp, 3).status_code == 403 and clear(lead, 3).status_code == 403 and code_of(3) == [("A001",)], "HR 이 아니면 사원코드 지우기 403")
+        ok(post(hr, "/api/members/3/employee-no", {"no": ""}, headers={}).status_code == 403 and code_of(3) == [("A001",)], "Origin 없으면 403")
+        ok(clear(hr, 999).status_code == 404, "명단에 없는 사람은 404")
+        ok(all(clear(hr, 3, b).status_code == 400 for b in ({"no": "B001"}, {"no": None}, {}, [""])) and code_of(3) == [("A001",)] and not audit(),
+           "지우기만 됨 — 다른 값·모양은 400 (안 바뀜)")
+        ok(clear(hr, 3).json == {"ok": True} and code_of(3) == [(None,)]
+           and {mb["id"]: mb["no"] for mb in get(hr, "/api/members").json["members"]}[3] == "", "HR 이 지우면 비고 명단의 no 도 빈 글자")
+        ok(audit() == [(1, "user", 3, '{"no": "A001"}', '{"no": null}')], "감사로그 MEMBER_EMPLOYEE_NO — 앞뒤 사원코드만")
+        ok(up(hr, "2026-09", [slip(11, "A001")], "2026-10-20").json == {"saved": 1} and code_of(11) == [("A001",)],
+           "지운 뒤 맞는 직원으로 다시 올리면 그 직원에게 붙음")
+        ok(clear(hr, 2).json == {"ok": True} and len(audit()) == 1, "이미 비어 있으면 그대로 (감사로그 더하지 않음)")
     finally:
         os.environ.pop("HR_PAY_KEY", None)
         if had is not None:

@@ -1,4 +1,5 @@
-"""급여명세서 (2026-10-20 인사담당자 — 급여명세서 실제화). 사람별 숫자만 서버 .env 의 HR_PAY_KEY 로 잠가(AES-GCM) 둔다 — 서버는 NAS 를 읽지 않는다.
+"""급여명세서 (2026-10-20 인사담당자 — 급여명세서 실제화). 사람별 명세서 내용(머리 칸·금액)만 서버 .env 의 HR_PAY_KEY 로 잠가(AES-GCM) 둔다
+(사원코드 users.employee_no 는 잠그지 않는다) — 서버는 NAS 를 읽지 않는다.
 
 app.py 가 bp 를 붙인다. 세션 검사는 auth._guard 가 모든 /api/* 에 하므로 여기서는 g.actor 만 쓴다.
 
@@ -35,8 +36,8 @@ bp = Blueprint("payslip", __name__)
 logger = logging.getLogger(__name__)
 
 KEY_ENV = "HR_PAY_KEY"
-YM = re.compile(r"20\d\d-(0[1-9]|1[0-2])")
-DATE = re.compile(r"20\d\d-\d\d-\d\d")
+YM = re.compile(r"20[0-9][0-9]-(0[1-9]|1[0-2])")  # [0-9]: \d 는 다른 나라 숫자(٢ 등)도 받아 DB 검사에서 500
+DATE = re.compile(r"20[0-9][0-9]-[0-9][0-9]-[0-9][0-9]")
 CODE = re.compile(r"[0-9A-Za-z-]{1,20}")
 SLIPS_MAX = 2000  # 한 번에
 BODY_MAX = 2_000_000  # 본문 (nginx 는 5MB)
@@ -197,7 +198,7 @@ def _store(conn, ym: str, pay_date: str, plan: list[tuple[int, str, dict]], key:
         if uid not in no:
             return 400, _shape(slip["head"]["name"], "포털에 없는 직원입니다")
         if holder.get(code, uid) != uid:
-            return 400, f"사원코드 {code}이(가) 이미 다른 직원에게 붙어 있습니다."
+            return 400, f"사원코드 {code}이(가) 이미 다른 직원에게 붙어 있습니다. 전에 직원을 잘못 골랐다면 구성원 설정에서 그 직원의 사원코드를 지운 뒤 다시 올려 주세요."
         if code not in holder and no[uid] is None:
             holder[code], no[uid] = uid, code
             remember.append((code, uid))
