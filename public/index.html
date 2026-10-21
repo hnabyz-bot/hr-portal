@@ -4102,7 +4102,7 @@ async function kpiLiveDo(path, body, done=KPI_LIVE_DONE[path]){   // 내 계획�
 /* ----- 진행 관리 (시안 3 — 2단계 ①, 2026-10-21) -----
    확정본이 있으면 목표설정 탭은 진행 관리다 (GET /api/kpi/progress/<내 id> → KPI_LIVE.prog). 숫자 · 상태(OPEN · LATE …) · 기대는 서버 것을 그대로 그린다.
    실적 · 진행률은 바뀌면 바로 저장(R3), 월 한 줄 · 결과 한 줄 · 늦어지는 이유는 [저장] — 저장 전 글은 KPI_LIVE.typed 에 두어 다시 그려도 · 다시 불러도 남고 나가기 전에 묻는다 (R21).
-   비정기 일정은 [일정 변경 요청] 창(시안 6)으로 기한을 바꿔 달라고 하고, 바로 위 관리자가 처리할 KPI 에서 확인 · 돌려보내기. 팀장 확인 칸 · 종 · 알람 끄기는 2단계 ②. 시안: 뉴디자인/KPI 진행 관리 시안 - 3 · 6 */
+   비정기 일정은 [일정 변경 요청] 창(시안 6)으로 기한을 바꿔 달라고 하고, 바로 위 관리자가 처리할 KPI 에서 확인 · 돌려보내기. 팀장 확인 칸 · 종 · 알람 끄기는 2단계 ②에서 더했다(kpiProgChk · kpiProgAlarm · kpiProgMute). 시안: 뉴디자인/KPI 진행 관리 시안 - 3 · 6 */
 let kpiProgTab = null, kpiProgAt = 0, kpiProgStale = false, kpiProgQ = Promise.resolve();   // 해제 뒤 다시 쓰는 중에 고른 화면('prog' · 'plan', null 이면 작성 기간 안 = 계획서 · 밖 = 진행 관리) · 진행 기록을 마지막으로 읽은 때 · 적는 중이라 미뤄 둔 다시 그리기 · 저장 줄
 const kpiProgEdit = new Set(), kpiProgFold = new Set(), kpiProgNums = {}, kpiProgSigs = new Set();   // 결과 칸을 연 일정('r-<sid>') · 펼친 "지난 달 기록"(rid) · 아직 안 보낸 숫자 { 'rid:k': 값 } · 줄에 선 같은 저장(두 번 눌러도 한 번)
 async function kpiProgGet(me){   // 내 진행 기록 — 확정본이 없으면 부르지 않는다. 못 읽으면(404 · 오류) null
