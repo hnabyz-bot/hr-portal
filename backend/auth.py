@@ -66,6 +66,7 @@ from hr_eval.domain.members import (
     validate_members,
 )
 from hr_eval.domain.models import Actor, AuditEntry, Role, position_of
+from hr_eval.domain.org import NO_COL, Dept, is_direct_team
 from hr_eval.roster_sync import NoRedirect
 from hr_eval.sql.db import connect
 
@@ -159,7 +160,7 @@ def _audit(conn: sqlite3.Connection, e: AuditEntry) -> None:
 def _members(conn: sqlite3.Connection) -> list[Member]:
     rows = conn.execute(
         "SELECT u.id, u.name, u.department_id, u.employee_no, u.hiworks_user_no, u.is_active, u.portal_enabled,"
-        " u.writes_kpi, u.in_evaluation, u.has_contract, group_concat(r.role)"
+        " u.writes_kpi, u.in_evaluation, u.has_contract, group_concat(r.role), u.led_department_id"
         " FROM users u LEFT JOIN user_roles r ON r.user_id = u.id GROUP BY u.id"
     )
     out = []
@@ -168,15 +169,28 @@ def _members(conn: sqlite3.Connection) -> list[Member]:
         out.append(
             Member(
                 r[0], r[1], r[2], r[3], r[4], bool(r[5]), bool(r[6]), position_of(roles), Role.HR_ADMIN in roles,
-                bool(r[7]), bool(r[8]), bool(r[9]),
+                bool(r[7]), bool(r[8]), bool(r[9]), r[11],
             )
         )
     return out
 
 
+def _depts(conn: sqlite3.Connection) -> list[Dept]:
+    return [Dept(*r) for r in conn.execute("SELECT id, name, parent_id FROM departments ORDER BY id")]
+
+
+def _dept_kind(d: Dept, depts: list[Dept]) -> str:
+    """고르는 목록용 종류 — 팀 · 장이 없는 부서('임원' 등) · 대표이사 직속 팀 · 본부."""
+    if d.parent_id is not None:
+        return "TEAM"
+    if d.name in NO_COL:
+        return "NOCOL"
+    return "DIRECT" if is_direct_team(d, depts) else "DIVISION"
+
+
 def actor_of(conn: sqlite3.Connection, user_id: int) -> Actor:
-    """세션 → Actor. 팀장·본부장이 "장"인 부서는 직책과 본인 소속으로 정한다 (팀장 = 자기 팀, 본부장 = 자기 본부)."""
-    dept = conn.execute("SELECT department_id FROM users WHERE id = ?", (user_id,)).fetchone()[0]
+    """세션 → Actor. 팀장·본부장이 "장"인 부서는 직책과 맡은 부서로 정한다 (맡은 부서를 안 정했으면 본인 소속)."""
+    dept = conn.execute("SELECT COALESCE(led_department_id, department_id) FROM users WHERE id = ?", (user_id,)).fetchone()[0]
     roles = [Role(r[0]) for r in conn.execute("SELECT role FROM user_roles WHERE user_id = ?", (user_id,))]
     pos = position_of(roles)
     return Actor(
@@ -432,7 +446,7 @@ def phone_revoke() -> Response:
 # ---------------- 구성원 설정 (HR) — 칸 이름은 화면(public/index.html 의 MS_FIELDS)과 같다 ----------------
 LEAD = {Role.TEAM_LEADER: "TEAM", Role.DIVISION_HEAD: "DIVISION", Role.CEO: "CEO"}
 FIELD = {"use": "portal_enabled", "hr": "is_hr", "kpi": "writes_kpi", "ev": "in_evaluation", "ct": "has_contract"}
-AUDIT_KEYS = ("portal_enabled", "position", "is_hr", "writes_kpi", "in_evaluation", "has_contract", "is_active")
+AUDIT_KEYS = ("portal_enabled", "position", "is_hr", "writes_kpi", "in_evaluation", "has_contract", "is_active", "led_department_id")
 
 
 def _hr_only() -> tuple[Response, int] | None:
@@ -440,7 +454,9 @@ def _hr_only() -> tuple[Response, int] | None:
 
 
 def _fix(m: Member) -> Member:
-    """대표이사는 KPI·평가·계약서가 없고, 본부장은 평가·계약서가 없다 — 화면(msFix)과 같은 규칙 (§6)."""
+    """대표이사는 KPI·평가·계약서가 없고, 본부장은 평가·계약서가 없다 — 화면(msFix)과 같은 규칙 (§6). 팀장·본부장이 아니면 맡은 부서도 없다."""
+    if m.position not in (Role.TEAM_LEADER, Role.DIVISION_HEAD) and m.led_department_id is not None:
+        m = replace(m, led_department_id=None)
     if m.position is Role.CEO:
         return replace(m, writes_kpi=False, in_evaluation=False, has_contract=False)
     if m.position is Role.DIVISION_HEAD:
@@ -455,7 +471,7 @@ def _audit_val(m: Member, k: str) -> object:
 
 def _save_members(conn: sqlite3.Connection, before: list[Member], after: list[Member], action: str) -> int:
     """검사를 통과한 명단을 저장한다. 바뀐 사람마다 감사로그, 들어올 수 없게 된 사람은 세션을 끊는다."""
-    validate_members(after, before=before)  # 직책 자리 · 본부장/대표이사 잠금 · 마지막 HR 보호 → ValidationError
+    validate_members(after, before=before, depts=_depts(conn))  # 직책 자리 · 맡은 부서 · 본부장/대표이사 잠금 · 마지막 HR 보호 → ValidationError
     now, was, n = _iso(_now()), {m.id: m for m in before}, 0
     for m in after:
         b = was[m.id]
@@ -464,9 +480,10 @@ def _save_members(conn: sqlite3.Connection, before: list[Member], after: list[Me
         n += 1
         conn.execute(
             "UPDATE users SET portal_enabled = ?, writes_kpi = ?, in_evaluation = ?, has_contract = ?, is_active = ?,"
+            " led_department_id = ?,"
             " deactivated_at = CASE WHEN ? = 1 THEN NULL ELSE COALESCE(deactivated_at, ?) END WHERE id = ?",
             (int(m.portal_enabled), int(m.writes_kpi), int(m.in_evaluation), int(m.has_contract), int(m.is_active),
-             int(m.is_active), now, m.id),
+             m.led_department_id, int(m.is_active), now, m.id),
         )
         for r in b.roles() - m.roles():
             conn.execute("DELETE FROM user_roles WHERE user_id = ? AND role = ?", (m.id, r.value))
@@ -486,14 +503,15 @@ def _save_members(conn: sqlite3.Connection, before: list[Member], after: list[Me
 def members_list() -> Response:
     if (denied := _hr_only()) is not None:
         return denied
-    rows = _db().execute(
+    conn = _db()
+    rows = conn.execute(
         "SELECT u.id, u.name, d.name, d.level, p.name, u.is_active, u.portal_enabled, u.writes_kpi, u.in_evaluation,"
         " u.has_contract, (SELECT group_concat(role) FROM user_roles r WHERE r.user_id = u.id),"
         " EXISTS (SELECT 1 FROM audit_logs a WHERE a.entity_type = 'user' AND a.entity_id = u.id"
         "         AND a.action IN ('MEMBER_UPDATED', 'MEMBER_ACTIVE')),"
         " (SELECT s.device || ' · 마지막 사용 ' || substr(s.last_seen_at, 6, 5) FROM sessions s WHERE s.user_id = u.id"
         "  AND s.kind = 'phone' AND s.revoked_at IS NULL AND s.last_seen_at > ? ORDER BY s.created_at DESC LIMIT 1),"
-        " u.title, u.org_hidden, u.hire_date, u.birthday, u.birthday_public"
+        " u.title, u.org_hidden, u.hire_date, u.birthday, u.birthday_public, u.led_department_id, u.department_id"
         " FROM users u JOIN departments d ON d.id = u.department_id LEFT JOIN departments p ON p.id = d.parent_id"
         " ORDER BY u.name",
         (_iso(_now() - PHONE_IDLE),),
@@ -510,14 +528,17 @@ def members_list() -> Response:
             "me": r[0] == g.actor.user_id,
             "phone": r[12] or "",  # 등록된 휴대폰 (§13.1) — "갤럭시 · 마지막 사용 10-19"
             "title": r[13] or "", "orgHidden": bool(r[14]), "hireDate": r[15] or "",
-            "birthday": r[16] or "", "birthdayPublic": bool(r[17]),
+            "birthday": r[16] or "", "birthdayPublic": bool(r[17]), "ledDept": r[18], "dept": r[19],
         })
-    return jsonify(members=out)
+    depts = _depts(conn)
+    open_ids = {r[0] for r in conn.execute("SELECT id FROM departments WHERE is_active = 1")}  # 닫힌 부서는 고르는 목록에 없다
+    return jsonify(members=out, depts=[
+        {"id": d.id, "name": d.name, "parent": d.parent_id, "kind": _dept_kind(d, depts)} for d in depts if d.id in open_ids])
 
 
 @bp.post("/api/members")
 def members_save() -> Response:
-    """{"changes": {"<id>": {"use"|"hr"|"kpi"|"ev"|"ct": bool, "lead": ""|"TEAM"|"DIVISION"|"CEO"}}} — 한 트랜잭션."""
+    """{"changes": {"<id>": {"use"|"hr"|"kpi"|"ev"|"ct": bool, "lead": ""|"TEAM"|"DIVISION"|"CEO", "ledDept": 부서 id|null}}} — 한 트랜잭션."""
     if (denied := _hr_only()) is not None:
         return denied
     changes = (request.get_json(silent=True) or {}).get("changes")
@@ -533,7 +554,7 @@ def members_save() -> Response:
         after = []
         for m in before:
             c = changes.get(str(m.id)) or {}
-            if not isinstance(c, dict) or any(k not in (*FIELD, "lead") for k in c):
+            if not isinstance(c, dict) or any(k not in (*FIELD, "lead", "ledDept") for k in c):
                 raise ValueError("알 수 없는 칸")
             if any(not isinstance(v, bool) for k, v in c.items() if k in FIELD):
                 raise ValueError("켜짐·꺼짐이 아님")
@@ -542,6 +563,11 @@ def members_save() -> Response:
                 if c["lead"] not in ("", *pos_of):
                     raise ValueError("알 수 없는 직책")
                 upd["position"] = pos_of.get(c["lead"])
+            if "ledDept" in c:
+                v = c["ledDept"]
+                if v is not None and (type(v) is not int or v < 1):
+                    raise ValueError("부서 번호가 아님")
+                upd["led_department_id"] = None if v == m.department_id else v  # 소속과 같게 고르면 "소속 따라감"으로 저장
             after.append(_fix(replace(m, **upd)) if upd else m)
         n = _save_members(conn, before, after, "MEMBER_UPDATED")
         conn.execute("COMMIT")
