@@ -310,6 +310,10 @@
   .ws-tag.c4{ background:var(--bg-warning); color:var(--warning); }  .ws-tag.c5{ background:#EEF2F6; color:var(--text-secondary); }
   .ws-meta{ display:inline-flex; align-items:center; gap:3px; font-size:var(--fs-xs); font-weight:400; color:var(--text-muted); white-space:nowrap; text-decoration:none; }
   .ws-meta svg{ width:13px; height:13px; }
+  .ws-lock{ flex:none; width:18px; height:18px; display:grid; place-items:center; color:var(--text-muted); }   /* KPI- 업무: 체크칸 자리에 자물쇠 (읽기 전용 — 결과는 목표설정에서) */
+  .ws-lock svg{ width:14px; height:14px; }
+  .ws-kcard.kpi, .ws-chip.kpi{ cursor:pointer; }
+  .ws-chip svg{ width:10px; height:10px; margin-right:2px; vertical-align:-1px; }
   .ws-board{ display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; margin-top:14px; align-items:start; }
   .ws-col{ min-height:140px; padding:10px; border-radius:var(--radius); background:var(--bg-page); }
   .ws-col-h{ display:flex; align-items:center; gap:6px; font-size:var(--fs-xs); font-weight:700; color:var(--text-secondary); }
@@ -1561,6 +1565,7 @@ const ICONS = {
   bell:'<path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/>',
   bellOff:'<path d="M8.7 3A6 6 0 0 1 18 8a21.3 21.3 0 0 0 .6 5"/><path d="M17 17H3s3-2 3-9a4.67 4.67 0 0 1 .3-1.7"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/><path d="m2 2 20 20"/>',
   check:'<polyline points="20 6 9 17 4 12"/>',
+  lock:'<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
   clock:'<circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/>',
   chevD:'<polyline points="6 9 12 15 18 9"/>',
   home:'<path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/>',
@@ -1634,14 +1639,14 @@ function homePortalTasks(){   // 인사포털이 만든 일. n의 합 = 왼쪽 �
   return out;
 }
 function homeDue(){   // 마감 임박 [오늘, 이번 주(7일 안)] — 끝내지 않은 개인 업무 + 열려 있는 KPI·평가 기간의 마지막 날
-  const left = to=>Math.round((celebParse(to) - celebParse(kpiDay(0)))/864e5), days = wsTasks().filter(x=>x.state!=='완료' && x.due).map(x=>left(x.due));
+  const left = to=>Math.round((celebParse(to) - celebParse(kpiDay(0)))/864e5), days = wsAll().filter(x=>x.state!=='완료' && x.due).map(x=>left(x.due));
   const kpiTo = AUTH.live ? KPI_LIVE.me?.writesKpi && homeKpiTo() : kpiSheets[kpiRole] && kpiInPeriod(kpiPeriod.editFrom, kpiPeriod.editTo) && kpiPeriod.editTo;
   if(kpiTo) days.push(left(kpiTo));
   if(evStarted() && TODO.e2()) days.push(left(kpiPeriod.evalTo));
   return [days.filter(d=>d<=0).length, days.filter(d=>d>0 && d<=7).length];
 }
 function homeRate(){   // 이번 주 달성률 [종합, 업무, 루틴] %. 업무 = 이번 주 업무 중 완료한 비율(wsWeekStat), 루틴 = 오늘까지 예정된 것 중 실천한 비율(rtStat). 셀 것이 없는 쪽은 null이고 종합은 있는 쪽만으로 낸다
-  const today = kpiDay(0), a = rtPct(wsWeekStat(wsTasks(), today)), b = rtPct(rtSum(rtList(), ...wsWeek(today), today));
+  const today = kpiDay(0), a = rtPct(wsWeekStat(wsAll(), today)), b = rtPct(rtSum(rtList(), ...wsWeek(today), today));
   return [a==null ? b : b==null ? a : Math.round((a+b)/2), a, b];
 }
 function homeKpiTo(){ if(!AUTH.live) return kpiPeriod.editTo; const w = KPI_LIVE.me?.window; return w && w.open ? w.to : ''; }   // 홈의 KPI 마감일 — 실제 로그인은 서버 작성 기간이 열려 있을 때 그 마지막 날만 (닫혀 있으면 '')
@@ -1701,18 +1706,19 @@ function homePortalRows(pre=''){   // 인사포털이 만든 일의 줄. pre = �
    인사포털 일은 누르면 그 화면으로, 개인 업무는 나의 업무로 간다. 환영 페이지가 뜨지 않는 날에는 이 창도 뜨지 않는다 */
 function homeTodayPop(){
   const today = kpiDay(0), t = celebParse(today), [left, done] = wsTodayCount(), close = 'orgCloseModal(); ';
-  const rows = [...homePortalRows(close), ...wsSorted(wsTasks().filter(x=>wsIn(x, 'today', today))).map(x=>{ const fin = x.state==='완료', [when, late] = wsWhen(x, today);
-    return `<div class="hm-row${fin?' done':''}" onclick="${close}goTo('ws','w1')"><span class="hm-go">${icon('chevR')}</span><span class="t">${escapeHtml(x.title)}${x.pri==='긴급' && !fin ? '<span class="hm-tag red">긴급</span>' : ''}</span><small${late?' class="late"':''}>${when}</small><span class="badge ${wsCls(x.state)}">${escapeHtml(x.state)}</span></div>`; })];
+  const rows = [...homePortalRows(close), ...wsSorted(wsAll().filter(x=>wsIn(x, 'today', today))).map(x=>{ const fin = x.state==='완료', [when, late] = wsWhen(x, today);
+    return `<div class="hm-row${fin?' done':''}${x.kpi ? ' kpi' : ''}" onclick="${close}${x.kpi ? 'wsKpiGo()' : "goTo('ws','w1')"}"><span class="hm-go">${icon('chevR')}</span><span class="t">${escapeHtml(x.title)}${x.kpi ? WS_KPI_TAG : ''}${x.pri==='긴급' && !fin ? '<span class="hm-tag red">긴급</span>' : ''}</span><small${late?' class="late"':''}>${when}</small><span class="badge ${wsCls(x.state)}">${escapeHtml(x.state)}</span></div>`; })];
   orgModal(`<div class="card-title"><span>오늘 할 일 <span style="font-weight:500; color:var(--text-secondary);">${t.getMonth()+1}월 ${t.getDate()}일 (${'일월화수목금토'[t.getDay()]})</span></span><button type="button" class="x-btn" onclick="orgCloseModal()" aria-label="닫기">${icon('x')}</button></div>
     <div class="list-sub" style="margin:-6px 0 6px;">남은 일 <b style="color:var(--coral-text);">${left}</b> · 완료 ${done}</div>
     <div class="hm-list">${rows.join('') || '<div class="hm-empty">오늘 할 일이 없습니다</div>'}</div>
     <button type="button" class="btn primary" style="width:100%; justify-content:center; margin-top:14px;" onclick="orgCloseModal()">확인</button>`);
 }
 function homeTaskCard(){   // 개인 업무는 나의 업무의 '오늘' 목록과 같다 (wsIn)
-  const today = kpiDay(0), mine = wsSorted(wsTasks().filter(x=>wsIn(x, 'today', today)));
+  const today = kpiDay(0), mine = wsSorted(wsAll().filter(x=>wsIn(x, 'today', today)));
   const rows = [
     ...(homeTaskTab==='mine' ? [] : homePortalRows()),
     ...(homeTaskTab==='portal' ? [] : mine.map(x=>{ const done = x.state==='완료', [when, late] = wsWhen(x, today);
+      if(x.kpi) return `<div class="hm-row kpi${done?' done':''}" onclick="wsKpiGo()">${WS_LOCK}<span class="t">${escapeHtml(x.title)}${WS_KPI_TAG}</span><small${late?' class="late"':''}>${when}</small><span class="badge ${wsCls(x.state)}">${escapeHtml(x.state)}</span></div>`;   // KPI- 업무: 체크칸 대신 자물쇠, 누르면 목표설정
       return `<label class="hm-row${done?' done':''}"><input type="checkbox" class="hm-check" id="hmT${x.id}" ${done?'checked':''} onchange="wsToggle(${x.id},'hmT')"><span class="t">${escapeHtml(x.title)}${x.pri==='긴급' && !done ? '<span class="hm-tag red">긴급</span>' : ''}</span><small${late?' class="late"':''}>${when}</small><span class="badge ${wsCls(x.state)}">${escapeHtml(x.state)}</span></label>`; })),
   ];
   const chip = (k, label)=>`<button type="button" class="hm-chip${homeTaskTab===k?' on':''}" aria-pressed="${homeTaskTab===k}" onclick="homeTaskTab='${k}'; renderContent()">${label}</button>`;
@@ -1740,7 +1746,7 @@ function homeRoutineCards(){   // 오늘의 루틴 = 나의 일상의 '오늘' �
   </div>`;
 }
 const HOME_TASK_DOT = '#D98A1F';   // 달력에서 '내 업무'의 점·줄 색
-function homeDayMap(y, m, list=wsTasks()){   // 날짜 → { tasks:[마감이 그날인 개인 업무], evs:[그 달의 급여일·KPI·평가] }. 홈 달력과 나의 업무 달력이 함께 쓴다
+function homeDayMap(y, m, list=wsAll()){   // 날짜 → { tasks:[마감이 그날인 개인 업무], evs:[그 달의 급여일·KPI·평가] }. 홈 달력과 나의 업무 달력이 함께 쓴다
   const map = {}, at = k=>(map[k] ||= { tasks:[], evs:[] });
   list.forEach(x=>{ if(x.due) at(x.due).tasks.push(x); });
   homeDates(y, m).forEach(e=>at(e.ymd).evs.push(e));
@@ -1767,7 +1773,7 @@ function homeCalendar(t){   // 날짜를 누르면 아래가 그날의 업무·�
     rows = [...wsSorted(it.tasks).map(x=>ev(HOME_TASK_DOT, escapeHtml(x.title), escapeHtml(x.time), escapeHtml(x.state))), ...it.evs.map(e=>ev(e.color, e.label, '', ''))];
   } else {   // 다가오는 일정: 끝나지 않은 개인 업무(날짜마다 한 줄) + 급여일·KPI·평가, 가까운 순으로 다섯
     const pay = payWindow(t).next, byDay = {};
-    wsTasks().forEach(x=>{ if(x.due>=today && x.state!=='완료') (byDay[x.due] ||= []).push(x); });
+    wsAll().forEach(x=>{ if(x.due>=today && x.state!=='완료') (byDay[x.due] ||= []).push(x); });
     const soon = [...homeDates(pay.getFullYear(), pay.getMonth()).filter(e=>e.ymd>=today),   // 급여일은 가장 가까운 하루만
       ...Object.entries(byDay).map(([ymd, v])=>({ ymd, color:HOME_TASK_DOT, label:escapeHtml(wsSorted(v)[0].title) + (v.length>1 ? ` 외 ${v.length-1}건` : '') }))];
     head = '<span>다가오는 일정</span>';
@@ -1840,6 +1846,8 @@ function homeContent(){
    - 저장: 실제 로그인이면 서버에 사람별로(아래 "서버 저장" — PC·휴대폰이 같은 내용, 2026-10-19). 시연은 각자 브라우저(localStorage)에, 시연 역할(가상 인물)마다 따로. 손대기 전에는 예시 업무가 보인다(처음 고칠 때 저장).
    - 개인 업무는 평가와 잇지 않는다. 왼쪽 메뉴 숫자(TODO)에도 세지 않는다 — 그 숫자는 서명·승인처럼 인사포털이 만든 일만 센다.
    - 글자를 적는 칸(빠른 등록·검색)은 적는 동안 다시 그리지 않는다 — 다시 그리면 한글 조합이 끊긴다. 목록만 다시 그린다(wsRenderBody).
+   - KPI- 업무(2단계 ①, 2026-10-21): 확정된 KPI 의 비정기 일정마다 "KPI- 일정 이름" — 그릴 때만 더한다(wsAll = wsTasks + kpiWsTasks). 저장소 · 이 기기 · 서버에는 넣지 않는다(설계: 옮겨 적지 않는다).
+     읽는 곳(목록 · 보드 · 달력 · 홈 · 숫자)은 wsAll, 고치는 곳은 wsTasks. 읽기 전용이라 체크 · 상태 · 끌기 · 고치기 대신 목표설정으로 간다(wsKpiGo). 결과를 적으면 완료, 일정 변경이 확인되면 마감일이 바뀐다(서버 진행 기록 그대로).
    업무 한 건: { id, title, due:'YYYY-MM-DD'|'', time:'HH:MM'|'', pri:긴급·보통·낮음, state:예정·진행 중·완료, memo, doneAt,
                 tags:[글자], subs:[{ t, done }], repeat:''·weekly·monthly, rday:반복 기준(매주 = 요일 0~6, 매월 = 날짜), from:이 회차를 만든 앞 회차 id } */
 const WS_STATES = ['예정','진행 중','완료'], WS_PRIS = ['긴급','보통','낮음'], WS_DOW = '일월화수목금토';
@@ -1870,6 +1878,15 @@ function wsTasks(){   // 지금 역할의 업무 목록. 저장된 것이 없으
   if(!wsStore[kpiRole]) wsStore[kpiRole] = wsNorm(wsLocal('tasks'));
   return wsStore[kpiRole];
 }
+const WS_KPI_MEMO = '목표설정(KPI)의 예정 기한입니다. 결과는 KPI 화면에서 적어 주세요.';
+function kpiWsTasks(){   // 실제 로그인 · 진행 기록(확정본)이 있을 때 비정기 일정마다 읽기 전용 업무 하나. id = -sid (한 계획서 안에서 다시 쓰지 않는다), 제목 · 기한은 서버 것(빈 이름이면 실행목표)
+  const prog = AUTH.live && KPI_LIVE.prog; if(!prog) return [];
+  return prog.items.flatMap(it=>it.scheds || []).map(s=>({ id:-s.sid, title:s.task, due:s.due, time:'', pri:'보통', state:s.result ? '완료' : '예정',
+    doneAt:s.result ? new Date(Date.parse(s.result.at) + 9*36e5).toISOString().slice(0, 10) : '',   // 끝낸 날 = 결과를 적은 한국 날짜 (서버 시각은 UTC)
+    tags:['KPI'], memo:WS_KPI_MEMO, subs:[], repeat:'', kpi:true }));
+}
+function wsAll(){ return wsTasks().concat(kpiWsTasks()); }   // 읽기만 하는 곳은 이것 — 고치는 곳(저장 · 상태 · 끌기 · 내일로)은 wsTasks() 그대로
+function wsKpiGo(){ if(isPhone()) return wsNotice('KPI 결과는 PC의 평가·성과 → 목표설정에서 적어 주세요'); goTo('perf', 'e1'); }   // KPI- 업무를 눌렀을 때 — 바꾸지 않고 목표설정으로 (평가·성과는 PC 전용)
 function wsSave(role=kpiRole){ try{ localStorage.setItem('wsTasks:'+role, JSON.stringify(wsStore[role])); }catch(_){} wsPush('tasks'); renderContent(); }
 
 /* ----- 규칙 (순수 로직, wsSelfCheck가 검증) ----- */
@@ -1941,7 +1958,7 @@ function wsReportText(list, today, off, who){   // 주간 보고 초안 글. off
     sec(off ? '이번 주 예정' : '다음 주 예정', wsSorted(list.filter(x=>x.state==='예정' && x.due>=nmon && x.due<=nsun)), x=>`${x.title} (${md(x.due)})`)].join('\n\n');
 }
 function wsTodayCount(){   // 오늘 할 일 [남은 일, 완료] — 남은 일에는 인사포털이 만든 일도 센다. 홈 요약 칸과 나의 업무 요약 칸이 같은 숫자를 쓴다
-  const mine = wsTasks().filter(x=>wsIn(x, 'today', kpiDay(0))), done = mine.filter(x=>x.state==='완료').length;
+  const mine = wsAll().filter(x=>wsIn(x, 'today', kpiDay(0))), done = mine.filter(x=>x.state==='완료').length;
   return [mine.length - done + homePortalTasks().length, done];
 }
 function wsSelfCheck(){   // 브라우저 콘솔에서 wsSelfCheck() 실행 — 2026-10-14(수)를 오늘로 놓고 본다
@@ -1992,6 +2009,7 @@ function wsUndoNow(){
   const { role, put, snap } = wsUndo; wsUndo = null; put(role, JSON.parse(snap));
 }
 function wsSetState(id, state){   // 완료로 바꾸면 끝낸 날을 적고, 반복 업무면 다음 회차를 만든다(하위 할 일은 체크를 풀고 메모는 비운다). 완료를 풀면 아직 끝내지 않은 그 다음 회차를 지운다
+  if(id<0) return wsKpiGo();   // KPI- 업무는 바꾸지 않는다
   const list = wsTasks(), x = list.find(v=>v.id===id), was = x.state==='완료', now = state==='완료';
   if(now && !was) wsKeep('완료했습니다 — '+x.title);
   x.state = state; x.doneAt = now ? (x.doneAt || kpiDay(0)) : '';
@@ -2000,7 +2018,7 @@ function wsSetState(id, state){   // 완료로 바꾸면 끝낸 날을 적고, �
   if(was && !now) wsStore[kpiRole] = list.filter(v=>!(v.from===id && v.state!=='완료'));
   wsSave();
 }
-function wsToggle(id, key){ wsSetState(id, wsTasks().find(v=>v.id===id).state==='완료' ? '예정' : '완료'); document.getElementById(key+id)?.focus(); }   // 다시 그린 뒤에도 누르던 칸에 머문다
+function wsToggle(id, key){ if(id<0) return wsKpiGo(); wsSetState(id, wsTasks().find(v=>v.id===id).state==='완료' ? '예정' : '완료'); document.getElementById(key+id)?.focus(); }   // 다시 그린 뒤에도 누르던 칸에 머문다
 function wsAddBase(){ return wsView==='cal' && currentNav.id==='ws' ? (wsCalDay || kpiDay(0)) : kpiDay(0); }   // 빠른 등록에 날짜를 안 적었을 때의 마감일: 달력 보기에서는 누른 날, 그 밖에는 오늘
 function wsAdd(e){   // 빠른 등록: 제목만 — 끝에 적은 날짜·시간을 읽고(wsParse), 날짜가 없으면 wsAddBase. 중요도 보통, 상태 예정
   e.preventDefault();
@@ -2024,6 +2042,7 @@ function wsCarry(){   // 못 끝낸 일 내일로: 마감이 오늘이거나 지
 }
 function wsDrop(e, state){ e.preventDefault(); const id = +e.dataTransfer.getData('text/plain'); if(wsTasks().some(x=>x.id===id && x.state!==state)) wsSetState(id, state); }
 function wsEdit(id){
+  if(id<0) return wsKpiGo();   // KPI- 업무는 고치는 창이 없다
   const x = wsTasks().find(v=>v.id===id);
   orgModal(`<form id="wsSubForm" onsubmit="wsSubAdd(event, ${id})"></form>
   <form id="wsForm" onsubmit="wsSubmit(event, ${id})">
@@ -2070,7 +2089,7 @@ function wsDelete(id){   // 확인 창 대신 되돌리기
 function wsReport(off=0){
   const me = KPI_USERS[kpiRole];
   orgModal(`<div class="card-title"><span>주간 보고 초안</span><select class="ws-pick" aria-label="기간" onchange="wsReport(+this.value)"><option value="0">이번 주</option><option value="1"${off?' selected':''}>지난주</option></select></div>
-    <textarea id="wsReportTa" class="ws-report" rows="16" aria-label="주간 보고 초안">${escapeHtml(wsReportText(wsTasks(), kpiDay(0), off, me.name+' '+me.title))}</textarea>
+    <textarea id="wsReportTa" class="ws-report" rows="16" aria-label="주간 보고 초안">${escapeHtml(wsReportText(wsAll().map(x=>x.kpi ? { ...x, memo:'' } : x), kpiDay(0), off, me.name+' '+me.title))}</textarea>
     <div class="ws-btns"><span class="list-sub">고쳐서 쓰는 초안입니다. 여기서 고친 글은 저장되지 않습니다.</span><span><button type="button" class="btn" onclick="orgCloseModal()">닫기</button><button type="button" class="btn primary" onclick="const t = document.getElementById('wsReportTa'); t.select(); orgCopy(t.value, this)">복사</button></span></div>`);
 }
 
@@ -2079,6 +2098,7 @@ const WS_HINT = '끝에 ‘내일’, ‘금요일’, ‘10/15’, ‘3시’�
 const wsCls = state=>({ '완료':'success', '진행 중':'info' }[state] || 'neutral');
 const wsOpts = (list, v)=>list.map(o=>`<option${o===v?' selected':''}>${escapeHtml(o)}</option>`).join('');
 const wsTagCls = t=>'c' + [...t].reduce((a,c)=>a+c.codePointAt(0), 0) % 6;   // 같은 태그는 늘 같은 색
+const WS_LOCK = `<span class="ws-lock" title="읽기 전용이에요 — 결과는 목표설정에서 적어요">${icon('lock')}</span>`, WS_KPI_TAG = `<span class="ws-tag ${wsTagCls('KPI')}">KPI</span>`;   // KPI- 업무의 체크칸 자리 · 태그
 function wsAddForm(){
   const base = wsAddBase(), d = celebParse(base), ph = (base===kpiDay(0) ? '' : `${d.getMonth()+1}/${d.getDate()} (${WS_DOW[d.getDay()]})에 등록 — `) + '할 일을 적고 Enter';
   return `<div class="ws-quick"><form class="field ws-add" onsubmit="wsAdd(event)"><input id="wsAddIn" name="title" required maxlength="80" placeholder="${ph}" aria-label="새 업무 제목" autocomplete="off" oninput="wsHint(this)"><button class="btn primary">추가</button></form>
@@ -2096,18 +2116,20 @@ function wsMatch(x){   // 태그·검색에 맞는가 (검색은 제목·메모�
 }
 function wsRow(x, today){
   const fin = x.state==='완료', [when, late] = wsWhen(x, today), urgent = x.pri==='긴급' && !fin ? '<span class="hm-tag red">긴급</span>' : '';
+  if(x.kpi) return `<div class="hm-row ws-row kpi${fin?' done':''}" onclick="wsKpiGo()">${WS_LOCK}<span class="t">${escapeHtml(x.title)}${wsMeta(x)}</span><small${late?' class="late"':''}>${when}</small><span class="badge ${wsCls(x.state)}">${escapeHtml(x.state)}</span></div>`;   // KPI- 업무: 체크칸 · 상태 고르기 대신 자물쇠 · 상태 글자, 누르면 목표설정
   return `<div class="hm-row ws-row${fin?' done':''}"><input type="checkbox" class="hm-check" id="wsT${x.id}" aria-label="${escapeHtml(x.title)} 완료" ${fin?'checked':''} onchange="wsToggle(${x.id},'wsT')"><span class="t" onclick="wsEdit(${x.id})">${escapeHtml(x.title)}${urgent}${wsMeta(x)}</span><small${late?' class="late"':''}>${when}</small><select class="badge ${wsCls(x.state)} ws-state" aria-label="상태" onchange="wsSetState(${x.id}, this.value)">${wsOpts(WS_STATES, x.state)}</select></div>`;
 }
 function wsBoard(list, today){   // 보드: 예정 · 진행 중 · 완료(이번 주에 끝낸 것만). 카드를 끌어 옮기면 상태가 바뀐다 — 휴대폰은 카드의 상태 칸으로
   const mon = wsWeek(today)[0], open = wsSorted(list.filter(x=>x.state!=='완료'));
   const done = list.filter(x=>x.state==='완료' && x.doneAt>=mon).sort((a,b)=>a.doneAt<b.doneAt ? 1 : a.doneAt>b.doneAt ? -1 : 0);
   const card = x=>{ const fin = x.state==='완료', [when, late] = wsWhen(x, today);
+    if(x.kpi) return `<div class="ws-kcard kpi${fin?' done':''}" onclick="wsKpiGo()"><div class="t">${WS_LOCK}${escapeHtml(x.title)}</div><div class="ws-kmeta">${x.due ? `<small${late?' class="late"':''}>${when}</small>` : ''}${wsMeta(x)}</div></div>`;   // KPI- 업무: 끌 수 없고 상태 고르기도 없다
     return `<div class="ws-kcard${fin?' done':''}" draggable="true" ondragstart="event.dataTransfer.setData('text/plain','${x.id}')" onclick="wsEdit(${x.id})"><div class="t">${escapeHtml(x.title)}${x.pri==='긴급' && !fin ? '<span class="hm-tag red">긴급</span>' : ''}</div><div class="ws-kmeta">${x.due ? `<small${late?' class="late"':''}>${when}</small>` : ''}${wsMeta(x)}</div><select class="badge ${wsCls(x.state)} ws-state" aria-label="상태" onclick="event.stopPropagation()" onchange="wsSetState(${x.id}, this.value)">${wsOpts(WS_STATES, x.state)}</select></div>`; };
   const col = (state, items, n=items.length)=>`<div class="ws-col" ondragover="event.preventDefault()" ondrop="wsDrop(event,'${state}')"><div class="ws-col-h ${wsCls(state)}">${state}<b>${state==='완료' ? '이번 주 ' : ''}${n}</b></div>${items.map(card).join('') || '<div class="hm-empty">없음</div>'}${n>items.length ? `<div class="ws-more">외 ${n-items.length}건 — 목록의 ‘완료’에서 볼 수 있어요</div>` : ''}</div>`;
   return `<div class="ws-board">${col('예정', open.filter(x=>x.state!=='진행 중'))}${col('진행 중', open.filter(x=>x.state==='진행 중'))}${col('완료', done.slice(0, 8), done.length)}</div>`;
 }
 function wsBody(){   // 목록(날짜별 묶음) · 보드 · 달력. 태그·검색은 셋 다에, 목록 종류(오늘·이번 주…)는 목록에만 적용된다
-  const today = kpiDay(0), list = wsTasks().filter(wsMatch), q = wsQuery.trim().toLowerCase(), empty = '<div class="hm-empty">해당하는 업무가 없습니다</div>';
+  const today = kpiDay(0), list = wsAll().filter(wsMatch), q = wsQuery.trim().toLowerCase(), empty = '<div class="hm-empty">해당하는 업무가 없습니다</div>';
   if(wsView==='board') return wsBoard(list, today);
   if(wsView==='cal') return wsCalendar(list, today);
   const rows = list.filter(x=>wsIn(x, wsFilter, today));
@@ -2131,7 +2153,7 @@ function wsDropDay(e, ymd){   // 달력에서 업무를 다른 날짜 칸으로 
 function wsCalendar(list, today){   // 달력 보기: 마감일 칸에 업무 제목(둘까지, 넘으면 +n)과 그 달의 급여일·KPI·평가. 끝낸 일도 마감일 칸에 줄 그어진 채 남는다. 마감일 없는 업무는 나오지 않는다(건수만). 휴대폰은 칸이 좁아 점으로 보인다
   const t = celebParse(today), first = new Date(t.getFullYear(), t.getMonth()+wsCalOff, 1), y = first.getFullYear(), m = first.getMonth(), last = new Date(y, m+1, 0).getDate(), sel = wsCalDay || today;
   const map = homeDayMap(y, m, list), sd = celebParse(sel);
-  const chip = x=>`<span class="ws-chip ${x.state==='완료' ? 'success' : wsWhen(x, today)[1] ? 'late' : wsCls(x.state)}" draggable="true" ondragstart="event.dataTransfer.setData('text/plain','${x.id}')" onclick="event.stopPropagation(); wsEdit(${x.id})" title="${escapeHtml(x.title)}">${escapeHtml(x.title)}</span>`;
+  const chip = x=>`<span class="ws-chip ${x.kpi ? 'kpi ' : ''}${x.state==='완료' ? 'success' : wsWhen(x, today)[1] ? 'late' : wsCls(x.state)}"${x.kpi ? ' onclick="event.stopPropagation(); wsKpiGo()"' : ` draggable="true" ondragstart="event.dataTransfer.setData('text/plain','${x.id}')" onclick="event.stopPropagation(); wsEdit(${x.id})"`} title="${escapeHtml(x.title)}">${x.kpi ? icon('lock') : ''}${escapeHtml(x.title)}</span>`;   // KPI- 업무는 끌 수 없다
   let cells = [...WS_DOW].map((d,i)=>`<div class="dow${i?'':' red'}">${d}</div>`).join('') + '<div class="ws-day blank"></div>'.repeat(first.getDay());
   for(let d=1; d<=last; d++){
     const ymd = ctYmd(new Date(y, m, d)), it = map[ymd], tasks = wsSorted(it?.tasks || []), evs = it?.evs || [];
@@ -2163,9 +2185,9 @@ function wsProgress(list, today){   // PC 오른쪽 칸: 이번 주 진척도(�
   </div>`;
 }
 function wsContent(){
-  const today = kpiDay(0), list = wsTasks(), [left, done] = wsTodayCount(), mon = wsWeek(today)[0];
+  const today = kpiDay(0), list = wsAll(), [left, done] = wsTodayCount(), mon = wsWeek(today)[0];
   const tags = [...new Set(list.flatMap(x=>x.tags))].sort(); if(!tags.includes(wsTag)) wsTag = '';
-  const carry = list.filter(x=>x.state!=='완료' && x.due && x.due<=today).length;
+  const carry = wsTasks().filter(x=>x.state!=='완료' && x.due && x.due<=today).length;   // 내일로 옮길 수 있는 것만 (KPI- 업무는 빼고)
   const tile = (cls, label, v, sub)=>`<div class="hm-tile ${cls}"><span>${label}</span><b>${v}<small>건</small></b><em>${sub}</em></div>`;
   const seg = (k, name, label)=>`<button type="button" class="${wsView===k?'on':''}" aria-pressed="${wsView===k}" onclick="wsView='${k}'; renderContent()">${icon(name)}${label}</button>`;
   return `<div class="ws">
@@ -3815,7 +3837,7 @@ function kpiContent(){
    단추를 막는 것은 안내일 뿐: 기간 · 상태 · 내용은 서버가 다시 본다. 관리자는 위에 처리할 KPI(GET /api/kpi/inbox) · 우리 팀 KPI 상태(시안 2),
    HR 관리 화면은 작성 기간 · 전 직원 표(GET /api/kpi/admin) · 대신 처리할 KPI, 대표이사는 HR에 맡기기(/api/kpi/delegation).
    시안: 뉴디자인/KPI 진행 관리 시안 - 1. "확정되면 나의 업무에 …" 안내는 나의 업무 연동(2단계) 때 넣는다. */
-const KPI_LIVE = { state:'', me:null, inbox:[], team:null, admin:null, deleg:null, yr:null, busy:false, dirty:false, yrDirty:false, prog:null, typed:{} };   // state: '' 아직 · loading · ok · err. deleg: 대표이사만 true/false. yr: HR 기간 칸에 적는 중인 날짜. dirty · yrDirty: 저장 안 한 내 초안 · 기간 칸 (R21). prog: 내 진행 기록(확정본이 있을 때). typed: 진행 관리에 적고 저장 안 한 글 { 'm-rid-달' · 'r-sid' · 'w-rid': { t, l } }
+const KPI_LIVE = { state:'', me:null, inbox:[], team:null, admin:null, deleg:null, yr:null, busy:false, progBusy:false, dirty:false, yrDirty:false, prog:null, typed:{} };   // busy: 계획서 일(kpiLiveDo) 도는 중 · progBusy: 진행 기록 저장(kpiProgDo) 도는 중. state: '' 아직 · loading · ok · err. deleg: 대표이사만 true/false. yr: HR 기간 칸에 적는 중인 날짜. dirty · yrDirty: 저장 안 한 내 초안 · 기간 칸 (R21). prog: 내 진행 기록(확정본이 있을 때). typed: 진행 관리에 적고 저장 안 한 글 { 'm-rid-달' · 'r-sid' · 'w-rid': { t, l } }
 function kpiEdited(){ if(AUTH.live) KPI_LIVE.dirty = true; }   // 내 초안을 화면에서 고쳤다 — 저장하기 전에는 다시 불러도 지킨다 (R21)
 addEventListener('beforeunload', e=>{ if(AUTH.live && (KPI_LIVE.dirty || KPI_LIVE.yrDirty || Object.keys(KPI_LIVE.typed).length)){ e.preventDefault(); e.returnValue = ''; } });   // 저장 안 한 내 초안 · 기간 칸 · 진행 관리 한 줄이 있으면 창을 닫거나 나가기 전에 브라우저가 묻는다 (없으면 아무것도 안 함)
 function kpiLiveBack(){ return KPI_LIVE.me?.plan?.noteKind==='RETURNED' ? 1 : 0; }   // 돌려보내진 내 계획서 = 다시 써서 낼 일 1건 (메뉴 숫자 · 홈 오늘의 업무 같은 규칙). 수정 요청 거절은 확정본이 그대로라 할 일이 아니다
@@ -3987,13 +4009,14 @@ function kpiProgShow(focus=[], now){   // 진행 관리를 다시 그린다. 글
 }
 function kpiProgFresh(prog){   // 새로 읽은 진행 기록 — 바뀌었으면 넣고 그린다(적는 중이면 미룸), 그대로면 아무것도 안 한다 → 바뀌었는지
   if(JSON.stringify(prog)===JSON.stringify(KPI_LIVE.prog)) return false;
-  kpiProgPrune(prog); KPI_LIVE.prog = prog; kpiProgShow();
+  kpiProgPrune(prog); KPI_LIVE.prog = prog;
+  if(currentTab.id==='e1') kpiProgShow(); else if(currentNav.id==='home' || currentNav.id==='ws') renderContent();   // 홈 · 나의 업무의 KPI- 업무도 새 기한 · 완료로 (적는 중 미루기는 진행 관리에만)
   return true;
 }
 document.addEventListener('visibilitychange', async ()=>{   // 화면이 다시 보이면 진행 기록을 새로 — 휴대폰 · PC 사이 나의 업무가 맞게 (1분에 한 번까지)
-  if(document.visibilityState!=='visible' || !AUTH.live || KPI_LIVE.state!=='ok' || KPI_LIVE.busy || Date.now() - kpiProgAt < 6e4) return;
+  if(document.visibilityState!=='visible' || !AUTH.live || KPI_LIVE.state!=='ok' || KPI_LIVE.busy || KPI_LIVE.progBusy || Date.now() - kpiProgAt < 6e4) return;
   const prog = await kpiProgGet(KPI_LIVE.me);
-  if(prog && !KPI_LIVE.busy) kpiProgFresh(prog);   // 못 읽으면 있던 것을 그대로 둔다
+  if(prog && !KPI_LIVE.busy && !KPI_LIVE.progBusy) kpiProgFresh(prog);   // 못 읽으면 있던 것을 그대로 둔다
 });
 document.addEventListener('focusout', e=>{   // 미뤄 둔 다시 그리기는 글 칸을 떠날 때. 단추로 옮겨 가면 그 단추의 일이 그린다(누른 것을 놓치지 않게) · 창을 옮긴 것이면 돌아와 마저 적는다
   const to = e.relatedTarget;
@@ -4101,7 +4124,7 @@ function kpiProgDo(make, focus=[], sig){   // 진행 기록 저장 — 줄을 �
   if(sig && kpiProgSigs.has(sig)) return kpiProgQ;   // 두 번 누른 같은 저장
   if(sig) kpiProgSigs.add(sig);
   return kpiProgQ = kpiProgQ.then(async ()=>{   // 받으면 진행 기록만 다시 읽는다(계획서 · 처리함은 그대로). 400 · 못 보냄이면 적던 것 그대로
-    KPI_LIVE.busy = true; kpiMsg = null;
+    KPI_LIVE.progBusy = true; kpiMsg = null;   // 계획서 일의 busy 는 읽지도 풀지도 않는다
     try {
       const [path, body, done, after, box] = make(), s = await kpiLivePost(path, body, box);
       if(s===200){ if(done) kpiMsg = { msg:done, type:'success' }; if(after) after(); }
@@ -4110,7 +4133,7 @@ function kpiProgDo(make, focus=[], sig){   // 진행 기록 저장 — 줄을 �
       else if(s===200) kpiMsg = { msg:[done, '진행 기록을 불러오지 못했어요 — 새로 고쳐 주세요.'].filter(Boolean).join(' '), type:'danger' };   // 받았는데 다시 못 읽음 — 옛 기록을 말없이 그리지 않는다
       kpiProgShow(focus, !!kpiMsg);   // 오류 · 알림은 바로 보인다
       if(kpiMsg) document.getElementById('kpiLiveMsg')?.scrollIntoView({ block:'nearest' });   // 이 일이 막 낸 알림일 때만 그 칸으로
-    } finally { KPI_LIVE.busy = false; if(sig) kpiProgSigs.delete(sig); }
+    } finally { KPI_LIVE.progBusy = false; if(sig) kpiProgSigs.delete(sig); }
   }).catch(e=>console.error(e));
 }
 function kpiProgNum(rid, k, v){   // 실적 · 진행률 — 바뀌면 바로 저장 (R3), 비우면 null (R6). 앞의 저장이 도는 동안 또 바꾸면 마지막 값을 그 뒤에 한 번. 맞지 않는 숫자는 서버가 400
@@ -4141,7 +4164,7 @@ function kpiSchedAsk(sid, prog=KPI_LIVE.prog){   // [일정 변경 요청] 창 (
     ${row('KPI', escapeHtml(it.action))}${row('일정', escapeHtml(kpiProgName(s)))}${row('지금 기한', escapeHtml(s.due))}
     <div class="kp-cg"><label for="kpSchedDue">바꿀 기한</label><input type="date" class="kpi-in" id="kpSchedDue" min="${y}-01-01" max="${y}-12-31" value="${escapeHtml(s.due)}"></div>
     <div class="field" style="margin:12px 0 0;"><label for="kpiActWhy">이유 (필수)</label><textarea id="kpiActWhy" rows="3" maxlength="200" placeholder="예: 연사 일정으로 3분기 웨비나를 12월로 미뤄요" oninput="document.getElementById('kpiActCnt').textContent=this.value.length"></textarea><div class="kl-cnt"><span id="kpiActCnt">0</span>/200</div></div>
-    <div class="kp-cgws">${icon('calendar')}<span>${boss}${kpiGa(boss)} 확인하면 나의 업무의 <b>"${escapeHtml(s.task)}"</b> 마감일도 바뀌고, 기대 진행률도 새 기한으로 다시 셉니다</span></div>
+    <div class="kp-cgws">${icon('calendar')}<span><span class="kl-who">${boss}</span>${kpiGa(boss)} 확인하면 나의 업무의 <b>"${escapeHtml(s.task)}"</b> 마감일도 바뀌고, 기대 진행률도 새 기한으로 다시 셉니다</span></div>
     <div class="kl-err" id="kpiActErr"></div>
     <div style="display:flex; gap:8px; margin-top:16px;"><button type="button" class="btn primary" onclick="kpiSchedGo(${+sid})">요청 보내기</button><button type="button" class="btn" onclick="orgCloseModal()">취소</button></div>`);
   document.getElementById('kpSchedDue').focus();
@@ -4230,8 +4253,8 @@ function kpiLiveAsk(uid, act){   // 확정 · 해제 · 일정 변경 확인은 
 function kpiLiveActGo(uid, act){
   const el = document.getElementById('kpiActWhy'), note = el ? el.value.trim() : '';
   if(el && !note){ document.getElementById('kpiActErr').textContent = '이유를 적어 주세요.'; return el.focus(); }
-  if(act==='change') kpiLiveDo('request-change', { reason:note });   // 내 계획서
-  else kpiLiveDo(act.startsWith('sched') ? `/api/kpi/sched-changes/${+uid}/${act.slice(6)}` : `/api/kpi/plans/${uid}/${act}`, el ? { note } : {}, KPI_ACT[act][3]);   // 일정 변경 확인 · 돌려보내기도 같은 보내는 함수 (받으면 다 다시 불러온다)
+  if(act==='change') return kpiLiveDo('request-change', { reason:note });   // 내 계획서
+  return kpiLiveDo(act.startsWith('sched') ? `/api/kpi/sched-changes/${+uid}/${act.slice(6)}` : `/api/kpi/plans/${uid}/${act}`, el ? { note } : {}, KPI_ACT[act][3]);   // 일정 변경 확인 · 돌려보내기도 같은 보내는 함수 (받으면 다 다시 불러온다)
 }
 function kpiLiveHr(a=KPI_LIVE.admin){   // HR 관리 화면: 그해 작성 기간(시작 · 종료 · 평가 시작일) + 전 직원 표 (사람별 기간 열기 · 지우기)
   const w = a.window, f = KPI_LIVE.yr || { from:w.from || '', to:w.to || '', ev:w.evalStart || '' }, y = +a.year, open = w.open;   // 열렸는지는 서버가 (한국 날짜 · 평가 시작일)
@@ -4269,7 +4292,7 @@ function kpiLiveDeleg(on=KPI_LIVE.deleg){   // 대표이사: 내 차례의 KPI �
   return `<div class="card" id="kpiDeleg" style="margin-bottom:14px;"><div class="card-title"><span>HR에 맡기기 <span class="badge ${on ? 'success' : 'neutral'}">${on ? '맡김' : '꺼짐'}</span></span><button type="button" class="btn sm${on ? '' : ' primary'}" aria-pressed="${on}" onclick="kpiLiveDo('/api/kpi/delegation', { on:${!on} }, '${on ? 'HR에 맡기기를 껐어요.' : 'HR에 맡겼어요.'}')">${on ? '맡기기 끄기' : 'HR에 맡기기'}</button></div>
     <div class="list-sub" style="margin:0;">켜면 대표이사 차례의 KPI를 HR이 대신 확정 · 돌려보내기 · 해제 · 거절할 수 있어요.</div></div>`;
 }
-function kpiLiveSelfCheck(){   // 브라우저 콘솔에서 kpiLiveSelfCheck() 실행 — 실제 로그인 계획서 화면의 그리기만 본다 (서버에 보내지 않는다)
+async function kpiLiveSelfCheck(){   // 브라우저 콘솔에서 await kpiLiveSelfCheck() 실행 — 실제 로그인 KPI 화면 · 나의 업무 KPI- 업무의 그리기와 보내는 모양만 본다 (fetch · 이 기기 저장은 가짜로 받아 서버에 보내지 않는다)
   const ok = (c,m)=>{ if(!c) throw new Error('kpiLiveSelfCheck 실패: '+m); };
   const dom = html=>{ const t = document.createElement('template'); t.innerHTML = html; return t.content; };
   const it = (kind, x)=>({ action:'가상 실행목표', formula:'f', weight:40, owner:'가상1', S:'s', A:'a', B:'b', C:'c', D:'d', kind, target:null, unit:'', scheds:[], ...x });
@@ -4514,6 +4537,7 @@ function kpiLiveSelfCheck(){   // 브라우저 콘솔에서 kpiLiveSelfCheck() �
     try {
       ok(du && du.min==='2026-01-01' && du.max==='2026-12-31' && du.value==='2026-10-10' && dm.querySelector('textarea#kpiActWhy[maxlength="200"]') && dm.querySelector('#kpiActCnt'), '일정 변경 요청 창: 바꿀 기한(그해 안 · 지금 기한으로 시작) · 이유 200자 · 글자 수');
       ok(dt.includes('웨비나 <b>개최</b>') && dt.includes('가을') && dt.includes('2026-10-10') && dt.includes('가상<b>팀장 님이 확인하면 나의 업무의 "KPI- 가을" 마감일도 바뀌고, 기대 진행률도 새 기한으로 다시 셉니다') && !dm.querySelector('b b'), '창: KPI · 일정 · 지금 기한 · 바로 위 관리자 이름 · 나의 업무 제목 (글자 그대로)');
+      ok(dm.querySelector('.kp-cgws .kl-who')?.textContent==='가상<b>팀장 님', '안내 칸의 관리자 이름은 두 줄로 꺾이지 않게 (kl-who)');
       ok([...dm.querySelectorAll('button')].map(b=>b.textContent).filter(Boolean).join()==='요청 보내기,취소', '창 단추: [요청 보내기] [취소]');
       kpiProgDo = (make, focus, sig)=>{ sq.push([make(), focus, sig]); return Promise.resolve(); };
       kpiSchedGo(3); ok(!sq.length && dm.querySelector('#kpiActErr').textContent==='이유를 적어 주세요.' && document.getElementById('orgModal'), '이유가 없으면 보내지 않고 창 안에 안내');
@@ -4521,6 +4545,7 @@ function kpiLiveSelfCheck(){   // 브라우저 콘솔에서 kpiLiveSelfCheck() �
       const [sm] = sq[0] || [[]];
       ok(sq.length===1 && sm[0]==='/api/kpi/me/sched-change' && JSON.stringify(sm[1])==='{"year":2026,"sid":3,"due":"2026-11-20","reason":"가상 이유"}' && sm[4]===dm.querySelector('#kpiActErr') && document.getElementById('orgModal') && sq[0][1].includes('kp-r-3-o'),
         '보내면 진행 기록 저장 줄로 · 오류는 창 안 칸에 · 창은 서버가 받은 뒤에 닫힌다');
+      sm[3]?.(); ok(!document.getElementById('orgModal'), 'kpiSchedGo: 서버가 받은 뒤 할 일(after)이 창을 닫는다');
     } finally { kpiProgDo = pq; orgCloseModal(); }
     const nIn = document.getElementById('contentArea').appendChild(document.createElement('input'));
     try {
@@ -4532,6 +4557,71 @@ function kpiLiveSelfCheck(){   // 브라우저 콘솔에서 kpiLiveSelfCheck() �
       renderContent = ()=>{}; currentTab = { id:'e1' }; mk.id = 'kpiLiveMsg'; mk.scrollIntoView = ()=>{ scrolled++; }; kpiProgShow([], true);
       ok(!scrolled, '다시 그리기만으로는 알림 칸으로 옮겨 가지 않는다 (그 일이 막 낸 알림일 때만)');
     } finally { renderContent = rc6; currentTab = tab6; mk.remove(); kpiProgStale = false; }
+    {   // 나의 업무에 KPI- 일정 (2단계 ① Task 7): 확정본의 비정기 일정 → 읽기 전용 업무. 그릴 때만 합친다 — 저장소 · 서버에 넣지 않는다 (fetch · 이 기기 저장은 가짜로 받아 본다)
+      const T0 = kpiDay(0), FAR = `${+T0.slice(0, 4) + 5}-01-15`, snap = JSON.stringify(wsTasks()), go = [], notes = [], sent = [], saved = [];
+      const sv = { goTo, wsNotice, isPhone, renderContent, kpiLiveLoad, fetch:window.fetch, set:Storage.prototype.setItem, view:wsView, filter:wsFilter, tag:wsTag, q:wsQuery, off:wsCalOff, day:wsCalDay, htab:homeTaskTab,
+        msg:kpiMsg, busy:KPI_LIVE.busy, pbusy:KPI_LIVE.progBusy, at:kpiProgAt, btns:[...document.querySelectorAll('#contentArea button')].map(b=>[b, b.disabled]) };
+      const ksc = (sid, name, task, due, at)=>({ sid, name, task, due, origDue:due, state:at ? 'DONE' : 'UPCOMING', result:at ? { text:'가상 결과', link:null, at } : null, pending:null, returned:null });
+      const kprog = { ...prog, items:[prog.items[0], { rid:3, kind:'irr', action:'웨비나 <b>개최</b>', weight:40, value:0, expected:0,
+        scheds:[ksc(1, '1분기', 'KPI- 1분기', '2026-03-26', '2026-03-26T16:30:00Z'), ksc(2, ' ', 'KPI- 웨비나 <b>개최</b>', T0), ksc(3, '가을', 'KPI- 가을', T0, T0+'T03:00:00Z'), ksc(4, '먼 일정', 'KPI- 먼 일정', FAR)] }] };
+      let res = { ok:true, status:200, j:{} };
+      try {
+        goTo = (n, t)=>{ go.push(n+'/'+t); }; wsNotice = m=>{ notes.push(m); }; isPhone = ()=>false; renderContent = ()=>{};
+        Storage.prototype.setItem = function(k, v){ saved.push([k, v]); };
+        window.fetch = (u, o)=>{ sent.push([u, o && o.body, KPI_LIVE.progBusy]); const r = String(u).startsWith('/api/workspace/') ? { ok:true, status:200, j:{ version:WS_SYNC.tasks.v } } : res; return Promise.resolve({ ok:r.ok, status:r.status, json:()=>Promise.resolve(r.j) }); };
+        AUTH.live = false; KPI_LIVE.prog = kprog;
+        ok(!kpiWsTasks().length && wsAll().length===wsTasks().length, '시연에는 KPI- 업무가 없다');
+        AUTH.live = true; KPI_LIVE.prog = null;
+        ok(!kpiWsTasks().length, '진행 기록(확정본)이 없으면 KPI- 업무도 없다');
+        KPI_LIVE.prog = kprog;
+        const all = wsAll(), kt = id=>all.find(x=>x.id===id);
+        ok(all.length===wsTasks().length+4 && [-1, -2, -3, -4].every(kt) && wsTasks().every(x=>x.id>0 && !x.kpi), 'KPI_업무는_저장되지_않는다: wsAll 에는 비정기 일정마다 하나(음수 id) · 저장소(wsTasks)에는 없다');
+        ok(kt(-1).state==='완료' && kt(-1).doneAt==='2026-03-27' && kt(-3).doneAt===T0 && kt(-2).state==='예정' && kt(-2).doneAt==='', '결과가 있는 일정은 완료 · 끝낸 날은 결과를 적은 한국 날짜 (UTC 날짜가 아니다)');
+        ok(kt(-2).title==='KPI- 웨비나 <b>개최</b>' && kt(-1).title==='KPI- 1분기' && kt(-2).due===T0, '빈 이름은 실행목표 제목 · 마감일은 실제 기한');
+        ok(kt(-1).tags.join()==='KPI' && kt(-1).pri==='보통' && kt(-1).memo==='목표설정(KPI)의 예정 기한입니다. 결과는 KPI 화면에서 적어 주세요.' && kt(-1).kpi && !kt(-1).subs.length && kt(-1).repeat==='' && kt(-1).time==='', 'KPI 태그 · 중요도 보통 · 안내 메모');
+        const fe = id=>({ preventDefault(){}, dataTransfer:{ getData:()=>String(id) } });
+        wsEdit(-1); wsToggle(-2, 'wsT'); wsSetState(-2, '완료'); wsDrop(fe(-2), '완료'); wsDropDay(fe(-2), wsShift(T0, 1));
+        ok(JSON.stringify(wsTasks())===snap && !document.getElementById('orgModal') && go.join()==='perf/e1,perf/e1,perf/e1' && !notes.length, 'wsEdit · wsToggle · wsSetState(음수 id)는 오류 없이 아무것도 바꾸지 않고 PC 는 목표설정으로 · 끌어 놓기는 무시');
+        isPhone = ()=>true; wsEdit(-2); wsToggle(-1, 'hmT'); wsSetState(-3, '예정');
+        ok(go.length===3 && notes.length===3 && notes.every(m=>m==='KPI 결과는 PC의 평가·성과 → 목표설정에서 적어 주세요') && JSON.stringify(wsTasks())===snap, '휴대폰에서는 안내만');
+        isPhone = ()=>false; wsTag = ''; wsQuery = ''; wsView = 'list'; wsFilter = 'all';
+        const kr = [...dom(wsBody()).querySelectorAll('.ws-row.kpi')];
+        ok(kr.length===3 && kr.every(r=>!r.querySelector('input, select') && r.querySelector('.ws-lock svg') && r.querySelector('.ws-tag').textContent==='KPI' && r.getAttribute('onclick')==='wsKpiGo()' && !r.querySelector('.t b')), '목록: KPI 줄은 체크칸 · 상태 고르기 대신 자물쇠 + KPI 태그 · 누르면 목표설정 · 제목은 글자 그대로');
+        wsView = 'board'; const kc = [...dom(wsBody()).querySelectorAll('.ws-kcard.kpi')];
+        ok(kc.length>=2 && kc.every(c=>!c.hasAttribute('draggable') && !c.querySelector('select') && c.querySelector('.ws-lock svg') && c.getAttribute('onclick')==='wsKpiGo()'), '보드: KPI 카드는 끌 수 없고 상태 고르기가 없다');
+        wsView = 'cal'; wsCalOff = 60 - (+T0.slice(5, 7) - 1); wsCalDay = FAR;
+        const C = dom(wsBody()), ch = [...C.querySelectorAll('.ws-chip.kpi')];
+        ok(ch.length===1 && !ch[0].hasAttribute('draggable') && ch[0].getAttribute('onclick')==='event.stopPropagation(); wsKpiGo()' && ch[0].querySelector('svg') && C.querySelectorAll('.hm-list .ws-row.kpi').length===1, '달력: KPI 칸은 끌 수 없다 · 고른 날 목록에도 KPI 줄');
+        ok(homeDayMap(+FAR.slice(0, 4), 0)[FAR]?.tasks.some(x=>x.id===-4), '홈 · 나의 업무 달력: KPI- 업무 마감일에 점');
+        homeTaskTab = 'mine'; const hm = [...dom(homeTaskCard()).querySelectorAll('.hm-row.kpi')];
+        homeTaskTab = 'portal'; const hp0 = dom(homeTaskCard()).querySelectorAll('.hm-row.kpi').length;
+        ok(hm.length===2 && hm.every(r=>!r.querySelector('input') && r.querySelector('.ws-lock svg') && r.querySelector('.ws-tag').textContent==='KPI' && r.getAttribute('onclick')==='wsKpiGo()') && !hp0, '홈 오늘의 업무: KPI 줄은 개인(내 일) 쪽 · 체크칸 대신 자물쇠');
+        homeTodayPop(); const pop = [...document.querySelectorAll('#orgModal .hm-row.kpi')].map(r=>r.getAttribute('onclick')); orgCloseModal();
+        ok(pop.length===2 && pop.every(c=>c==='orgCloseModal(); wsKpiGo()'), '오늘 할 일 창: KPI 줄은 누르면 목표설정');
+        wsView = 'list'; const W = dom(wsContent()), real = wsTasks().filter(x=>x.state!=='완료' && x.due && x.due<=T0).length;
+        ok([...W.querySelectorAll('button')].some(b=>b.textContent===(real ? `못 끝낸 일 내일로 (${real})` : '못 끝낸 일 내일로')) && [...W.querySelectorAll('select[aria-label="태그로 골라 보기"] option')].some(o=>o.textContent==='KPI'), '못 끝낸 일 내일로는 KPI- 업무를 세지 않는다 · 태그로 골라 보기에 KPI');
+        wsReport(); const rp = document.getElementById('wsReportTa')?.value || ''; orgCloseModal();
+        ok(rp.includes('- KPI- 가을 (') && !rp.includes('예정 기한입니다'), '주간 보고 초안: 끝낸 KPI- 업무는 들어가고 안내 메모는 빠진다');
+        wsSave();
+        const body = sent.find(([u])=>u==='/api/workspace/tasks'), ls = saved.filter(([k])=>k.startsWith('wsTasks:'));
+        ok(body && JSON.parse(body[1]).data.every(x=>x.id>0 && !x.kpi) && ls.length===1 && JSON.parse(ls[0][1]).every(x=>x.id>0 && !x.kpi), 'KPI_업무는_저장되지_않는다: wsSave 가 서버로 보내는 목록 · 이 기기 저장에 음수 id 가 없다');
+        // Task 6 리뷰에서 넘어온 것: 일정 변경 확인 · 돌려보내기의 주소와 본문 / kpiLivePost(box) / 진행 기록 저장은 따로 쓰는 busy
+        sent.length = 0; KPI_LIVE.busy = false; KPI_LIVE.inbox = [sx(5, false)]; kpiLiveLoad = async ()=>{};
+        kpiLiveAsk(5, 'sched_return'); document.getElementById('kpiActWhy').value = ' 가상 이유 '; await kpiLiveActGo(5, 'sched_return');
+        kpiLiveAsk(5, 'sched_confirm'); await kpiLiveActGo(5, 'sched_confirm');
+        ok(sent.map(([u, b])=>u+' '+b).join('|')==='/api/kpi/sched-changes/5/return {"note":"가상 이유"}|/api/kpi/sched-changes/5/confirm {}' && !document.getElementById('orgModal'), 'kpiLiveActGo: 일정 변경 돌려보내기 · 확인의 주소와 본문 · 받은 뒤에 창이 닫힌다');
+        const box = document.body.appendChild(document.createElement('div')); kpiMsg = null; res = { ok:false, status:400, j:{ error:'가상 <b>오류</b>' } };
+        const s400 = await kpiLivePost('/api/kpi/me/sched-change', {}, box), boxText = box.textContent, boxB = !!box.querySelector('b'); box.remove();
+        ok(s400===400 && boxText==='가상 <b>오류</b>' && !boxB && !kpiMsg, 'kpiLivePost(box): 400 은 그 창 안 칸에 (글자 그대로 · 위쪽 칸에는 없음)');
+        sent.length = 0; KPI_LIVE.busy = true; res = { ok:true, status:200, j:kprog };   // 계획서 일이 도는 중에 진행 기록 저장
+        kpiProgDo(()=>['/api/kpi/me/progress', { year:2026, rid:1, actual:1 }]); await kpiProgQ;
+        ok(KPI_LIVE.busy && !KPI_LIVE.progBusy && sent[0]?.[2]===true && KPI_LIVE.prog===kprog, '진행 기록 저장은 KPI_LIVE.busy 를 읽지도 풀지도 않는다 (도는 동안은 progBusy)');
+      } finally {
+        goTo = sv.goTo; wsNotice = sv.wsNotice; isPhone = sv.isPhone; renderContent = sv.renderContent; kpiLiveLoad = sv.kpiLiveLoad; window.fetch = sv.fetch; Storage.prototype.setItem = sv.set;
+        wsView = sv.view; wsFilter = sv.filter; wsTag = sv.tag; wsQuery = sv.q; wsCalOff = sv.off; wsCalDay = sv.day; homeTaskTab = sv.htab; kpiMsg = sv.msg; KPI_LIVE.busy = sv.busy; KPI_LIVE.progBusy = sv.pbusy; kpiProgAt = sv.at;
+        sv.btns.forEach(([b, d])=>{ b.disabled = d; }); orgCloseModal();
+      }
+    }
   } finally { Object.assign(KPI_LIVE, { inbox:keep.inbox, me:keep.me, admin:keep.admin, dirty:keep.dirty, yrDirty:keep.yrDirty, yr:keep.yr, prog:keep.prog, typed:keep.typed }); kpiProgTab = keep.tab; kpiProgFold.clear(); keep.fold.forEach(r=>kpiProgFold.add(r)); AUTH.live = keep.live; AUTH.me = keep.authMe; }
   return 'kpiLiveSelfCheck 통과';
 }
@@ -8009,7 +8099,7 @@ const TOURS = {   // 단계: el = 가리킬 곳(여러 개면 묶어서, 배열�
   ]},
   ws:{ label:'나의 업무 사용법', tab:'w1', steps:()=>[
     { el:'.ws .ws-add', title:'할 일 적기', body:'제목만 적고 <b>Enter</b>. 제목 끝에 <b>내일</b>, <b>금요일 3시</b>, <b>10/20</b>처럼 적으면 마감일과 시간이 함께 들어갑니다.' },
-    { el:'#wsBody .ws-row:not(.done)', one:true, title:'끝내기 · 고치기', body:'왼쪽 <b>네모</b>를 누르면 완료됩니다. 줄을 누르면 중요도·메모·하위 할 일·반복을 정할 수 있습니다.' },
+    { el:'#wsBody .ws-row:not(.done):not(.kpi)', one:true, title:'끝내기 · 고치기', body:'왼쪽 <b>네모</b>를 누르면 완료됩니다. 줄을 누르면 중요도·메모·하위 할 일·반복을 정할 수 있습니다.' },
     { el:'.ws .ws-seg', title:'보기 바꾸기', body:'<b>목록 · 보드 · 달력</b>. 보드에서는 카드를 끌어 상태를 바꾸고, 달력에서는 끌어서 마감일을 옮깁니다.' },
     { el:'.ws .ws-bar > span', title:'미루기 · 주간 보고', body:'못 끝낸 일은 한 번에 <b>내일로</b> 넘길 수 있고, 이번 주에 한 일로 <b>주간 보고 초안</b>을 만들어 줍니다.' },
   ]},
