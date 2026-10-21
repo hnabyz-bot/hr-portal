@@ -969,13 +969,30 @@
   .pay-track{ position:absolute; left:0; right:0; bottom:14px; height:14px; background:var(--surface); border-radius:8px; overflow:hidden; box-shadow:inset 0 1px 3px rgba(27,36,51,.1); }
   .pay-fill{ height:100%; width:0; background:linear-gradient(90deg,var(--bg-warning),var(--alert)); border-radius:8px; transition:width 1s linear; }
   .pay-tick{ position:absolute; top:3px; width:2px; height:8px; border-radius:1px; background:#F3DCC8; }
-  .pay-walker{ position:absolute; bottom:20px; left:0; height:112px; transition:left 1s linear; }
-  .pay-walker img{ display:block; height:112px; width:auto; position:relative; z-index:1; transform-origin:50% 100%; animation:payStep .5s ease-in-out infinite alternate; }
-  @keyframes payStep{ from{ transform:translateY(0) rotate(-1.5deg); } to{ transform:translateY(-6px) rotate(1.5deg); } }
-  .pay-shadow{ position:absolute; left:15%; right:15%; bottom:-4px; height:8px; border-radius:50%; background:rgba(122,62,29,.18); animation:payShadow .5s ease-in-out infinite alternate; }
-  @keyframes payShadow{ from{ transform:scaleX(1); opacity:1; } to{ transform:scaleX(.82); opacity:.6; } }
-  .pay-glyph{ position:absolute; z-index:2; font-size:15px; font-weight:800; color:var(--accent); opacity:0; text-shadow:0 1px 0 #fff; animation:payGlyph 2.6s ease-out infinite; }
+  .pay-walker{ position:absolute; bottom:20px; left:0; height:var(--wk-h,116px); transition:left 1s linear; }
+  .pay-walker.ant{ --wk-h:92px; }
+  /* 걷는 캐릭터 (2026-10-21 인사담당자 — 여자·남자·개미 중 고르기, 자연스러운 걸음): 그림 한 장을 몸통 + 다리 조각으로 나눠(같은 크기 캔버스) 다리가 엉덩이를 축으로 번갈아 움직인다.
+     다리는 몸통 뒤에 깔리고 몸통이 이음매를 덮는다. 조각을 다시 만드는 법은 CLAUDE.md "급여명세서 캐릭터" */
+  .wk-fig{ display:block; position:relative; height:100%; aspect-ratio:var(--ar); transform-origin:50% 100%; animation:wkBob var(--wk-step) ease-in-out infinite alternate; }
+  .wk-fig > img{ position:absolute; inset:0; width:100%; height:100%; display:block; }
+  .pay-walker, .pay-pick-btn{ --wk-step:.46s; --wk-stride:24deg; }
+  .wk-leg.a{ animation:wkLegA calc(var(--wk-step)*2) ease-in-out infinite; }
+  .wk-leg.b{ animation:wkLegB calc(var(--wk-step)*2) ease-in-out infinite; }
+  @keyframes wkBob{ from{ transform:translateY(0) rotate(-.6deg); } to{ transform:translateY(-2.5%) rotate(.6deg); } }   /* 다리가 모일 때 몸이 올라간다 */
+  @keyframes wkLegA{ 0%,100%{ transform:rotate(0); } 50%{ transform:rotate(var(--wk-stride)); } }
+  @keyframes wkLegB{ 0%,100%{ transform:rotate(0); } 50%{ transform:rotate(calc(var(--wk-stride)*-1)); } }
+  .ant .wk-fig{ animation-duration:calc(var(--wk-step)*.65); }
+  .ant .wk-leg.a, .ant .wk-leg.b{ animation:wkAnt calc(var(--wk-step)*1.3) ease-in-out infinite; }   /* 개미: 다리 넷이 둘씩(1·3 / 2·4) 번갈아 들렸다 놓인다 */
+  .ant .wk-leg.b{ animation-delay:calc(var(--wk-step)*-.65); }
+  @keyframes wkAnt{ 0%,100%{ transform:rotate(7deg); } 25%{ transform:rotate(-4deg) translateY(-5%); } 50%{ transform:rotate(-9deg); } }
+  .wk-dev{ display:block; position:absolute; }
+  .wk-dev svg{ display:block; width:100%; height:auto; overflow:visible; }
+  .pay-shadow{ position:absolute; left:18%; right:18%; bottom:-4px; height:8px; border-radius:50%; background:rgba(122,62,29,.18); animation:payShadow var(--wk-step,.46s) ease-in-out infinite alternate; }
+  @keyframes payShadow{ from{ transform:scaleX(1); opacity:1; } to{ transform:scaleX(.85); opacity:.6; } }
+  .pay-glyph{ position:absolute; z-index:5; font-size:15px; font-weight:800; color:var(--accent); opacity:0; text-shadow:0 1px 0 #fff; animation:payGlyph 2.6s ease-out infinite; pointer-events:none; }
   @keyframes payGlyph{ 0%{ transform:translate(0,0) scale(.6); opacity:0; } 15%{ opacity:1; } 100%{ transform:translate(var(--dx),-48px) scale(1.15); opacity:0; } }
+  .pay-ttun{ position:absolute; z-index:5; font-size:14px; font-weight:900; color:var(--pay-ink,#7A3E1D); letter-spacing:-.02em; white-space:nowrap; opacity:0; text-shadow:0 1px 0 #fff, 0 0 6px #fff; animation:payTtun 2.2s ease-out infinite; pointer-events:none; }
+  @keyframes payTtun{ 0%{ transform:translate(0,6px) scale(.7) rotate(var(--r)); opacity:0; } 18%{ opacity:1; transform:translate(0,0) scale(1.05) rotate(var(--r)); } 70%{ opacity:1; } 100%{ transform:translate(var(--dx),-34px) scale(1) rotate(var(--r)); opacity:0; } }
   .pay-treasure{ position:absolute; right:0; bottom:18px; width:150px; }
   .pay-treasure img{ width:100%; height:auto; display:block; animation:payGlow 2.4s ease-in-out infinite; }
   .pay-shine{ position:absolute; inset:0; pointer-events:none; background:linear-gradient(110deg,transparent 35%,rgba(255,255,255,.85) 50%,transparent 65%); background-size:260% 100%;
@@ -983,8 +1000,8 @@
   @keyframes payShine{ 0%,35%{ background-position:130% 0; } 100%{ background-position:-40% 0; } }
   @keyframes payGlow{ 0%,100%{ filter:drop-shadow(0 0 0 rgba(255,200,60,0)); } 50%{ filter:drop-shadow(0 0 10px rgba(255,200,60,.6)); } }
   .pay-spark{ position:absolute; width:14px; height:14px; background:#FFD54A; opacity:0; clip-path:polygon(50% 0,62% 38%,100% 50%,62% 62%,50% 100%,38% 62%,0 50%,38% 38%); animation:fxTwinkle 1.8s ease-in-out infinite; }
-  .pay-win{ position:absolute; left:50%; bottom:6px; width:200px; height:128px; transform:translateX(-50%); }
-  .pay-win > img:first-child{ position:absolute; left:50%; bottom:0; height:124px; width:auto; transform:translateX(-50%); animation:payJump .55s ease-in-out infinite alternate; }
+  .pay-win{ position:absolute; left:50%; bottom:6px; width:240px; height:134px; transform:translateX(-50%); }
+  .pay-win > img:first-child{ position:absolute; left:50%; bottom:0; height:130px; width:auto; transform:translateX(-50%); animation:payJump .55s ease-in-out infinite alternate; }
   @keyframes payJump{ from{ transform:translateX(-50%) translateY(0); } to{ transform:translateX(-50%) translateY(-10px); } }
   .pay-coin{ position:absolute; top:0; width:24px; height:24px; opacity:0; animation:payCoin 1.5s ease-in infinite; }
   @keyframes payCoin{ 0%{ transform:translateY(-16px) rotate(0); opacity:0; } 20%{ opacity:1; } 100%{ transform:translateY(90px) rotate(200deg); opacity:0; } }
@@ -993,7 +1010,8 @@
   @media (max-width:768px){
     .pay-hero{ grid-template-columns:1fr; gap:6px; }
     .pay-road{ height:120px; }
-    .pay-walker, .pay-walker img{ height:100px; }
+    .pay-walker{ --wk-h:100px; }
+    .pay-walker.ant{ --wk-h:80px; }
     .pay-treasure{ width:120px; }
   }
   .pay-ends{ display:flex; justify-content:space-between; font-size:var(--fs-xs); color:#7D6656; }
@@ -1011,9 +1029,12 @@
   .pay-tags .badge{ font-size:10px; padding:1px 6px; }
   .pay-pick{ display:block; text-align:center; padding:18px 24px; }
   .pay-pick-row{ display:flex; justify-content:center; flex-wrap:wrap; gap:16px; margin:12px 0 10px; }
-  .pay-pick-btn{ border:1px solid #F3DCC8; background:var(--surface); border-radius:var(--radius-lg); padding:12px 22px; cursor:pointer; transition:border-color .2s var(--ease), box-shadow .2s var(--ease); }
+  .pay-pick-btn{ width:150px; display:flex; flex-direction:column; align-items:center; gap:8px; border:2px solid #F3DCC8; background:var(--surface); border-radius:var(--radius-lg); padding:12px 8px 10px; cursor:pointer; font:inherit; font-weight:700; color:var(--pay-ink,#7A3E1D); transition:border-color .2s var(--ease), box-shadow .2s var(--ease); }
   .pay-pick-btn:hover, .pay-pick-btn:focus-visible{ border-color:#C94F5B; box-shadow:0 6px 16px -8px rgba(201,79,91,.5); }
-  .pay-pick-btn img{ display:block; height:112px; width:auto; }
+  .pay-pick-btn.on{ border-color:#C94F5B; box-shadow:0 0 0 3px rgba(201,79,91,.15); }
+  .pay-pick-btn .stage{ height:100px; width:100%; display:flex; align-items:flex-end; justify-content:center; }
+  .pay-pick-btn .stage > span{ display:block; height:96px; }
+  .pay-pick-btn .stage > span.ant{ height:76px; }
   .pay-sum{ display:flex; flex-wrap:wrap; gap:6px 18px; font-size:var(--fs-sm); color:var(--text-secondary); margin-bottom:8px; }
   .pay-sum b{ color:var(--text-primary); }
   .pay-legend{ display:flex; flex-wrap:wrap; gap:14px; align-items:center; font-size:var(--fs-xs); color:var(--text-secondary); margin-bottom:10px; }
@@ -5113,7 +5134,7 @@ const PAY_PEOPLE = {   // 시연 역할별 가상 사원 정보와 월 지급 �
 };
 let payYear = null, paySlips = null, payOpen = null, payShow = false, payViewKey = null, payTimer = null, payPreview = false;   // payPreview: 시연용 급여일 모습 미리보기. payViewKey: 시연 = 역할 열쇠 · 실제 = null(본인) 또는 HR이 고른 직원 번호
 const PAY_LIVE = { state:'', who:null, slips:[], mine:[] };   // 실제 로그인: 지금 화면의 명세서(slips, who = null 본인 · 직원 번호) + 내 공개된 명세서(mine, 메뉴 숫자). state: '' 아직 · loading · ok · err (MS_LIVE와 같은 방식)
-let PAY_CHAR_MEM = '';   // 고른 캐릭터 'f' | 'm' — 브라우저 저장소를 못 쓰면 이번 화면 동안만 기억한다
+let PAY_CHAR_MEM = '', payPicking = false;   // 고른 캐릭터 'f' | 'm' | 'a' — 브라우저 저장소를 못 쓰면 이번 화면 동안만 기억한다 · payPicking: "캐릭터 바꾸기"로 고르기 카드를 다시 연 상태
 
 /* ----- 규칙 (순수 로직, paySelfCheck가 검증) ----- */
 function payIsOff(d){ return d.getDay()===0 || d.getDay()===6 || PAY_HOLIDAYS.has(ctYmd(d)); }
@@ -5187,10 +5208,21 @@ function paySelfCheck(){   // 브라우저 콘솔에서 paySelfCheck() 실행
     AUTH.live = false; ok(TODO.p1()===0, '시연에는 새 명세서가 없다');
     AUTH.live = true; PAY_CHAR_MEM = ''; try{ localStorage.removeItem('payChar'); }catch(e){}
     ok(payHero([d]).includes('급여일까지 함께 걸어갈 캐릭터를 골라 주세요') && !payHero([d]).includes('pay-fill'), '캐릭터를 고르기 전에는 고르기 카드만');
+    const pc = payHero([d]);
+    ok(['여자','남자','개미'].every(n=>pc.includes(`</span>${n}</button>`)) && (pc.match(/class="pay-pick-btn/g) || []).length===3 && !pc.includes('pay-glyph') && !pc.includes('pay-ttun'), '고르기 카드: 여자 · 남자 · 개미 셋 (카드에는 떠오르는 글자 없음)');
     PAY_CHAR_MEM = 'm'; const hm = payHero([d]);
-    ok(hm.includes('pay-fill') && /(walk|payday)-m\.png/.test(hm) && !/(walk|payday)-f\.png/.test(hm) && hm.includes('캐릭터 바꾸기') && !hm.includes('시연: 급여일'), '고른 뒤에는 히어로 · 캐릭터 바꾸기');
+    ok(hm.includes('pay-fill') && hm.includes('walk-m-body.png') && hm.includes('walk-m-front.png') && !hm.includes('walk-f-') && hm.includes('pay-glyph') && hm.includes('캐릭터 바꾸기') && !hm.includes('시연: 급여일'), '고른 뒤에는 히어로(남자: 몸통 + 다리 · 노트북 글자) · 캐릭터 바꾸기');
+    PAY_CHAR_MEM = 'a'; const ha = payHero([d]);
+    ok(ha.includes('walk-a-l4.png') && ha.includes('pay-ttun') && ha.includes('pay-walker ant') && !ha.includes('pay-glyph'), '개미: 다리 넷 · 뚠뚠');
+    payPicking = true; const hp = payHero([d]);
+    ok(hp.includes('pay-pick-btn on') && hp.includes("paySetChar('a')") && hp.includes('바꾸지 않고 닫기') && !hp.includes('pay-fill'), '캐릭터 바꾸기 = 고르기 카드(지금 캐릭터 표시 · 닫기)');
+    payPicking = false; PAY_CHAR_MEM = '';
+    try{ localStorage.setItem('payChar', 'x'); ok(payChar()==='', '모르는 값은 고르지 않은 것'); localStorage.setItem('payChar', 'a'); ok(payChar()==='a', '고른 캐릭터는 브라우저가 기억'); }catch(e){}
+    AUTH.live = false; PAY_CHAR_MEM = ''; try{ localStorage.removeItem('payChar'); }catch(e){}
+    const hd = payHero([d]);
+    ok(hd.includes('pay-fill') && hd.includes('캐릭터 바꾸기') && hd.includes('시연: 급여일'), '시연: 고르지 않아도 가상 인물로 히어로 · 캐릭터 바꾸기 + 시연 단추');
   } finally {
-    [AUTH.live, PAY_LIVE.mine, PAY_CHAR_MEM] = keep;
+    [AUTH.live, PAY_LIVE.mine, PAY_CHAR_MEM] = keep; payPicking = false;
     try{ if(keep[3]===null) localStorage.removeItem('payChar'); else localStorage.setItem('payChar', keep[3]); }catch(e){}
   }
   return 'paySelfCheck 통과';
@@ -5379,37 +5411,59 @@ function payTick(){
   fill.style.width = pct;
   const wk = document.getElementById('payWalker'); if(wk) wk.style.left = `calc((100% - 170px) * ${p})`;
 }
-function payChar(){   // 실제 로그인: 고른 캐릭터 'f'(패드) | 'm'(노트북). 아직 안 골랐으면 ''. 로그인에는 성별이 없어 처음 한 번 고르게 한다 (브라우저마다 기억)
+/* ----- 캐릭터 (2026-10-21 인사담당자 — 여자 · 남자 · 개미 중 고르기) -----
+   걷는 그림은 몸통(walk-?-body) + 다리 조각(같은 크기 캔버스, 엉덩이 축 = legs의 %)을 겹친다. 패드·노트북은 그림에 없어 SVG로 손에 쥐여 준다.
+   그림을 바꾸면 조각과 축을 다시 만든다 — CLAUDE.md "급여명세서 캐릭터" */
+const PAY_CHARS = {
+  f:{ name:'여자', ar:'210 / 360', dev:'tablet', alt:'패드로 일하며 급여일을 향해 걸어가는 여자 캐릭터', legs:[['back','46.01% 57.78%','b'], ['front','57.98% 57.78%','a']] },
+  m:{ name:'남자', ar:'226 / 360', dev:'laptop', alt:'노트북으로 일하며 급여일을 향해 걸어가는 남자 캐릭터', legs:[['back','42.12% 58.33%','b'], ['front','53.1% 57.78%','a']] },
+  a:{ name:'개미', ar:'344 / 360', dev:'', alt:'뚠뚠 걸어서 급여일을 향해 가는 개미 캐릭터', legs:[['l1','14.93% 80%','a'], ['l2','25.69% 80%','b'], ['l3','39.43% 80%','a'], ['l4','56.15% 80%','b']] },
+};
+const PAY_TABLET = `<svg viewBox="0 0 60 80" aria-hidden="true"><defs><linearGradient id="payTbB" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#46516A"/><stop offset="1" stop-color="#1D2433"/></linearGradient><linearGradient id="payTbS" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#F6FAFF"/><stop offset="1" stop-color="#D8E8FA"/></linearGradient></defs>
+  <rect x="1" y="1" width="58" height="78" rx="8" fill="url(#payTbB)"/><rect x="5" y="6" width="50" height="66" rx="3.5" fill="url(#payTbS)"/><rect x="10" y="12" width="24" height="4" rx="2" fill="#9CBFE6"/><rect x="10" y="19" width="15" height="3" rx="1.5" fill="#C6D9EF"/>
+  <rect x="10" y="44" width="6" height="20" rx="1.5" fill="#54A6E1"/><rect x="19" y="34" width="6" height="30" rx="1.5" fill="#255DAA"/><rect x="28" y="40" width="6" height="24" rx="1.5" fill="#54A6E1"/><rect x="37" y="28" width="6" height="36" rx="1.5" fill="#F2994A"/><path d="M5 6 L30 6 L5 40 Z" fill="#fff" opacity=".28"/></svg>`;
+const PAY_LAPTOP = `<svg viewBox="0 0 100 80" aria-hidden="true"><defs><linearGradient id="payLpL" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#EEF2F7"/><stop offset=".55" stop-color="#C9D2DE"/><stop offset="1" stop-color="#A9B4C3"/></linearGradient><linearGradient id="payLpB" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#D5DCE5"/><stop offset="1" stop-color="#8C97A6"/></linearGradient></defs>
+  <path d="M18 7 L86 3 Q90 3 90 7 L83 55 L14 60 Q11 60 12 56 Z" fill="url(#payLpL)" stroke="#9AA6B6" stroke-width="1"/><g transform="translate(51 31)"><circle cx="-3.4" cy="-3.4" r="3.6" fill="#E9573F"/><circle cx="3.4" cy="-3.4" r="3.6" fill="#F5A623"/><circle cx="-3.4" cy="3.4" r="3.6" fill="#2F7BD6"/><circle cx="3.4" cy="3.4" r="3.6" fill="#4CB050"/></g>
+  <path d="M8 59 L90 53 L98 60 L16 68 Z" fill="url(#payLpB)"/><path d="M16 68 L98 60 L98 63 L17 71 Z" fill="#6E7888"/><path d="M18 7 L44 5 L16 40 Z" fill="#fff" opacity=".35"/></svg>`;
+function payWalker(g, plain){   // 걷는 캐릭터 한 명(몸통·다리·패드/노트북·떠오르는 글자). plain = 고르기 카드용(떠오르는 글자 없이)
+  const c = PAY_CHARS[g], legs = c.legs.map(([n, o, ph])=>`<img class="wk-leg ${ph}" src="img/pay/walk-${g}-${n}.png" alt="" style="transform-origin:${o}">`).join('');
+  const dev = c.dev==='tablet' ? `<span class="wk-dev" style="left:70%; top:28.5%; width:30%; transform:rotate(-24deg); transform-origin:20% 95%">${PAY_TABLET}</span>`   // 손가락이 앞에 오게 몸통 뒤에
+    : c.dev==='laptop' ? `<span class="wk-dev" style="left:63%; top:23%; width:40%; z-index:2">${PAY_LAPTOP}</span>` : '';   // 앞으로 내민 주먹 위에
+  const top = g==='f' ? 27 : 20;
+  const fx = plain ? '' : g==='a'
+    ? [[8,30,-8,-10],[62,4,6,8],[86,40,10,-6],[30,8,-4,12],[74,22,-6,4]].map(([x,y,r,dx],i)=>`<span class="pay-ttun" style="left:${x}%; top:${y}%; --r:${r}deg; --dx:${dx}px; animation-delay:${(i*0.44).toFixed(2)}s">뚠뚠</span>`).join('')
+    : ['가','A','₩','1','%','H','R','+','8'].map((ch,i)=>`<span class="pay-glyph" style="left:${80 + ((i*37)%11) - 5}%; top:${top}%; animation-delay:${(i*0.37).toFixed(2)}s; --dx:${((i*53)%41) - 20}px">${ch}</span>`).join('');
+  return `<span class="wk-fig" role="img" aria-label="${c.alt}" style="--ar:${c.ar}">${legs}${c.dev==='tablet' ? dev : ''}<img class="wk-body" src="img/pay/walk-${g}-body.png" alt="" style="z-index:1">${c.dev==='laptop' ? dev : ''}${fx}</span>`;
+}
+function payChar(){   // 고른 캐릭터 'f' | 'm' | 'a'. 아직 안 골랐으면 ''. 로그인에는 성별이 없어 처음 한 번 고르게 한다 (브라우저마다 기억)
   if(PAY_CHAR_MEM) return PAY_CHAR_MEM;
-  try { const v = localStorage.getItem('payChar'); if(v==='f' || v==='m') return v; } catch(e){}
+  try { const v = localStorage.getItem('payChar'); if(PAY_CHARS[v]) return v; } catch(e){}
   return '';
 }
 function paySetChar(g){   // 고르기 · 바꾸기. 저장소를 못 쓰면 이번 화면 동안만 기억한다
-  PAY_CHAR_MEM = g;
+  PAY_CHAR_MEM = g; payPicking = false;
   try { localStorage.setItem('payChar', g); } catch(e){}
   renderContent();
 }
-function payPickCard(){   // 아직 캐릭터를 안 골랐을 때 히어로 자리에 나오는 카드
-  const btn = (g, alt)=>`<button type="button" class="pay-pick-btn" onclick="paySetChar('${g}')" aria-label="${alt}"><img src="img/pay/walk-${g}.png" alt="${alt}"></button>`;
+function payPickCard(cur){   // 아직 안 골랐을 때(또는 "캐릭터 바꾸기") 히어로 자리에 나오는 카드
+  const btn = g=>`<button type="button" class="pay-pick-btn${g===cur ? ' on' : ''}" onclick="paySetChar('${g}')" aria-pressed="${g===cur}"><span class="stage"><span class="${g==='a' ? 'ant' : ''}">${payWalker(g, true)}</span></span>${PAY_CHARS[g].name}</button>`;
   return `<section class="pay-hero pay-pick" aria-label="캐릭터 고르기">
     <div class="pay-lead"><b>급여일까지 함께 걸어갈 캐릭터를 골라 주세요</b></div>
-    <div class="pay-pick-row">${btn('f', '패드로 일하는 캐릭터')}${btn('m', '노트북으로 일하는 캐릭터')}</div>
-    <div class="pay-sub">고른 뒤에도 그림 아래 "캐릭터 바꾸기"에서 바꿀 수 있습니다.</div>
+    <div class="pay-pick-row">${Object.keys(PAY_CHARS).map(btn).join('')}</div>
+    <div class="pay-sub">${cur ? `<button type="button" class="pay-demo" onclick="payPicking=false; renderContent()">바꾸지 않고 닫기</button>` : '고른 뒤에도 그림 아래 "캐릭터 바꾸기"에서 바꿀 수 있습니다.'}</div>
   </section>`;
 }
 function payHero(slips){
-  const g = AUTH.live ? payChar() : PAY_PEOPLE[payViewKey].gender==='f' ? 'f' : 'm';
-  if(!g) return payPickCard();
+  const g = payChar() || (AUTH.live ? '' : PAY_PEOPLE[payViewKey]?.gender==='f' ? 'f' : 'm');   // 시연은 고른 것이 없으면 가상 인물의 성별로
+  if(!g || payPicking) return payPickCard(g);
   const now = new Date(), w = payWindow(now), t = payTarget(slips, w), arrived = w.isPayday || payPreview;
   const days = Math.round((w.next - new Date(now.getFullYear(), now.getMonth(), now.getDate()))/864e5);
   const lead = arrived ? '<b>오늘은 급여일!</b> 이번 달도 수고 많으셨어요' : `다음 급여일 <b>${payMd(w.next)}</b>까지 <b>${days}일</b><br>지금까지 모인 이번 달 급여`;
-  const dev = g==='f' ? { x:80, y:24 } : { x:72, y:30 };   // 패드·노트북 화면 위치(그림 안 %)
-  const glyphs = ['가','A','₩','1','%','H','R','+','8'].map((ch,i)=>`<span class="pay-glyph" style="left:${dev.x + ((i*37)%11) - 5}%; top:${dev.y}%; animation-delay:${(i*0.37).toFixed(2)}s; --dx:${((i*53)%41) - 20}px">${ch}</span>`).join('');
   const scene = arrived
-    ? `<div class="pay-win"><img src="img/pay/payday-${g}.png" alt="금은보화를 안고 기뻐하는 캐릭터">
+    ? `<div class="pay-win"><img src="img/pay/payday-${g}.png?v=2" alt="금은보화를 안고 기뻐하는 ${PAY_CHARS[g].name} 캐릭터">
         ${[12,30,52,70,88].map((x,i)=>`<img class="pay-coin" src="img/pay/coin.png" alt="" style="left:${x}%; animation-delay:${i*0.3}s">`).join('')}
         ${[[8,20],[86,14],[20,64],[78,58]].map(([x,y],i)=>`<span class="pay-spark" style="left:${x}%; top:${y}%; animation-delay:${i*0.4}s"></span>`).join('')}</div>`
-    : `<div class="pay-walker" id="payWalker"><img src="img/pay/walk-${g}.png" alt="${g==='f'?'패드':'노트북'}으로 일하며 급여일을 향해 걸어가는 캐릭터">${glyphs}<span class="pay-shadow"></span></div>
+    : `<div class="pay-walker${g==='a' ? ' ant' : ''}" id="payWalker">${payWalker(g)}<span class="pay-shadow"></span></div>
        <div class="pay-treasure"><img src="img/pay/treasure.png" alt="금은보화"><span class="pay-shine"></span>${[[16,12,0],[70,2,.5],[44,30,1],[86,40,1.4],[30,56,.8],[60,62,1.7]].map(([x,y,d])=>`<span class="pay-spark" style="left:${x}%; top:${y}%; animation-delay:${d}s"></span>`).join('')}</div>`;
   return `<section class="pay-hero${arrived?' arrived':''}" aria-label="급여일까지 진행 상황">
     <div class="pay-top"><div>
@@ -5422,7 +5476,7 @@ function payHero(slips){
       <div class="pay-track"><div class="pay-fill" id="payFill"></div>${[25,50,75].map(x=>`<i class="pay-tick" style="left:${x}%"></i>`).join('')}</div>
       ${scene}
     </div>
-    <div class="pay-ends"><span>${payMd(w.prev)} 지난 급여일</span>${AUTH.live ? `<button type="button" class="pay-demo" onclick="paySetChar('${g==='f'?'m':'f'}')">캐릭터 바꾸기</button>` : `<button type="button" class="pay-demo" onclick="payPreview=!payPreview; renderContent()">${payPreview?'원래대로 보기':'시연: 급여일 모습 보기'}</button>`}<span>${payMd(w.next)} 급여일</span></div></div>
+    <div class="pay-ends"><span>${payMd(w.prev)} 지난 급여일</span><span><button type="button" class="pay-demo" onclick="payPicking=true; renderContent()">캐릭터 바꾸기</button>${AUTH.live ? '' : ` · <button type="button" class="pay-demo" onclick="payPreview=!payPreview; renderContent()">${payPreview?'원래대로 보기':'시연: 급여일 모습 보기'}</button>`}</span><span>${payMd(w.next)} 급여일</span></div></div>
   </section>`;
 }
 function payBadges(s){   // 명세서 달의 작은 배지: 다시 올려 고친 것(수정됨) · HR이 남의 것을 볼 때 아직 공개 전인 달
