@@ -4027,7 +4027,8 @@ function kpiProgReg(it, today){   // 정기: 왼쪽 실적(목표가 있으면) 
   };
   const past = [...Array(Math.max(0, m0 - 1))].map((_, i)=>m0 - 1 - i).filter(m=>!ms.includes(m) && ['DONE', 'MISSED', 'NA'].includes(it.months[m].state)), rows = [];
   past.forEach(m=>{ const c = it.months[m], r = rows[rows.length - 1]; if(c.state==='NA' && r && r.na && r.lo===m + 1) r.lo = m; else rows.push({ na:c.state==='NA', hi:m, lo:m, c }); });   // 이어진 해당 없음 달은 한 줄로
-  const fold = past.length ? `<details class="kp-tl"><summary>지난 달 기록 ${past.length}개</summary>${rows.map(r=>`<div class="kp-tl-r"><b>${r.lo===r.hi ? r.hi : `${r.lo}~${r.hi}`}월</b>${r.na ? '<span class="kl-hint">해당 없음</span>'
+  const n = past.filter(m=>it.months[m].state!=='NA').length;   // 쓴 달 · 안 쓴 달만 센다 — 해당 없음은 기록이 아니다 (R10)
+  const fold = past.length ? `<details class="kp-tl"><summary>지난 달 기록 ${n ? n+'개' : '없음'}</summary>${rows.map(r=>`<div class="kp-tl-r"><b>${r.lo===r.hi ? r.hi : `${r.lo}~${r.hi}`}월</b>${r.na ? '<span class="kl-hint">해당 없음</span>'
     : r.c.state==='MISSED' ? '<span class="kp-miss">안 씀</span>' : `<span><span class="kp-text">${escapeHtml(r.c.text)}</span>${kpiProgLink(r.c.link)}</span>`}</div>`).join('')}</details>` : '';
   return `<div class="kp-kb"><div><div class="kp-lbl">${tg ? '실적' : '진행률'}<span class="sp"></span><span class="kl-hint">언제든 고칠 수 있어요</span></div>
       <div class="kp-num">${tg ? `지금까지 ${num('actual', it.actual, '실적', 'max="1000000000" step="any"')} / 목표 <b>${+it.target}</b>${escapeHtml(it.unit)} <span class="kl-hint">→ ${Math.round(it.value)}% 자동</span>` : `${num('pct', it.pct, '진행률', 'max="100" step="1"')} %`}</div>
@@ -4293,7 +4294,9 @@ function kpiLiveSelfCheck(){   // 브라우저 콘솔에서 kpiLiveSelfCheck() �
     const early = ps(false, 'CONFIRMED', '2026-10-05').querySelector('.kp-k'), sep = early.querySelectorAll('.kp-mon')[1];
     ok(sep.querySelector('textarea').value==='가상 <b>9월</b>\n둘째 줄' && sep.querySelector('.kp-st i').textContent==='✓' && k1.querySelector('.kp-mon .kp-st i').textContent==='\u200b', '지난달 칸에는 쓴 글 · 상태 글자 앞 아이콘 자리는 늘 있다');
     const fold = k1.querySelector('details.kp-tl');
-    ok(fold.querySelector('summary').textContent==='지난 달 기록 9개' && [...fold.querySelectorAll('.kp-tl-r')].map(r=>r.textContent).join('|')==='9월가상 <b>9월</b>\n둘째 줄|8월안 씀|1~7월해당 없음', '지난 달 기록: 최근 달부터 · 씀 / 안 씀 / 해당 없음 · 오지 않은 달은 없음');
+    ok(fold.querySelector('summary').textContent==='지난 달 기록 2개' && [...fold.querySelectorAll('.kp-tl-r')].map(r=>r.textContent).join('|')==='9월가상 <b>9월</b>\n둘째 줄|8월안 씀|1~7월해당 없음', '지난 달 기록: 최근 달부터 · 씀 / 안 씀 / 해당 없음 · 오지 않은 달은 없음 · 수는 쓴 달 · 안 쓴 달만 (R10)');
+    const naOnly = { ...prog, items:[{ ...prog.items[0], months:Object.fromEntries(Object.entries(mo).map(([k, c])=>[k, +k<10 ? { ...c, state:'NA', text:null } : c])) }] }, nf = ps(false, 'CONFIRMED', '2026-10-21', naOnly).querySelector('details.kp-tl');
+    ok(nf.querySelector('summary').textContent==='지난 달 기록 없음' && [...nf.querySelectorAll('.kp-tl-r')].map(r=>r.textContent).join('|')==='1~9월해당 없음' && nf.querySelector('.kp-tl-r .kl-hint'), '해당 없음만 있으면 "지난 달 기록 없음" + 흐린 한 줄 (R10)');
     ok(!fold.querySelector('.kp-text b') && !early.querySelector('details.kp-tl').textContent.includes('9월'), '글은 글자 그대로 · 1~7일의 지난달은 칸으로만 (접힘에 두 번 나오지 않음)');
     const ev = [...k3.querySelectorAll('.kp-ev:not(.h)')], btn = r=>[...r.querySelectorAll('button')].map(b=>b.textContent).join();
     ok(ev.length===4 && !k3.querySelector('.kp-ev.h').textContent.includes('팀장'), '비정기: 일정마다 한 줄 · 팀장 확인 칸은 그리지 않음 (2단계 ②)');
@@ -4333,6 +4336,10 @@ function kpiLiveSelfCheck(){   // 브라우저 콘솔에서 kpiLiveSelfCheck() �
     KPI_LIVE.typed = {}; ok(!leave(), '다 저장하면 묻지 않는다');
     KPI_LIVE.me = pm(false, 'CONFIRMED'); KPI_LIVE.prog = prog; kpiProgPlan();
     const pv = document.getElementById('orgModal'), pvt = pv ? pv.textContent : ''; orgCloseModal();
+    const tsel = st=>[].concat(st.el || []), pts = ()=>TOURS.kpi.steps().filter(st=>tsel(st).some(q=>q.startsWith('#kpiProg'))), PD = ps(false);
+    ok(pts().map(st=>st.title).join()==='진행 요약,정기 업무 — 실적 · 이번 달 한 줄,비정기 업무 — 결과 한 줄,늦어지는 이유 (선택)' && pts().every(st=>tsel(st).some(q=>PD.querySelector(q)))
+      && pts()[2].body.includes('결과를 적으면 나의 업무가 완료로 바뀌어요'), '이 화면 사용법: 진행 관리 칸마다 한 단계 (R11)');
+    AUTH.live = false; const demoPts = pts().length; AUTH.live = true; ok(demoPts===0, '시연 사용법에는 진행 관리 단계가 없다');
     ok(pv && pv.querySelector('.kpi-table') && pvt.includes('2026-12-10(바뀜)') && pvt.includes('2026-09-24') && !pv.querySelector('textarea, input'), 'KPI 계획서 보기: 확정본 읽기 전용 · 바뀐 기한은 (바뀜)');
   } finally { Object.assign(KPI_LIVE, { inbox:keep.inbox, me:keep.me, admin:keep.admin, dirty:keep.dirty, yrDirty:keep.yrDirty, yr:keep.yr, prog:keep.prog, typed:keep.typed }); kpiProgTab = keep.tab; AUTH.live = keep.live; AUTH.me = keep.authMe; }
   return 'kpiLiveSelfCheck 통과';
@@ -7823,6 +7830,10 @@ const TOURS = {   // 단계: el = 가리킬 곳(여러 개면 묶어서, 배열�
   ]},
   kpi:{ label:'목표설정 사용법', tab:'e1', steps:()=>[
     ...(AUTH.live ? [{ el:'#kpiInbox .kl-ib', one:true, title:'처리할 KPI', body:'팀원이 제출하거나 수정 요청한 KPI예요. <b>내용 보기</b>로 살펴보고 <b>확정</b>하거나 이유를 적어 <b>돌려보내기</b>해요. 수정 요청은 <b>해제</b>하거나 <b>거절</b>해요.' }] : []),
+    ...(AUTH.live ? [{ el:'#kpiProg .kp-sum', title:'진행 요약', body:'<b>종합 진행률</b>(세로선은 오늘 기준 기대) · <b>지금 적을 것</b> · <b>다가오는 예정 기한</b>을 한눈에 봐요.' },   // 진행 관리 (시안 3, R11)
+      { el:'#kpiProg .kp-kb', one:true, title:'정기 업무 — 실적 · 이번 달 한 줄', body:'실적(또는 진행률)은 고치면 바로 저장돼요. 그 달에 한 일은 <b>한 줄</b>로 적고 <b>저장</b>해요. 다음 달 7일까지 고칠 수 있어요.' },
+      { el:'#kpiProg .kp-evs', one:true, title:'비정기 업무 — 결과 한 줄', body:'예정 기한마다 <b>결과 적기</b>로 한 줄 적어요. 결과를 적으면 나의 업무가 완료로 바뀌어요. 기한이 지나면 주황, 2주가 넘으면 빨강이에요.' },
+      { el:'#kpiProg .kp-why', one:true, title:'늦어지는 이유 (선택)', body:'늦어지는 실행목표는 이유를 한 줄 적고 <b>저장</b>해요. 팀장 · 본부장 · HR이 봐요.' }] : []),
     ...(AUTH.live ? [{ el:'#kpiMine .kl-steps', title:'진행 단계', body:'<b>작성 → 제출 · 팀장 확인 → 확정 → 수정 요청 → 해제</b> 순서예요. 지금 단계가 색으로 표시돼요. 작성 기간이 끝나면 제출 · 수정 요청이 모두 막혀요.' }] : []),
     { el:'#kpiInbox .list-row', one:true, title:'승인 대기함', body:'<b>검토</b>를 누르면 제출한 KPI가 펼쳐집니다. 수정 요청은 바뀐 줄이 노란색으로 표시됩니다. 내용을 확인하고 <b>승인</b>하거나, 사유를 적어 <b>반려</b>합니다.' },
     { el:trCol(1,2), inline:'start', title:'팀목표 · 개인목표', body:'팀 목표와 <b>직접 이어지는</b> 내 목표를 적습니다. 팀장과 면담한 뒤 정하세요.' },
