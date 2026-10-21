@@ -1250,7 +1250,8 @@ def check_kpi_manager(hr) -> None:
        and lead.get("/api/kpi/plans/42", base_url=BASE).json == {**mine, "owner": owner} and a1.get("/api/kpi/plans/42", base_url=BASE).status_code == 200,
        "HR · 관리자 · 주인은 계획서를 봄: 본인 화면의 plan 과 같은 모양 + owner")
     ok(all((r := c.get("/api/kpi/plans/42", base_url=BASE)).status_code == 403 and r.json == {"error": "이 KPI를 볼 권한이 없습니다."}
-           for c in (a2, leadb, head, ceo)), "남의_계획서는_못_본다: 같은 팀 다른 팀원 · 다른 팀장 · 본부장 · 대표이사 403")
+           for c in (a2, leadb, ceo)), "남의_계획서는_못_본다: 같은 팀 다른 팀원 · 다른 팀장 · 대표이사(팀원은 못 봄) 403")
+    ok(head.get("/api/kpi/plans/42", base_url=BASE).json == {**mine, "owner": owner}, "본부장은 본부의 팀원 계획서를 봄 (2단계 ② 에서 넓어진 범위)")
     ok(lead.get("/api/kpi/plans/43", base_url=BASE).json == {"error": "아직 작성한 KPI가 없습니다."}
        and lead.get("/api/kpi/plans/43", base_url=BASE).status_code == 404 and a2.get("/api/kpi/plans/43", base_url=BASE).status_code == 404
        and hr.get("/api/kpi/plans/999", base_url=BASE).status_code == 404 and leadb.get("/api/kpi/plans/43", base_url=BASE).status_code == 403
@@ -1612,7 +1613,8 @@ def check_kpi_progress(hr) -> None:
         exp_reg = days / (date(year + 1, 1, 1) - date(year, 1, 1)).days * 100
         r1, r2, r3 = row(p, 1), row(p, 2), row(p, 3)
         ok(p["year"] == year and p["version"] == 1 and p["open"] is True and p["schedOpen"] is True and [i["rid"] for i in p["items"]] == [1, 2, 3]
-           and set(p) == {"year", "version", "open", "schedOpen", "items", "total", "totalExpected", "todo", "next"}, "읽기: 해 · 판 · 기록 기간 · 일정 변경 기간 · 행 순서")
+           and set(p) == {"year", "version", "open", "schedOpen", "items", "total", "totalExpected", "todo", "next", "checkStep", "checks"},
+           "읽기: 해 · 판 · 기록 기간 · 일정 변경 기간 · 행 순서 · 월간 확인 단계 · 확인한 달")
         ok(base(r1) == {"rid": 1, "kind": "reg", "action": "가상 정기 업무 1", "weight": 40, "target": 12, "unit": "건", "actual": None, "pct": None, "why": None, "at": None}
            and base(r2) == {"rid": 2, "kind": "reg", "action": "가상 정기 업무 2", "weight": 30, "target": None, "unit": "", "actual": None, "pct": None, "why": None, "at": None}
            and base(r3) == {"rid": 3, "kind": "irr", "action": "가상 비정기 업무", "weight": 30, "target": None, "unit": "", "actual": None, "pct": None, "why": None, "at": None}
@@ -1768,9 +1770,10 @@ def check_kpi_progress(hr) -> None:
 
         # ---- 남의 기록 ----
         mine = prog()
-        ok(all(err(get(EMP, who), 403, "이 KPI를 볼 권한이 없습니다.") for who in (PEER, OTHER, HEAD, FIELD)),
-           "남의_기록은_못_본다: 같은 팀 다른 팀원 · 다른 팀장 · 본부장 · 현장직 403")
-        ok(get(EMP, LEAD).status_code == 200 and get(EMP, LEAD).json == mine and get(EMP, HR).json == mine, "바로 위 관리자(팀장) · HR 은 봄 (본인 화면과 같은 내용)")
+        ok(all(err(get(EMP, who), 403, "이 KPI를 볼 권한이 없습니다.") for who in (PEER, OTHER, FIELD)),
+           "남의_기록은_못_본다: 같은 팀 다른 팀원 · 다른 팀장 · 현장직 403")
+        ok(get(EMP, LEAD).status_code == 200 and get(EMP, LEAD).json == mine and get(EMP, HR).json == mine and get(EMP, HEAD).json == mine,
+           "바로 위 관리자(팀장) · HR · 본부장(2단계 ② 에서 넓어진 범위)은 봄 (본인 화면과 같은 내용)")
         ok(err(get(PEER, PEER), 404, no_plan) and err(get(PEER, LEAD), 404, no_plan) and err(get(PEER, OTHER), 403, "이 KPI를 볼 권한이 없습니다."),
            "계획서가 없으면 404 (볼 권한은 먼저 봄)")
         anon = app.test_client()
@@ -2289,6 +2292,192 @@ def check_kpi_sched(hr) -> None:
     ok(q("SELECT year, edit_from, edit_to, eval_start, updated_at, updated_by FROM kpi_years WHERE year = ?", year) == saved, "(작성 기간 설정을 원래대로 돌려 놓음)")
 
 
+def check_kpi_review(hr) -> None:
+    """KPI 현황 (2026-10-21, 2단계 ②): 남의 KPI 보는 범위가 넓어짐 (본부장 = 본부의 팀장 · 팀원, 대표이사 = 본부장 · 팀장 + 자기에게 보고하는 분) ·
+    바로 위 관리자가 달마다 '확인' (HR 대신 없음 · 대표이사에게 보고하는 분은 확인 단계가 없음) · 확인한 달의 기록을 고치거나 지우면 그 달 확인이 풀림 ·
+    결과의 달은 바뀐 기한으로 센다. 서버가 순서대로 다시 본다 (바로 위 관리자 403 → 대표이사 403 → 해 · 달 400 → 아직 안 온 달 403 → 확정본 404 → 기록 없음 409).
+    오늘에 기대는 검사는 모두 시계(auth._now)를 정해 두고 돈다 — 어느 날 돌려도 같다 (R4). 시계가 바뀌면 창은 새로 연다.
+    뒤 절(메모 · 알람 · 명단 · 경영계획)은 같은 가상 조직과 아래 도구를 이어 쓴다."""
+    import kpi
+    print("KPI 현황 (보는 범위 · 월간 확인)")
+    # 이 검사만의 가상 조직: 본부(71) 밑 팀 둘(72 · 73), 대표이사 직속 팀(74), 장이 없는 '임원'(75)
+    for dept in ((71, "R71", "가상R본부", "DIVISION", None), (72, "R72", "가상R팀A", "TEAM", 71), (73, "R73", "가상R팀B", "TEAM", 71),
+                 (74, "R74", "가상R직속팀", "DIVISION", None), (75, "R75", "임원", "DIVISION", None)):
+        x("INSERT INTO departments (id, code, name, level, parent_id) VALUES (?, ?, ?, ?, ?)", *dept)
+    HR, HEAD, LEAD, EMP, EMP2, LEAD2, PEER2, DIRECT, EXEC, CEO = 1, 91, 92, 93, 94, 95, 96, 97, 98, 99
+    cast = {HEAD: ("가상R본부장", 71, "DIVISION_HEAD", 1), LEAD: ("가상R팀장", 72, "TEAM_LEADER", 1), EMP: ("가상R직원", 72, None, 1),
+            EMP2: ("가상R동료", 72, None, 1), LEAD2: ("가상R다른팀장", 73, "TEAM_LEADER", 1), PEER2: ("가상R다른팀원", 73, None, 1),
+            DIRECT: ("가상R직속팀장", 74, "TEAM_LEADER", 1), EXEC: ("가상R임원직원", 75, None, 1), CEO: ("가상R대표", 71, "CEO", 0)}
+    for uid, (name, dept, role, writes) in cast.items():
+        x("INSERT INTO users (id, name, email, department_id, hiworks_user_no, portal_enabled, is_active, writes_kpi) VALUES (?, ?, ?, ?, ?, 1, 1, ?)",
+          uid, name, f"r{uid}@example.invalid", dept, f"HW-{uid}", writes)
+        if role:
+            x("INSERT INTO user_roles (user_id, role) VALUES (?, ?)", uid, role)
+
+    year, real_now = kpi.plan_year(), auth._now  # 진짜 오늘의 올해 — 아래 날짜는 모두 이 해 안 (시계를 정해 놓고 돈다)
+    ymd = lambda m, d: f"{year}-{m:02d}-{d:02d}"  # noqa: E731
+    z = lambda m, d, hh=3, mm=0: f"{year}-{m:02d}-{d:02d}T{hh:02d}:{mm:02d}:00Z"  # noqa: E731
+    jar: dict[int, object] = {}
+
+    def at(m, d, hh=3, mm=0):
+        """시계를 UTC 로 (올해 m월 d일 hh:mm) 에 맞춘다. 기본 03:00 = 한국 정오."""
+        t = datetime(year, m, d, hh, mm, tzinfo=timezone.utc)
+        auth._now = lambda: t
+        jar.clear()
+
+    def c(uid):
+        if uid not in jar:
+            jar[uid] = app.test_client()
+            login(jar[uid], new_token(f"HW-{uid}"))
+        return jar[uid]
+
+    NO_VIEW, NOT_BOSS = {"error": "이 KPI를 볼 권한이 없습니다."}, {"error": "바로 위 관리자만 확인할 수 있습니다."}
+    TO_CEO, FUTURE = {"error": "대표이사에게 보고하는 분은 월간 확인이 없습니다."}, {"error": "아직 오지 않은 달입니다."}
+    NO_PLAN, NO_REC = {"error": "확정된 KPI가 없습니다."}, {"error": "확인할 기록이 없습니다."}
+    hit = lambda r, code, body: r.status_code == code and r.json == body  # noqa: E731
+    prog = lambda uid, who=None: c(uid if who is None else who).get(f"/api/kpi/progress/{uid}?year={year}", base_url=BASE)  # noqa: E731
+    plan_of = lambda uid, who: c(who).get(f"/api/kpi/plans/{uid}", base_url=BASE)  # noqa: E731
+    sees = lambda who, uid: prog(uid, who).status_code == 200 and plan_of(uid, who).status_code == 200  # noqa: E731
+    closed = lambda who, uid: hit(prog(uid, who), 403, NO_VIEW) and hit(plan_of(uid, who), 403, NO_VIEW)  # noqa: E731
+    check = lambda who, uid, month, **over: c(who).post(f"/api/kpi/plans/{uid}/check", base_url=BASE, headers=ORIGIN,  # noqa: E731
+                                                       json={"year": year, "month": month, **over})
+    put = lambda who, what, body: c(who).post(f"/api/kpi/me/{what}", base_url=BASE, headers=ORIGIN, json={"year": year, **body})  # noqa: E731
+    line = lambda who, m, text="가상 한 줄": put(who, "month", {"rid": 1, "month": m, "text": text})  # noqa: E731
+    result = lambda who, sid, text="가상 결과": put(who, "result", {"sid": sid, "text": text})  # noqa: E731
+    checks = lambda uid: prog(uid).json["checks"]  # noqa: E731  — 본인 화면에 붙은 확인
+    n_checks = lambda: q("SELECT COUNT(*) FROM kpi_month_checks WHERE user_id BETWEEN 91 AND 99")[0][0]  # noqa: E731
+    audit = lambda uid: q("SELECT actor_user_id, actor_is_hr, on_behalf_of, entity_type, after_data FROM audit_logs"  # noqa: E731
+                          " WHERE action = 'KPI_MONTH_CHECKED' AND entity_id = ? ORDER BY id", uid)
+    aj = lambda m: json.dumps({"year": year, "month": m})  # noqa: E731
+    sched_due = lambda uid, sid: next(s["due"] for i in prog(uid).json["items"] for s in i.get("scheds", []) if s["sid"] == sid)  # noqa: E731
+
+    def item(name, w, kind, **more):
+        return {"action": name, "formula": "가상 측정식", "weight": w, "owner": "가상R직원", "S": "가상 s", "A": "가상 a", "B": "가상 b", "C": "가상 c",
+                "D": "가상 d", "kind": kind, "target": None, "unit": "", "scheds": [], **more}
+
+    def confirmed(uid):
+        """계획서를 바로 확정된 모습으로 넣는다: 정기 2 (실행목표 1 · 2) + 비정기 1 (실행목표 3, 일정 1 = 3/20 · 일정 2 = 5/20). 2월 10일에 확정."""
+        content = json.dumps([{"team": "가상 팀목표", "personal": "가상 개인목표", "items": [
+            {**item("가상 정기 업무 1", 40, "reg", target=12, unit="건"), "rid": 1}, {**item("가상 정기 업무 2", 30, "reg"), "rid": 2},
+            {**item("가상 비정기 업무", 30, "irr", scheds=[{"sid": 1, "due": ymd(3, 20), "name": "가상 초안"}, {"sid": 2, "due": ymd(5, 20), "name": "가상 마감"}]),
+             "rid": 3}]}], ensure_ascii=False)
+        x("INSERT INTO kpi_plans (user_id, year, status, draft, confirmed_version, updated_at) VALUES (?, ?, 'CONFIRMED', ?, 1, '2000-01-01T00:00:00Z')", uid, year, content)
+        x("INSERT INTO kpi_versions (user_id, year, version, content, confirmed_at, confirmed_by) VALUES (?, ?, 1, ?, ?, ?)", uid, year, content, z(2, 10), LEAD)
+
+    for uid in (HEAD, LEAD, EMP, EMP2, LEAD2, DIRECT, EXEC):  # 동료 팀원(PEER2) 만 계획서가 없다 — '확정본 없음 404' 를 보려고
+        confirmed(uid)
+    other_ceos = [r[0] for r in q("SELECT u.id FROM users u JOIN user_roles r ON r.user_id = u.id WHERE r.role = 'CEO' AND u.is_active = 1 AND u.id <> ?", CEO)]
+    for uid in other_ceos:  # 이 가상 조직의 대표이사는 내가 만든 한 명뿐이게
+        x("UPDATE users SET is_active = 0, deactivated_at = '2027-01-01T00:00:00Z' WHERE id = ?", uid)
+    anon = app.test_client()
+    ev_saved = q("SELECT eval_start FROM kpi_years WHERE year = ?", year)  # 일정 변경은 평가 시작일부터 막힌다 — 앞 검사가 정해 둔 날짜에 기대지 않는다
+    x("UPDATE kpi_years SET eval_start = NULL WHERE year = ?", year)
+    try:
+        at(4, 5)  # 한국 4월 5일 12시
+        ok(anon.post(f"/api/kpi/plans/{EMP}/check", base_url=BASE, headers=ORIGIN, json={"year": year, "month": 3}).status_code == 401, "로그인 없이는 401 (월간 확인)")
+
+        # ---- 보는 범위 ----
+        ok(all(sees(HEAD, u) for u in (EMP, EMP2, LEAD, LEAD2)) and prog(EMP, HEAD).json == prog(EMP).json,
+           "보는_범위가_넓어졌다: 본부장은 본부의 팀원 · 팀장(다른 팀 포함)의 진행 기록 · 계획서를 봄 (본인 화면과 같은 내용)")
+        ok(closed(HEAD, DIRECT) and closed(HEAD, EXEC), "본부장도 본부 밖(대표이사 직속 팀장 · '임원' 소속)은 못 봄")
+        ok(all(sees(CEO, u) for u in (LEAD, HEAD, DIRECT, EXEC)), "대표이사는 팀장 · 본부장 · 직속 팀장 · '임원' 소속(자기에게 보고하는 분)을 봄")
+        ok(all(closed(CEO, u) for u in (EMP, EMP2, PEER2)), "대표이사는 팀원 KPI 를 응답으로 받지 않음: 진행 기록 · 계획서 모두 403")
+        ok(closed(LEAD2, EMP) and closed(EMP2, EMP) and closed(LEAD, LEAD2) and closed(EMP, EMP2), "다른 팀장 · 동료 팀원 · 팀장끼리 · 팀원끼리는 못 봄 403")
+        ok(all(sees(w, EMP) for w in (EMP, LEAD, HR)) and all(sees(w, LEAD) for w in (LEAD, HEAD, CEO, HR)), "이미 되던 것은 그대로: 본인 · 바로 위 관리자 · HR")
+
+        # ---- 확인하면 본인 화면에 붙는다 ----
+        p = prog(EMP).json
+        ok(p["checkStep"] is True and p["checks"] == {} and n_checks() == 0, "(확인 전: 확인 단계가 있고 확인한 달은 없음)")
+        ok(line(EMP, 3, "가상 3월 줄").status_code == 200, "(팀원이 3월 한 줄을 씀)")
+        r = check(LEAD, EMP, 3)
+        ok(hit(r, 200, {"ok": True}) and checks(EMP) == {"3": z(4, 5)} and prog(EMP, LEAD).json["checks"] == {"3": z(4, 5)},
+           "팀장이_확인하면_본인_화면에_붙는다: 팀장이 3월 확인 → 본인 · 팀장 화면의 checks[\"3\"] 에 확인한 시각")
+        ok(q("SELECT user_id, year, month, checked_at, checked_by FROM kpi_month_checks WHERE user_id = ?", EMP) == [(EMP, year, 3, z(4, 5), LEAD)],
+           "확인 줄: 그 사람 · 해 · 달 · 시각 · 확인한 사람(팀장)")
+        ok(audit(EMP) == [(LEAD, 0, None, "kpi_plan", aj(3))] and "가상" not in audit(EMP)[0][4], "감사로그 KPI_MONTH_CHECKED: 해 · 달만 (내용 문장 없음)")
+
+        # ---- 두 번 눌러도 한 번 ----
+        at(4, 6)
+        ok(hit(check(LEAD, EMP, 3), 200, {"ok": True}) and n_checks() == 1 and len(audit(EMP)) == 1 and checks(EMP) == {"3": z(4, 5)},
+           "두_번_눌러도_한_번: 같은 확인을 또 보내면 200 · 줄 하나 · 감사로그 하나 · 처음 시각 그대로")
+
+        # ---- 고치면 풀린다 ----
+        ok(line(EMP, 3, "가상 고친 3월 줄").status_code == 200 and checks(EMP) == {} and n_checks() == 0,
+           "고치면_확인이_풀린다: 3월 한 줄을 고치면 3월 확인이 풀림")
+        ok(check(LEAD, EMP, 3).status_code == 200 and set(checks(EMP)) == {"3"} and len(audit(EMP)) == 2, "(다시 확인 — 새로 확인한 것이라 감사로그가 한 줄 더)")
+        ok(line(EMP, 3, "").status_code == 200 and checks(EMP) == {} and hit(check(LEAD, EMP, 3), 409, NO_REC),
+           "한 줄을 지워도 풀림 — 기록이 없어지면 다시 확인할 수도 없음 (409)")
+        ok(line(EMP, 3).status_code == 200 and check(LEAD, EMP, 3).status_code == 200 and set(checks(EMP)) == {"3"}, "(다시 써서 확인)")
+        ok(line(EMP, 4, "가상 4월 줄").status_code == 200 and line(EMP2, 3).status_code == 200 and set(checks(EMP)) == {"3"},
+           "다른 달 줄 · 다른 사람의 3월 줄을 써도 3월 확인은 그대로")
+        ok(result(EMP, 1).status_code == 200 and checks(EMP) == {}, "3월 기한 일정(3/20)의 결과를 쓰면 3월 확인이 풀림")
+        ok(check(LEAD, EMP, 3).status_code == 200 and result(EMP, 2).status_code == 200 and set(checks(EMP)) == {"3"},
+           "5월 기한 일정(5/20)의 결과를 써도 3월 확인은 그대로")
+        ok(result(EMP, 1, "").status_code == 200 and checks(EMP) == {} and check(LEAD, EMP, 3).status_code == 200 and set(checks(EMP)) == {"3"},
+           "3월 기한 일정의 결과를 지워도 3월 확인이 풀림 (줄은 남아 있으니 다시 확인은 됨)")
+        ok(put(EMP, "progress", {"rid": 1, "actual": 3}).status_code == 200 and put(EMP, "progress", {"rid": 2, "pct": 40}).status_code == 200
+           and put(EMP, "progress", {"rid": 2, "why": "가상 이유"}).status_code == 200 and set(checks(EMP)) == {"3"},
+           "실적 · 진행률 · 늦어지는 이유를 고쳐도 확인은 그대로")
+
+        # ---- 결과의 달은 바뀐 기한으로 센다 ----
+        at(5, 25)
+        ok(line(EMP2, 5, "가상 5월 줄").status_code == 200, "바뀐_기한의_달로_센다: (동료가 5월 한 줄을 씀)")
+        r = c(EMP2).post("/api/kpi/me/sched-change", base_url=BASE, headers=ORIGIN, json={"year": year, "sid": 2, "due": ymd(7, 10), "reason": "가상 사유"})
+        ok(r.status_code == 200 and c(LEAD).post(f"/api/kpi/sched-changes/{r.json['id']}/confirm", base_url=BASE, headers=ORIGIN, json={}).status_code == 200
+           and sched_due(EMP2, 2) == ymd(7, 10), "(5/20 일정을 7/10 으로 일정 변경 — 팀장이 확인)")
+        at(7, 12)
+        ok(line(EMP2, 7, "가상 7월 줄").status_code == 200 and check(LEAD, EMP2, 5).status_code == 200 and check(LEAD, EMP2, 7).status_code == 200
+           and set(checks(EMP2)) == {"5", "7"}, "(5월 · 7월 둘 다 확인해 둠)")
+        ok(result(EMP2, 2).status_code == 200 and set(checks(EMP2)) == {"5"},
+           "그 일정 결과를 쓰면 바뀐 기한의 달(7월)만 풀림 — 처음 기한의 달(5월)은 그대로")
+
+        # ---- HR 은 대신 못 한다 ----
+        n0, a0 = n_checks(), len(audit(EMP))
+        ok(hit(check(HR, EMP, 4), 403, NOT_BOSS) and hit(check(CEO, EMP, 4), 403, NOT_BOSS), "HR은_월간_확인을_대신_못_한다: HR · 대표이사(바로 위 관리자가 아님) 모두 403")
+        ok(c(CEO).post("/api/kpi/delegation", base_url=BASE, headers=ORIGIN, json={"on": True}).json == {"ok": True, "on": True}
+           and all(hit(check(HR, u, m), 403, NOT_BOSS) for u, m in ((EMP, 4), (EMP2, 7), (HEAD, 3))) and n_checks() == n0 and len(audit(EMP)) == a0,
+           "대표이사가 HR 에 맡김을 켜도 HR 은 403 (같은 문구) · 아무것도 안 남음")
+        c(CEO).post("/api/kpi/delegation", base_url=BASE, headers=ORIGIN, json={"on": False})
+
+        # ---- 대표이사에게 보고하는 분은 확인이 없다 ----
+        ok(all(hit(check(CEO, u, 3), 403, TO_CEO) for u in (HEAD, DIRECT, EXEC)) and n_checks() == n0,
+           "대표이사에게_보고하는_분은_확인이_없다: 대표이사가 본부장 · 직속 팀장 · '임원' 소속을 확인하면 403")
+        ok(all(prog(u, CEO).json["checkStep"] is False for u in (HEAD, DIRECT, EXEC)) and all(prog(u).json["checkStep"] is True for u in (EMP, EMP2, LEAD, LEAD2)),
+           "checkStep: 대표이사에게 보고하는 분은 거짓 · 나머지는 참")
+        ok(hit(check(HEAD, LEAD, 3), 409, NO_REC) and hit(check(HEAD, EMP, 4), 403, NOT_BOSS), "본부장은 팀장의 확인을 하고(기록이 없으면 409) 팀원의 확인은 못 함")
+
+        # ---- 거절 순서 ----
+        ok(hit(check(LEAD2, EMP, 3), 403, NOT_BOSS) and hit(check(LEAD2, EMP, 13), 403, NOT_BOSS) and hit(check(LEAD2, EMP, 8, year=year - 1), 403, NOT_BOSS),
+           "확인_거절_순서: 다른 팀장은 달 · 해가 이상해도 먼저 403")
+        ok(all(check(LEAD, EMP, m).status_code == 400 for m in (13, 0, -1, "3", True, 3.0, None, [3], 10 ** 30))
+           and all(check(LEAD, EMP, 3, year=y).status_code == 400 for y in (year - 1, year + 1, "%d" % year, None, True, year + 0.5, 0))
+           and c(LEAD).post(f"/api/kpi/plans/{EMP}/check", base_url=BASE, headers=ORIGIN, json={"month": 3}).status_code == 400
+           and c(LEAD).post(f"/api/kpi/plans/{EMP}/check", base_url=BASE, headers=ORIGIN, data="not json", content_type="application/json").status_code == 400,
+           "달이 1~12 정수가 아니거나 해가 올해 정수가 아니거나 본문이 이상하면 400")
+        ok(hit(check(LEAD, EMP, 8), 403, FUTURE) and hit(check(LEAD, EMP, 12), 403, FUTURE) and hit(check(LEAD2, PEER2, 8), 403, FUTURE),
+           "오늘(한국 7월 12일)보다 뒤의 달은 403 — 확정본 404 보다 먼저")
+        ok(hit(check(LEAD2, PEER2, 3), 404, NO_PLAN), "그해 확정본이 없으면 404")
+        ok(hit(check(LEAD, EMP, 6), 409, NO_REC) and hit(check(LEAD, EMP, 2), 409, NO_REC), "기록이 없는 달은 409")
+        ok(c(LEAD).post(f"/api/kpi/plans/{EMP}/check", base_url=BASE, headers={}, json={"year": year, "month": 4}).status_code == 403 and n_checks() == n0,
+           "포털 화면에서만 (Origin 없으면 403) · 아무것도 안 남음")
+        ok(hit(check(LEAD, EMP, 4), 200, {"ok": True}) and set(checks(EMP)) == {"3", "4"}, "(앞의 거절이 아무것도 바꾸지 않았다 — 4월은 이제 확인됨)")
+
+        # ---- 팀을 옮기면 ----
+        x("UPDATE users SET department_id = 73 WHERE id = ?", EMP2)  # 팀 B 로
+        ok(check(LEAD2, EMP2, 7).status_code == 200, "팀을_옮기면_새_관리자가_확인한다: 새 팀장이 확인 (결과를 써서 풀려 있던 7월)")
+        ok(hit(check(LEAD, EMP2, 7), 403, NOT_BOSS) and q("SELECT checked_by FROM kpi_month_checks WHERE user_id = ? AND month = 7", EMP2) == [(LEAD2,)]
+           and audit(EMP2)[-1] == (LEAD2, 0, None, "kpi_plan", aj(7)), "옛 팀장은 403 · 확인한 사람 · 감사로그는 새 팀장")
+        ok(closed(LEAD, EMP2) and sees(LEAD2, EMP2) and sees(HEAD, EMP2), "보는 범위도 따라 바뀜: 옛 팀장은 못 보고 새 팀장 · 본부장은 봄")
+    finally:
+        auth._now = real_now
+        x("DELETE FROM ceo_delegation WHERE ceo_user_id = ?", CEO)
+        x("UPDATE users SET is_active = 0, deactivated_at = '2027-01-01T00:00:00Z' WHERE id = ?", CEO)
+        for uid in other_ceos:
+            x("UPDATE users SET is_active = 1, deactivated_at = NULL WHERE id = ?", uid)
+        for (ev,) in ev_saved:
+            x("UPDATE kpi_years SET eval_start = ? WHERE year = ?", ev, year)
+
+
 def main() -> int:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     seed()
@@ -2529,6 +2718,7 @@ def main() -> int:
     check_kpi_manager(hr)
     check_kpi_progress(hr)
     check_kpi_sched(hr)
+    check_kpi_review(hr)
     check_payslips(hr)
 
     acts = {r[0] for r in q("SELECT action FROM audit_logs")}

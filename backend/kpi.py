@@ -10,7 +10,7 @@ app.py 가 bp 를 붙인다. 세션 검사는 auth._guard 가 모든 /api/* 에 
   GET  /api/kpi/admin/year          ?year= 그해 작성 기간 (HR)
   POST /api/kpi/admin/year          {"year", "editFrom", "editTo", "evalStart"} 작성 기간 정하기 · 닫기 (HR)
 
-  GET  /api/kpi/plans/<uid>         그 사람 올해 계획서 + owner — 주인 · 바로 위 관리자 · HR 만
+  GET  /api/kpi/plans/<uid>         그 사람 올해 계획서 + owner — 보는 범위는 아래 (주인 · 바로 위 관리자 · HR · 본부장 · 대표이사)
   POST /api/kpi/plans/<uid>/confirm 확정 (SUBMITTED → CONFIRMED, 새 판)
   POST /api/kpi/plans/<uid>/return  {"note"} 돌려보내기 (SUBMITTED → DRAFT)
   POST /api/kpi/plans/<uid>/unlock  수정 요청 풀어 주기 (CHANGE_REQUESTED → DRAFT, 초안 = 마지막 확정본 + 지금 실제 기한, 기다리던 일정 변경 요청은 취소)
@@ -20,7 +20,7 @@ app.py 가 bp 를 붙인다. 세션 검사는 auth._guard 가 모든 /api/* 에 
   POST /api/kpi/admin/window        {"userId", "year", "editFrom", "editTo"} | {"userId", "year", "clear": true} 한 사람만의 작성 기간 (HR)
   GET/POST /api/kpi/delegation      {"on": bool} 대표이사 몫을 HR 에 맡기기 — 대표이사 본인만
 
-  GET  /api/kpi/progress/<uid>      ?year= 그 사람 그해 진행 기록 + 계산한 숫자 — 주인 · 바로 위 관리자 · HR 만. 그해 확정본이 없으면 404
+  GET  /api/kpi/progress/<uid>      ?year= 그 사람 그해 진행 기록 + 계산한 숫자 + 월간 확인(checkStep · checks) — 보는 범위는 plans 와 같다. 그해 확정본이 없으면 404
   POST /api/kpi/me/progress         {"year", "rid", "actual"?, "pct"?, "why"?} 실적 · 진행률 · 늦어지는 이유 (보낸 칸만 바꾼다)
   POST /api/kpi/me/month            {"year", "rid", "month", "text", "link"} 정기 실행목표의 월 한 줄 (text "" 는 지움)
   POST /api/kpi/me/result           {"year", "sid", "text", "link"} 비정기 일정의 결과 한 줄 (text "" 는 지움)
@@ -30,13 +30,18 @@ app.py 가 bp 를 붙인다. 세션 검사는 auth._guard 가 모든 /api/* 에 
   POST /api/kpi/sched-changes/<id>/confirm   바로 위 관리자(또는 대신하는 HR)가 확인 — 그 일정의 실제 기한이 바뀐다 (확정본은 그대로)
   POST /api/kpi/sched-changes/<id>/return    {"note"} 돌려보내기 (이유 필수)
 
+  POST /api/kpi/plans/<uid>/check   {"year", "month"} 그 달 기록을 확인했다고 남긴다 — 바로 위 관리자 본인만 (HR 대신 없음 · 대표이사에게 보고하는 분은 확인이 없음)
+
+남의 KPI(계획서 · 진행 기록)를 보는 범위는 _sees 한 곳: HR · 본인 · 바로 위 관리자, 그리고 팀장 = 팀원, 본부장 = 본부의 팀장 · 팀원, 대표이사 = 본부장 · 팀장 (팀원은 못 본다).
 본인 쓰기는 서버가 늘 같은 순서로 다시 본다: KPI 작성 대상 403 → 작성 기간 403 → 상태 409 → 내용 400.
 관리자 처리는: 처리 권한 403 → 계획서 주인의 작성 기간 403 → 상태 409 → 사유 400. 권한은 요청마다 명단에서 새로 계산한다 (decider).
 진행 기록 쓰기는: KPI 작성 대상 403 → 그해 확정본 404 → 기록 기간(다음 해 1월 7일까지) 403 → 실행목표 · 일정 · 종류 400 → (월 한 줄) 달 403 → 글자 · 링크 · 숫자 한도 400.
 작성 기간 · 계획서 상태는 보지 않고 지금 확정본에 쓴다. 감사로그는 남기지 않는다 (내용 문장이라서).
 일정 변경 요청은: KPI 작성 대상 403 → 해 400 → 확정본 404 → 계획서 상태 409 → 평가 시작일 403 → 일정 · 결과 · 기한 400 → 같은 일정에 기다리는 요청 409 → 이유 400.
 확인 · 돌려보내기는: 요청 번호 404 → 처리 권한 403 → 평가 시작일 403 → 기다리는 중이 아니면 409 → (돌려보내기) 이유 400. 작성 기간과는 상관없다.
-감사로그에는 행동 이름 · 대상 · 해(· 판 · 일정과 옛 · 새 기한)만 남긴다 — 계획서 · 사유 문장은 넣지 않는다. 임시 저장은 남기지 않는다. HR 이 대신 하면 on_behalf_of.
+월간 확인은: 바로 위 관리자가 아님 403 → 내가 대표이사 403 → 해(올해 정수) · 달(1~12 정수) 400 → 아직 오지 않은 달 403 → 그해 확정본 404 → 그 달 기록 없음 409 →
+이미 확인한 달은 아무것도 더하지 않고 200. 작성 기간 · 평가 시작일과는 상관없다. 확인한 달의 월 한 줄 · 결과(결과는 지금 실제 기한의 달)를 쓰거나 지우면 그 달 확인이 풀린다.
+감사로그에는 행동 이름 · 대상 · 해(· 판 · 일정과 옛 · 새 기한 · 확인한 달)만 남긴다 — 계획서 · 사유 문장은 넣지 않는다. 임시 저장은 남기지 않는다. HR 이 대신 하면 on_behalf_of.
 """
 
 from __future__ import annotations
@@ -51,6 +56,7 @@ from typing import Iterator, NamedTuple
 from flask import Blueprint, Response, g, jsonify, request
 
 import auth
+from hr_eval.domain.access import Act, can
 from hr_eval.domain.errors import StateConflictError
 from hr_eval.domain.kpi_plan import (
     PLAN_MAX_BYTES, REASON_MAX, assign_ids, clean_plan, next_status, validate_plan, window_open, window_span,
@@ -58,8 +64,9 @@ from hr_eval.domain.kpi_plan import (
 from hr_eval.domain.kpi_progress import (
     LINK_MAX, NOTE_MAX, WHY_MAX, effective_dues, item_expected, item_pct, month_state, overall, records_open, sched_state, task_title, valid_link,
 )
+from hr_eval.domain.kpi_review import month_summary
 from hr_eval.domain.models import Actor, AuditEntry, Role
-from hr_eval.domain.org import Dept, Person, manager_of
+from hr_eval.domain.org import Dept, Person, manager_of, target_of
 
 bp = Blueprint("kpi", __name__)
 
@@ -451,14 +458,30 @@ def unlock(uid: int) -> Response:
     return jsonify(ok=True)
 
 
+def _sees(uid: int, people: list[Person], depts: list[Dept]) -> bool:
+    """로그인한 사람이 이 사람의 KPI(계획서 · 진행 기록)를 볼 수 있나: HR · 본인 · 바로 위 관리자, 그리고 access 의 VIEW_KPI 규칙 —
+    팀장 = 팀원, 본부장 = 본부의 팀장 · 팀원, 대표이사 = 본부장 · 팀장 (팀원은 못 본다). 명단에 없는 사람은 HR 만 본다.
+    명단을 이미 읽은 쪽(명단 표 · 메모)도 이 함수를 쓴다 — 보는 범위를 바꿀 때는 여기 한 곳만 고친다."""
+    me = g.actor
+    if me.is_hr or uid == me.user_id or manager_of(uid, people, depts) == me.user_id:
+        return True
+    owner = next((p for p in people if p.id == uid), None)
+    return owner is not None and bool(can(me, Act.VIEW_KPI, target_of(owner, depts)))
+
+
 def _can_view(conn: sqlite3.Connection, uid: int) -> bool:
-    """이 사람의 KPI(계획서 · 진행 기록)를 볼 수 있나: HR · 본인 · 바로 위 관리자. 보는 범위를 넓힐 때는 여기 한 곳만 고친다."""
-    return g.actor.is_hr or uid == g.actor.user_id or manager_of(uid, *load_org(conn)) == g.actor.user_id
+    return _sees(uid, *load_org(conn))
+
+
+def _step(uid: int, people: list[Person], depts: list[Dept]) -> bool:
+    """월간 확인 · 확인 메모 단계가 있나 = 바로 위 관리자가 있고 대표이사가 아니다 (대표이사에게 보고하는 분은 단계가 없다)."""
+    boss = manager_of(uid, people, depts)
+    return boss is not None and next((p.position for p in people if p.id == boss), None) is not Role.CEO
 
 
 @bp.get(f"/api/kpi/plans/{UID}")
 def plan_get(uid: int) -> Response:
-    """주인 · 바로 위 관리자 · HR 만. GET /api/kpi/me 의 plan 과 같은 모양 + {"owner": {"id", "name", "dept"}}. 계획서가 없으면 404."""
+    """볼 수 있는 사람만 (_sees: 주인 · 바로 위 관리자 · HR · 본부장 · 대표이사). GET /api/kpi/me 의 plan 과 같은 모양 + {"owner": {"id", "name", "dept"}}. 계획서가 없으면 404."""
     conn = auth._db()
     if not _can_view(conn, uid):
         return jsonify(error="이 KPI를 볼 권한이 없습니다."), 403
@@ -656,13 +679,20 @@ def _dues(conn: sqlite3.Connection, uid: int, year: int) -> dict[int, str]:
     return effective_dues(versions[-1][1], changes)
 
 
-def progress_json(conn: sqlite3.Connection, uid: int, year: int) -> dict | None:
+def _uncheck(conn: sqlite3.Connection, uid: int, year: int, month: int) -> None:
+    """그 달 확인을 지운다 (없으면 아무 일 없음). 확인한 달의 월 한 줄 · 결과를 쓰거나 지우면 부른다 — 고치면 확인이 풀린다."""
+    conn.execute("DELETE FROM kpi_month_checks WHERE user_id = ? AND year = ? AND month = ?", (uid, year, month))
+
+
+def progress_json(conn: sqlite3.Connection, uid: int, year: int, org: tuple[list[Person], list[Dept]] | None = None) -> dict | None:
     """그 사람 그해 진행 기록을 지금 확정본의 실행목표 줄 모양으로, 계산한 숫자까지 붙여. 확정본이 없으면 None.
     날짜 판정은 한국 날짜(auth._today). 호출하는 쪽이 한 트랜잭션 안에서 부른다 (표 여럿을 한 번에 읽으므로).
     items 마다 rid · kind · action · weight · target · unit · actual · pct · why · at · value(막대 0~100) · expected(기대 진행률) 와
     정기는 months {"1"…"12": {state, text, link, at}}, 비정기는 scheds [{sid, name, task, due, origDue, state, result, pending, returned}]
     (returned = 가장 늦게 요청한 것이 돌려보내진 경우, 지금 확정본이 확정된 뒤에 돌려보낸 것만 — 수정 → 다시 확정한 뒤에는 옛 줄을 안 보인다).
-    total · totalExpected = 가중 평균, todo = 지금 할 일 수, next = 결과가 없고 실제 기한이 오늘 이후인 가장 가까운 일정."""
+    total · totalExpected = 가중 평균, todo = 지금 할 일 수, next = 결과가 없고 실제 기한이 오늘 이후인 가장 가까운 일정.
+    checkStep = 월간 확인 단계가 있나 (바로 위 관리자가 있고 대표이사가 아니다), checks = 확인한 달 {"3": 확인한 시각, …} (그해 전부).
+    org = (명단, 부서) — 사람 여럿을 읽는 쪽이 한 번 읽은 것을 넘긴다. 없으면 여기서 읽는다."""
     versions = _versions(conn, uid, year)
     if not versions:
         return None
@@ -714,14 +744,16 @@ def progress_json(conn: sqlite3.Connection, uid: int, year: int) -> dict | None:
         values.append(out["value"])
         expects.append(out["expected"])
         items.append(out)
+    checks = {str(r[0]): r[1] for r in conn.execute("SELECT month, checked_at FROM kpi_month_checks WHERE user_id = ? AND year = ? ORDER BY month", own)}
     return {"year": year, "version": version, "open": records_open(year, today), "schedOpen": _sched_open(conn, year),
             "items": items, "total": overall(rows, values), "totalExpected": overall(rows, expects),
-            "todo": {"months": cur + prev, "prev": prev, "results": late}, "next": nxt}
+            "todo": {"months": cur + prev, "prev": prev, "results": late}, "next": nxt,
+            "checkStep": _step(uid, *(org or load_org(conn))), "checks": checks}
 
 
 @bp.get(f"/api/kpi/progress/{UID}")
 def progress_get(uid: int) -> Response:
-    """?year= (없으면 올해) → progress_json. 주인 · 바로 위 관리자 · HR 만 (plan_get 과 같은 범위). 그해 확정본이 없으면 404."""
+    """?year= (없으면 올해) → progress_json. 볼 수 있는 사람만 (_sees — plan_get 과 같은 범위). 그해 확정본이 없으면 404."""
     conn = auth._db()
     if not _can_view(conn, uid):
         return jsonify(error="이 KPI를 볼 권한이 없습니다."), 403
@@ -849,6 +881,7 @@ def month_set() -> Response:
                            (*key, text, link, m.now))
         else:
             m.conn.execute("DELETE FROM kpi_month_notes WHERE user_id = ? AND year = ? AND rid = ? AND month = ?", key)
+        _uncheck(m.conn, m.uid, m.year, month)  # 쓰든 지우든 그 달 확인은 풀린다
     return jsonify(ok=True)
 
 
@@ -866,6 +899,40 @@ def result_set() -> Response:
                            (m.uid, m.year, sid, text, link, m.now))
         else:
             m.conn.execute("DELETE FROM kpi_results WHERE user_id = ? AND year = ? AND sid = ?", (m.uid, m.year, sid))
+        _uncheck(m.conn, m.uid, m.year, int(_dues(m.conn, m.uid, m.year)[sid][5:7]))  # 달은 일정 변경이 확인된 뒤의 실제 기한으로 센다
+    return jsonify(ok=True)
+
+
+# ---------------- 월간 확인 (2단계 ②, 2026-10-21) ----------------
+@bp.post(f"/api/kpi/plans/{UID}/check")
+def month_check(uid: int) -> Response:
+    """{"year", "month"} → {"ok": true}. 바로 위 관리자 본인이 그 달 기록을 확인했다고 남긴다 (HR 대신 없음 · 대표이사에게 보고하는 분은 확인이 없다).
+    서버가 보는 순서: 바로 위 관리자가 아님 403 → 내가 대표이사 403 → 해(올해 정수) · 달(1~12 정수) 400 → 아직 오지 않은 달(한국 날짜) 403 →
+    그해 확정본 404 → 그 달 기록이 없음 409 → 이미 확인한 달이면 아무것도 더하지 않고 200. 작성 기간 · 평가 시작일과는 상관없다.
+    확인과 쓰기는 한 트랜잭션이라 빠르게 두 번 눌러도 한 번이다. 감사로그 KPI_MONTH_CHECKED — 해 · 달만."""
+    b = _body()
+    year, month, conn = b.get("year"), b.get("month"), auth._db()
+    with _txn(conn):
+        people, depts = load_org(conn)
+        if manager_of(uid, people, depts) != g.actor.user_id:
+            raise _Refuse("바로 위 관리자만 확인할 수 있습니다.", 403)
+        if g.actor.position is Role.CEO:
+            raise _Refuse("대표이사에게 보고하는 분은 월간 확인이 없습니다.", 403)
+        if type(year) is not int or year != plan_year():  # type 검사: True 가 1로 통하지 않게
+            raise _Refuse("해가 올바르지 않습니다.", 400)
+        if type(month) is not int or not 1 <= month <= 12:
+            raise _Refuse("달은 1~12 사이 숫자로 보내 주세요.", 400)
+        if month > auth._today().month:  # 해가 올해이므로 달만 견주면 된다
+            raise _Refuse("아직 오지 않은 달입니다.", 403)
+        prog = progress_json(conn, uid, year, (people, depts))
+        if prog is None:
+            raise _Refuse("확정된 KPI가 없습니다.", 404)
+        if month_summary(prog, month)["records"] == 0:
+            raise _Refuse("확인할 기록이 없습니다.", 409)
+        if conn.execute("INSERT OR IGNORE INTO kpi_month_checks (user_id, year, month, checked_at, checked_by) VALUES (?, ?, ?, ?, ?)",
+                        (uid, year, month, auth._iso(auth._now()), g.actor.user_id)).rowcount:  # 이미 확인한 달이면 줄도 감사로그도 더하지 않는다
+            auth._audit(conn, AuditEntry.by(g.actor, action="KPI_MONTH_CHECKED", entity_type="kpi_plan", entity_id=uid,
+                                            after_data={"year": year, "month": month}))
     return jsonify(ok=True)
 
 
