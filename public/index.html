@@ -4798,7 +4798,8 @@ async function celebDelete(id){
    - 본인만 서명(본문 끝까지 읽어야 서명 가능). 서명 즉시 잠금. 파기는 HR만(사유 필수), 재발송은 원본 보존 + 새 버전
    - 열람: 본인 · HR(담당자·팀장)만. 팀장·본부장·대표이사는 남의 계약서를 못 본다 (인사담당자 2026-10-15 — 처음에는 본부장이 자기 본부를 봤다)
    - 본부장은 자기 본부의 "계약 현황"만 본다 — 이름·팀·상태·서명한 날. 금액·본문·등급은 없다 (ctCanSeeStatus, 같은 날 인사담당자)
-   - 본부장 본인은 포털에서 계약서를 만들지 않는다 (인사담당자 2026-10-13 — 평가 등급이 없다) */
+   - 본부장 본인은 포털에서 계약서를 만들지 않는다 (인사담당자 2026-10-13 — 평가 등급이 없다)
+   - HR(담당자·팀장)도 본인 계약서를 받아 서명한다. 화면은 둘 — "내 연봉계약서" / "직원 연봉계약 관리" (ctView, 인사담당자 2026-10-21 — 직원 현황만 보이고 본인 것이 안 보였다) */
 const CT_COMPANY = { name:'㈜에이치앤아비즈', ceo:'○○○', kind:'제조업', addr:'경기도 용인시 처인구 처인성로 41-16' };
 const CT_PEOPLE = [   // key = 시연 역할(kpiRole). null이면 시연에서 로그인 불가
   { pid:1, key:'emp',  name:'홍길동', title:'대리',   team:'국내영업팀', division:'전략마케팅본부', rrn:'900315-1******' },
@@ -4806,11 +4807,13 @@ const CT_PEOPLE = [   // key = 시연 역할(kpiRole). null이면 시연에서 �
   { pid:3, key:'head', name:'이철수', title:'본부장', team:'',           division:'전략마케팅본부', rrn:'780911-1******' },
   { pid:4, key:null,   name:'신에스', title:'사원',   team:'SCM팀',      division:'솔루션사업본부',   rrn:'990120-1******' },
   { pid:5, key:'line', name:'최현장', title:'사원',   team:'국내영업팀', division:'전략마케팅본부', rrn:'960805-1******' },
+  { pid:6, key:'hrl',  name:'최지원', title:'팀장',   team:'지원팀',     division:'대표이사 직속부서', rrn:'870524-2******' },
+  { pid:7, key:'hr',   name:'박인사', title:'HR 담당', team:'지원팀',    division:'대표이사 직속부서', rrn:'930217-2******' },
 ];
 const CT_GRADES = ['S','A','B','C','D'];
 const ctRates = { base:3, zones:[   // 시연용 인상률(%) — 실제 값은 HR이 "연봉 인상 계산" 탭에서 입력한다(저장소에 실제 숫자를 적지 않는다). max = 그 구간의 상한(만원, 미만), 마지막 구간은 null
   { max:5000, pct:{ S:8, A:6, B:4, C:2, D:0 } }, { max:6000, pct:{ S:7, A:5, B:3.5, C:2, D:0 } }, { max:7000, pct:{ S:6, A:4, B:3, C:1.5, D:0 } }, { max:null, pct:{ S:5, A:3, B:2, C:1, D:0 } } ] };
-let ctSeq = 0, ctSelected = new Set(), ctOpenId = null;
+let ctSeq = 0, ctSelected = new Set(), ctOpenId = null, ctView = 'me';   // ctView: HR 화면 'me' 내 연봉계약서 · 'admin' 직원 연봉계약 관리
 
 /* ----- 규칙 (순수 로직, ctSelfCheck가 검증) ----- */
 function ctYmd(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
@@ -4916,6 +4919,7 @@ function ctSelfCheck(){   // 브라우저 콘솔에서 ctSelfCheck() 실행
   ok(ctSign(c, 1, {...sig, read:false}) && ctSign(c, 1, {...sig, consent:false}) && ctSign(c, 1, {...sig, name:'홍길'}) && ctSign(c, 1, {...sig, image:null}), '서명 조건 4가지');
   ok(!ctSign(c, 1, sig) && c.status==='SIGNED' && c.locked && ctSign(c, 1, sig), '서명 → 잠금, 재서명 불가');
   ok(ctCancel(c, false, '오류', 't') && ctCancel(c, true, ' ', 't') && c.status==='SIGNED', '파기: HR·사유 필수');
+  ok(['hr','hrl'].every(k=>ctActive(ctContracts, ctActor(k).pid)), 'HR 담당자·HR 팀장도 본인 계약서가 있다');
   const list = [c]; ok(!ctResend(list, c, true, '금액 오류', '2026-10-02 10:00') && list.length===2 && c.status==='CANCELLED' && list[1].status==='SENT' && list[1].version===2 && ctActive(list, 1)===list[1], '재발송: 원본 보존 + 새 버전');
   return 'ctSelfCheck 통과';
 }
@@ -4932,6 +4936,8 @@ const ctContracts = [];
   const hire = (orgMembers.find(m=>m.name==='신에스')||{}).hireDate || today;
   mk(4, { newHire:true, abilityBefore:1100000, ...ctNewHirePeriod(hire), adjReason:'신규 입사' });
   mk(5, { abilityBefore:1050000 });
+  mk(6, { grade:'A', abilityBefore:1400000, pos:300000 }).status = 'SENT';
+  mk(7, { grade:'B', abilityBefore:1150000 }).status = 'SENT';
   ctContracts.forEach(c=>{ if(c.status==='SENT') c.sentAt = today; });
   // 김영희 팀장: 서명 완료 예시 (손글씨 서명 그림을 코드로 그림)
   lead.status = 'SENT'; lead.sentAt = today;
@@ -5084,7 +5090,7 @@ function ctViewer(c){
     </div>`;
   if(signable) setTimeout(ctInitSign, 0);
   return `<div class="card ct-print" style="margin-bottom:14px;">
-    <div class="card-title"><span>${c.start.slice(0,4)}년 연봉계약서 <span style="font-weight:500; color:var(--text-secondary);">${escapeHtml(p.name)} ${escapeHtml(p.title)}</span></span><span style="display:flex; gap:8px; align-items:center;">${ctBadge(c)}<button class="btn sm no-print" onclick="ctPrint(${c.id})">${icon('download')} 인쇄 / PDF 저장</button>${kpiRole==='hr'||!mine?`<button class="btn sm no-print" onclick="ctOpenId=null; kpiFlash(null)">목록으로</button>`:''}</span></div>
+    <div class="card-title"><span>${c.start.slice(0,4)}년 연봉계약서 <span style="font-weight:500; color:var(--text-secondary);">${escapeHtml(p.name)} ${escapeHtml(p.title)}</span></span><span style="display:flex; gap:8px; align-items:center;">${ctBadge(c)}<button class="btn sm no-print" onclick="ctPrint(${c.id})">${icon('download')} 인쇄 / PDF 저장</button>${!mine||ctAdmin()?`<button class="btn sm no-print" onclick="ctOpenId=null; kpiFlash(null)">목록으로</button>`:''}</span></div>
     ${signed}${cancelled}
     <div class="ct-scroll${signable?' gated':''}" id="ctScroll" tabindex="0" aria-label="계약서 본문">${ctDocHtml(c)}</div>
     ${signBox}
@@ -5115,6 +5121,13 @@ async function ctSubmitSign(id){
   await ctHash(c);
   kpiFlash('서명을 완료했습니다. 계약서가 잠겼고, 인쇄·PDF 저장으로 1부를 보관할 수 있습니다.');
 }
+function ctAdmin(){ return kpiIsHr() && ctView==='admin'; }   // HR이 "직원 연봉계약 관리" 화면을 보고 있나
+function ctSwitch(){   // HR에게만: 내 연봉계약서 / 직원 연봉계약 관리 (급여명세서 paySwitch와 같은 모양). 숫자 = 서명할 내 계약서
+  if(!kpiIsHr()) return '';
+  const n = TODO.p2(), btn = (v, label, b)=>`<button type="button" class="${ctView===v ? 'on' : ''}" onclick="ctView='${v}'; ctOpenId=null; kpiFlash(null)" aria-pressed="${ctView===v}">${label}${b ? `<b class="nav-badge" aria-label="서명할 계약서 ${b}건">${b}</b>` : ''}</button>`;
+  return `<div class="hr-seg" id="ctSeg" role="group" aria-label="화면 고르기">${btn('me', '내 연봉계약서', n)}${btn('admin', '직원 연봉계약 관리', 0)}
+    <span class="list-sub" style="margin:0 0 0 6px;">${ctView==='me' ? '내가 받은 연봉계약서를 보고 서명하는 화면입니다.' : '직원 계약서를 조정·발송하고 서명 현황을 보는 화면입니다.'}</span></div>`;
+}
 function ctContent(){
   const role = kpiRole, me = ctActor(role);
   const open = ctOpenId && ctContracts.find(c=>c.id===ctOpenId);
@@ -5122,7 +5135,7 @@ function ctContent(){
   if(open && ctCanView(role, open)) body = ctViewer(open);
   else {
     ctOpenId = null;
-    if(kpiIsHr(role)) body = ctHrPanel();
+    if(ctAdmin()) body = ctHrPanel();
     else {
       const mine = me && ctActive(ctContracts, me.pid);   // 계약 명단에 없는 역할(대표이사)은 받은 계약서 없음
       body = mine && ctCanView(role, mine) ? ctViewer(mine) : `<div class="card" style="margin-bottom:14px;"><div class="card-title">연봉계약서</div><div class="placeholder-note" style="margin:0;">${me && me.title==='본부장' ? '본부장은 포털에서 연봉계약서를 만들지 않습니다. 아래에서 우리 본부 직원의 서명 진행 상황을 볼 수 있습니다.' : '아직 받은 계약서가 없습니다. HR이 발송하면 여기에 표시됩니다.'}</div></div>`;
@@ -5133,7 +5146,7 @@ function ctContent(){
       }
     }
   }
-  return `${roleSwitcher()}${kpiMsg ? kpiNote(kpiMsg.msg, kpiMsg.type) : ''}${body}`;
+  return `${roleSwitcher()}${ctSwitch()}${kpiMsg ? kpiNote(kpiMsg.msg, kpiMsg.type) : ''}${body}`;
 }
 
 /* ---------------- 연봉 인상 계산 (HR 전용) ----------------
@@ -8296,6 +8309,7 @@ const TOURS = {   // 단계: el = 가리킬 곳(여러 개면 묶어서, 배열�
     { el:'#paySlip .card-title', title:'인쇄 · PDF 저장', body:'오른쪽 단추로 이 명세서를 <b>인쇄하거나 PDF로 저장</b>합니다.' },
   ]},
   ct:{ label:'연봉계약서 서명 방법', tab:'p2', steps:()=>[
+    { el:'#ctSeg', title:'화면 고르기 (HR)', body:'<b>내 연봉계약서</b>에서 내가 받은 계약서를 보고 서명합니다. <b>직원 연봉계약 관리</b>에서 직원 계약서를 조정·발송하고 서명 현황을 봅니다.' },
     { el:'#ctScroll.gated', title:'내용 확인', body:'계약 내용을 <b>끝까지</b> 내려 읽어 주세요. 끝까지 읽어야 서명 칸이 열립니다.' },
     { el:'#ctSignBox', title:'서명하기', body:'<b>동의에 체크</b>하고, <b>성명</b>을 적고, 서명 칸에 마우스나 손가락으로 서명한 뒤 서명 완료를 누릅니다. 서명하면 계약서가 잠겨 고칠 수 없습니다.' },
     { el:'.ct-print .card-title [onclick^="ctPrint("]', title:'보관', body:'이 단추로 계약서를 <b>인쇄하거나 PDF로 저장</b>해 1부를 보관합니다.' },
