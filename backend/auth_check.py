@@ -858,7 +858,7 @@ def check_kpi_owner(hr) -> None:
        "확정본: 판 · 내용 · 시각 · 확정한 사람의 이름")
     ok(conflict(draft(emp, plan), "CONFIRMED") and conflict(do(emp, "submit"), "CONFIRMED") and conflict(do(emp, "cancel"), "CONFIRMED"),
        "확정되면 임시 저장 · 제출 · 취소는 409")
-    for bad in (None, "", "   ", 5, ["x"], "가" * 201):
+    for bad in (None, "", "   ", 5, ["x"], "가" * 201, "\x00", "가\x1b"):
         r = do(emp, "request-change", {"reason": bad} if bad is not None else {})
         ok(r.status_code == 400 and row() == [("CONFIRMED", None, None, None, 1)], f"수정 요청 사유는 1~200자 글자 ({bad!r:.12})")
     ok(do(emp, "request-change", {"reason": "가" * 200}).status_code == 200, "사유 200자는 됨")
@@ -1012,7 +1012,7 @@ def check_kpi_manager(hr) -> None:
        "계획서가 없으면 404 (볼 권한을 먼저 봄) · 너무 큰 번호도 서버 오류가 아님")
 
     # ---- 돌려보내기 ----
-    for bad in (None, "", "   ", 5, ["x"], "가" * 201, "\ud800"):
+    for bad in (None, "", "   ", 5, ["x"], "가" * 201, "\ud800", "\x00", "\x00가"):
         r = act(lead, 42, "return", {"note": bad} if bad is not None else {})
         ok(r.status_code == 400 and r.json.get("error") and row(42)[0][0] == "SUBMITTED",
            f"돌려보내는 이유는 1~200자 글자 (UTF-8 로 쓸 수 있는 글자) — 아니면 400 ({bad!r:.12})")
@@ -1076,7 +1076,7 @@ def check_kpi_manager(hr) -> None:
        and versions(42) == [(1, 41, None), (2, 41, None)] and json.loads(q("SELECT content FROM kpi_versions WHERE user_id = 42 AND version = 1")[0][0]) == v1,
        "새 판은 판 2 (행 순서를 바꿔도 번호는 행을 따라 이어짐) · 판 1 은 그대로")
     ok(own(a1, "request-change", {"reason": "가상 두 번째 수정 사유"}).status_code == 200, "다시 수정 요청")
-    for bad in (None, "", "   ", 5, "가" * 201, "\ud800"):
+    for bad in (None, "", "   ", 5, "가" * 201, "\ud800", "\x00", "\x00가"):
         r = act(lead, 42, "reject", {"note": bad} if bad is not None else {})
         ok(r.status_code == 400 and row(42)[0][0] == "CHANGE_REQUESTED", f"거절 이유도 1~200자 글자 — 아니면 400 ({bad!r:.12})")
     ok(act(lead, 42, "reject", {"note": "가상 거절 사유"}).json == {"ok": True}
@@ -1420,13 +1420,19 @@ def check_kpi_progress(hr) -> None:
            "목표 없는 정기에 실적 · 목표 있는 정기에 진행률 · 비정기에 둘 다 → 400 (값은 그대로)")
         bad_n = ({"rid": 1, "actual": -1}, {"rid": 1, "actual": True}, {"rid": 1, "actual": "6"}, {"rid": 1, "actual": 1e9 + 1000}, {"rid": 1, "actual": float("nan")},
                  {"rid": 1, "actual": float("inf")}, {"rid": 1, "actual": 10 ** 400}, {"rid": 1, "actual": [6]}, {"rid": 2, "pct": 70.5}, {"rid": 2, "pct": 70.0},
-                 {"rid": 2, "pct": True}, {"rid": 2, "pct": 101}, {"rid": 2, "pct": -1}, {"rid": 2, "pct": "70"}, {"rid": 2, "pct": None})
+                 {"rid": 2, "pct": True}, {"rid": 2, "pct": 101}, {"rid": 2, "pct": -1}, {"rid": 2, "pct": "70"})
         ok(all(put("progress", b).status_code == 400 for b in bad_n) and row(prog(), 1)["actual"] == 6 and row(prog(), 2)["pct"] == 70,
            "숫자가 틀리면 400: 음수 · 불리언 · 글자 · 10억 초과 · NaN · 무한 · 소수 진행률 · 0~100 밖")
         ok(all(err(put("progress", b), 400, no_rid) for b in ({"rid": 99, "actual": 1}, {"rid": "1", "actual": 1}, {"rid": True, "actual": 1}, {"rid": 1.0, "actual": 1},
                                                                {"rid": None, "actual": 1}, {"actual": 1}, {"rid": 0, "actual": 1}))
            and put("progress", {"rid": 1}).status_code == 400 and put("progress", {"rid": 1, "extra": 5}).status_code == 400,
            "없는 실행목표 (번호 모양이 틀린 것 포함) · 바꿀 칸이 없음 → 400")
+        ok(put("progress", {"rid": 1, "actual": None}).status_code == 200 and row(prog(), 1)["actual"] is None and near(row(prog(), 1)["value"], 0)
+           and row(prog(), 1)["at"] is None and counts()[0] == 1 and put("progress", {"rid": 1, "actual": 6}).status_code == 200,
+           "실적_비우기: actual null → 비움 (값 0 · 비어 남은 줄은 지움) — 화면에서 숫자 칸을 지울 수 있게 (다시 6 으로)")
+        ok(put("progress", {"rid": 2, "pct": None}).status_code == 200 and row(prog(), 2)["pct"] is None and near(row(prog(), 2)["value"], 0)
+           and put("progress", {"rid": 2, "pct": 70}).status_code == 200 and row(prog(), 2)["pct"] == 70,
+           "진행률_비우기: pct null → 비움 (다시 70 으로)")
 
         # ---- 늦어지는 이유 ----
         ok(put("progress", {"rid": 3, "why": "  가상 이유  "}).status_code == 200 and row(prog(), 3)["why"] == "가상 이유" and row(prog(), 3)["at"] == f"{year}-06-15T03:00:00Z"
@@ -1434,8 +1440,10 @@ def check_kpi_progress(hr) -> None:
            "늦어지는_이유는_모든_행에: 비정기도 · 정기도 · 보낸 칸만 바뀜 (실적은 그대로) · 앞뒤 공백은 뺌")
         ok(put("progress", {"rid": 1, "why": "가" * 100}).status_code == 200 and row(prog(), 1)["why"] == "가" * 100 and err(put("progress", {"rid": 1, "why": "가" * 101}), 400, "늦어지는 이유: 100자 안으로 써 주세요.")
            and row(prog(), 1)["why"] == "가" * 100, "늦어지는_이유는_100자: 100자는 되고 101자는 400 (저장된 것은 그대로)")
-        ok(all(put("progress", {"rid": 1, "why": v}).status_code == 400 for v in (5, None, ["가"], "\ud800")) and row(prog(), 1)["why"] == "가" * 100,
-           "이유가 글자가 아니거나 쓸 수 없는 글자(짝 없는 서로게이트)면 400")
+        ok(all(put("progress", {"rid": 1, "why": v}).status_code == 400 for v in (5, None, ["가"], "\ud800", "\x00", "\x00abc", "가\x00", "가\x1b", "가\x7f")) and row(prog(), 1)["why"] == "가" * 100,
+           "이유가 글자가 아니거나 쓸 수 없는 글자(짝 없는 서로게이트 · NUL · 제어문자)면 400")
+        ok(put("progress", {"rid": 3, "why": "첫째 줄\n둘째 줄"}).status_code == 200 and row(prog(), 3)["why"] == "첫째 줄\n둘째 줄"
+           and put("progress", {"rid": 3, "why": ""}).status_code == 200, "줄바꿈 · 탭은 됨 (화면의 글 상자에서 Enter 를 눌러도 막히지 않게)")
         ok(put("progress", {"rid": 1, "why": ""}).status_code == 200 and row(prog(), 1)["why"] is None and row(prog(), 1)["actual"] == 6
            and put("progress", {"rid": 3, "why": "   "}).status_code == 200 and row(prog(), 3)["why"] is None and row(prog(), 3)["at"] is None
            and q("SELECT COUNT(*) FROM kpi_progress WHERE user_id = ? AND rid = 3", EMP) == [(0,)],
@@ -1457,7 +1465,8 @@ def check_kpi_progress(hr) -> None:
            "빈칸만 보내도 지움 · 없는 줄을 지워도 오류가 아님")
         ok(put("month", {"rid": 1, "month": 6, "text": "가" * 200}).status_code == 200 and err(put("month", {"rid": 1, "month": 6, "text": "가" * 201}), 400, "월 한 줄: 200자 안으로 써 주세요.")
            and row(prog(), 1)["months"]["6"]["text"] == "가" * 200, "월 한 줄은 200자까지 (201자는 400 · 저장된 것은 그대로)")
-        ok(all(put("month", {"rid": 1, "month": 6, **b}).status_code == 400 for b in ({}, {"text": 5}, {"text": None}, {"text": ["가"]}, {"text": "\ud800"}, {"text": "가", "link": "\ud800"}))
+        ok(all(put("month", {"rid": 1, "month": 6, **b}).status_code == 400 for b in ({}, {"text": 5}, {"text": None}, {"text": ["가"]}, {"text": "\ud800"}, {"text": "가", "link": "\ud800"},
+                                                                  {"text": "\x00"}, {"text": "\x00abc"}, {"text": "가\x00"}, {"text": "가\x1b"}, {"text": "가\x7f"}, {"text": "가", "link": "\x00"}))
            and row(prog(), 1)["months"]["6"]["text"] == "가" * 200, "글이 없거나 글자가 아니거나 쓸 수 없는 글자면 400")
         ok(put("month", {"rid": 1, "month": 6, "text": "가상 6월"}).status_code == 200, "(6월 줄을 짧게 고쳐 둠)")
         ok(all(err(put("month", {"rid": r_, "month": m_, "text": "가상"}), 403, not_now) for r_, m_ in ((1, 5), (2, 5), (1, 7), (2, 12), (1, 1), (2, 2), (1, 3), (1, 4)))
@@ -1498,7 +1507,7 @@ def check_kpi_progress(hr) -> None:
         ok(put("result", {"sid": 3, "text": ""}).status_code == 200 and sched(prog(), 3)["state"] == "UPCOMING" and sched(prog(), 3)["result"] is None
            and prog()["next"] == {"sid": 3, "due": ymd(9, 30), "name": "가상 마감"} and counts() == [2, 1, 2], "\"\"로 지우면 다시 예정 (UPCOMING) · 다음 일정으로 돌아옴")
         ok(put("result", {"sid": 3, "text": "가" * 200}).status_code == 200 and err(put("result", {"sid": 3, "text": "가" * 201}), 400, "결과 한 줄: 200자 안으로 써 주세요.")
-           and all(put("result", {"sid": 3, **b}).status_code == 400 for b in ({}, {"text": 5}, {"text": None}, {"text": "\ud800"}))
+           and all(put("result", {"sid": 3, **b}).status_code == 400 for b in ({}, {"text": 5}, {"text": None}, {"text": "\ud800"}, {"text": "\x00"}, {"text": "\x00abc"}, {"text": "가\x00"}, {"text": "가\x1b"}))
            and put("result", {"sid": 3, "text": ""}).status_code == 200, "결과 한 줄은 200자까지 · 글이 아니면 400")
         ok(all(err(put("result", {"sid": v, "text": "가상"}), 400, no_sid) for v in (99, 0, "1", True, 1.0, None, [1])) and err(put("result", {"text": "가상"}), 400, no_sid)
            and counts() == [2, 1, 2], "없는 일정 (번호 모양이 틀린 것 포함) → 400")

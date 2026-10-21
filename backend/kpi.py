@@ -173,14 +173,22 @@ def _body() -> dict:
     return b if isinstance(b, dict) else {}
 
 
-def _text(v: object, label: str) -> str:
-    """사유 글 (돌려보내기 · 거절 · 수정 요청): 글자만, 앞뒤 공백을 뺀 1~REASON_MAX자, UTF-8 로 쓸 수 있어야 한다 — 아니면 400.
-    label 은 문구용 ("…이유")."""
-    t = v.strip() if isinstance(v, str) else ""
+def _chars(t: str, label: str) -> str:
+    """사람이 쓴 글의 글자 규칙 (한 곳): UTF-8 로 쓸 수 있어야 하고(짝 없는 서로게이트 없음) 제어문자가 없어야 한다 — 아니면 400.
+    줄바꿈 · 탭 · 캐리지리턴은 글 상자에서 Enter 로 들어오므로 둔다. 특히 NUL 은 SQLite length() 가 거기서 멈춰 CHECK 가 서버 오류로 터진다."""
     try:
         t.encode("utf-8")
     except UnicodeEncodeError:  # 짝 없는 서로게이트 — SQLite 에 묶다가 서버 오류가 나기 전에
         raise _Refuse(f"{label}에 쓸 수 없는 글자가 있습니다.", 400) from None
+    if any(ord(ch) == 127 or (ord(ch) < 32 and ch not in "\t\n\r") for ch in t):
+        raise _Refuse(f"{label}에 쓸 수 없는 글자가 있습니다.", 400)
+    return t
+
+
+def _text(v: object, label: str) -> str:
+    """사유 글 (돌려보내기 · 거절 · 수정 요청): 글자만, 앞뒤 공백을 뺀 1~REASON_MAX자, _chars 규칙 — 아니면 400.
+    label 은 문구용 ("…이유")."""
+    t = _chars(v.strip() if isinstance(v, str) else "", label)
     if not 0 < len(t) <= REASON_MAX:
         raise _Refuse(f"{label}를 {REASON_MAX}자 안으로 써 주세요.", 400)
     return t
@@ -429,11 +437,16 @@ def unlock(uid: int) -> Response:
     return jsonify(ok=True)
 
 
+def _can_view(conn: sqlite3.Connection, uid: int) -> bool:
+    """이 사람의 KPI(계획서 · 진행 기록)를 볼 수 있나: HR · 본인 · 바로 위 관리자. 보는 범위를 넓힐 때는 여기 한 곳만 고친다."""
+    return g.actor.is_hr or uid == g.actor.user_id or manager_of(uid, *load_org(conn)) == g.actor.user_id
+
+
 @bp.get(f"/api/kpi/plans/{UID}")
 def plan_get(uid: int) -> Response:
     """주인 · 바로 위 관리자 · HR 만. GET /api/kpi/me 의 plan 과 같은 모양 + {"owner": {"id", "name", "dept"}}. 계획서가 없으면 404."""
     conn = auth._db()
-    if not (g.actor.is_hr or uid == g.actor.user_id or manager_of(uid, *load_org(conn)) == g.actor.user_id):
+    if not _can_view(conn, uid):
         return jsonify(error="이 KPI를 볼 권한이 없습니다."), 403
     plan = plan_json(conn, uid, plan_year())
     if plan is None:
@@ -674,7 +687,7 @@ def progress_json(conn: sqlite3.Connection, uid: int, year: int) -> dict | None:
 def progress_get(uid: int) -> Response:
     """?year= (없으면 올해) → progress_json. 주인 · 바로 위 관리자 · HR 만 (plan_get 과 같은 범위). 그해 확정본이 없으면 404."""
     conn = auth._db()
-    if not (g.actor.is_hr or uid == g.actor.user_id or manager_of(uid, *load_org(conn)) == g.actor.user_id):
+    if not _can_view(conn, uid):
         return jsonify(error="이 KPI를 볼 권한이 없습니다."), 403
     year = _year_arg()
     with _txn(conn):  # 표 여럿을 읽는 동안 다른 요청이 끼어들지 않게
@@ -723,15 +736,10 @@ def _item(m: _Rec, rid: object) -> dict:
 
 
 def _line(v: object, label: str, limit: int) -> str:
-    """진행 기록의 글 한 줄: 글자만, 앞뒤 공백을 뺀 limit자 이하 ("" 가능). 글자가 아니거나 UTF-8 로 쓸 수 없는 글자(짝 없는 서로게이트)가 있거나
-    한도를 넘으면 400."""
+    """진행 기록의 글 한 줄: 글자만, 앞뒤 공백을 뺀 limit자 이하 ("" 가능), _chars 규칙. 글자가 아니거나 쓸 수 없는 글자가 있거나 한도를 넘으면 400."""
     if not isinstance(v, str):
         raise _Refuse(f"{label}: 글자로 보내 주세요.", 400)
-    t = v.strip()
-    try:
-        t.encode("utf-8")
-    except UnicodeEncodeError:
-        raise _Refuse(f"{label}에 쓸 수 없는 글자가 있습니다.", 400) from None
+    t = _chars(v.strip(), label)
     if len(t) > limit:
         raise _Refuse(f"{label}: {limit}자 안으로 써 주세요.", 400)
     return t
@@ -750,7 +758,7 @@ def _link(v: object) -> str | None:
 @bp.post("/api/kpi/me/progress")
 def progress_set() -> Response:
     """{"year", "rid", "actual"?, "pct"?, "why"?} 보낸 칸만 바꾼다. actual(0~10억 숫자)은 목표 숫자가 있는 정기에만, pct(0~100 정수)는 목표 숫자가 없는
-    정기에만, why(늦어지는 이유 100자)는 모든 행에 — 다른 데 보내면 400. why "" 는 지운다."""
+    정기에만, why(늦어지는 이유 100자)는 모든 행에 — 다른 데 보내면 400. actual · pct 는 null, why 는 "" 로 보내면 그 칸을 비운다."""
     b = _body()
     with _record() as m:
         it = _item(m, b.get("rid"))
@@ -761,14 +769,15 @@ def progress_set() -> Response:
             raise _Refuse("진행률은 목표 숫자가 없는 정기 업무에만 직접 적을 수 있습니다.", 400)
         sets: dict[str, object] = {}
         if "actual" in b:
-            a = b["actual"]
-            if not (isinstance(a, (int, float)) and not isinstance(a, bool) and 0 <= a <= 1e9):  # NaN · 무한도 여기서 걸린다
+            a = b["actual"]  # null 은 비우기 (화면의 숫자 칸을 지웠을 때)
+            if a is not None and not (isinstance(a, (int, float)) and not isinstance(a, bool) and 0 <= a <= 1e9):  # NaN · 무한도 여기서 걸린다
                 raise _Refuse("실적은 0 이상 10억 이하 숫자로 적어 주세요.", 400)
             sets["actual"] = a
         if "pct" in b:
-            if type(b["pct"]) is not int or not 0 <= b["pct"] <= 100:
+            pct = b["pct"]
+            if pct is not None and (type(pct) is not int or not 0 <= pct <= 100):
                 raise _Refuse("진행률은 0~100 사이 정수로 적어 주세요.", 400)
-            sets["pct"] = b["pct"]
+            sets["pct"] = pct
         if "why" in b:
             sets["why"] = _line(b["why"], "늦어지는 이유", WHY_MAX) or None
         if not sets:
