@@ -1208,8 +1208,8 @@
   .wh-row{ display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px solid var(--border); font-size:var(--fs-sm); }
   .wh-row:last-of-type{ border-bottom:0; }
   .wh-actions{ display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; }
-  .wh-hero.none{ grid-template-columns:1fr; background:var(--bg-page); border:1px solid var(--border); }   /* 환급/추가를 못 읽음 · 0원 — 효과 없이 */
-  .wh-none{ margin-top:4px; font-size:var(--fs-lg); font-weight:700; }
+  .wh-hero.none{ grid-template-columns:1fr; background:var(--bg-page); border:1px solid var(--border); --wh-ink:var(--text-primary); }   /* 환급/추가를 못 읽음 · 0원 — 효과 없이 */
+  .wh-none{ font-size:var(--fs-lg); font-weight:700; }
   .wh-orig{ margin-top:12px; padding-top:12px; border-top:1px solid var(--border); }   /* 원본 PDF 보기 — 쪽 캔버스는 .wh-pages */
   .pay-year .badge{ margin-left:2px; padding:1px 6px; }
   @media (max-width:768px){
@@ -6663,8 +6663,15 @@ async function whSelfCheck(){   // 브라우저 콘솔에서 await whSelfCheck()
     const nd = body({ taxDecided:null });
     ok(!nd.includes('② 결정세액') && !nd.includes('실효세율') && steps(nd)===3 && nd.includes('돌려받아요'), '결정 소득세를 못 읽으면 ② 줄 · 실효세율을 숨긴다');
     const ns = body({ taxSettle:null });
-    ok(ns.includes('요약을 만들지 못했습니다. 원본 PDF를 확인해 주세요.') && !/wh-fly|wh-heart|pay-eye|환급|추가 납부/.test(ns) && steps(ns)===3, '차감을 못 읽으면 맨 위 효과 · 금액 · ④ 줄 없이 안내만');
-    ok(!body({ gross:null, taxDecided:null, localDecided:null, taxPrepaid:null, localPrepaid:null, taxSettle:null, localSettle:null }).includes('wh-flow'), '다 못 읽으면 흐름 줄이 없다');
+    ok(ns.includes('요약을 만들지 못했습니다. 원본 PDF를 확인해 주세요.') && !/wh-fly|wh-heart|환급|추가 납부/.test(ns) && steps(ns)===3, '차감을 못 읽으면 맨 위 효과 · 금액 · ④ 줄 없이 안내만');
+    const nul = body({ gross:null, taxDecided:null, localDecided:null, taxPrepaid:null, localPrepaid:null, taxSettle:null, localSettle:null });
+    ok(!nul.includes('wh-flow') && !nul.includes('pay-eye'), '다 못 읽으면 흐름 줄도 눈 단추도 없다 (가린 금액이 없다)');
+    payShow = false; const hid = body({ taxSettle:null }), hid0 = body({ taxSettle:0, localSettle:0 }); payShow = true;
+    ok(hid.includes(PAY_MASK) && hid.includes('pay-eye') && hid0.includes(PAY_MASK) && hid0.includes('pay-eye'), '효과 없는 맨 위라도 흐름 줄에 가린 금액이 있으면 눈 단추가 있다');
+    const kv = [kpiRole, whViewKey, whYear, wh.view, WH_LIVE.state, WH_LIVE.who, MS_LIVE.state];   // 실제 HR이 A(원본 열림) → B를 골라 B를 불러오는 중 (서버에 묻지 않게 이미 불러오는 중으로 둔다)
+    kpiRole = 'hr'; wh.view = 'me'; AUTH.live = true; MS_LIVE.state ||= 'err'; Object.assign(WH_LIVE, { state:'loading', who:7 }); whViewKey = 7; whOrig = { year:2025, who:5, bytes:new Uint8Array(1), state:'ok' };
+    try { ok(whContent().includes('불러오는 중') && whOrig===null, '다른 직원으로 옮기면 불러오는 중 화면에서도 열어 둔 원본(PDF)을 버린다'); }
+    finally { [kpiRole, whViewKey, whYear, wh.view, WH_LIVE.state, WH_LIVE.who, MS_LIVE.state] = kv; AUTH.live = false; }
     const zero = body({ taxSettle:0, localSettle:0 }), extra = body({ taxSettle:1000, localSettle:100 });
     ok(zero.includes('돌려받거나 더 낼 세금이 없습니다') && !/wh-fly|wh-heart/.test(zero) && extra.includes('1,100원 더 냈어요') && extra.includes('wh-heart') && extra.includes('② − ③ 추가 납부'), '0원은 효과 없이 · 추가 납부는 토닥토닥');
     ok(h.includes('시연에는 원본 PDF가 없습니다') && !h.includes('whViewer('), '시연 예시 자료로 올린 해: 원본 단추 대신 안내');
@@ -6700,21 +6707,22 @@ function whContent(){
   const role = kpiRole, live = AUTH.live, head = (live ? '' : roleSwitcher()) + whSwitch();   // 실제 로그인에는 시연용 역할 전환 줄이 없다
   if(kpiIsHr(role) && wh.view==='admin') return head + (kpiMsg ? kpiNote(kpiMsg.msg, kpiMsg.type) : '') + whAdmin();   // HR은 두 화면을 오간다 (급여명세서 payContent와 같다)
   let picker = '', rows;
+  if(live){ if(typeof whViewKey!=='number' || !kpiIsHr(role)) whViewKey = null; }   // 직원이 남의 번호를 가진 경우는 본인으로
+  else if(!whViewKey || !payCanView(role, whViewKey)) whViewKey = role;
+  if(whOrig && whOrig.who!==whViewKey) whOrig = null;   // 다른 직원으로 옮기면 원본은 닫고 받아 둔 PDF도 버린다 — 불러오는 중 · 영수증 없음 화면으로 일찍 끝나도
   if(live){
-    if(typeof whViewKey!=='number' || !kpiIsHr(role)) whViewKey = null;   // 직원이 남의 번호를 가진 경우는 본인으로
     if(kpiIsHr(role)){ if(!MS_LIVE.state) msLoad(); picker = payPickerLive(whViewKey, 'whViewKey', 'whYear=null'); }
     if(!WH_LIVE.state || WH_LIVE.who!==whViewKey) whFetch(whViewKey);
     if(WH_LIVE.state!=='ok') return head + picker + kpiNote(WH_LIVE.state==='err' ? '원천징수영수증을 불러오지 못했습니다. 잠시 뒤 새로 고쳐 주세요.' : '원천징수영수증을 불러오는 중입니다…', WH_LIVE.state==='err' ? 'danger' : 'info');
     rows = WH_LIVE.years;
   } else {
-    if(!whViewKey || !payCanView(role, whViewKey)) whViewKey = role;
     picker = kpiIsHr(role) ? `<div class="card" style="margin-bottom:14px;"><div class="field" style="max-width:320px;"><label>볼 직원 (HR)</label><select onchange="whViewKey=this.value; whYear=null; renderContent()">${Object.keys(PAY_PEOPLE).map(k=>`<option value="${k}" ${k===whViewKey?'selected':''}>${escapeHtml(KPI_USERS[k].name)} ${escapeHtml(KPI_USERS[k].title)}</option>`).join('')}</select></div></div>` : '';
     rows = whRows(whViewKey);
   }
   const key = whViewKey;
+  if(!rows.some(r=>r.year===whYear)) whYear = rows[0]?.year ?? null;
+  if(whOrig && whOrig.year!==whYear) whOrig = null;   // 다른 해로 옮겼거나 그 해가 없어졌다(공개 내리기)
   if(!rows.length) return `${head}${picker}<div class="card"><div class="placeholder-note" style="margin:0;">${!live ? '아직 등록된 원천징수영수증이 없습니다. 연말정산이 끝나면 HR이 올립니다.' : key===null ? '아직 공개된 원천징수영수증이 없습니다. 연말정산이 끝나면 HR이 올립니다.' : '이 직원의 원천징수영수증이 없습니다.'}</div></div>`;
-  if(!rows.some(r=>r.year===whYear)) whYear = rows[0].year;
-  if(whOrig && (whOrig.year!==whYear || whOrig.who!==key)) whOrig = null;   // 다른 해 · 직원으로 옮기면 원본은 닫는다(받아 둔 PDF도 버린다)
   const r = rows.find(x=>x.year===whYear), name = !live ? KPI_USERS[key].name : key===null ? AUTH.me.name : MS_LIVE.list.find(m=>m.id===key)?.name || '';
   const yearBtns = rows.map(x=>{ const tags = payBadges(x) + (live && key===null && x.seen===false ? '<span class="badge info">새 영수증</span>' : '');   // 수정됨 · 공개 전(HR이 남의 것을 볼 때) · 새 영수증(내 것 중 아직 안 연 해 — 메뉴 숫자와 같은 것)
     return `<button type="button" class="pay-year${x.year===whYear?' on':''}" onclick="whYear=${x.year}; renderContent()" aria-pressed="${x.year===whYear}">${x.year}년 귀속${tags ? ' '+tags : ''}</button>`; }).join('');
@@ -6735,22 +6743,23 @@ function whBody(r, who){   // 한 해의 요약 + 원본. r = { year, sum, revis
   const fx = refund
     ? `<img class="wh-fly" src="img/pay/money-wings.png" alt="">${[18,46,74].map((x,i)=>`<img class="pay-coin" src="img/pay/coin.png" alt="" style="left:${x}%; animation-delay:${i*0.45}s">`).join('')}`
     : `<img class="wh-heart" src="img/pay/heart.png" alt="">`;
-  const hero = !st ? `<section class="wh-hero none" aria-label="연말정산 결과"><div><div class="wh-lead">${lead}</div><div class="wh-none">${st===null ? '요약을 만들지 못했습니다. 원본 PDF를 확인해 주세요.' : '돌려받거나 더 낼 세금이 없습니다.'}</div></div></section>`   // 환급/추가를 못 읽었으면 효과 없이 안내만
-    : `<section class="wh-hero ${refund?'refund':'extra'}" aria-label="연말정산 결과">
-        <div>
-          <div class="wh-lead">${lead}</div>
-          <div class="pay-amt-row"><span class="wh-big">${won(amt)} ${refund?'돌려받아요':'더 냈어요'}</span>
-            <button type="button" class="pay-eye" onclick="payShow=!payShow; renderContent()" aria-pressed="${payShow}" aria-label="${payShow?'금액 가리기':'금액 보기'}">${icon(payShow?'eyeOff':'eye')}</button></div>
-          <div class="wh-lead">${refund ? '미리 낸 세금이 실제 세금보다 많았어요. 차액을 급여와 함께 돌려받아요.' : '토닥토닥, 미리 낸 세금이 조금 모자랐어요. 차액은 급여에서 정산돼요.'}</div>
-        </div>
-        <div class="wh-fx" aria-hidden="true">${fx}</div>
-      </section>`;
   const steps = [
     s.gross!==null && ['① 총급여 (급여 + 상여)', won(s.gross)],
     dec!==null && ['② 결정세액 · 실제 세금', won(dec), `소득세 ${won(s.taxDecided)} + 지방 ${won(s.localDecided)}`],
     pre!==null && ['③ 미리 낸 세금 (매월 공제)', won(pre), `소득세 ${won(s.taxPrepaid)} + 지방 ${won(s.localPrepaid)}`],
     !!st && [refund ? '③ − ② 환급' : '② − ③ 추가 납부', (refund ? '+' : '−') + won(amt), '', refund ? 'refund' : 'extra'],
   ].filter(Boolean).map(([k, v, sm, c])=>`<div class="wh-step${c ? ' '+c : ''}"><span>${k}</span><b>${v}</b>${sm ? `<small>${sm}</small>` : ''}</div>`).join('');
+  const eye = `<button type="button" class="pay-eye" onclick="payShow=!payShow; renderContent()" aria-pressed="${payShow}" aria-label="${payShow?'금액 가리기':'금액 보기'}">${icon(payShow?'eyeOff':'eye')}</button>`;
+  const hero = !st ? `<section class="wh-hero none" aria-label="연말정산 결과"><div><div class="wh-lead">${lead}</div><div class="pay-amt-row"><span class="wh-none">${st===null ? '요약을 만들지 못했습니다. 원본 PDF를 확인해 주세요.' : '돌려받거나 더 낼 세금이 없습니다.'}</span>${steps ? eye : ''}</div></div></section>`   // 환급/추가를 못 읽었으면 효과 없이 안내만. 아래 흐름 줄에 가린 금액이 있으면 눈 단추는 둔다
+    : `<section class="wh-hero ${refund?'refund':'extra'}" aria-label="연말정산 결과">
+        <div>
+          <div class="wh-lead">${lead}</div>
+          <div class="pay-amt-row"><span class="wh-big">${won(amt)} ${refund?'돌려받아요':'더 냈어요'}</span>
+            ${eye}</div>
+          <div class="wh-lead">${refund ? '미리 낸 세금이 실제 세금보다 많았어요. 차액을 급여와 함께 돌려받아요.' : '토닥토닥, 미리 낸 세금이 조금 모자랐어요. 차액은 급여에서 정산돼요.'}</div>
+        </div>
+        <div class="wh-fx" aria-hidden="true">${fx}</div>
+      </section>`;
   const o = whOrig, open = !!o, live = AUTH.live;
   const pdf = d ? `<button class="btn sm" onclick="kpiFlash('시연 모드에서는 원본 PDF가 없습니다. 운영에서는 HR이 위하고 PDF를 올리면 여기서 내려받을 수 있습니다.', 'warning')">${icon('download')} 원본 PDF 내려받기</button>`
     : !live && !r.pdf ? '<span class="list-sub" style="margin:0; align-self:center;">시연에는 원본 PDF가 없습니다.</span>'   // 시연 예시 자료로 올린 해
@@ -9013,7 +9022,7 @@ function selectTab(id){
 }
 function goTo(navId, tabId){
   if(navId==='pay' && tabId==='p1') ps.view = 'me';   // 홈 "새 급여명세서 확인" · 빠른 서비스 · 원천징수영수증의 "급여명세서 보기"는 HR도 내 명세서 화면으로
-  if(navId==='pay' && tabId==='p3') wh.view = 'me';   // 홈 "새 원천징수영수증 확인"도 HR은 내 영수증 화면으로
+  if(navId==='pay' && tabId==='p3'){ wh.view = 'me'; whViewKey = null; }   // 홈 "새 원천징수영수증 확인"(이 길뿐): HR도 전에 고른 직원이 아니라 내 영수증으로 — 그래야 내 숫자가 줄어든다 (시연은 null이면 내 역할)
   if(selectNav(navId) === false) return;   // 휴대폰에서 막힌 메뉴 — 안내창만 뜬다
   if(tabId) selectTab(tabId);
 }
@@ -9291,7 +9300,7 @@ function authLock(kind){   // 로그아웃 · 세션 끝(401)에도 부른다 �
   document.getElementById('contentArea').innerHTML = '';   // #payAmt 도 사라져 payTick 이 멈춘다
   orgCloseModal(true);   // 급여대장 확인 창 · 미리 보기 등
   ps.pick = null; ps.prev = null; Object.assign(PAY_LIVE, { state:'', who:null, slips:[], mine:[] });
-  Object.assign(WH_LIVE, { state:'', who:null, years:[], mine:[] }); whOrig = null;   // 받아 둔 원천징수영수증 원본(주민등록번호가 있다)도 버린다
+  Object.assign(WH_LIVE, { state:'', who:null, years:[], mine:[] }); whOrig = null; whDrop(); wh.prev = null; wh.run = null;   // 받아 둔 원천징수영수증 원본 · 확인 창의 사람별 PDF(주민등록번호가 있다) · 미리 보기 · 읽는 중인 것도 버린다 (orgCloseModal(true)는 whDrop을 건너뛴다)
   if(kind==='login' && isPhone()) kind = 'phone';
   const [title, body] = AUTH_TEXT[kind];
   let el = document.getElementById('authLock');
