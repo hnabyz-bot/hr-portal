@@ -1193,6 +1193,7 @@ def check_contracts(hr) -> None:
     key, had = base64.b64encode(raw_key).decode(), os.environ.pop("HR_PAY_KEY", None)  # 열쇠는 글자로 적지 않고 여기서 만든다
     real_now = auth._now
     real_render = contract_doc.render_pdf  # 서명 검사에서 잠깐 바꾸므로 원래 것을 쥐고 있다
+    real_tpl, real_build = contract_doc.TPL, contract_doc.build_blocks  # 양식을 바꿔 보는 검사도 있다
     get = lambda c, p: c.get(p, base_url=BASE)  # noqa: E731
     post = lambda c, p, body=None, headers=ORIGIN: c.post(p, base_url=BASE, headers=headers, json=body)  # noqa: E731
     PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="  # 1x1 그림
@@ -1567,12 +1568,13 @@ def check_contracts(hr) -> None:
            and spy[0][1]["esign"] == {"signedAt": kst.strftime("%Y-%m-%d %H:%M"), "name": "가상계약A", "how": "하이웍스 로그인", "hash": h},
            "서명본에 넣은 것: 그 본문의 고유번호 · 발송 때 고정한 직인 (지금 설정의 새 직인이 아님) · 서명 그림 · 전자서명 정보 (한국 시각 · 이름 · 본인 확인 방법)")
         rec = opened(A, "sign")
-        ok(set(rec) == {"image", "name", "consent", "ip", "ua", "kind"} and rec["name"] == "가상계약A" and rec["consent"] is True and rec["kind"] == "pc" and isinstance(rec["ip"], str)
-           and base64.b64decode(rec["image"]) == base64.b64decode(PNG), "서명 기록 (잠금): 그림 · 입력한 성명 · 동의 · IP · 브라우저 · 로그인 종류")
+        ok(set(rec) == {"image", "name", "consent", "ip", "ua", "kind", "blocks", "tpl"} and rec["name"] == "가상계약A" and rec["consent"] is True and rec["kind"] == "pc" and isinstance(rec["ip"], str)
+           and base64.b64decode(rec["image"]) == base64.b64decode(PNG) and rec["blocks"] == spy[0][0] and rec["tpl"] == contract_doc.TPL,
+           "서명 기록 (잠금): 그림 · 입력한 성명 · 동의 · IP · 브라우저 · 로그인 종류 · 해시를 매기고 PDF 에 그린 본문 블록 그대로 · 그때의 양식 판 번호")
         mine_y = by_id(ca)[ia]
         ok(t.date() != kst.date() and mine_y["status"] == "SIGNED" and mine_y["signedAt"] == auth._iso(t) and mine_y["hash"] == h and mine_y["canSign"] is False
            and mine_y["blocks"] == want_blocks(kst.date().isoformat()) and kdate(kst) in text_of(mine_y["blocks"]) and "(서명한 날)" not in text_of(mine_y["blocks"])
-           and contract_doc.doc_hash(mine_y["blocks"]) == h, "mine: 서명한 줄의 본문 = 체결일 (서명한 때의 한국 날짜 — UTC 로는 전날) · 다시 만든 본문의 고유번호 = 저장한 고유번호")
+           and contract_doc.doc_hash(mine_y["blocks"]) == h, "mine: 서명한 줄의 본문 = 체결일 (서명한 때의 한국 날짜 — UTC 로는 전날) · 본문의 고유번호 = 저장한 고유번호")
         pdf, stored = unsealed(A, "pdf"), q("SELECT pdf FROM contracts WHERE id = ?", ia)[0][0]
         r = get(ca, f"/api/contracts/{ia}/pdf")
         ok(pdf.startswith(b"%PDF") and b"%PDF" not in stored and r.status_code == 200 and r.mimetype == "application/pdf" and r.data == pdf
@@ -1588,6 +1590,17 @@ def check_contracts(hr) -> None:
         ok(r.status_code == 200 and r.data == pdf and logs_pdf == [("user", A, json.dumps({"contract": ia, "year": Y}))] and not any(w in str(logs_pdf) for w in ("가상", "2418900", "900315")),
            "HR 가 남의 서명본을 보면 감사로그 CONTRACT_PDF_VIEW — 직원 번호 · 계약서 번호 · 해만 (이름 · 금액 없음)")
         ok(all(get(c, f"/api/contracts/{ia}/pdf").status_code == 403 for c in outsiders), "서명본 PDF 도 직원 · 팀장 · 본부장은 남의 것 403")
+
+        print("  - 양식이 나중에 바뀌어도 서명한 본문은 그대로 (서명 전 줄만 지금 양식)")
+        patched = [{"t": "title", "text": "바뀐 양식"}]
+        contract_doc.TPL, contract_doc.build_blocks = "2099-9", lambda **kw: patched  # 양식 판 번호 · 문장을 바꾼 새 버전
+        try:
+            got_mine, got_one, got_hr = by_id(ca), get(ca, f"/api/contracts/{ia}").json, get(hr, f"/api/contracts/{ia}").json
+        finally:
+            contract_doc.TPL, contract_doc.build_blocks = real_tpl, real_build
+        ok(got_mine[ia]["blocks"] == got_one["blocks"] == got_hr["blocks"] == rec["blocks"] == spy[0][0] != patched and got_mine[ia]["hash"] == got_one["hash"] == got_hr["hash"] == h
+           and contract_doc.doc_hash(got_one["blocks"]) == h and got_mine[a_y1]["blocks"] == patched,
+           "양식 (판 번호 · 문장) 이 바뀐 뒤에도 mine · 한 건 보기 (본인 · HR) 는 서명한 줄에 서명할 때의 본문을 그대로 내줌 — 고유번호도 그대로 맞음 · 서명 전 줄만 새 양식")
 
         print("  - 두 번 동시에 서명 → 하나만")
         c1, c2, gate, codes = client_of(I), client_of(I), threading.Barrier(2), []
@@ -1799,6 +1812,7 @@ def check_contracts(hr) -> None:
             os.environ["HR_PAY_KEY"] = had
         auth._now = real_now
         contract_doc.render_pdf = real_render
+        contract_doc.TPL, contract_doc.build_blocks = real_tpl, real_build
 
 
 def check_eval_report(hr) -> None:

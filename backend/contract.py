@@ -28,13 +28,14 @@ app.py 가 bp 를 붙인다. 세션 검사는 auth._guard 가 모든 /api/* 에 
 계약서 한 줄(admin 의 rows) = {id, year, userId, version, status, start, end, code, name, dept, title, birth6, base, ability, pos, site, qual, annual, reason,
 sentAt, due, late, signedAt, replacedOn, cancelledAt, cancelReason, ask: {text, at, closedAt} | null, prevId}. late = 서명 대기인데 마감일이 지남.
 본인 · 한 건 보기의 줄 = 위에서 reason · cancelReason · ask.text 를 빼고 blocks(본문 블록 — contract_doc.build_blocks, 서명한 줄은 서명한 날(한국 날짜)이 들어간 것) ·
-hash(서명 때 저장한 문서 고유번호, 서명 전 null) · canSign(서명 대기이고 본인 것)을 더한 것. 서명한 줄의 blocks 는 서명할 때 고유번호를 매기고 서명본 PDF 에 그린 본문을 다시 만든 것이라 hash 와 맞는다.
+hash(서명 때 저장한 문서 고유번호, 서명 전 null) · canSign(서명 대기이고 본인 것)을 더한 것. 서명한 줄(서명 완료 · 새 계약으로 바뀜 · 서명 뒤 파기)의 blocks 는 서명할 때 고유번호를 매기고 서명본 PDF 에 그린 그 본문을 서명 기록에 넣어 둔 것을 그대로 내준다 —
+양식(contract_doc.TPL · 문장)이 나중에 바뀌어도 서명한 본문은 그대로이고 hash 와 맞는다. 서명 전 줄만 지금 양식으로 만든다.
 
 잠근 글 = 12바이트 nonce + AES-GCM(내용, aad). 계약서 칸의 aad = "ct|해|직원|차수|칸" (칸 = body · company · sign · pdf · ask) — 차수는 발송 뒤에 바뀌지 않고
 줄을 넣기 전에도 알 수 있어서, 다른 줄로 옮겨 붙이면 풀리지 않으면서 번호(id)를 몰라도 잠글 수 있다. body · company · sign · ask 는 JSON 글(ask 는 문의 글 한 줄을 JSON 글자로),
 pdf 와 직인 그림은 바이트 그대로. 설정 data 의 aad 는 "ct|settings", 직인 그림은 "ct|seal|직인번호"(직인 줄은 바꾸지 않는다).
 body = {code, name, dept, title, birth6, base, ability, pos, site, qual, reason} — 이름 · 소속(팀 이름, 팀이 없으면 본부) · 직급은 올릴 때의 명단 값을 고정하고 모두 글자다("" 가능).
-company = {name, ceo, addr, kind} — 발송 때 그 줄에 고정. sign = {image, name, consent, ip, ua, kind} — 서명 그림은 base64 글자.
+company = {name, ceo, addr, kind} — 발송 때 그 줄에 고정. sign = {image, name, consent, ip, ua, kind, blocks, tpl} — 서명 그림은 base64 글자, blocks = 서명할 때 해시를 매기고 PDF 에 그린 본문 블록 그대로, tpl = 그때의 양식 판 번호(고유번호를 다시 확인할 때 필요).
 다음 차수(파기 후 재발송 · 새 계약)를 만들 때는 내용을 풀어 새 차수 자리(aad)로 다시 잠근다 — 그대로 옮긴 글은 풀리지 않는다.
 
 감사로그에는 행동 · 해 · 인원 수 · 계약서/직원 번호 · 마감일 · 문서 고유번호 · 바뀐 설정 칸 이름만 남긴다 (이름 · 금액 · 생년월일 · 사유는 넣지 않는다).
@@ -87,7 +88,7 @@ BODY_KEYS = ("code", "name", "dept", "title", "birth6", *PAY, "reason")
 CFG_AAD = "ct|settings"
 COLS = ("c.id, c.year, c.user_id, c.version, c.prev_id, c.status, c.starts_on, c.body, c.sent_at, c.due_on, c.signed_at,"
         " c.replaced_on, c.cancelled_at, c.cancel_reason, c.ask, c.ask_at, c.ask_closed_at")
-DOC_COLS = COLS + ", c.company, c.seal_id, c.doc_hash"  # 본문을 그릴 때 더 필요한 칸 (맨 뒤 셋)
+DOC_COLS = COLS + ", c.sign, c.company, c.seal_id, c.doc_hash"  # 본문을 내줄 때 더 필요한 칸 (맨 뒤 넷 — 뒤 셋은 company · seal_id · doc_hash)
 NO_COMPANY = {"ceo": "(계약서 설정 필요)", "addr": "", "kind": ""}  # 계약서 설정이 없을 때 발송 전 줄의 미리 보기
 
 MSG_NO_KEY = "서버에 계약서 잠금 열쇠(HR_PAY_KEY)가 없어 저장할 수 없습니다. 서버 설정을 먼저 마쳐 주세요."
@@ -284,18 +285,22 @@ def _view(key: bytes, r: tuple, today: str, hr: bool = True) -> dict:
 
 
 def _blocks(v: dict, company: dict, signed_at: str | None) -> list[dict]:
-    """_view 한 줄(v) 과 회사 칸 → 본문 블록. 서명한 줄은 서명한 날(한국 날짜)이 들어간다 — 서명하는 순간 만든 본문과 나중에 다시 만든 본문이 같은 글이어야 고유번호가 맞는다."""
+    """_view 한 줄(v) 과 회사 칸 → 지금 양식으로 만든 본문 블록. signed_at 이 있으면 서명한 날(한국 날짜)이 들어간다 (서명하는 순간 쓴다 — 서명한 뒤에는 그때 만든 것을 서명 기록에서 꺼낸다)."""
     return contract_doc.build_blocks(company=company, worker=v, pay=v, start=v["start"], end=v["end"],
                                      signed_on=_kst(signed_at).date().isoformat() if signed_at else None)
 
 
 def _doc(key: bytes, r: tuple, today: str, preview: dict | None = None) -> dict:
     """본인 · HR 이 계약서를 열 때의 한 줄 (r = DOC_COLS): _view(hr=False) + blocks + hash(서명 때 저장한 문서 고유번호, 서명 전 null) + canSign(서명 대기이고 본인 것).
-    회사 칸은 발송 때 고정한 것. 발송 전 줄은 고정한 것이 없어서 preview(지금 설정)를 쓴다."""
+    본문: 서명한 줄은 서명 기록에 넣어 둔 그때의 블록 그대로(양식이 바뀌어도 서명한 본문은 그대로), 서명 전 줄은 회사 칸(발송 때 고정한 것, 발송 전 줄은 preview = 지금 설정)으로 지금 양식에서 만든다."""
     v = _view(key, r, today, hr=False)
-    company, _, doc_hash = r[-3:]
-    co = preview if company is None else _unlock(key, _aad(v["year"], v["userId"], v["version"], "company"), company)
-    return {**v, "blocks": _blocks(v, co, v["signedAt"]), "hash": doc_hash, "canSign": v["status"] == "SENT" and v["userId"] == g.actor.user_id}
+    sign, company, _, doc_hash = r[-4:]
+    aad = lambda field: _aad(v["year"], v["userId"], v["version"], field)  # noqa: E731
+    if v["signedAt"] is not None:
+        blocks = _unlock(key, aad("sign"), sign)["blocks"]
+    else:
+        blocks = _blocks(v, preview if company is None else _unlock(key, aad("company"), company), None)
+    return {**v, "blocks": blocks, "hash": doc_hash, "canSign": v["status"] == "SENT" and v["userId"] == g.actor.user_id}
 
 
 def _rows(conn, key: bytes, where: str, args: tuple, *, doc: bool = False, order: str = "c.user_id, c.version") -> list[dict]:
@@ -603,7 +608,7 @@ def sign(key: bytes, cid: int) -> Response:
         raise kpi._Refuse(MSG_SIGN_IMG, 400)
     r = conn.execute(f"SELECT {DOC_COLS} FROM contracts c WHERE c.id = ?", (cid,)).fetchone()
     _, year, _, ver, _, status, *_ = r
-    company_blob, seal_id, _ = r[-3:]
+    company_blob, seal_id, _ = r[-3:]  # r 의 맨 뒤 셋 (sign 은 아직 없다)
     if status != "SENT":  # 빠른 거절 — 아래 트랜잭션에서 한 번 더 본다
         raise kpi._Refuse(MSG_NOT_SENT, 409)
     v, company = _opened(cid, lambda: (_view(key, r, auth._today().isoformat(), hr=False), _unlock(key, _aad(year, me, ver, "company"), company_blob)))
@@ -622,7 +627,8 @@ def sign(key: bytes, cid: int) -> Response:
         logger.error("연봉계약서 서명본을 만들 수 없음: 계약서 %s (%s)", cid, type(e).__name__)
         raise kpi._Refuse(MSG_SIGN_IMG, 400) from None
     record = {"image": base64.b64encode(image).decode(), "name": name, "consent": True, "ip": auth._client_ip(),
-              "ua": request.headers.get("User-Agent", "")[:300], "kind": g.session_kind}
+              "ua": request.headers.get("User-Agent", "")[:300], "kind": g.session_kind,
+              "blocks": blocks, "tpl": contract_doc.TPL}  # 해시를 매기고 PDF 에 그린 본문 그대로 — 나중에 양식이 바뀌어도 서명한 본문을 이걸로 내준다
     with kpi._txn(conn):
         if conn.execute("SELECT status FROM contracts WHERE id = ?", (cid,)).fetchone()[0] != "SENT":
             raise kpi._Refuse(MSG_NOT_SENT, 409)
