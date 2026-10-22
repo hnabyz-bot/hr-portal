@@ -6,9 +6,9 @@ self.addEventListener('activate', e=>e.waitUntil(self.clients.claim()));   // �
 self.addEventListener('push', e=>{
   let d = {};
   try { d = e.data ? e.data.json() : {}; } catch(_){}   // 읽지 못해도 알림은 띄운다(아이폰은 알림 없이 받으면 구독이 끊긴다)
-  const work = [self.registration.showNotification(d.title || '인사포털', {
-    body: d.body || '', icon: '/android-chrome-192x192.png', badge: '/favicon-32x32.png', tag: d.tag, data: { url: d.url || '/' },
-  })];
+  const opts = { body: d.body || '', icon: '/android-chrome-192x192.png', badge: '/favicon-32x32.png', tag: d.tag, data: { url: d.url || '/' } };
+  if(d.tag) opts.renotify = true;   // 같은 태그(9시 묶음)가 어제 지우지 않은 알림을 조용히 바꿔 치지 않고 다시 울린다. 태그 없이 renotify 를 주면 TypeError 라 태그가 있을 때만
+  const work = [self.registration.showNotification(d.title || '인사포털', opts)];
   if(typeof d.badge === 'number' && self.navigator.setAppBadge) work.push(d.badge > 0 ? self.navigator.setAppBadge(d.badge) : self.navigator.clearAppBadge());
   e.waitUntil(Promise.all(work.map(p => Promise.resolve(p).catch(()=>{}))));
 });
