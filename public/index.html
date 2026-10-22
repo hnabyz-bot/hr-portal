@@ -11641,9 +11641,15 @@ function pushState(e){   // 순수 함수. e = { live, phone, sw, push, key, per
 const pushEnv = ()=>({ live:AUTH.live, phone:AUTH.me?.kind==='phone', sw:PUSH.sw, push:'PushManager' in window && 'Notification' in window, key:PUSH.key, perm:window.Notification?.permission,
   ios:/iPhone|iPad|iPod/.test(navigator.userAgent), standalone:navigator.standalone===true || matchMedia('(display-mode: standalone)').matches });
 const pushBytes = b64=>Uint8Array.from(atob(b64.replace(/-/g, '+').replace(/_/g, '/')), c=>c.charCodeAt(0));   // base64url → 구독에 넘기는 서버 키
-async function pushSubscribe(){   // 이 휴대폰의 구독을 서버에 알린다. 성공하면 true
+const pushSameKey = (a, b)=>a.byteLength===b.length && new Uint8Array(a).every((v, i)=>v===b[i]);   // 구독에 남은 서버 키(ArrayBuffer)와 지금 서버 키(Uint8Array)가 바이트까지 같은가
+async function pushSubscribe(reg){   // 이 휴대폰의 구독을 서버에 알린다. 성공하면 true. reg = 서비스 워커 등록 (검사가 가짜를 넣는다)
   try {
-    const reg = await navigator.serviceWorker.ready, sub = await reg.pushManager.getSubscription() || await reg.pushManager.subscribe({ userVisibleOnly:true, applicationServerKey:pushBytes(PUSH.key) });   // ponytail: 서버 키를 바꾸면 앞서 한 구독이 어긋난다 — 그때 sub.unsubscribe() 뒤 다시 구독
+    reg = reg || await navigator.serviceWorker.ready;
+    const want = pushBytes(PUSH.key);
+    let sub = await reg.pushManager.getSubscription();
+    const had = sub?.options?.applicationServerKey;   // 서버 열쇠를 바꿨으면 옛 구독은 새 열쇠로 보낸 알림을 못 받는다 — 구독이 기억하는 열쇠가 다르면 해지하고 새 열쇠로 다시 구독 (열쇠를 알려 주지 않는 브라우저는 그대로 쓴다)
+    if(sub && had && !pushSameKey(had, want)){ await sub.unsubscribe(); sub = null; }
+    sub = sub || await reg.pushManager.subscribe({ userVisibleOnly:true, applicationServerKey:want });
     const { endpoint, keys } = sub.toJSON();   // keys 는 이미 base64url — 서버가 그대로 받는다
     return (await fetch('/api/push/subscribe', { method:'POST', headers:{ 'Content-Type':'application/json' }, body:JSON.stringify({ endpoint, keys }) })).ok;
   } catch(e){ return false; }
@@ -11694,7 +11700,7 @@ function pushGoParse(q){   // '?go=pay.p1' → ['pay','p1']. NAV 에 있는 메�
   const [n, t] = v.split('.');
   return NAV.find(x=>x.id===n)?.tabs.some(x=>x.id===t) ? [n, t] : ['home'];
 }
-function pushSelfCheck(){   // 브라우저 콘솔에서 pushSelfCheck() 실행 (화면 상태 · 실제 로그인 흉내는 끝나면 되돌린다)
+async function pushSelfCheck(){   // 브라우저 콘솔에서 await pushSelfCheck() 실행 (화면 상태 · 실제 로그인 흉내는 끝나면 되돌린다)
   const ok = (c,m)=>{ if(!c) throw new Error('pushSelfCheck 실패: '+m); };
   const base = { live:true, phone:true, sw:true, push:true, key:'K', perm:'default', ios:false, standalone:false }, st = o=>pushState({ ...base, ...o });
   ok(st({})==='ask' && st({ perm:'granted' })==='on' && st({ perm:'denied' })==='denied', '안드로이드: 묻기 전 ask · 허용 on · 거부 denied');
@@ -11705,7 +11711,7 @@ function pushSelfCheck(){   // 브라우저 콘솔에서 pushSelfCheck() 실행 
   ok(st({ ios:true, key:'' })==='off' && st({ ios:true, live:false })==='off' && st({ ios:true, phone:false })==='off', '아이폰이어도 서버에 키가 없으면 · 시연 · PC 세션이면 칸 없음');
   ok(st({ ios:true, standalone:true })==='ask' && st({ ios:true, standalone:true, perm:'granted' })==='on' && st({ ios:true, standalone:true, perm:'denied' })==='denied', '아이폰 홈 화면 앱: 안드로이드와 같은 규칙');
   ok(st({ perm:'granted', key:'' })==='off', '이미 허용했어도 서버에 키가 없으면 구독하지 않는다');
-  const keep = [AUTH.live, AUTH.me, KPI_LIVE.inbox, KPI_LIVE.deleg, PUSH.state, homePortalTasks], calls = [];
+  const keep = [AUTH.live, AUTH.me, KPI_LIVE.inbox, KPI_LIVE.deleg, PUSH.state, homePortalTasks, PUSH.key], calls = [], realFetch0 = window.fetch;
   try {
     ['ask', 'denied', 'ios'].forEach(s=>ok(pushCard(s).includes('휴대폰 알림 켜기') && pushCard(s).includes('class="btn primary"') && pushCard(s).includes(icon('bell')), s+' 칸: 제목 · 종 · 파란 단추'));
     ok(pushCard('ask').includes('처리할 일이 생기면<br>휴대폰으로 알려 드려요') && pushCard('ask').includes('pushEnable()') && pushCard('ask').includes('>켜기<'), 'ask 칸 문구 · [켜기]');
@@ -11728,8 +11734,23 @@ function pushSelfCheck(){   // 브라우저 콘솔에서 pushSelfCheck() 실행 
     PUSH.state = 'on'; pushBadgeSync(); ok(calls.pop()===sum-2 && !calls.length, '켜 둔 휴대폰: 아이콘 숫자를 맞춘다');
     homePortalTasks = ()=>[]; pushBadgeSync(); ok(calls.pop()===0 && !calls.length, '할 일이 없으면 숫자를 지운다');
     PUSH.state = 'ask'; pushBadgeSync(); AUTH.live = false; PUSH.state = 'on'; pushBadgeSync(); ok(!calls.length, '알림을 켜지 않았거나 시연이면 아이콘 숫자를 건드리지 않는다');
+    // 서버 열쇠가 바뀐 휴대폰 (가짜 pushManager) — 같은 열쇠면 구독을 그대로 쓰고, 다르면 해지한 뒤 새 열쇠로 다시 구독해 새 주소를 서버에 알린다
+    const bytes = last=>Uint8Array.from({ length:65 }, (_, i)=>i===0 ? 4 : i===64 ? last : i), b64u = u=>btoa(String.fromCharCode(...u)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''), posts = [];
+    window.fetch = async (url, o)=>(posts.push([url, JSON.parse(o.body).endpoint]), { ok:true });
+    const fake = (opts, unsubFails)=>{   // opts: 이미 있는 구독의 {applicationServerKey} (없으면 구독 없음, null 이면 열쇠를 알려 주지 않는 브라우저)
+      const log = [], make = (o, endpoint)=>({ ...(o ? { options:o } : {}), unsubscribe:async()=>{ if(unsubFails) throw new Error('x'); log.push('unsub'); cur = null; return true; }, toJSON:()=>({ endpoint, keys:{ p256dh:'p', auth:'a' } }) });
+      let cur = opts === undefined ? null : make(opts, 'https://push.example.invalid/old');
+      return { log, pushManager:{ getSubscription:async()=>cur, subscribe:async o=>{ log.push('sub:'+(pushSameKey(o.applicationServerKey, bytes(1)) ? 'new' : 'other')); return cur = make({ applicationServerKey:o.applicationServerKey.buffer }, 'https://push.example.invalid/new'); } } };
+    };
+    PUSH.key = b64u(bytes(1));
+    let r = fake(), res = await pushSubscribe(r); ok(res && r.log.join()==='sub:new' && posts.pop()[1].endsWith('/new'), '구독이 없으면 새로 구독하고 서버에 알린다');
+    r = fake({ applicationServerKey:bytes(1).buffer }); res = await pushSubscribe(r); ok(res && !r.log.length && posts.pop()[1].endsWith('/old'), '서버 열쇠가 같으면 구독을 그대로 쓴다 (해지 · 새 구독 없음)');
+    r = fake({ applicationServerKey:bytes(2).buffer }); res = await pushSubscribe(r); ok(res && r.log.join()==='unsub,sub:new' && posts.pop()[1].endsWith('/new') && !posts.length, '서버 열쇠가 다르면 해지 → 새 열쇠로 다시 구독 → 새 주소를 서버에 알린다');
+    r = fake({ applicationServerKey:new Uint8Array(64).buffer }); res = await pushSubscribe(r); ok(res && r.log.join()==='unsub,sub:new' && posts.pop()[1].endsWith('/new') && !posts.length, '열쇠 길이가 달라도 다른 열쇠다');
+    r = fake(null); res = await pushSubscribe(r); ok(res && !r.log.length && posts.pop()[1].endsWith('/old'), '구독이 열쇠를 알려 주지 않는 브라우저는 그대로 쓴다');
+    r = fake({ applicationServerKey:bytes(2).buffer }, true); res = await pushSubscribe(r); ok(res===false && !posts.length, '해지에 실패하면 false — 서버에 알리지 않는다');
   } finally {
-    [AUTH.live, AUTH.me, KPI_LIVE.inbox, KPI_LIVE.deleg, PUSH.state, homePortalTasks] = keep;
+    [AUTH.live, AUTH.me, KPI_LIVE.inbox, KPI_LIVE.deleg, PUSH.state, homePortalTasks, PUSH.key] = keep; window.fetch = realFetch0;
     delete navigator.setAppBadge; delete navigator.clearAppBadge;
   }
   return 'pushSelfCheck 통과';
