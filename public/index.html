@@ -7085,14 +7085,15 @@ function whAmts(line){ return (line.match(WH_AMT) || []).map(s=>+s.replace(/,/g,
 function whCut(line){ const t = line.match(WH_AMT) || []; return t.length>3 || t.some((x, i)=>/^-?0\d/.test(x) || /^-?\d{1,3}$/.test(x) && t[i+1]?.includes(',')) || /\d\s+,|,\s+\d|-\s+\d/.test(line); }   // 금액이 갈라진 줄 — 금액 4개 이상(소득세 · 지방 · 농특세 셋까지) · 0으로 시작하는 금액(',000'이 떨어짐) · 쉼표 없는 세 자리 이하 숫자 바로 뒤 쉼표 금액('2 15,386' — 둘째 칸은 첫 칸의 10%쯤이라 바른 줄엔 없다) · 쉼표가 숫자와 떨어짐 · 마이너스가 숫자와 떨어짐('- 2,291,660' — 환급이 추가 납부로 보인다). 틈 기준(WH_GAP)이 안 맞는 PDF에서 한 자리를 금액으로 보이지 않게
 function whNums(p1, p2){   // 스펙 4.5 — 사람의 첫 쪽(p1) · 둘째 쪽(p2, 없으면 null) 줄 → 요약 숫자. 못 읽은 칸은 null (짐작해 채우지 않는다)
   const row = (lines, key, not)=>{ const hit = (lines || []).filter(l=>whFlat(l).includes(key) && !(not && whFlat(l).includes(not))), l = hit.find(l=>whAmts(l).length); return !hit.length ? null : l===undefined ? [] : whCut(l) ? false : whAmts(l); };   // 그 말이 든 줄 중 금액이 있는 첫 줄의 금액들 — 금액 없는 줄은 건너뛴다. 줄이 없으면 null, 금액이 갈라진 줄이면 false(그 줄 값은 모두 null)
-  const dec = row(p1, '결정세액', '(결정세액') || [], st = row(p1, '차감징수세액') || [], cur = row(p1, '주(현)근무지') || [], pv = row(p1, '종(전)근무지'), prev = pv || [], t10 = x=>Math.trunc(x/10)*10;   // '기납부 (결정세액…' 줄은 결정세액 줄이 아니다 — 주(현) 금액과 한 줄로 붙어 나와도
+  const dr = row(p1, '결정세액', '(결정세액'), st = row(p1, '차감징수세액') || [], cur = row(p1, '주(현)근무지') || [], pv = row(p1, '종(전)근무지'), prev = pv || [], t10 = x=>Math.trunc(x/10)*10;   // '기납부 (결정세액…' 줄은 결정세액 줄이 아니다 — 주(현) 금액과 한 줄로 붙어 나와도
+  const pre = [0, 1].map(i=>cur[i] + (prev[i] ?? 0)), fit = (d, sign)=>pv!==false && cur.length>1 && [0, 1].every(i=>d[i]!==undefined && st[i]!==undefined && t10(d[i] - pre[i])===sign*st[i]), fits = sign=>fit(dec, sign);   // 기납부 = 주(현) + 종(전)(없으면 0 — 갈라져 못 읽었으면 기납부도 못 읽음), 소득세 · 지방소득세 따로
+  const dec = dr?.length===0 && fit([0, 0], 1) ? [0, 0] : dr || [];   // 결정세액 칸이 비어 있으면(위하고는 0원 칸을 비운다) 기납부 · 차감 셈이 0원과 맞을 때만 0원 — 셈 없이 0으로 치지 않는다
   const sum = { gross:whGross(row(p2, '근로소득공제')?.[0] ?? null, row(p2, '근로소득금액')?.[0] ?? null), taxDecided:dec[0] ?? null, localDecided:dec[1] ?? null,
     taxPrepaid:null, localPrepaid:null, taxSettle:st[0] ?? null, localSettle:st[1] ?? null };
-  const pre = [0, 1].map(i=>cur[i] + (prev[i] ?? 0)), fits = sign=>pv!==false && cur.length>1 && [0, 1].every(i=>dec[i]!==undefined && st[i]!==undefined && t10(dec[i] - pre[i])===sign*st[i]);   // 기납부 = 주(현) + 종(전)(없으면 0 — 갈라져 못 읽었으면 기납부도 못 읽음), 소득세 · 지방소득세 따로
   if(fits(1)) [sum.taxPrepaid, sum.localPrepaid] = pre;   // 10원 미만 절사(결정 − 기납부) = 차감일 때만 (whSummary의 t10). 결정 − 차감으로 거꾸로 계산하지 않는다(최대 9원 틀림)
   else if(fits(-1)) sum.taxSettle = sum.localSettle = null;   // 부호만 반대 = pdf.js가 '-'를 떼어 놓아 부호를 잃은 것 → 믿을 수 없는 부호는 보이지 않는다(환급이 추가납부로 보이면 실패)
   if(sum.taxPrepaid===null && sum.taxSettle && sum.localSettle && (sum.taxSettle<0)!==(sum.localSettle<0)) sum.taxSettle = sum.localSettle = null;   // 기납부 검사가 받쳐 주지 않는데 소득세 · 지방소득세 부호가 서로 반대 = 한쪽만 '-'를 잃었다 → 둘 다 보이지 않는다 (검사가 맞으면 아주 작은 환급처럼 부호가 다를 수 있어 둔다)
-  const d2 = row(p2, '결정세액('), decided2 = d2===null ? null : !!d2?.length && d2[0]===sum.taxDecided;   // 둘째 쪽 결정세액이 첫 쪽 소득세 결정과 같은지 (줄이 없으면 null, 금액이 갈라졌으면 false)
+  const d2 = row(p2, '결정세액('), decided2 = d2===null ? null : d2!==false && (d2[0] ?? 0)===sum.taxDecided;   // 둘째 쪽 결정세액이 첫 쪽 소득세 결정과 같은지 (줄이 없으면 null, 금액이 갈라졌으면 false, 빈 칸 = 0원)
   if(decided2===false && sum.taxPrepaid===null) sum.taxDecided = sum.localDecided = null;   // 둘째 쪽과 다르고 기납부 검사도 못 맞췄다 → 결정세액을 받쳐 주는 것이 없다
   return { sum, check:{ decided2 } };
 }
@@ -7229,6 +7230,9 @@ async function whSelfCheck(){   // 브라우저 콘솔에서 await whSelfCheck()
   ok(dm({ cur:'4,445,600 444,460', settle:'- 2,291,660 - 229,070' }).taxSettle===null && dm({ cur:'4,445,600 444,460', settle:'- 2,291,660 - 229,070' }).localSettle===null, '차감의 마이너스가 떨어지면(− 2,291,660) 못 읽음 — 환급을 추가 납부로 보이지 않는다');
   ok(dm({ dec:'결정세액 2,153,860 2 15,386' }).localDecided===null && dm({ settle:'-2,291,660 -2 29,070' }).localSettle===null, '둘째 금액 안에 틈(2 15,386 · -2 29,070)이 있으면 못 읽음');
   ok(['근로소득공제 12,967,651 ○ ○ 1,234,567', '결정세액 2,153,860 215,386', '0 0', '500 50', '-500 50', '차감징수세액( - - - ) -2,291,660 -229,070', '결정세액( - - ) 2,153,860', '종(전)근무지 ○○○ 400,000 40,000'].every(l=>!whCut(l)), '바른 금액 줄은 갈라졌다고 보지 않는다');
+  const p2z = [...p2.slice(0, 3), '결정세액( - - )'], z = whNums(p1({ dec:'결정세액', cur:'927,073 92,718', settle:'-927,070 -92,710' }), p2z), zx = whNums(p1({ dec:'결정세액', cur:'927,073 92,718', settle:'-900,000 -90,000' }), p2z).sum;   // 위하고는 결정세액 0원 칸을 비워 둔다 (첫 쪽 · 둘째 쪽 모두)
+  ok(J(z)==='{"sum":{"gross":64353030,"taxDecided":0,"localDecided":0,"taxPrepaid":927073,"localPrepaid":92718,"taxSettle":-927070,"localSettle":-92710},"check":{"decided2":true}}', '결정세액 칸이 비어 있고 기납부 · 차감 셈이 0원과 맞으면 결정세액 0원 · 기납부 확인 · 둘째 쪽 빈 칸도 0원으로 같음');
+  ok(zx.taxDecided===null && zx.localDecided===null && zx.taxPrepaid===null && zx.taxSettle===-900000, '결정세액 칸이 비어 있어도 셈이 안 맞으면 0원으로 치지 않는다 (못 읽음)');
   const nums = o=>whNums(p1(o), p2).sum, near = nums({ cur:'4,445,529 444,460' }), off = nums({ cur:'4,445,600 444,460' }), noSt = nums({ noSettle:true });
   ok(near.taxPrepaid===4445529 && near.localPrepaid===444460, '기납부 검사: 10원 미만 절사 범위 안이면 맞음');
   ok(off.taxPrepaid===null && off.localPrepaid===null && J({ ...off, taxPrepaid:4445520, localPrepaid:444460 })===J(nums()), '기납부 검사가 틀리면 기납부 둘 다 null, 나머지는 그대로');
