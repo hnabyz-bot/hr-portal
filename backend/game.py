@@ -9,6 +9,8 @@ app.py 가 bp 를 붙인다. 세션 검사는 auth._guard 가 모든 /api/* 에 
   GET  /api/game/gifts          동료 선물: 보낼 수 있는 동료 · 오늘 보낸 사람 · 받은 선물함
   POST /api/game/gifts          {"to": id} 출동권 1장 보내기 — 하루 3명 · 한 사람에게 하루 1장
   POST /api/game/gifts/claim    {"ids": [...]} 받기 — 하루 5장까지
+  GET  /api/game/hours          오픈시간 — 게임 · 탕비실 표 (2026-10-22 인사담당자: HR 이 탕비실에서 바꾼다)
+  POST /api/game/hours          HR 만. 평일 시간대 · 주말 · 하루 종일 여는 날 · 잠시 닫기를 통째로
 
 점수·기록은 게임 화면이 보낸다 — 마음먹고 고치면 막을 수 없다(사내 놀이라 모양·범위만 본다).
 """
@@ -22,6 +24,7 @@ from datetime import date, datetime, timedelta, timezone
 from flask import Blueprint, Response, g, jsonify, request
 
 import auth
+from hr_eval.domain.models import AuditEntry
 
 bp = Blueprint("game", __name__)
 
@@ -180,3 +183,101 @@ def gift_claim() -> Response:
         conn.execute("ROLLBACK")
         raise
     return jsonify(ids=got)
+
+
+# ---------------- 오픈시간 (2026-10-22 인사담당자 — HR 이 탕비실 "게임 오픈시간" 표에서 바꾼다) ----------------
+# 게임(public/xray-portal.js → 게임 isOpenAt)과 탕비실 표(index.html pantryGame)가 이 값을 쓴다. 시각 = 한국 시간 0시부터 센 분, 10분 단위.
+# 끝이 시작보다 이르면(18:00~09:00) 다음날 아침까지 — 평일마다 [시작, 24시) + [0시, 끝). 끝 0 = 24시.
+# weekend "all" = 토·일 하루 종일, "slots" = 평일과 같은 시간대. days = 하루 종일 여는 날(공휴일 등). closed = 잠시 닫기 (until 이 지나면 저절로 열림).
+HOURS_DEFAULT = {
+    "slots": [{"name": "평일 점심", "from": 720, "to": 810}, {"name": "오후 휴식", "from": 930, "to": 960},
+              {"name": "퇴근 후", "from": 1080, "to": 540}],
+    "weekend": "all",
+    # 공휴일 — 2027년은 우주항공청 2027년도 월력요항(2026-06) 기준. 2026년부터 노동절 · 제헌절도 공휴일. 그 뒤 해는 HR 이 더한다
+    "days": [{"date": d, "name": n} for d, n in (
+        ("2026-12-25", "성탄절"), ("2027-01-01", "신정"), ("2027-02-06", "설날 연휴"), ("2027-02-07", "설날"), ("2027-02-08", "설날 연휴"),
+        ("2027-02-09", "대체공휴일(설날)"), ("2027-03-01", "삼일절"), ("2027-05-01", "노동절"), ("2027-05-03", "대체공휴일(노동절)"),
+        ("2027-05-05", "어린이날"), ("2027-05-13", "부처님오신날"), ("2027-06-06", "현충일"), ("2027-07-17", "제헌절"),
+        ("2027-07-19", "대체공휴일(제헌절)"), ("2027-08-15", "광복절"), ("2027-08-16", "대체공휴일(광복절)"), ("2027-09-14", "추석 연휴"),
+        ("2027-09-15", "추석"), ("2027-09-16", "추석 연휴"), ("2027-10-03", "개천절"), ("2027-10-04", "대체공휴일(개천절)"),
+        ("2027-10-09", "한글날"), ("2027-10-11", "대체공휴일(한글날)"), ("2027-12-25", "성탄절"), ("2027-12-27", "대체공휴일(성탄절)"))],
+    "closed": None,
+}
+SLOT_MAX, DAY_MAX, CLOSE_DAYS = 10, 200, 366
+DAY_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
+
+
+def _text(v: object, n: int, empty: bool = False) -> str | None:
+    s = v.strip() if isinstance(v, str) else None
+    return s if s is not None and (empty or s) and len(s) <= n else None
+
+
+def _min(v: object) -> bool:
+    return type(v) is int and 0 <= v < 1440 and v % 10 == 0
+
+
+def hours_clean(b: object, now: datetime, today: date) -> dict | None:
+    """화면이 보낸(또는 저장된) 오픈시간 → 지금 쓸 모양. 지난 날 · 다시 열 시각이 지난 닫기는 뺀다. 모양이 틀리면 None."""
+    if not isinstance(b, dict):
+        return None
+    slots, days, closed = b.get("slots"), b.get("days"), b.get("closed")
+    if (not isinstance(slots, list) or len(slots) > SLOT_MAX or b.get("weekend") not in ("all", "slots")
+            or not isinstance(days, list) or len(days) > DAY_MAX or not (closed is None or isinstance(closed, dict))):
+        return None
+    out = {"slots": [], "weekend": b["weekend"], "days": [], "closed": None}
+    for s in slots:
+        name = _text(s.get("name"), 12) if isinstance(s, dict) else None
+        if name is None or not _min(s.get("from")) or not _min(s.get("to")) or s["from"] == s["to"]:
+            return None
+        out["slots"].append({"name": name, "from": s["from"], "to": s["to"]})
+    seen = set()
+    for d in days:
+        day, name = (d.get("date"), _text(d.get("name"), 20)) if isinstance(d, dict) else (None, None)
+        try:
+            ok = isinstance(day, str) and DAY_RE.fullmatch(day) and date.fromisoformat(day) and day not in seen
+        except ValueError:
+            ok = False
+        if not ok or name is None:
+            return None
+        seen.add(day)
+        if day >= today.isoformat():
+            out["days"].append({"date": day, "name": name})
+    out["days"].sort(key=lambda d: d["date"])
+    if closed is not None:
+        msg, until, now_ms = _text(closed.get("msg"), 40, empty=True), closed.get("until"), int(now.timestamp() * 1000)
+        if msg is None or not (until is None or (type(until) is int and until <= now_ms + CLOSE_DAYS * 864e5)):
+            return None
+        if until is None or until > now_ms:   # 다시 열 시각이 지났으면 이미 열린 것
+            out["closed"] = {"msg": msg, "until": until}
+    return out
+
+
+def _hours(conn) -> dict:
+    """저장된 것(없으면 기본값)에서 지난 날 · 지난 닫기를 뺀 지금 모양. 저장된 것은 저장할 때 같은 검사를 통과했다."""
+    row = conn.execute("SELECT data FROM game_hours WHERE id = 1").fetchone()
+    return hours_clean(json.loads(row[0]) if row else HOURS_DEFAULT, auth._now(), auth._today())
+
+
+@bp.get("/api/game/hours")
+def hours_get() -> Response:
+    """로그인한 누구나 — 게임 · 탕비실 표. {slots: [{name, from, to}], weekend, days: [{date, name}], closed: {msg, until(ms) | null} | null}"""
+    return jsonify(_hours(auth._db()))
+
+
+@bp.post("/api/game/hours")
+def hours_put() -> Response:
+    """HR 만. 위 모양을 통째로 → 저장한 모양. 감사로그 GAME_HOURS_SET 에 전 · 후."""
+    if (denied := auth._hr_only()) is not None:
+        return denied
+    new = hours_clean(_body(), auth._now(), auth._today())
+    if new is None:
+        return jsonify(error="오픈시간 모양이 올바르지 않습니다."), 400
+    conn = auth._db()
+    before = _hours(conn)
+    conn.execute(
+        "INSERT INTO game_hours (id, data, updated_at, updated_by) VALUES (1, ?, ?, ?)"
+        " ON CONFLICT (id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at, updated_by = excluded.updated_by",
+        (json.dumps(new, ensure_ascii=False), auth._iso(auth._now()), g.actor.user_id))
+    auth._audit(conn, AuditEntry.by(g.actor, action="GAME_HOURS_SET", entity_type="game_hours", entity_id=1,
+                                    before_data=before, after_data=new))
+    return jsonify(new)

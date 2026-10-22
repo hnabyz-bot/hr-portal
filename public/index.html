@@ -921,6 +921,33 @@
   .org-name{ color:var(--accent); font-weight:600; cursor:pointer; text-decoration:underline; text-underline-offset:3px; }
   .org-modal{ position:fixed; inset:0; background:rgba(27,36,51,.45); z-index:60; display:flex; align-items:center; justify-content:center; padding:16px; }
   .org-modal .card{ width:100%; max-width:420px; max-height:90vh; overflow-y:auto; box-shadow:0 20px 40px -16px rgba(37,93,170,.35); }
+  /* 탕비실 게임 오픈시간 (HR 이 바꾼다). 강조는 빨강 — 화면이 온통 파랗지 않게 (인사담당자 취향) */
+  .gh-acts{ display:flex; gap:6px; }
+  .gh-acts .btn, .gh-between .btn{ white-space:nowrap; }   /* 휴대폰에서도 단추 글자가 두 줄로 꺾이지 않게 */
+  .btn.gh-hot{ border-color:var(--coral-text); color:var(--coral-text); }
+  .btn.gh-go{ background:var(--coral-text); border-color:var(--coral-text); color:#fff; }
+  .gh-closed{ display:grid; gap:2px; padding:10px 12px; margin-bottom:6px; border-radius:var(--radius-sm); background:var(--bg-warning); color:var(--warning); font-size:var(--fs-sm); }
+  .gh-days summary{ cursor:pointer; list-style:none; }
+  .gh-days summary > span{ white-space:nowrap; }
+  .gh-days summary::-webkit-details-marker{ display:none; }
+  .gh-days summary b{ text-align:right; display:inline-flex; align-items:center; gap:4px; }
+  .gh-days summary svg{ width:14px; height:14px; flex-shrink:0; color:var(--text-muted); transition:transform .2s var(--ease); }
+  .gh-days[open] summary svg{ transform:rotate(180deg); }
+  .gh-day{ display:flex; gap:10px; padding:6px 0; font-size:var(--fs-sm); border-bottom:1px solid var(--border); }
+  .gh-day span{ width:92px; flex-shrink:0; color:var(--text-secondary); }
+  .gh-yr{ flex-basis:100%; display:block; margin:8px 0 2px; font-size:var(--fs-xs); font-weight:600; color:var(--text-secondary); }
+  .org-modal .card:has(.gh-edit){ max-width:520px; }
+  .gh-lb{ font-size:var(--fs-xs); color:var(--text-secondary); margin:0 0 6px; }
+  .gh-slot{ display:grid; grid-template-columns:minmax(0,1fr) 82px 12px 82px 32px; gap:6px; align-items:center; margin-bottom:6px; }
+  .gh-slot input, .gh-slot select, .gh-add input, .gh-add select{ height:34px; min-width:0; padding:0 8px; border:1px solid var(--border); border-radius:var(--radius-sm); font:inherit; font-size:var(--fs-sm); background:var(--surface); color:var(--text-primary); }
+  .gh-between{ display:flex; justify-content:space-between; align-items:center; gap:8px; margin:2px 0 16px; }
+  .gh-radio{ display:flex; gap:18px; font-size:var(--fs-sm); margin-bottom:16px; }
+  .gh-chips{ display:flex; flex-wrap:wrap; gap:6px; margin-bottom:6px; }
+  .gh-chip{ display:inline-flex; align-items:center; gap:4px; padding:3px 4px 3px 9px; border:1px solid var(--border); border-radius:var(--radius-sm); font-size:var(--fs-xs); }
+  .gh-chip button{ border:0; background:none; padding:2px; cursor:pointer; color:var(--text-secondary); display:inline-flex; }
+  .gh-chip svg{ width:13px; height:13px; }
+  .gh-add{ display:grid; grid-template-columns:140px minmax(0,1fr) auto; gap:6px; }
+  .gh-btns{ display:flex; justify-content:flex-end; gap:6px; margin-top:18px; }
   .org-priv{ margin-top:14px; border-top:1px solid var(--border); padding-top:12px; }
   .org-priv > b{ display:block; font-size:var(--fs-sm); margin-bottom:4px; }
   .org-priv-row{ display:flex; align-items:center; gap:12px; padding:8px 0; }
@@ -9087,18 +9114,118 @@ async function phoneRevoke(){
    게임 "X-ray 특공대"는 public/xray/ 에 따로 있는 화면이다(그림·음악·글꼴 포함). 게임 코드를 이 파일에 섞지 않는다.
    포털 안에 창(iframe)으로 띄우지 않고 그 주소로 바로 보낸다 — iframe 안에서는 휴대폰 "폰에 설치"가 안 된다(게임 원본의 연결 안내).
    게임은 로그인해야 들어가고, 기록·랭킹·동료 선물은 서버에 사람별로 있다 (../xray-portal.js · backend/game.py, 2026-10-20). */
+/* 게임 오픈시간 (2026-10-22 인사담당자 — HR 이 이 표에서 바꾼다). 실제 로그인이면 서버 값(GET /api/game/hours — backend/game.py), 게임도 같은 값을 쓴다(../xray-portal.js).
+   시연이면 예전 오픈시간(공휴일 없음)으로 시작하고 HR 이 바꾼 것은 이 브라우저 메모리에만 — 시연 게임은 늘 예전 오픈시간이다.
+   시각 = 한국 시간 0시부터 센 분, 10분 단위. 끝이 시작보다 이르면 다음날 아침까지(끝 0 = 24:00). 잠시 닫기는 다시 열 시각(until, ms)이 지나면 저절로 열린다. */
+const GH_DEMO = { slots:[{ name:'평일 점심', from:720, to:810 }, { name:'오후 휴식', from:930, to:960 }, { name:'퇴근 후', from:1080, to:540 }], weekend:'all', days:[], closed:null };
+const GH = { d:null, state:'', at:0, draft:null };   // state: '' 아직 · loading · ok · err (실제 로그인)
+async function ghLoad(){
+  GH.state = 'loading';
+  try { const r = await fetch('/api/game/hours'); if(!r.ok) throw new Error(r.status); GH.d = await r.json(); GH.state = 'ok'; } catch(e){ GH.state = 'err'; }
+  GH.at = Date.now();
+  if(currentNav.id==='pantry') renderContent();
+}
+function ghData(){ return AUTH.live ? GH.d : (GH.d ||= structuredClone(GH_DEMO)); }
+const ghHm = m=>Math.floor(m/60)+':'+String(m%60).padStart(2,'0');
+const ghHH = m=>String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0');   // 고르는 칸은 09:00 처럼
+function ghRows(d){   // 표 · 게임 안내창과 같은 글 (../xray-portal.js rows)
+  return d.slots.map(x=>[x.name, ghHm(x.from)+'~'+(x.to===0 ? '24:00' : (x.to<x.from ? '다음날 ' : '')+ghHm(x.to))])
+    .concat([['주말', d.weekend==='all' ? '하루 종일' : '평일과 같은 시간']]);
+}
+function ghDay(iso, noYear){   // '2026-12-25' → 12/25(금) · 다른 해면 27년 1/1(금) (noYear: 해마다 묶어 보일 때)
+  const [y, m, dd] = iso.split('-').map(Number), w = '일월화수목금토'[new Date(y, m-1, dd).getDay()];
+  return (noYear || y===new Date().getFullYear() ? '' : String(y).slice(2)+'년 ')+m+'/'+dd+'('+w+')';
+}
+const ghYear = (days, i)=>i && days[i-1].date.slice(0,4)===days[i].date.slice(0,4) ? '' : `<b class="gh-yr">${days[i].date.slice(0,4)}년</b>`;   // 해가 바뀌는 자리에 연도 한 줄
+function ghWhen(ms){ const k = new Date(ms + 9*3600e3); return ghDay(k.toISOString().slice(0,10))+' '+ghHH(k.getUTCHours()*60 + k.getUTCMinutes()); }   // 한국 시간
+function ghUntil(day, min){ if(!day) return null; const [y, m, d] = day.split('-').map(Number); return Date.UTC(y, m-1, d) + min*60e3 - 9*3600e3; }   // 다시 열 날 · 시각(한국) → ms
+function ghTimes(sel){ let o = ''; for(let m=0; m<1440; m+=10) o += `<option value="${m}"${m===sel?' selected':''}>${ghHH(m)}</option>`; return o; }
+function ghClosed(){ const c = ghData()?.closed; return c && !(c.until && c.until <= Date.now()) ? c : null; }   // 다시 열 시각이 지난 닫기는 없는 것으로 (서버도 그렇게 돌려준다)
+function ghCard(){
+  const d = ghData();
+  if(!d) return `<div class="list-sub">${GH.state==='err' ? '오픈시간을 불러오지 못했어요. 잠시 뒤 다시 열어 주세요.' : '오픈시간을 불러오는 중이에요.'}</div>`;
+  const c = ghClosed(), days = d.days;
+  return `${c ? `<div class="gh-closed"><b>지금은 게임을 잠시 닫았어요</b><span>${[escapeHtml(c.msg), c.until && ghWhen(c.until)+'에 열려요'].filter(Boolean).join(' · ') || '다시 열 때까지 닫혀 있어요'}</span></div>` : ''}
+    ${ghRows(d).map(h=>`<div class="list-row"><span>${escapeHtml(h[0])}</span><b>${h[1]}</b></div>`).join('')}
+    ${days.length ? `<details class="gh-days"><summary class="list-row"><span>하루 종일 여는 날</span><b>${ghDay(days[0].date)} ${escapeHtml(days[0].name)}${days.length>1 ? ` 외 ${days.length-1}일` : ''}${icon('chevD')}</b></summary>
+      ${days.map((x, i)=>`${ghYear(days, i)}<div class="gh-day"><span>${ghDay(x.date, true)}</span>${escapeHtml(x.name)}</div>`).join('')}</details>` : ''}
+    <div class="list-sub" style="margin-top:8px;">근무시간에는 새 게임을 시작할 수 없고, 하던 판은 지금 구역까지만 하고 끝나요. 점수는 그대로 기록돼요.</div>`;
+}
+async function ghSave(next, done){   // 통째로 저장 → 표 다시 그림. done = 성공 안내
+  const err = t=>{ const e = document.getElementById('ghErr'); if(e) e.innerHTML = kpiNote(escapeHtml(t), 'danger'); else kpiFlash(t, 'danger'); };
+  if(AUTH.live){
+    let r, j = {};
+    try { r = await fetch('/api/game/hours', { method:'POST', headers:{ 'Content-Type':'application/json' }, body:JSON.stringify(next) }); j = await r.json().catch(()=>({})); } catch(e){}
+    if(!r || !r.ok) return err(j.error || '저장하지 못했어요. 잠시 뒤 다시 해 주세요.');
+    GH.d = j; GH.at = Date.now();
+  } else GH.d = next;
+  orgCloseModal(); kpiFlash(done);
+}
+function ghEdit(){   // 오픈시간 바꾸기 — 초안(GH.draft)에 담고 저장을 눌러야 반영
+  GH.draft = structuredClone(ghData()); ghEditDraw();
+}
+function ghEditDraw(){
+  const d = GH.draft, today = kpiDay(0);
+  orgModal(`<div class="gh-edit"><div class="card-title"><span>게임 오픈시간 바꾸기</span><button type="button" class="x-btn" onclick="orgCloseModal()" aria-label="닫기">${icon('x')}</button></div><div id="ghErr"></div>
+    <div class="gh-lb">평일 (월~금) · 10분 단위</div>
+    ${d.slots.map((x, i)=>`<div class="gh-slot"><input aria-label="시간대 이름" maxlength="12" placeholder="평일 점심" value="${escapeHtml(x.name)}" oninput="GH.draft.slots[${i}].name=this.value">
+      <select aria-label="시작" onchange="GH.draft.slots[${i}].from=+this.value">${ghTimes(x.from)}</select><span>~</span>
+      <select aria-label="끝" onchange="GH.draft.slots[${i}].to=+this.value">${ghTimes(x.to)}</select>
+      <button type="button" class="x-btn" onclick="GH.draft.slots.splice(${i},1); ghEditDraw()" aria-label="이 시간대 빼기">${icon('x')}</button></div>`).join('') || '<div class="list-sub" style="margin-bottom:6px;">평일 시간대가 없어요 — 평일에는 하루 종일 여는 날에만 열려요.</div>'}
+    <div class="gh-between"><button type="button" class="btn sm" onclick="GH.draft.slots.push({ name:'', from:720, to:780 }); ghEditDraw()"${d.slots.length>=10?' disabled':''}>+ 시간대 더하기</button><span class="list-sub">끝이 시작보다 이르면 다음날까지예요</span></div>
+    <div class="gh-lb">주말 (토·일)</div>
+    <div class="gh-radio"><label><input type="radio" name="ghWe" value="all"${d.weekend==='all'?' checked':''} onchange="GH.draft.weekend='all'"> 하루 종일</label><label><input type="radio" name="ghWe" value="slots"${d.weekend==='slots'?' checked':''} onchange="GH.draft.weekend='slots'"> 평일과 같은 시간대</label></div>
+    <div class="gh-lb">하루 종일 여는 날 <span class="list-sub" style="display:inline;">· 공휴일 미리 넣어 둠 · 지난 날은 저절로 빠져요</span></div>
+    <div class="gh-chips">${d.days.map((x, i)=>`${ghYear(d.days, i)}<span class="gh-chip">${ghDay(x.date, true)} ${escapeHtml(x.name)}<button type="button" onclick="GH.draft.days.splice(${i},1); ghEditDraw()" aria-label="${ghDay(x.date)} 빼기">${icon('x')}</button></span>`).join('') || '<span class="list-sub">없어요</span>'}</div>
+    <div class="gh-add"><input type="date" id="ghDayD" min="${today}" aria-label="여는 날"><input id="ghDayN" maxlength="20" placeholder="창립기념일" aria-label="날 이름"><button type="button" class="btn sm" onclick="ghDayAdd()">더하기</button></div>
+    <div class="gh-btns"><button type="button" class="btn" onclick="orgCloseModal()">취소</button><button type="button" class="btn gh-go" onclick="ghEditSave()">저장</button></div></div>`);
+}
+function ghDayAdd(){
+  const day = document.getElementById('ghDayD').value, name = document.getElementById('ghDayN').value.trim(), e = document.getElementById('ghErr');
+  const why = !day ? '날짜를 골라 주세요.' : day < kpiDay(0) ? '지난 날은 넣을 수 없어요.' : !name ? '날 이름을 적어 주세요. 예: 창립기념일' : GH.draft.days.some(x=>x.date===day) ? '이미 들어 있는 날이에요.' : '';
+  if(why) return e.innerHTML = kpiNote(why, 'danger');
+  GH.draft.days.push({ date:day, name }); GH.draft.days.sort((a, b)=>a.date < b.date ? -1 : 1); ghEditDraw();
+}
+function ghEditSave(){
+  const d = GH.draft, bad = d.slots.find(x=>!x.name.trim()) ? '시간대 이름을 적어 주세요. 예: 평일 점심' : d.slots.find(x=>x.from===x.to) ? '시작과 끝이 같은 시간대가 있어요.' : '';
+  if(bad) return document.getElementById('ghErr').innerHTML = kpiNote(bad, 'danger');
+  ghSave({ ...d, slots:d.slots.map(x=>({ ...x, name:x.name.trim() })) }, '오픈시간을 바꿨어요. 게임에도 바로 반영돼요.');
+}
+function ghCloseEdit(){   // 잠시 닫기 — 한 줄 · 다시 열 시각(비우면 "다시 열기"를 누를 때까지)
+  orgModal(`<div class="gh-edit"><div class="card-title"><span>게임 잠시 닫기</span><button type="button" class="x-btn" onclick="orgCloseModal()" aria-label="닫기">${icon('x')}</button></div><div id="ghErr"></div>
+    <div class="gh-lb">직원에게 보일 한 줄</div>
+    <div class="field" style="margin-bottom:14px;"><input id="ghMsg" maxlength="40" placeholder="연말 결산 기간이에요"></div>
+    <div class="gh-lb">다시 열 시각 <span class="list-sub" style="display:inline;">· 비우면 "다시 열기"를 누를 때까지</span></div>
+    <div class="gh-add" style="grid-template-columns:minmax(0,1fr) 96px;"><input type="date" id="ghUntilD" min="${kpiDay(0)}" aria-label="다시 열 날"><select id="ghUntilT" aria-label="다시 열 시각">${ghTimes(540)}</select></div>
+    <div class="list-sub" style="margin-top:8px;">닫으면 새 게임은 시작할 수 없고, 하던 판은 지금 구역까지만 하고 끝나요.</div>
+    <div class="gh-btns"><button type="button" class="btn" onclick="orgCloseModal()">취소</button><button type="button" class="btn gh-go" onclick="ghCloseSave()">닫기</button></div></div>`);
+}
+function ghCloseSave(){
+  const until = ghUntil(document.getElementById('ghUntilD').value, +document.getElementById('ghUntilT').value);
+  const why = until===null ? '' : until <= Date.now() ? '다시 열 시각은 지금보다 뒤여야 해요.' : until > Date.now() + 366*864e5 ? '다시 열 시각은 1년 안으로 골라 주세요.' : '';
+  if(why) return document.getElementById('ghErr').innerHTML = kpiNote(why, 'danger');
+  ghSave({ ...ghData(), closed:{ msg:document.getElementById('ghMsg').value.trim(), until } }, until ? `게임을 닫았어요. ${ghWhen(until)}에 저절로 열려요.` : '게임을 닫았어요. "다시 열기"를 누르면 열려요.');
+}
+function ghReopen(){ ghSave({ ...ghData(), closed:null }, '게임을 다시 열었어요.'); }
+function ghSelfCheck(){   // 콘솔에서 ghSelfCheck() — 표 글 · 한국 시각 바꾸기
+  const ok = (c, m)=>{ if(!c) throw new Error('ghSelfCheck: '+m); };
+  ok(JSON.stringify(ghRows(GH_DEMO))===JSON.stringify([['평일 점심','12:00~13:30'],['오후 휴식','15:30~16:00'],['퇴근 후','18:00~다음날 9:00'],['주말','하루 종일']]), '예전 오픈시간 글 그대로 (게임 OPEN_DEF rows 와 같게)');
+  ok(ghRows({ slots:[{ name:'밤', from:1200, to:0 }], weekend:'slots', days:[] }).join('|')==='밤,20:00~24:00|주말,평일과 같은 시간', '끝 0 = 24:00 · 주말 평일과 같은');
+  ok(ghUntil('2026-11-03', 540)===Date.UTC(2026, 10, 3, 0, 0) && ghUntil('', 540)===null, '11/3 09:00(한국) = 11/3 00:00 UTC · 날짜 없으면 null');
+  ok(ghWhen(Date.UTC(2026, 10, 3, 0, 0)).endsWith('11/3(화) 09:00'), '다시 여는 때 글');
+  return 'ghSelfCheck 통과';
+}
 function pantryGame(){
-  // 오픈시간은 게임(public/xray/index.html)의 OPEN_ROWS 와 같아야 한다 — 게임에서 시간을 바꾸면 여기도 고친다
-  const hours = [['평일 점심','12:00~13:30'], ['오후 휴식','15:30~16:00'], ['퇴근 후','18:00~다음날 9:00'], ['주말','하루 종일']];
+  if(AUTH.live && GH.state!=='loading' && Date.now()-GH.at > 60e3) ghLoad();   // 다른 HR 이 바꾼 것도 1분 안에
+  const c = ghClosed(), hr = kpiIsHr() && ghData();
   return `<div class="card" style="text-align:center; padding:28px 20px; margin-bottom:14px;">
     <a href="xray/"><img src="img/pantry/xray-title.jpg" alt="X-ray 특공대 — 좀비를 찍으면 해골만 남는다 (게임 열기)" width="602" height="291" style="width:min(602px,100%); height:auto; border-radius:12px;"></a>
     <div><a class="btn primary" href="xray/" style="margin-top:14px; text-decoration:none;">게임 열기</a></div>
     <div class="list-sub" style="margin-top:12px;">휴대폰은 게임 화면에서 "폰에 설치"를 누르면 홈 화면에 아이콘이 생겨요 · 포털로 돌아올 때는 뒤로 가기</div>
   </div>
   <div class="card" style="max-width:520px; margin:0 auto;">
-    <div class="card-title">게임 오픈시간</div>
-    ${hours.map(h=>`<div class="list-row"><span>${h[0]}</span><b>${h[1]}</b></div>`).join('')}
-    <div class="list-sub" style="margin-top:8px;">근무시간에는 새 게임을 시작할 수 없고, 하던 판은 지금 구역까지만 하고 끝나요. 점수는 그대로 기록돼요.</div>
+    <div class="card-title"><span>게임 오픈시간</span>${hr ? `<span class="gh-acts"><button type="button" class="btn sm" onclick="${c ? 'ghReopen()' : 'ghCloseEdit()'}">${c ? '다시 열기' : '잠시 닫기'}</button><button type="button" class="btn sm gh-hot" onclick="ghEdit()">오픈시간 바꾸기</button></span>` : ''}</div>
+    ${hr && kpiMsg ? kpiNote(kpiMsg.msg, kpiMsg.type) : ''}${ghCard()}
   </div>`;
 }
 

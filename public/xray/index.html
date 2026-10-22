@@ -1429,7 +1429,7 @@ body.skin-g #ndOk{--bh:52px}
     <section class="gsec"><h3>점수 많이 얻는 법</h3><ul class="glist" id="gScore"></ul></section>
     <section class="gsec"><h3>장비 재고 · 특근(재장전)</h3><div class="gweap" id="gWeap"></div><ul class="glist" id="gFast"></ul></section>
     <section class="gsec"><h3>아이템</h3><div class="gcards" id="gItems"></div></section>
-    <section class="gsec"><h3>출동권 · 오픈시간</h3><p class="gnote">게임 한 판에 <b>출동권 1장</b>을 써요. 최대 5장이고 20분마다 1장씩 다시 생겨요. 동료에게 보낼 수도 있어요(하루 3명까지, 보낼 때마다 나도 1장 · 받는 건 하루 5장까지). 튜토리얼과 2회차 도전은 출동권이 들지 않아요.</p><ul class="glist"><li><b>주간 랭킹 보상</b><em>매주 월요일 0시 · 지난주 1위 출동권 50장 · 2위 30장 · 3위 20장</em></li><li><b>입장 선물</b><em>게임에 처음 들어온 사람만 · 첫 판에서 쓰러지면 1시간 무제한권 2장 · 켜 두면 1시간 동안 출동권 없이 출동 · 오픈시간에만 켤 수 있고 근무시간은 1시간에서 빼고 세요</em></li><li><b>오픈시간</b><em>평일 12:00~13:30 · 15:30~16:00 · 18:00~다음날 9:00 · 주말은 하루 종일</em></li><li><b>근무시간이 되면</b><em>새 게임은 시작할 수 없고, 하던 판은 지금 구역까지만 하고 끝나요. 점수는 그대로 기록돼요.</em></li></ul></section>
+    <section class="gsec"><h3>출동권 · 오픈시간</h3><p class="gnote">게임 한 판에 <b>출동권 1장</b>을 써요. 최대 5장이고 20분마다 1장씩 다시 생겨요. 동료에게 보낼 수도 있어요(하루 3명까지, 보낼 때마다 나도 1장 · 받는 건 하루 5장까지). 튜토리얼과 2회차 도전은 출동권이 들지 않아요.</p><ul class="glist"><li><b>주간 랭킹 보상</b><em>매주 월요일 0시 · 지난주 1위 출동권 50장 · 2위 30장 · 3위 20장</em></li><li><b>입장 선물</b><em>게임에 처음 들어온 사람만 · 첫 판에서 쓰러지면 1시간 무제한권 2장 · 켜 두면 1시간 동안 출동권 없이 출동 · 오픈시간에만 켤 수 있고 근무시간은 1시간에서 빼고 세요</em></li><li><b>오픈시간</b><em id="guideHours">평일 12:00~13:30 · 15:30~16:00 · 18:00~다음날 9:00 · 주말은 하루 종일</em></li><li><b>근무시간이 되면</b><em>새 게임은 시작할 수 없고, 하던 판은 지금 구역까지만 하고 끝나요. 점수는 그대로 기록돼요.</em></li></ul></section>
     <section class="gsec"><h3>본부장 소환 · 15초</h3><p class="gnote">소환권은 구역을 통과할 때마다 1장(최대 3장)씩 받아요. <b>대표이사님은 3장</b>을 꽉 채워야 부를 수 있어요. 머리 위 막대가 남은 시간이에요.</p><div class="gcards" id="gExecs"></div></section>
     <div class="gcta"><button type="button" class="cta" id="btnGuideGo">출동!</button></div>
   </div>
@@ -1540,7 +1540,7 @@ body.skin-g #ndOk{--bh:52px}
   </div>
 </div>
 
-<script src="../xray-portal.js?v=1"></script>
+<script src="../xray-portal.js?v=2"></script>
 <script>
 (window.XRSQ_GATE || Promise.resolve()).then(() => {   // 인사포털 로그인·기록을 먼저 확인한다 (../xray-portal.js · 포털 사본에만 있는 수정 6)
 'use strict';
@@ -5201,6 +5201,7 @@ function buildGuide() {
 }
 function openGuide(from) {
   buildGuide(); guideFrom = from;
+  if (PORTAL && PORTAL.hours) $('#guideHours').textContent = OH().rows.map(r => r[0] + ' ' + r[1]).join(' · ');   // HR 이 정한 오픈시간 (포털 사본에만 있는 수정 7)
   const go = $('#btnGuideGo'); go.textContent = from === 'tutorial' ? '출동!' : '닫기';
   if (from === 'tutorial') { state = 'guide'; cancelCharge(); hud.root.hidden = true; tutBox.hidden = true; }
   show('scrGuide'); $('#scrGuide').scrollTop = 0;
@@ -5650,7 +5651,7 @@ function gameOver() {
   $('#overTitle').textContent = saved ? '세상을 구했다!' : '강제 퇴근!';
   $('#overSub').textContent = quit ? '남극에서 치료제를 확보하고 정시 퇴근했어요' : saved ? '치료제를 구한 뒤 ' + ZONES[zk].name + (G.boss ? ' 보스에게' : ' 구역에서') + ' 붙잡혔어요' : G.boss ? ZONES[zk].boss + '에게 붙잡혔어요' : ZONES[zk].name + ' 구역에서 좀비에게 붙잡혔어요';
   const work = !!G.workEnd && !G.player.dead && !saved;
-  if (work) { $('#overEye').textContent = 'TIME UP · 업무 복귀'; $('#overTitle').textContent = '업무 복귀!'; $('#overSub').textContent = ZONES[zk].name + ' 구역까지 마치고 근무하러 갔어요 · 다음 오픈 ' + gateInfo().until; }
+  if (work) { $('#overEye').textContent = 'TIME UP · 업무 복귀'; $('#overTitle').textContent = '업무 복귀!'; const gi = gateInfo(); $('#overSub').textContent = ZONES[zk].name + (gi.paused ? ' 구역까지 마쳤어요 · 게임을 잠시 닫았어요' : ' 구역까지 마치고 근무하러 갔어요') + (gi.until ? ' · 다음 오픈 ' + gi.until : ''); }   // (포털 사본에만 있는 수정 7)
   try { $('#overZ').src = AT.ok ? (quit || work ? rigSnap(playerRig(), { mode: 'idle', over: playerHat() }) : rigSnap(RIGS[G.boss ? 'b' + zk : 'z0'], { mode: 'shuffle', ph: 1 })).toDataURL() : scaled(G.boss ? bFrames(zk).frames[0] : zFrames(zk, 'base')[0], G.boss ? 1 : 2); } catch (e) {}
   rankTab = 'week'; renderRank();
   hud.root.hidden = true; show('scrOver'); paintTixBars();
@@ -6135,20 +6136,28 @@ function frame(now) {
 const PORTAL = window.XRSQ_PORTAL || null;
 function nowMs() { try { if (PORTAL && typeof PORTAL.now === 'function') { const v = +PORTAL.now(); if (v > 0) return v; } } catch (e) {} return Date.now(); }
 // 평일(월~금) 오픈: 0:00~9:00 · 12:00~13:30 · 15:30~16:00 · 18:00~24:00 / 주말 종일 — 모두 한국 시간
-const OPEN_SLOTS = [[0, 540], [720, 810], [930, 960], [1080, 1440]];
-const OPEN_ROWS = [['평일 점심', '12:00~13:30'], ['오후 휴식', '15:30~16:00'], ['퇴근 후', '18:00~다음날 9:00'], ['주말', '하루 종일']];
+// 포털: HR 이 탕비실에서 바꾼 오픈시간(PORTAL.hours — 하루 종일 여는 날 · 잠시 닫기 포함)을 쓴다. 없으면(예시 모드) 아래 값 (포털 사본에만 있는 수정 7)
+const OPEN_DEF = { slots: [[0, 540], [720, 810], [930, 960], [1080, 1440]], rows: [['평일 점심', '12:00~13:30'], ['오후 휴식', '15:30~16:00'], ['퇴근 후', '18:00~다음날 9:00'], ['주말', '하루 종일']], weekend: true, days: new Set(), closed: null };
+function OH() { return (PORTAL && PORTAL.hours) || OPEN_DEF; }
+function pausedAt(ms) { const c = OH().closed; return !!c && (!c.until || ms < c.until); }   // HR 이 잠시 닫음 — 다시 열 시각이 지나면 저절로 열려요
 function kstDay(ms) { return Math.floor((ms + 9 * 3600e3) / 864e5); }
 function isOpenAt(ms) {
-  const k = new Date(ms + 9 * 3600e3), dow = k.getUTCDay(), m = k.getUTCHours() * 60 + k.getUTCMinutes();
-  return dow === 0 || dow === 6 || OPEN_SLOTS.some(([a, b]) => m >= a && m < b);
+  const h = OH(), k = new Date(ms + 9 * 3600e3), dow = k.getUTCDay(), m = k.getUTCHours() * 60 + k.getUTCMinutes();
+  return !pausedAt(ms) && (h.days.has(kstDay(ms)) || (h.weekend && (dow === 0 || dow === 6)) || h.slots.some(([a, b]) => m >= a && m < b));
 }
-function nextFlip(ms) { const open = isOpenAt(ms); let t = Math.floor(ms / 60000) * 60000 + 60000; for (let i = 0; i < 10080; i++, t += 60000) if (isOpenAt(t) !== open) return t; return 0; }
+function nextFlip(ms) {
+  const open = isOpenAt(ms), c = OH().closed; let t = Math.floor(ms / 60000) * 60000 + 60000;
+  if (pausedAt(ms)) { if (!c.until) return 0; t = Math.max(t, c.until); }   // 잠시 닫음: 다시 여는 때부터 찾아요 (포털 사본에만 있는 수정 7)
+  for (let i = 0; i < 10080; i++, t += 60000) if (isOpenAt(t) !== open) return t;
+  return 0;
+}
 function hhmm(ms) { const k = new Date(ms + 9 * 3600e3); return String(k.getUTCHours()).padStart(2, '0') + ':' + String(k.getUTCMinutes()).padStart(2, '0'); }
 function gateInfo() {
   const now = nowMs(), open = isOpenAt(now), flip = nextFlip(now), d = kstDay(flip) - kstDay(now);
-  const dow = new Date(now + 9 * 3600e3).getUTCDay();
-  const day = d <= 0 ? '' : d === 1 ? '내일 ' : '일월화수목금토'[new Date(flip + 9 * 3600e3).getUTCDay()] + '요일 ';
-  return { open, weekend: dow === 0 || dow === 6, until: flip ? day + hhmm(flip) : '', left: flip ? flip - now : 0 };
+  const dow = new Date(now + 9 * 3600e3).getUTCDay(), h = OH(), holiday = h.days.has(kstDay(now));
+  const day = d <= 0 ? '' : d === 1 ? '내일 ' : d < 7 ? '일월화수목금토'[new Date(flip + 9 * 3600e3).getUTCDay()] + '요일 ' : (() => { const k = new Date(flip + 9 * 3600e3); return (k.getUTCMonth() + 1) + '/' + k.getUTCDate() + ' '; })();
+  // weekend = 오늘은 하루 종일 열림(주말 · 하루 종일 여는 날) · paused = HR 이 잠시 닫음 · msg = HR 이 적은 한 줄(HTML) (포털 사본에만 있는 수정 7)
+  return { open, weekend: holiday || (h.weekend && (dow === 0 || dow === 6)), holiday, paused: pausedAt(now), msg: h.closed ? h.closed.msg : '', until: flip ? day + hhmm(flip) : '', left: flip ? flip - now : 0 };
 }
 function fmtLeft(ms) { const s = Math.max(0, Math.ceil(ms / 1000)), h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60); return h ? h + '시간 ' + m + '분' : m ? m + '분' : s + '초'; }
 function mmss(ms) { const s = Math.max(0, Math.ceil(ms / 1000)); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); }
@@ -6218,12 +6227,12 @@ function tixHtml() {
   if (t.n > TIX.MAX) pips += '<em>+' + (t.n - TIX.MAX) + '</em>';
   return '<div class="tx-tix"><span class="lbl">출동권</span><span class="tpips">' + pips + '</span><b>' + (t.n > TIX.MAX ? t.n + '장' : t.n + '/' + TIX.MAX) + '</b>' +
     (nx > 0 ? '<span class="nx">+1 · ' + mmss(nx) + '</span>' : '') + '</div>' +
-    (g.open ? '<div class="tx-open"><i></i><span>' + (g.weekend ? '주말 · 종일 오픈' : '지금 오픈 · ' + g.until + '까지') + '</span></div>'
-      : '<div class="tx-open off"><i></i><span>근무시간 · ' + g.until + ' 오픈</span></div>');
+    (g.open ? '<div class="tx-open"><i></i><span>' + (g.weekend ? (g.holiday ? '오늘은 종일 오픈' : '주말 · 종일 오픈') : '지금 오픈 · ' + g.until + '까지') + '</span></div>'
+      : '<div class="tx-open off"><i></i><span>' + (g.paused ? '잠시 닫힘' : '근무시간') + (g.until ? ' · ' + g.until + ' 오픈' : '') + '</span></div>');   // (포털 사본에만 있는 수정 7)
 }
 function passHtml() {
   const left = passLeft(), p = passState(), open = gateInfo().open;
-  if (left > 0) return '<div class="tx-pass on' + (open ? '' : ' paused') + '"><i class="ic-pass" aria-hidden="true"></i><span class="pt"><span class="pl">' + (open ? '무제한 출동 중' : '무제한권 · 근무시간엔 멈춰요') + '<b>' + mmss(left) + '</b></span><span class="nx">남은 시간 동안 출동권이 줄지 않아요</span></span></div>';
+  if (left > 0) return '<div class="tx-pass on' + (open ? '' : ' paused') + '"><i class="ic-pass" aria-hidden="true"></i><span class="pt"><span class="pl">' + (open ? '무제한 출동 중' : gateInfo().paused ? '무제한권 · 닫힌 동안 멈춰요' : '무제한권 · 근무시간엔 멈춰요') + '<b>' + mmss(left) + '</b></span><span class="nx">남은 시간 동안 출동권이 줄지 않아요</span></span></div>';
   if (p.n > 0) return '<div class="tx-pass"><i class="ic-pass" aria-hidden="true"></i><span class="pt"><span class="pl">1시간 무제한권<b>' + p.n + '장</b></span><span class="nx">켜 두면 1시간 동안 출동권 없이 출동해요</span></span><button type="button" class="gfb" data-act="pass">지금 쓰기</button></div>';
   return '';
 }
@@ -6238,7 +6247,7 @@ function paintTixBars() {
     q.hidden = !ph;
     el.classList.toggle('empty', t.n <= 0 && !free);
   }
-  const st = $('#btnStart'), lbl = g.open ? '게임 시작' : g.until + ' 오픈';
+  const st = $('#btnStart'), lbl = g.open ? '게임 시작' : g.until ? g.until + ' 오픈' : '잠시 닫힘';   // (포털 사본에만 있는 수정 7)
   if (st.textContent !== lbl) st.textContent = lbl;
   st.classList.toggle('locked', !g.open || (t.n <= 0 && !free));
   $('#btnTutT').classList.toggle('locked', !g.open);
@@ -6320,9 +6329,10 @@ function paintNotice() {
     return;
   }
   if (ND.kind === 'closed') {
-    ic.className = 'rk-ic ic-clock'; $('#ndTitle').textContent = g.open ? '지금 열렸어요!' : '지금은 근무시간이에요';
-    $('#ndText').innerHTML = g.open ? '이제 게임을 할 수 있어요.' : '게임은 쉬는 시간과 퇴근 후에만 열려요.<br><em>' + g.until + '</em>에 열려요 · ' + fmtLeft(g.left) + ' 남았어요';
-    hours.hidden = false; hours.innerHTML = OPEN_ROWS.map(r => '<li><span>' + r[0] + '</span><span>' + r[1] + '</span></li>').join('');
+    ic.className = 'rk-ic ic-clock'; $('#ndTitle').textContent = g.open ? '지금 열렸어요!' : g.paused ? '지금은 게임을 잠시 닫았어요' : '지금은 근무시간이에요';
+    const at = g.until ? '<em>' + g.until + '</em>에 열려요 · ' + fmtLeft(g.left) + ' 남았어요' : '다시 열 때까지 닫혀 있어요';   // HR 이 잠시 닫음 (포털 사본에만 있는 수정 7)
+    $('#ndText').innerHTML = g.open ? '이제 게임을 할 수 있어요.' : g.paused ? (g.msg ? g.msg + '<br>' : '') + at : '게임은 쉬는 시간과 퇴근 후에만 열려요.<br>' + at;
+    hours.hidden = false; hours.innerHTML = OH().rows.map(r => '<li><span>' + r[0] + '</span><span>' + r[1] + '</span></li>').join('');
     ndButtons('확인', 'close');
   } else {
     const nx = tixNext(), box = giftCount(), pn = passState().n, canPass = t.n <= 0 && pn > 0 && g.open && !passActive();
@@ -6390,8 +6400,8 @@ function gateTick() {
   if (!g.open && !G.workEnd && (state === 'play' || state === 'summon' || state === 'review' || state === 'story')) {
     G.workEnd = { t: nowMs() };
     if (state === 'review') { G.over = true; gameOver(); return; }   // 구역을 막 끝낸 참이면 바로 마무리
-    workTag.hidden = false;
-    if (state === 'play') { banner('근무시간이에요', '이번 구역까지만 하고 업무로 복귀해요', 'warn'); try { sfx.warn(); } catch (e) {} }
+    workTag.hidden = false; workTag.textContent = g.paused ? '잠시 닫힘 · 이번 구역까지만' : '근무시간 · 이번 구역까지만';   // (포털 사본에만 있는 수정 7)
+    if (state === 'play') { if (g.paused) banner('게임을 잠시 닫았어요', '이번 구역까지만 하고 마무리해요', 'warn'); else banner('근무시간이에요', '이번 구역까지만 하고 업무로 복귀해요', 'warn'); try { sfx.warn(); } catch (e) {} }
   }
   if (G.workEnd && state === 'play' && nowMs() - G.workEnd.t > WORK_GRACE) { G.over = true; gameOver(); }
 }
@@ -6430,7 +6440,7 @@ function paintGiftMe() {
   const h = '<i class="ic-tix" aria-hidden="true"></i><div><div class="num">' + t.n + '<small>/ ' + TIX.MAX + '장</small></div><div class="nx">' + (nx > 0 ? '다음 1장까지 ' + mmss(nx) : t.n > TIX.MAX ? '보너스로 ' + (t.n - TIX.MAX) + '장 더 있어요' : '가득 찼어요') + '</div></div>';
   const el = $('#gfTix'); if (el.innerHTML !== h) el.innerHTML = h;
   const o = $('#gfOpen'); o.className = 'gf-open' + (g.open ? '' : ' off');
-  const oh = '<i></i>' + (g.open ? (g.weekend ? '주말이라 종일 열려 있어요' : '지금 오픈 · ' + g.until + '까지') : '근무시간 · ' + g.until + '에 열려요');
+  const oh = '<i></i>' + (g.open ? (g.weekend ? (g.holiday ? '오늘은 종일 열려 있어요' : '주말이라 종일 열려 있어요') : '지금 오픈 · ' + g.until + '까지') : (g.paused ? '잠시 닫힘' : '근무시간') + (g.until ? ' · ' + g.until + '에 열려요' : ''));   // (포털 사본에만 있는 수정 7)
   if (o.innerHTML !== oh) o.innerHTML = oh;
 }
 async function openGift(from) {
