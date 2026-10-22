@@ -2606,6 +2606,8 @@ def check_push_pending(hr) -> None:
         ok(push.morning(app, FRI_A) == 0 and not calls and not ran() and len(subs()) == 12, "알림 키가 없으면 0 — 보내지 않고 기록도 쓰지 않고 구독 줄도 그대로")
         os.environ.update(HR_PUSH_PRIVATE=priv)
         ok(push.morning(app, SAT) == 0 and not calls and not ran() and len(subs()) == 12, "토요일에는 0 — 보내지 않고 기록도 없음")
+        ok(push.morning(app, FRI_A - timedelta(minutes=1)) == 0 and push.morning(app, FRI_A + timedelta(hours=9)) == 0 and not calls and not ran() and len(subs()) == 12,
+           "평일이어도 근무시간(9시~18시) 밖이면 0 — 금요일 8:59 · 18:00 에 손으로 돌려도(늦은 실행) 보내지 않고 기록도 없음")
         ok(push.morning(app, FRI_A) == 2, "금요일 9시: 남은 일이 있는 두 사람(직원 · 팀장)에게 보냄 → 2")
         by_ep = {ep: (p, ttl) for ep, p, ttl in calls}
         ok(len(calls) == 2 and set(by_ep) == {live[EMP], live[TL]}, "남은 일 있는 휴대폰에만 한 통씩 (일 없는 직원 · 위임한 대표이사 · 제출만 한 직원에게는 안 감)")
@@ -2672,6 +2674,318 @@ def check_push_pending(hr) -> None:
        and all(q("SELECT is_active FROM users WHERE id = ?", uid) == [(1,)] for uid in other_ceos)
        and all(os.environ.get(k) == v for k, v in env.items()) and push.SEND is real_send,
        "끝나면 구독 · 기록 · 세션 · 계획서 · 메모 · 위임 · 명세서 · 영수증 · 계약서(파기)를 정리하고 기간 · 대표이사 · 환경 값 · 보내기 함수를 되돌림")
+
+
+def check_push_events(hr) -> None:
+    """휴대폰 알림 일이 생길 때 보내기 (2026-10-22): 급여명세서 · 원천징수영수증 공개(공개 중인 해에 사람만 더 올리기 포함) · KPI 제출 · 수정 요청 · 일정 변경 요청 · 돌려보냄 ·
+    확인 메모(쓰기 · 고치기 · 답글) · 연봉계약서 발송 · 파기 뒤 다시 보내기 · 문의가 commit 뒤에 받을 사람의 휴대폰으로 한 통씩 간다 (제목 · 열 화면 · TTL · 앱 아이콘 숫자 = 그 사람 pending 합계).
+    돌려보내는 일만 가고 거절(reject)은 안 가며, 이미 그 상태면 안 간다. 대표이사 직속 KPI 는 위임을 켜면 HR 전원 · 대표이사가 없으면 HR 전원.
+    근무시간(평일 9~18시) 밖 · 알림 키가 없음이면 안 보내고 원래 일은 성공한다. 푸시 서버가 500 · 410 · 예외여도 원래 응답은 그대로(410 은 구독 삭제).
+    시각은 금요일 10:00 KST 로 고정하고(auth._now) 보내기 함수는 가짜로 바꾼다(SYNC 로 바로 — 한 번은 스레드로). 가상 사람 · 부서(62xx) · 가상 구독 주소(example.invalid).
+    감사로그 · 확정본 때문에 지울 수 없는 것(가상 사람 · 확정된 계획서)은 비활성으로 두고, 그 밖의 자료와 환경 값 · 시각 · 보내기 함수는 되돌린다."""
+    import base64
+    import unittest
+
+    import contract
+    import contract_doc
+    import kpi
+    import push
+    import withholding
+
+    print("휴대폰 알림 일이 생길 때 보내기")
+    TL, EMP, EMP2, OTHER, CEO, DIR, HR2, CT1, CT2, CT3, HR3 = cast = tuple(range(6201, 6212))  # 팀장 · 직원 · 직원 · 구경꾼 · 대표이사 · 대표이사 직속 · HR · 계약서 셋 · 비활성 HR
+    mine = ",".join(map(str, cast))
+    utc, KST, year = timezone.utc, auth.KST, 2026
+    T0 = datetime(2026, 10, 23, 10, 0, tzinfo=KST)  # 금요일 근무시간
+    clock = [T0]
+    ym, wy, cy = "2094-03", 2094, 2092  # 가상 명세서 달 · 영수증 해 · 계약서 회차 (다른 검사가 쓰지 않는 값)
+    env = {k: os.environ.get(k) for k in ("HR_PAY_KEY", "HR_PUSH_PUBLIC", "HR_PUSH_PRIVATE")}
+    raw_key = bytes(range(32))  # 앞 검사들이 쓴 열쇠와 같게 — 앞 검사가 남긴 계약서 설정도 풀린다
+    real_now, real_send, real_sync, real_pending = auth._now, push.SEND, push.SYNC, push.pending
+    kyear = q("SELECT edit_from, edit_to, eval_start FROM kpi_years WHERE year = ?", year)
+    other_ceos = [r[0] for r in q("SELECT u.id FROM users u JOIN user_roles r ON r.user_id = u.id WHERE r.role = 'CEO' AND u.is_active = 1")]
+    had = {r[0] for r in q("SELECT token_hash FROM sessions")}  # 시작 때 있던 세션 — 끝나면 이 검사가 만든 세션(로그인 · 가상)만 지운다
+    PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="  # 1x1 그림 (가짜 직인)
+    calls: list[tuple[str, dict, int]] = []
+    seen_all: list[dict] = []  # 보낸 내용 전부 (이름이 새지 않았는지 마지막에 본다)
+    owner: dict[str, int] = {}  # 구독 주소 → 받는 사람
+    dev: dict[int, str] = {}  # 사람 → 그 사람의 (첫) 기기 주소
+    codes: dict[str, int] = {}
+    boom: set[str] = set()
+    threads: list[str] = []  # 보낸 스레드 이름 — 평소 검사는 요청 스레드 그대로, 스레드 검사는 push-deliver
+    seq = [0]
+
+    def fake_send(info, payload, ks, ttl):  # 보낸 것을 적어 두고, 정해 둔 주소는 그 상태 코드를 돌려주거나(기본 201) 던진다
+        calls.append((info["endpoint"], payload, ttl))
+        threads.append(threading.current_thread().name)
+        if info["endpoint"] in boom:
+            raise RuntimeError("검사용 고장")
+        return codes.get(info["endpoint"], 201)
+
+    def take() -> list[tuple[int, dict, int]]:
+        """지금까지 보낸 것 [(받은 사람, 내용, ttl)] — 사람 순으로 돌려주고 비운다."""
+        rows = sorted(((owner[ep], p, ttl) for ep, p, ttl in calls), key=lambda r: r[0])
+        seen_all.extend(p for _, p, _ in rows)
+        calls.clear()
+        return rows
+
+    def got(kind: str, title: str, url: str, *uids: int, badge: int | None = None) -> bool:
+        """방금 보낸 것이 정확히 uids 에게 한 통씩이고, 제목 · 내용 · 열 화면 · TTL 이 맞고 앱 아이콘 숫자(badge)가 그 사람의 처리할 일 합계(badge 를 주면 그 숫자)인가."""
+        rows = take()
+        return (sorted(u for u, _, _ in rows) == sorted(uids)
+                and all(p["title"] == title and p["body"] == push.MESSAGES[kind][1] and p["url"] == url and set(p) == {"title", "body", "url", "badge"}
+                        and p["badge"] == (sum(n for _, n in push.pending(app, u)) if badge is None else badge) and ttl == push.TTL_EVENT for u, p, ttl in rows))
+
+    def put(uid: int) -> str:
+        """가상 휴대폰 세션 + 구독 한 줄 (고정한 시각 기준) — 구독 주소를 돌려준다."""
+        seq[0] += 1
+        t, h, ep = T0.astimezone(utc), f"{seq[0]:02d}" + "4" * 62, f"https://push.example.invalid/ev-{uid}-{seq[0]}"
+        x("INSERT INTO sessions (token_hash, user_id, created_at, last_seen_at, expires_at, kind) VALUES (?, ?, ?, ?, ?, 'phone')",
+          h, uid, auth._iso(t), auth._iso(t), auth._iso(t + timedelta(days=30)))
+        x("INSERT INTO push_subscriptions (token_hash, user_id, endpoint, p256dh, auth, created_at) VALUES (?, ?, ?, 'k', 'a', ?)", h, uid, ep, auth._iso(t))
+        owner[ep] = uid
+        return ep
+
+    subs = lambda uid: sorted(r[0] for r in q("SELECT endpoint FROM push_subscriptions WHERE user_id = ?", uid))  # noqa: E731
+
+    def client(uid: int):  # 지금(고정한) 시각의 PC 로그인
+        c = app.test_client()
+        login(c, new_token("hr" if uid == 1 else f"HW-{uid}"))
+        return c
+
+    post = lambda c, p, body=None: c.post(p, base_url=BASE, headers=ORIGIN, json=body or {})  # noqa: E731
+    state = lambda: q("SELECT status FROM payslip_months WHERE ym = ?", ym)
+
+    def plan(tag):  # 정기 2 · 비정기 1 (check_push_pending 과 같은 모양)
+        item = lambda name, w, kind, **more: {  # noqa: E731
+            "action": name, "formula": "가상 측정식", "weight": w, "owner": "가상", "S": "가상 s", "A": "가상 a", "B": "가상 b", "C": "가상 c",
+            "D": "가상 d", "kind": kind, "target": None, "unit": "", "scheds": [], **more}
+        return [{"team": f"{tag} 팀목표", "personal": f"{tag} 개인목표", "items": [
+            item(f"{tag} 정기 1", 40, "reg"), item(f"{tag} 정기 2", 30, "reg"),
+            item(f"{tag} 비정기", 30, "irr", scheds=[{"due": f"{year}-03-31", "name": "가상 초안"}, {"due": f"{year}-12-31", "name": "가상 마감"}])]}]
+
+    def submit(c, tag) -> bool:
+        return (post(c, "/api/kpi/me/draft", {"draft": plan(tag)}).status_code == 200 and post(c, "/api/kpi/me/submit").status_code == 200)
+
+    try:
+        pub, priv = push.keygen()
+        os.environ.update(HR_PAY_KEY=base64.b64encode(raw_key).decode(), HR_PUSH_PUBLIC=pub, HR_PUSH_PRIVATE=priv)
+        cfg = hr.get("/api/contracts/settings", base_url=BASE).json  # HR 쪽 준비는 시각을 고정하기 전에 (hr 로그인은 고정한 시각에서는 만료) — 앞 검사가 남긴 계약서 설정이 없으면 만든다
+        if cfg["settings"] is None:
+            ok(post(hr, "/api/contracts/settings", {"ceo": "○○○", "addr": "가상시 가상구 가상로 1", "kind": "가상 서비스업", "seal": PNG}).status_code == 200, "(검사용) 계약서 설정을 만듦")
+        auth._now = lambda: clock[0].astimezone(utc)
+        push.SYNC, push.SEND = True, fake_send
+        now_iso = auth._iso(auth._now())
+
+        # ---- 이 검사만의 조직 · 사람 · 휴대폰 구독 ----
+        x("INSERT INTO departments (id, code, name, level, parent_id) VALUES (6201, 'Q71', '가상R본부', 'DIVISION', NULL)")
+        x("INSERT INTO departments (id, code, name, level, parent_id) VALUES (6202, 'Q72', '가상R팀', 'TEAM', 6201)")
+        for uid, dept, kpi_on, has_ct, active in ((TL, 6202, 1, 0, 1), (EMP, 6202, 1, 0, 1), (EMP2, 6202, 1, 0, 1), (OTHER, 6202, 1, 0, 1), (CEO, 6201, 0, 0, 1),
+                                                  (DIR, 6201, 1, 0, 1), (HR2, 6201, 0, 0, 1), (CT1, 6202, 0, 1, 1), (CT2, 6202, 0, 1, 1), (CT3, 6202, 0, 0, 1),
+                                                  (HR3, 6201, 0, 0, 0)):
+            x("INSERT INTO users (id, name, email, department_id, hiworks_user_no, portal_enabled, is_active, deactivated_at, writes_kpi, has_contract)"
+              " VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?)", uid, f"가상R{uid}", f"r{uid}@example.invalid", dept, f"HW-{uid}", active, None if active else "2027-01-01T00:00:00Z", kpi_on, has_ct)
+        for uid, role in ((TL, "TEAM_LEADER"), (CEO, "CEO"), (HR2, "HR_ADMIN"), (HR3, "HR_ADMIN")):
+            x("INSERT INTO user_roles (user_id, role) VALUES (?, ?)", uid, role)
+        for uid in other_ceos:  # 대표이사는 이 사람 하나만 — 본부장이 없는 곳의 관리자는 처음 만나는 대표이사
+            x("UPDATE users SET is_active = 0, deactivated_at = ? WHERE id = ?", now_iso, uid)
+        x("INSERT INTO kpi_years (year, edit_from, edit_to, eval_start, updated_at, updated_by) VALUES (?, ?, ?, NULL, ?, 1)"
+          " ON CONFLICT (year) DO UPDATE SET edit_from = excluded.edit_from, edit_to = excluded.edit_to, eval_start = NULL", year, f"{year}-01-01", f"{year}-12-31", now_iso)
+        for uid in (1, *cast[:-1]):  # 활성인 모든 사람이 휴대폰 하나씩 — 받지 말아야 할 사람이 받으면 잡힌다
+            dev[uid] = put(uid)
+        c_hr, c_tl, c_emp, c_emp2, c_ceo, c_dir, c_ct1 = (client(u) for u in (1, TL, EMP, EMP2, CEO, DIR, CT1))
+        ok(len(owner) == 11 and not calls and q("SELECT COUNT(*) FROM push_subscriptions") == [(11,)], "(검사용) 가상 구독 11줄 — HR 둘 · 직원들 · 구경꾼까지, 아직 아무것도 안 보냄")
+
+        c = connect(os.environ["HR_DB_PATH"])
+        try:
+            active_hr = [r[0] for r in q("SELECT DISTINCT r.user_id FROM user_roles r JOIN users u ON u.id = r.user_id WHERE r.role = 'HR_ADMIN' AND u.is_active = 1 ORDER BY 1")]
+            ok(push.hr_admins(c) == active_hr and {1, HR2} <= set(active_hr) and HR3 not in active_hr
+               and q("SELECT 1 FROM user_roles WHERE user_id = ? AND role = 'HR_ADMIN'", HR3), "hr_admins: 활성 HR 전원 (HR 권한이 있어도 비활성이면 빠짐)")
+            ok(push.approvers(c, EMP) == [TL] and push.approvers(c, TL) == [CEO] and push.approvers(c, CEO) == push.hr_admins(c),
+               "approvers: 바로 위 관리자 · 팀장은 (본부장이 없으면) 대표이사 · 대표이사는 관리자가 없어 HR 전원")
+        finally:
+            c.close()
+
+        # ---- 급여명세서 ----
+        slip = lambda uid: {"userId": uid, "code": f"R{uid}", "head": {"code": f"R{uid}", "name": "가상R", "dept": "가상R팀", "title": "프로", "job": "연구"},  # noqa: E731
+                            "pay": [["기본급", 2500000]], "ded": [["소득세", 30000]], "gross": 2500000, "deduct": 30000, "net": 2470000}
+        ok(post(c_hr, f"/api/payslips/{ym}", {"payDate": "2094-03-25", "slips": [slip(EMP), slip(EMP2)]}).status_code == 200 and not take(), "명세서를 올려도(공개 전) 아무도 안 받음")
+        ok(post(c_hr, f"/api/payslips/{ym}/open").json == {"status": "OPEN"}
+           and got("payslip", "3월 급여명세서가 올라왔어요", "/?go=pay.p1", EMP, EMP2, badge=1), "명세서 공개 → 그 달 명세서가 있는 두 사람에게만 1통씩 (같은 팀 팀장 · 구경꾼 · HR 은 안 받음) · 아이콘 숫자 = 안 본 명세서 1")
+        ok(post(c_hr, f"/api/payslips/{ym}/open").status_code == 200 and not take(), "이미 공개된 달을 다시 공개하면 0통")
+        ok(post(c_hr, f"/api/payslips/{ym}/close").json == {"status": "DRAFT"} and not take(), "내리기는 알리지 않음")
+        ok(post(c_hr, f"/api/payslips/{ym}/open").status_code == 200 and got("payslip", "3월 급여명세서가 올라왔어요", "/?go=pay.p1", EMP, EMP2), "내렸다가 다시 공개하면 다시 보냄 (상태가 실제로 바뀔 때마다)")
+        ok(post(c_hr, "/api/payslips/2094-04/open").status_code == 404 and not take(), "올린 적 없는 달은 404 · 0통")
+        with app.test_request_context():  # 받는 사람 모양: 같은 사람 둘 · 0 · None 은 빼고 한 번씩, 번호를 만드는 함수도 받는다
+            push.notify([EMP, EMP, 0, None, EMP2], "payslip", month=3)
+            ok(got("payslip", "3월 급여명세서가 올라왔어요", "/?go=pay.p1", EMP, EMP2), "notify: 중복 · 0 · None 번호는 빼고 한 사람에게 한 통")
+            push.notify(lambda: [EMP], "payslip", month=3)
+            ok(got("payslip", "3월 급여명세서가 올라왔어요", "/?go=pay.p1", EMP), "notify: 받는 사람은 번호 목록 대신 번호를 만드는 함수도 됨 (보낼 수 없는 때는 부르지 않음)")
+            with unittest.TestCase().assertLogs("push", "WARNING") as cm:
+                push.notify([EMP], "no_such_kind")
+            ok(not take() and cm.output == ["WARNING:push:push notify failed: KeyError"], "notify 는 모르는 종류여도 예외를 내지 않고 예외 종류만 로그에 남김")
+
+        # ---- 원천징수영수증 ----
+        pdf = base64.b64encode(b"%PDF-1.4\n%fake").decode()
+        person = lambda uid: {"userId": uid, "sum": dict.fromkeys(withholding.SUM_KEYS, 0), "pdf": pdf}  # noqa: E731
+        ok(post(c_hr, f"/api/withholding/{wy}", {"mode": "all", "reset": True, "total": 2, "people": [person(EMP), person(EMP2)]}).status_code == 200
+           and post(c_hr, f"/api/withholding/{wy}", {"mode": "some", "people": [person(EMP)]}).status_code == 200 and not take(), "영수증을 올려도(공개 전) · 공개 전에 사람만 더 올려도 아무도 안 받음")
+        ok(post(c_hr, f"/api/withholding/{wy}/open").json == {"status": "OPEN"}
+           and got("withholding", "2094년 원천징수영수증이 올라왔어요", "/?go=pay.p3", EMP, EMP2, badge=2), "영수증 공개 → 그 해 영수증이 있는 두 사람에게 1통씩 · 아이콘 숫자 = 명세서 1 + 영수증 1")
+        ok(post(c_hr, f"/api/withholding/{wy}/open").status_code == 200 and not take(), "이미 공개된 해를 다시 공개하면 0통")
+        ok(post(c_hr, f"/api/withholding/{wy}", {"mode": "some", "people": [person(EMP)]}).json == {"saved": 1, "pending": 0}
+           and got("withholding", "2094년 원천징수영수증이 올라왔어요", "/?go=pay.p3", EMP), "공개 중인 해에 사람만 더 올리면 이번에 올린 사람에게만 1통")
+        ok(post(c_hr, f"/api/withholding/{wy}", {"mode": "some", "people": [{**person(EMP), "pdf": "not a pdf"}]}).status_code == 400 and not take(), "올리기가 거절되면(400) 0통")
+        ok(post(c_hr, f"/api/withholding/{wy}/close").status_code == 200 and not take(), "내리기는 알리지 않음")
+
+        # ---- KPI: 제출 · 돌려보냄 · 다시 제출 · 확정 · 일정 변경 요청 · 수정 요청 · 거절 ----
+        ok(post(c_emp, "/api/kpi/me/draft", {"draft": plan("가상E")}).status_code == 200 and not take(), "KPI 임시 저장은 알리지 않음")
+        ok(post(c_emp, "/api/kpi/me/submit").status_code == 200 and got("kpi_inbox", "팀원 KPI 승인 요청이 왔어요", "/?go=perf.e1", TL, badge=1),
+           "KPI 제출 → 바로 위 관리자(팀장)에게만 1통 (대표이사 · HR 은 안 받음) · 아이콘 숫자 = 처리함 1")
+        ok(post(c_tl, f"/api/kpi/plans/{EMP}/return", {"note": "가상 사유"}).status_code == 200
+           and got("kpi_back", "KPI 계획서가 돌아왔어요", "/?go=perf.e1", EMP), "돌려보냄 → 계획서 주인에게 1통")
+        ok(post(c_emp, "/api/kpi/me/submit").status_code == 200 and got("kpi_inbox", "팀원 KPI 승인 요청이 왔어요", "/?go=perf.e1", TL), "다시 제출 → 팀장에게 1통")
+        ok(post(c_tl, f"/api/kpi/plans/{EMP}/confirm").status_code == 200 and not take(), "확정은 알리지 않음")
+        content = c_emp.get("/api/kpi/me", base_url=BASE).json["plan"]["confirmed"]["content"]
+        sid = next(s["sid"] for goal in content for it in goal["items"] for s in it["scheds"])
+        ok(post(c_emp, "/api/kpi/me/sched-change", {"year": year, "sid": sid, "due": f"{year}-11-30", "reason": "가상 사유"}).status_code == 200
+           and got("kpi_inbox", "팀원 KPI 승인 요청이 왔어요", "/?go=perf.e1", TL), "일정 변경 요청 → 팀장에게 1통")
+        ok(post(c_emp, "/api/kpi/me/sched-change", {"year": year, "sid": sid, "due": f"{year}-11-29", "reason": "가상 사유"}).status_code == 409 and not take(), "거절된 일정 변경 요청(409)은 0통")
+        ok(post(c_emp, "/api/kpi/me/request-change", {"reason": "가상 사유"}).status_code == 200
+           and got("kpi_inbox", "팀원 KPI 승인 요청이 왔어요", "/?go=perf.e1", TL), "수정 요청 → 팀장에게 1통")
+        ok(post(c_tl, f"/api/kpi/plans/{EMP}/reject", {"note": "가상 사유"}).status_code == 200 and not take(), "거절(reject)은 알리지 않음 — 돌려보냄(return)과 다르다")
+
+        # ---- KPI 처리자: 관리자가 없으면 HR 전원 · 대표이사가 맡기면 HR 전원 · 맡김을 끄면 대표이사 ----
+        x("UPDATE users SET is_active = 0, deactivated_at = ? WHERE id = ?", now_iso, CEO)  # 대표이사가 아무도 없는 동안
+        ok(submit(c_dir, "가상D") and got("kpi_inbox", "팀원 KPI 승인 요청이 왔어요", "/?go=perf.e1", 1, HR2), "관리자가 없는 사람의 제출 → HR 전원(본인 제외)에게 1통씩 (팀장 · 구경꾼은 안 받음)")
+        x("UPDATE users SET is_active = 1, deactivated_at = NULL WHERE id = ?", CEO)
+        ok(post(c_dir, "/api/kpi/me/cancel").status_code == 200 and not take(), "제출 취소는 알리지 않음")
+        ok(submit(c_dir, "가상D") and got("kpi_inbox", "팀원 KPI 승인 요청이 왔어요", "/?go=perf.e1", CEO), "대표이사 직속의 제출 → 대표이사에게 1통 (HR 은 안 받음)")
+        ok(post(c_dir, "/api/kpi/me/cancel").status_code == 200 and post(c_ceo, "/api/kpi/delegation", {"on": True}).status_code == 200 and not take(), "(검사용) 대표이사가 HR 에 맡김")
+        ok(submit(c_dir, "가상D") and got("kpi_inbox", "팀원 KPI 승인 요청이 왔어요", "/?go=perf.e1", 1, HR2), "맡긴 동안 대표이사 직속의 제출 → HR 전원에게만 1통씩, 대표이사는 0통")
+        ok(post(c_dir, "/api/kpi/me/cancel").status_code == 200 and post(c_ceo, "/api/kpi/delegation", {"on": False}).status_code == 200 and submit(c_dir, "가상D")
+           and got("kpi_inbox", "팀원 KPI 승인 요청이 왔어요", "/?go=perf.e1", CEO), "맡김을 끄면 다시 대표이사에게")
+
+        # ---- 확인 메모 · 답글 ----
+        r = post(c_tl, f"/api/kpi/memos/{EMP}", {"year": year, "text": "가상 메모"})
+        mid = r.json["id"]
+        ok(r.status_code == 200 and got("kpi_memo", "KPI 확인 메모가 왔어요", "/?go=perf.e1", EMP), "메모 쓰기 → 메모 주인에게 1통")
+        ok(post(c_tl, f"/api/kpi/memos/{EMP}", {"year": year, "text": ""}).status_code == 400 and not take(), "거절된 메모(400)는 0통")
+        ok(post(c_tl, f"/api/kpi/memo/{mid}/edit", {"text": "가상 고친 메모"}).status_code == 200 and got("kpi_memo", "KPI 확인 메모가 왔어요", "/?go=perf.e1", EMP), "메모 고치기 → 메모 주인에게 1통")
+        ok(post(c_emp, f"/api/kpi/memo/{mid}/reply", {"text": "가상 답글"}).status_code == 200
+           and got("kpi_reply_to_author", "확인 메모에 새 답글이 달렸어요", "/?go=perf.e4", TL), "주인이 답글 → 메모를 쓴 사람에게 1통 (열 화면 perf.e4)")
+        ok(post(c_tl, f"/api/kpi/memo/{mid}/reply", {"text": "가상 답글"}).status_code == 200
+           and got("kpi_reply_to_owner", "확인 메모에 새 답글이 달렸어요", "/?go=perf.e1", EMP), "쓴 사람이 답글 → 메모 주인에게 1통 (열 화면 perf.e1)")
+        ok(post(c_emp, f"/api/kpi/memo/{mid}/ack").status_code == 200 and post(c_emp2, f"/api/kpi/memo/{mid}/reply", {"text": "가상"}).status_code == 403 and not take(),
+           "확인했습니다 · 권한 없는 답글(403)은 0통")
+
+        # ---- 연봉계약서: 발송 · 문의 · 파기 ----
+        ctrs = {}
+        for uid in (CT1, CT2, CT3):
+            body = {"code": f"R-{uid}", "name": f"가상R{uid}", "dept": "가상R팀", "title": "", "birth6": "900315", "base": 2418900, "ability": 1211000, "pos": 300000, "site": 0, "qual": 0, "reason": ""}
+            x("INSERT INTO contracts (year, user_id, version, status, starts_on, body, created_at, created_by) VALUES (?, ?, 1, 'DRAFT', ?, ?, ?, 1)",
+              cy, uid, contract_doc.round_period(cy)[0], contract._lock(raw_key, contract._aad(cy, uid, 1, "body"), body), now_iso)
+            ctrs[uid] = q("SELECT id FROM contracts WHERE year = ? AND user_id = ?", cy, uid)[0][0]
+        r = post(c_hr, "/api/contracts/send", {"ids": [ctrs[CT1], ctrs[CT2], ctrs[CT3]], "due": "2026-11-06"})
+        ok(r.status_code == 200 and r.json["sent"] == 2 and r.json["skipped"] == [{"id": ctrs[CT3], "why": "연봉계약서 대상 아님"}]
+           and got("contract_sign", "서명할 연봉계약서가 있어요", "/?go=pay.p2", CT1, CT2), "계약서 발송 → 이번에 서명 대기가 된 두 사람에게만 1통씩 (건너뛴 사람은 0통)")
+        ok(post(c_hr, "/api/contracts/send", {"ids": [ctrs[CT1]], "due": "2026-11-06"}).json["sent"] == 0 and not take(), "이미 보낸 계약서를 다시 발송해도 0통")
+        ok(post(c_ct1, f"/api/contracts/{ctrs[CT1]}/ask", {"text": "가상 문의"}).status_code == 200
+           and got("contract_ask", "답변할 연봉계약서 문의가 있어요", "/?go=pay.p2", 1, HR2), "문의 → HR 전원(비활성 HR 은 빼고)에게 1통씩, 문의한 직원 · 구경꾼은 0통")
+        ok(post(c_ct1, f"/api/contracts/{ctrs[CT1]}/ask", {"text": "가상 문의"}).status_code == 409 and not take(), "거절된 문의(409)는 0통")
+        ok(post(c_hr, f"/api/contracts/{ctrs[CT1]}/cancel", {"reason": "가상 사유", "then": "draft"}).status_code == 200 and not take(), "파기 → 발송 전으로 돌리면(draft) 0통")
+        r = post(c_hr, f"/api/contracts/{ctrs[CT2]}/cancel", {"reason": "가상 사유", "then": "resend"})
+        ok(r.status_code == 200 and got("contract_sign", "서명할 연봉계약서가 있어요", "/?go=pay.p2", CT2), "파기 뒤 같은 내용으로 다시 보내면(resend) 그 직원에게 1통")
+        ok(post(c_hr, f"/api/contracts/{r.json['id']}/cancel", {"reason": "가상 사유", "then": "none"}).status_code == 200 and not take(), "파기하고 끝내면(none) 0통")
+
+        # ---- 푸시 서버가 실패해도 원래 일은 그대로: 500 · 410 · 예외 · 숫자를 못 셈 ----
+        extra = put(EMP2)
+        codes.update({dev[EMP]: 500, dev[EMP2]: 410})
+        boom.add(extra)
+        ok(post(c_hr, f"/api/payslips/{ym}/close").status_code == 200 and not take(), "(검사용) 내림")
+        with unittest.TestCase().assertLogs("push", "WARNING") as cm:
+            r = post(c_hr, f"/api/payslips/{ym}/open")
+        out = "\n".join(cm.output)
+        ok(r.status_code == 200 and r.json == {"status": "OPEN"} and state() == [("OPEN",)] and len(take()) == 3
+           and sorted(cm.output) == ["WARNING:push:event push failed: RuntimeError", "WARNING:push:event push rejected: status 500"]
+           and "example.invalid" not in out and "가상" not in out, "푸시 서버가 500 · 예외여도 공개는 200 으로 끝나고 세 기기 모두 시도 · 로그에는 상태 코드 · 예외 종류만")
+        ok(subs(EMP) == [dev[EMP]] and subs(EMP2) == [extra], "500 · 예외는 구독 그대로 · 410 을 돌려준 구독만 삭제")
+        dev[EMP2] = extra
+        codes.clear()
+        boom.clear()
+        push.pending = lambda flask_app, uid: (_ for _ in ()).throw(RuntimeError("검사용 고장"))
+        try:
+            ok(post(c_hr, f"/api/payslips/{ym}/close").status_code == 200 and not take(), "(검사용) 내림")
+            with unittest.TestCase().assertLogs("push", "WARNING") as cm:
+                r = post(c_hr, f"/api/payslips/{ym}/open")
+            rows = take()
+            ok(r.status_code == 200 and [u for u, _, _ in rows] == [EMP, EMP2] and all("badge" not in p and p["title"] == "3월 급여명세서가 올라왔어요" for _, p, _ in rows)
+               and cm.output == ["WARNING:push:event pending failed: RuntimeError"] * 2, "처리할 일 개수를 못 세도 알림은 감 (아이콘 숫자 없이) · 로그에는 예외 종류만")
+        finally:
+            push.pending = real_pending
+
+        # ---- 스레드로 보내기 (운영 모양): 요청은 바로 끝나고 알림은 뒤따라 간다 ----
+        push.SYNC = False
+        try:
+            ok(post(c_hr, f"/api/payslips/{ym}/close").status_code == 200, "(검사용) 내림")
+            r = post(c_hr, f"/api/payslips/{ym}/open")
+            for th in [t for t in threading.enumerate() if t.name == "push-deliver"]:
+                th.join(15)
+            ok(r.status_code == 200 and set(threads[-2:]) == {"push-deliver"} and got("payslip", "3월 급여명세서가 올라왔어요", "/?go=pay.p1", EMP, EMP2),
+               "SYNC 가 꺼지면 데몬 스레드(push-deliver)에서 보냄 — 요청은 200 으로 끝나고 두 사람에게 1통씩")
+        finally:
+            push.SYNC = True
+
+        # ---- 안 보내는 때: 키 없음 · 근무시간 밖 (원래 일은 성공) ----
+        os.environ.pop("HR_PUSH_PRIVATE")
+        ok(post(c_hr, f"/api/payslips/{ym}/close").status_code == 200 and post(c_hr, f"/api/payslips/{ym}/open").json == {"status": "OPEN"} and state() == [("OPEN",)] and not take(),
+           "알림 키가 없으면 아무것도 안 보내고 공개는 그대로 성공")
+        os.environ.update(HR_PUSH_PRIVATE=priv)
+        for when, why in ((T0.replace(hour=18), "금요일 18:00"), (T0.replace(day=24), "토요일 10:00"), (T0.replace(day=25, hour=12), "일요일 12:00")):
+            clock[0] = when
+            c = client(1)  # 시각이 바뀌었으니 새로 로그인 (PC 세션은 4시간 안 쓰면 끝남)
+            ok(post(c, f"/api/payslips/{ym}/close").status_code == 200 and post(c, f"/api/payslips/{ym}/open").json == {"status": "OPEN"} and state() == [("OPEN",)] and not take(),
+               f"{why} 에는 안 보내고 공개는 성공")
+        clock[0] = T0.replace(hour=17, minute=59)
+        c = client(1)
+        ok(post(c, f"/api/payslips/{ym}/close").status_code == 200 and post(c, f"/api/payslips/{ym}/open").status_code == 200
+           and got("payslip", "3월 급여명세서가 올라왔어요", "/?go=pay.p1", EMP, EMP2), "금요일 17:59 에는 보냄 (18:00 부터 안 보냄)")
+
+        ok(len(seen_all) > 20 and threads.count("push-deliver") == 2 and all("가상" not in json.dumps(p, ensure_ascii=False) for p in seen_all),
+           "보낸 알림(스무 통 넘게) 제목 · 내용 어디에도 사람 이름(가상…)이 없음 — 스레드로 보낸 것은 스레드 검사의 두 통뿐")
+    finally:
+        push.SYNC, push.SEND, push.pending = real_sync, real_send, real_pending
+        auth._now = real_now
+        for k, v in env.items():
+            os.environ.pop(k, None)
+            if v is not None:
+                os.environ[k] = v
+        for h in {r[0] for r in q("SELECT token_hash FROM sessions")} - had:  # 이 검사의 로그인 · 가상 세션 (구독 줄도 함께)
+            x("DELETE FROM sessions WHERE token_hash = ?", h)
+        x(f"DELETE FROM kpi_memos WHERE user_id IN ({mine})")  # 답글도 함께
+        x(f"DELETE FROM kpi_sched_changes WHERE user_id IN ({mine})")
+        x(f"DELETE FROM kpi_plans WHERE user_id IN ({mine}) AND NOT EXISTS (SELECT 1 FROM kpi_versions v WHERE v.user_id = kpi_plans.user_id AND v.year = kpi_plans.year)")  # 확정된 계획서는 지울 수 없다
+        x(f"DELETE FROM ceo_delegation WHERE ceo_user_id IN ({mine})")
+        x("DELETE FROM payslip_months WHERE ym = ?", ym)  # 명세서도 함께
+        x("DELETE FROM withholding_years WHERE year = ?", wy)  # 영수증도 함께
+        x(f"DELETE FROM contracts WHERE status = 'DRAFT' AND user_id IN ({mine})")
+        x(f"UPDATE contracts SET status = 'CANCELLED', cancelled_at = ?, cancelled_by = 1, cancel_reason = '검사 정리' WHERE user_id IN ({mine}) AND status = 'SENT'", auth._iso(real_now()))  # 발송한 줄은 지울 수 없어 파기로
+        if kyear:
+            x("UPDATE kpi_years SET edit_from = ?, edit_to = ?, eval_start = ? WHERE year = ?", *kyear[0], year)
+        else:
+            x("DELETE FROM kpi_years WHERE year = ?", year)
+        for uid in other_ceos:
+            x("UPDATE users SET is_active = 1, deactivated_at = NULL WHERE id = ?", uid)
+        x(f"UPDATE users SET is_active = 0, deactivated_at = ?, portal_enabled = 0 WHERE id IN ({mine})", auth._iso(real_now()))  # 감사로그가 가리켜 지울 수 없는 가상 사람은 비활성으로
+    ok(not q(f"SELECT 1 FROM push_subscriptions WHERE user_id IN ({mine})") and not q("SELECT 1 FROM push_subscriptions WHERE endpoint LIKE 'https://push.example.invalid/ev-%'")
+       and not q(f"SELECT 1 FROM sessions WHERE user_id IN ({mine})") and not q(f"SELECT 1 FROM kpi_memos WHERE user_id IN ({mine})")
+       and not q(f"SELECT 1 FROM kpi_sched_changes WHERE user_id IN ({mine})") and not q(f"SELECT 1 FROM ceo_delegation WHERE ceo_user_id IN ({mine})")
+       and not q("SELECT 1 FROM payslip_months WHERE ym = ?", ym) and not q("SELECT 1 FROM withholding_years WHERE year = ?", wy)
+       and not q(f"SELECT 1 FROM contracts WHERE status IN ('DRAFT', 'SENT') AND user_id IN ({mine})")
+       and q("SELECT edit_from, edit_to, eval_start FROM kpi_years WHERE year = ?", year) == kyear
+       and all(q("SELECT is_active FROM users WHERE id = ?", uid) == [(1,)] for uid in other_ceos)
+       and all(os.environ.get(k) == v for k, v in env.items()) and push.SEND is real_send and push.SYNC is real_sync and push.pending is real_pending and auth._now is real_now,
+       "끝나면 구독 · 세션 · 메모 · 위임 · 명세서 · 영수증 · 계약서(파기)를 정리하고 기간 · 대표이사 · 환경 값 · 보내기 함수 · 시각을 되돌림")
 
 
 def year_day(n: int) -> str:
@@ -5179,6 +5493,7 @@ def main() -> int:
     check_push_targets(hr)
     check_push_api(hr)
     check_push_pending(hr)
+    check_push_events(hr)
 
     acts = {r[0] for r in q("SELECT action FROM audit_logs")}
     ok({"LOGIN", "HR_BOOTSTRAP"} <= acts, "감사로그 LOGIN 이 남음")

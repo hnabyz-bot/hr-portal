@@ -36,6 +36,7 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from flask import Blueprint, Response, g, jsonify, request
 
 import auth
+import push
 from hr_eval.domain.models import AuditEntry
 from payslip import pay_key
 
@@ -221,7 +222,7 @@ def _store(conn, year: int, mode: str, reset: bool, total: int, plan: list[tuple
 
 @bp.post("/api/withholding/<year>")
 def upload(year: str) -> Response:
-    """한 묶음 올리기. 모양이 틀린 사람이 하나라도 있으면 아무것도 저장하지 않는다."""
+    """한 묶음 올리기. 모양이 틀린 사람이 하나라도 있으면 아무것도 저장하지 않는다. 이미 공개된 해에 사람만 더 올리면(some) COMMIT 뒤에 이번에 올린 사람의 휴대폰에 알림(push.notify)."""
     if (denied := auth._hr_only()) is not None:
         return denied
     if (y := _year(year)) is None:
@@ -253,15 +254,18 @@ def upload(year: str) -> Response:
     conn.execute("BEGIN IMMEDIATE")
     try:
         res = _store(conn, y, mode, bool(reset), total, plan, key)
+        live = mode == "some" and not isinstance(res, tuple) and conn.execute("SELECT status FROM withholding_years WHERE year = ?", (y,)).fetchone()[0] == "OPEN"
         conn.execute("ROLLBACK" if isinstance(res, tuple) else "COMMIT")
     except BaseException:
         conn.execute("ROLLBACK")
         raise
+    if live:  # 이미 공개된 해에 사람만 더 올렸다 — 저장이 끝난 뒤 이번에 올린 사람에게 알림
+        push.notify([p[0] for p in plan], "withholding", year=y)
     return (jsonify(error=res[1]), res[0]) if isinstance(res, tuple) else jsonify(saved=len(plan), pending=res)
 
 
 def _toggle(year: str, to: str, action: str) -> Response:
-    """공개(OPEN) · 내리기(DRAFT). 이미 그 상태면 그대로 두고 감사로그도 더하지 않는다."""
+    """공개(OPEN) · 내리기(DRAFT). 이미 그 상태면 그대로 두고 감사로그도 더하지 않는다. 공개로 바뀌었으면 COMMIT 뒤에 그 해 영수증이 있는 사람의 휴대폰에 알림(push.notify)."""
     if (denied := auth._hr_only()) is not None:
         return denied
     y, conn = _year(year), auth._db()
@@ -269,10 +273,11 @@ def _toggle(year: str, to: str, action: str) -> Response:
     try:
         row = conn.execute("SELECT y.status, y.pending, COUNT(w.user_id) FROM withholding_years y LEFT JOIN withholding w ON w.year = y.year"
                            " WHERE y.year = ? GROUP BY y.year", (y,)).fetchone() if y else None
-        err = None
+        err, opened = None, False
         if row and to == "OPEN" and (row[1] > 0 or row[2] == 0):
             err = MSG_PENDING if row[1] > 0 else "올린 영수증이 없는 해입니다."
         elif row and row[0] != to:
+            opened = to == "OPEN"
             if to == "OPEN":
                 conn.execute("UPDATE withholding_years SET status = 'OPEN', opened_at = ?, opened_by = ? WHERE year = ?",
                              (auth._iso(auth._now()), g.actor.user_id, y))
@@ -285,6 +290,8 @@ def _toggle(year: str, to: str, action: str) -> Response:
         raise
     if err:
         return jsonify(error=err), 409
+    if opened:  # 저장(COMMIT)이 끝난 뒤 — 그 해 영수증이 있는 사람에게 알림
+        push.notify(lambda: [r[0] for r in conn.execute("SELECT user_id FROM withholding WHERE year = ?", (y,))], "withholding", year=y)
     return jsonify(status=to) if row else (jsonify(error="올린 적 없는 해입니다."), 404)
 
 

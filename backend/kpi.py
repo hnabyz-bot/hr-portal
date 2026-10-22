@@ -82,6 +82,7 @@ from typing import Iterator, NamedTuple
 from flask import Blueprint, Response, g, jsonify, request
 
 import auth
+import push
 from hr_eval.domain.access import Act, can
 from hr_eval.domain.errors import StateConflictError
 from hr_eval.domain.kpi_plan import (
@@ -291,6 +292,7 @@ def submit() -> Response:
         m.conn.execute("UPDATE kpi_plans SET status = ?, submitted_at = ?, note = NULL, note_kind = NULL, updated_at = ?"
                        " WHERE user_id = ? AND year = ?", (m.next, m.now, m.now, m.uid, m.year))
         _log(m, "KPI_SUBMITTED")
+    push.notify(lambda: push.approvers(m.conn, m.uid), "kpi_inbox")  # 저장(COMMIT)이 끝난 뒤 — 처리할 사람에게 알림
     return jsonify(ok=True)
 
 
@@ -311,6 +313,7 @@ def request_change() -> Response:
         m.conn.execute("UPDATE kpi_plans SET status = ?, change_reason = ?, note = NULL, note_kind = NULL, updated_at = ?"
                        " WHERE user_id = ? AND year = ?", (m.next, reason, m.now, m.uid, m.year))
         _log(m, "KPI_CHANGE_REQUESTED")
+    push.notify(lambda: push.approvers(m.conn, m.uid), "kpi_inbox")
     return jsonify(ok=True)
 
 
@@ -460,6 +463,8 @@ def _note_back(uid: int, action: str, kind: str, label: str) -> Response:
         m.conn.execute("UPDATE kpi_plans SET status = ?, note = ?, note_kind = ?, change_reason = NULL, updated_at = ? WHERE user_id = ? AND year = ?",
                        (m.next, note, kind, m.now, uid, m.year))
         _log(m, f"KPI_{kind}")
+    if kind == "RETURNED":  # 돌려보냄만 알린다 — 거절(REJECTED)은 확정본이 그대로라 고칠 일이 없다
+        push.notify([uid], "kpi_back")
     return jsonify(ok=True)
 
 
@@ -1086,6 +1091,7 @@ def memo_add(uid: int) -> Response:
         text = _memo_text(text, "메모")
         cur = conn.execute("INSERT INTO kpi_memos (user_id, year, author_id, text, created_at) VALUES (?, ?, ?, ?, ?)",
                            (uid, year, g.actor.user_id, text, auth._iso(auth._now())))
+    push.notify([uid], "kpi_memo")
     return jsonify(ok=True, id=cur.lastrowid)
 
 
@@ -1098,6 +1104,7 @@ def memo_edit(mid: int) -> Response:
         owner, author, created, _ = _memo(conn, mid)
         _mine_today(conn, owner, author, created, "쓴 사람만 고치거나 지울 수 있습니다.")
         conn.execute("UPDATE kpi_memos SET text = ?, edited_at = ?, ack_at = NULL WHERE id = ?", (_memo_text(text, "메모"), auth._iso(auth._now()), mid))
+    push.notify([owner], "kpi_memo")
     return jsonify(ok=True)
 
 
@@ -1142,6 +1149,7 @@ def memo_reply(mid: int) -> Response:
             conn.execute("UPDATE kpi_memos SET ack_at = NULL WHERE id = ?", (mid,))
         elif ack is None:
             conn.execute("UPDATE kpi_memos SET ack_at = ? WHERE id = ?", (now, mid))
+    push.notify([author if me == owner else owner], "kpi_reply_to_author" if me == owner else "kpi_reply_to_owner")  # 상대방에게 — 주인이 쓰면 쓴 사람, 쓴 사람이 답하면 주인
     return jsonify(ok=True, id=cur.lastrowid)
 
 
@@ -1468,6 +1476,7 @@ def sched_request() -> Response:
         cid = conn.execute("INSERT INTO kpi_sched_changes (user_id, year, sid, from_due, to_due, reason, status, requested_at) VALUES (?, ?, ?, ?, ?, ?, 'PENDING', ?)",
                            (uid, year, sid, frm, to, reason, auth._iso(auth._now()))).lastrowid
         _sched_log(conn, uid, year, sid, "KPI_SCHED_REQUESTED", frm, to)
+    push.notify(lambda: push.approvers(conn, uid), "kpi_inbox")
     return jsonify(ok=True, id=cid)
 
 

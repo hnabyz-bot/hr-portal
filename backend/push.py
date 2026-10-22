@@ -1,15 +1,18 @@
 """휴대폰 알림 바탕 (2026-10-22 인사담당자 — 휴대폰 알림 · 앱 아이콘 숫자, 설계 docs/superpowers/specs/2026-10-22-push-notifications-design.md).
-표(017_push.sql) · 알림 문구 · 근무시간 · 키 · 보낼 대상 · 보내기 함수 · 구독 주소(API) · 처리할 일 개수 · 아침 9시 묶음을 둔다. 일이 생길 때 보내기는 뒤 작업에서 이 파일에 더한다.
+표(017_push.sql) · 알림 문구 · 근무시간 · 키 · 보낼 대상 · 보내기 함수 · 구독 주소(API) · 처리할 일 개수 · 아침 9시 묶음 · 일이 생길 때 보내기(notify)를 둔다.
 
   python -m push check    자체 검증 (CI) — 문구 · 근무시간 · 키 모양 · 진짜 pywebpush 로 가짜 푸시 서버에 보내 보기
   python -m push keygen   서버에서 한 번 — HR_PUSH_PUBLIC · HR_PUSH_PRIVATE 두 줄을 출력만 한다 (.env 에는 사람이 붙인다)
-  python -m push morning  평일 9시(KST) 묶음 — 서버 예약 작업이 부른다. 보낸 사람 수만 출력. 같은 날 두 번 돌지 않는다
+  python -m push morning  평일 9시(KST) 묶음 — 서버 예약 작업이 부른다. 보낸 사람 수만 출력. 같은 날 두 번 돌지 않고, 근무시간(평일 9~18시) 밖에는 아무것도 안 한다
 
   GET  /api/push/key          공개키 {"key"} — 키가 없으면 404 (화면이 알림 켜기 칸을 숨긴다)
   POST /api/push/subscribe    휴대폰 세션만. {"endpoint": https 푸시 서버 주소, "keys": {"p256dh", "auth"}} → 이 세션의 구독 1줄(덮어씀)
   POST /api/push/unsubscribe  이 세션의 구독 줄 삭제
   세션 검사 · 같은 출처 검사는 auth._guard 가 모든 /api/* 에 한다. app.py 가 bp 를 붙인다.
 
+일이 생길 때 보내기: 급여명세서 · 원천징수영수증 공개, KPI 제출 · 수정 요청 · 일정 변경 요청 · 돌려보냄, 확인 메모 · 답글, 연봉계약서 발송 · 다시 보내기 · 문의가 그 일을 저장(commit)한 뒤
+notify() 를 부른다 — 보내는 쪽(pending)이 DB 를 새로 잡으므로 commit 전에 부르면 잠김 오류가 난다. 키가 없거나 근무시간(평일 9~18시 KST) 밖이면 아무것도 안 한다 (다음 근무일 9시 묶음에 들어감).
+보내기는 요청을 붙잡지 않게 데몬 스레드에서, 실패해도 원래 일은 그대로 (예외를 밖으로 내지 않고 로그에는 상태 코드 · 예외 종류만).
 알림 문구에는 금액 · 다른 사람 이름 · 평가 등급이 없다 — 잠금 화면에 그대로 보이므로. 문구는 MESSAGES 한 곳에만 둔다.
 받는 기기는 휴대폰 세션(sessions.kind='phone')뿐이다 — 로그아웃 · 휴대폰 해제 · 새 휴대폰 등록 때 forget() 으로 구독을 지우고(auth.py), 놓쳐도 targets() 가 살아 있는 세션만 거른다.
 보내기 함수 SEND 는 검사가 갈아 끼울 수 있게 모듈 이름으로 둔다 (push.SEND = 가짜). 로그에는 상태 코드만 — 이름 · 주소 · 문구는 남기지 않는다.
@@ -23,6 +26,7 @@ import logging
 import os
 import re
 import sys
+import threading
 from collections.abc import Callable, Iterable
 from datetime import datetime, timedelta, timezone
 from sqlite3 import Connection
@@ -30,10 +34,11 @@ from urllib.parse import urlsplit
 
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec
-from flask import Blueprint, Flask, Response, g, jsonify, request
+from flask import Blueprint, Flask, Response, current_app, g, jsonify, request
 
 import auth
 from hr_eval.domain.models import Role
+from hr_eval.domain.org import manager_of
 
 logger = logging.getLogger(__name__)
 bp = Blueprint("push", __name__)
@@ -42,6 +47,7 @@ SUBJECT = "https://hr.abyz-lab.work"  # VAPID subject — 사이트 주소 (개�
 TTL_EVENT = 43200  # 일이 생겼을 때 보낸 알림: 휴대폰이 꺼져 있어도 12시간 안에 켜지면 전달
 TTL_MORNING = 32400  # 9시 묶음: 18시까지 (9시간)
 SEND_TIMEOUT = 10  # 푸시 서버 응답 기다리는 초 — 정하지 않으면 끝없이 기다린다
+SYNC = False  # 검사가 True 로 두면 notify 가 스레드 없이 바로 보낸다
 
 # 종류 → (제목 틀, 내용, 눌렀을 때 열 화면 go). 금액 · 이름 · 등급 자리를 만들지 않는다.
 MESSAGES: dict[str, tuple[str, str, str]] = {
@@ -211,16 +217,19 @@ def unsubscribe() -> Response:
 def _webpush(info: dict, payload: dict, keys: tuple[str, str], ttl: int) -> int:
     """한 기기에 보내고 HTTP 상태 코드를 돌려준다 (성공 201). 푸시 서버 거절이면 그 코드, 연결 실패 · 깨진 구독이면 0 — 던지지 않는다."""
     try:
+        import requests
         from pywebpush import WebPushException, webpush  # 쓰는 자리에서 — 설치가 깨져도 앱이 뜨는 데는 영향 없게
     except Exception as exc:  # 서버 설치 문제 — 네트워크 실패("push send failed")와 로그에서 구별
         logger.warning("push library unavailable: %s", type(exc).__name__)
         return 0
     try:
-        return webpush(
-            info, json.dumps(payload, ensure_ascii=False),
-            vapid_private_key=keys[1], vapid_claims={"sub": SUBJECT},  # claims 는 pywebpush 가 고쳐 쓰므로 호출마다 새로
-            ttl=ttl, timeout=SEND_TIMEOUT,
-        ).status_code
+        with requests.Session() as session:
+            session.max_redirects = 0  # 푸시 서버가 다른 주소(안쪽 망 …)로 넘겨도 따라가지 않는다 — TooManyRedirects 로 실패(0), 구독은 그대로
+            return webpush(
+                info, json.dumps(payload, ensure_ascii=False),
+                vapid_private_key=keys[1], vapid_claims={"sub": SUBJECT},  # claims 는 pywebpush 가 고쳐 쓰므로 호출마다 새로
+                ttl=ttl, timeout=SEND_TIMEOUT, requests_session=session,
+            ).status_code
     except WebPushException as exc:
         if exc.response is not None:
             return exc.response.status_code
@@ -232,6 +241,24 @@ def _webpush(info: dict, payload: dict, keys: tuple[str, str], ttl: int) -> int:
 
 # (subscription_info, payload, (공개키, 개인키), ttl) → HTTP 상태 코드. 검사는 push.SEND 를 가짜로 바꿔 끼운다.
 SEND: Callable[[dict, dict, tuple[str, str], int], int] = _webpush
+
+
+def _deliver_one(conn: Connection, found: list[tuple[str, dict]], payload: dict, ks: tuple[str, str], ttl: int, who: str) -> bool:
+    """한 사람의 기기들(found = [(세션 번호, 구독 정보)])에 같은 알림을 보낸다 — 푸시 서버가 받아 준 기기가 하나라도 있으면 True.
+    404 · 410 은 구독이 없어졌다는 뜻이라 그 줄을 지우고, 그 밖의 실패는 건너뛴다 (한 기기의 실패가 나머지를 막지 않게). 로그에는 상태 코드 · 예외 종류만 — who 는 morning · event."""
+    reached = False
+    for th, info in found:
+        try:
+            status = SEND(info, payload, ks, ttl)
+        except Exception as exc:  # 진짜 SEND 는 던지지 않지만, 바꿔 낀 것이 던져도 나머지로 넘어간다
+            logger.warning("%s push failed: %s", who, type(exc).__name__)
+            continue
+        if status in (404, 410):
+            forget(conn, [th])
+        elif not 200 <= status < 300:
+            logger.warning("%s push rejected: status %s", who, status)
+        reached = reached or 200 <= status < 300
+    return reached
 
 
 def pending(flask_app: Flask, uid: int) -> list[tuple[str, int]]:
@@ -270,15 +297,76 @@ def pending(flask_app: Flask, uid: int) -> list[tuple[str, int]]:
     return [(k, n[k]) for k in LABELS if n.get(k)]
 
 
+def hr_admins(conn: Connection) -> list[int]:
+    """활성 HR 전원 (user_roles.role = 'HR_ADMIN' 이면서 users.is_active = 1) — HR 에게 가는 알림의 받는 사람."""
+    return [r[0] for r in conn.execute(
+        "SELECT DISTINCT r.user_id FROM user_roles r JOIN users u ON u.id = r.user_id WHERE r.role = 'HR_ADMIN' AND u.is_active = 1 ORDER BY r.user_id")]
+
+
+def approvers(conn: Connection, owner: int) -> list[int]:
+    """owner 의 KPI 를 처리할 사람 — kpi.inbox() 의 proxy() 와 같은 규칙: 바로 위 관리자가 있으면 그 사람, 없거나 그 관리자가 HR 에 맡긴 대표이사(ceo_delegation 에 줄이 있음)면
+    활성 HR 전원(owner 본인 제외). 맡긴 대표이사는 받는 사람에서 빠진다 (그 대표이사가 HR 이면 HR 로서만 받는다)."""
+    import kpi  # 쓰는 자리에서 — kpi 가 이 파일을 불러오므로 순환하지 않게
+    people, depts = kpi.load_org(conn)
+    boss = manager_of(owner, people, depts)
+    if boss is not None and not kpi._ceos(conn, people).get(boss, False):
+        return [boss]
+    return [u for u in hr_admins(conn) if u != owner]
+
+
+def deliver(flask_app: Flask, uids: list[int], msg: dict, ttl: int) -> int:
+    """uids 의 휴대폰에 msg 를 보낸다 — 사람마다 처리할 일 합계를 badge(앱 아이콘 숫자)로 붙이고(못 세면 숫자 없이), 푸시 서버가 받아 준 사람 수를 돌려준다.
+    404 · 410 은 그 구독을 지우고 그 밖의 실패는 건너뛰어 다음 기기 · 다음 사람으로 간다. 던지지 않는다 (스레드 안에서 부른다). 로그에는 상태 코드 · 예외 종류만.
+    새 앱 컨텍스트에서 자기 DB 연결로 일한다 — 요청 안에서(SYNC) 불러도 그 요청의 g 를 건드리지 않는다."""
+    sent = 0
+    try:
+        if (ks := keys()) is None:
+            return 0
+        with flask_app.app_context():
+            conn = auth._db()
+            devices: dict[int, list[tuple[str, dict]]] = {}
+            for uid, th, info in targets(conn, uids, auth._now()):
+                devices.setdefault(uid, []).append((th, info))
+            for uid, found in devices.items():
+                try:
+                    payload = {**msg, "badge": sum(n for _, n in pending(flask_app, uid))}
+                except Exception as exc:  # 숫자를 못 세도 알림 자체는 간다
+                    logger.warning("event pending failed: %s", type(exc).__name__)
+                    payload = msg
+                sent += _deliver_one(conn, found, payload, ks, ttl, "event")
+    except Exception as exc:
+        logger.warning("event deliver failed: %s", type(exc).__name__)
+    return sent
+
+
+def notify(uids: Iterable[int] | Callable[[], Iterable[int]], kind: str, **fmt: object) -> None:
+    """일이 생겼을 때 uids 의 휴대폰에 알림 한 통 (kind = MESSAGES 의 종류, fmt = 문구 빈칸). 요청 안에서 그 일을 저장(commit)한 뒤에 부른다 —
+    보내는 쪽(pending)이 DB 를 새로 잡으므로 쓰기가 안 끝났으면 5초 기다리다 잠김 오류가 난다. 키가 없거나 근무시간(평일 9~18시 KST) 밖이면 아무것도 안 한다 (다음 근무일 9시 묶음에 들어감).
+    uids 는 번호 목록이거나 번호를 만들어 주는 함수 — 함수는 보낼 때만 부르고, 거기서 DB 를 읽다 터져도 원래 일에는 영향이 없다. 같은 번호 · 0 · None 은 뺀다.
+    요청을 붙잡지 않게 데몬 스레드에서 보낸다 (SYNC 면 바로). 무슨 일이 있어도 예외를 내지 않는다 — 알림이 원래 일을 되돌리거나 실패시키면 안 된다. 로그에는 예외 종류만."""
+    try:
+        if keys() is None or not in_work_hours(auth._now()):
+            return
+        ids = sorted({int(u) for u in (uids() if callable(uids) else uids) if u})
+        if not ids:
+            return
+        args = (current_app._get_current_object(), ids, message(kind, **fmt), TTL_EVENT)
+        if SYNC:
+            deliver(*args)
+        else:
+            threading.Thread(target=deliver, args=args, daemon=True, name="push-deliver").start()
+    except Exception as exc:
+        logger.warning("push notify failed: %s", type(exc).__name__)
+
+
 def morning(flask_app: Flask, now: datetime) -> int:
     """평일(한국 시간) 아침 묶음 — 휴대폰 구독이 있는 활성 직원 중 처리할 일이 1건 이상인 사람에게 한 통씩(제목 = 개수 합, 내용 = 종류 이름, 앱 아이콘 숫자 = 합).
-    보낸 사람 수(푸시 서버가 받아 준 사람)를 돌려준다. 주말 · 알림 키 없음 · 오늘 이미 돌렸음이면 0 (키가 없으면 기록도 쓰지 않는다).
+    보낸 사람 수(푸시 서버가 받아 준 사람)를 돌려준다. 근무시간(평일 9~18시) 밖 · 알림 키 없음 · 오늘 이미 돌렸음이면 0 (기록도 쓰지 않는다 — 새벽 · 밤에 손으로 돌리거나 늦게 돌려도 울리지 않는다).
     푸시 서버가 구독이 없어졌다(404 · 410)고 하면 그 줄을 지운다. 세션이 끝났거나 직원이 비활성인 구독 줄은 같은 일에서 함께 정리한다.
     한 사람의 개수 세기나 보내기가 실패해도 다음 사람으로 넘어간다. 앱 안에 예약 작업을 두지 않는다 — 서버 예약 작업이 python -m push morning 으로 부른다."""
-    k = now.astimezone(auth.KST)
-    if k.weekday() >= 5 or (ks := keys()) is None:
+    if not in_work_hours(now) or (ks := keys()) is None:
         return 0
-    today, sent = k.date().isoformat(), 0
+    today, sent = now.astimezone(auth.KST).date().isoformat(), 0
     with flask_app.app_context():
         conn = auth._db()
         if conn.execute("SELECT 1 FROM push_morning WHERE day = ?", (today,)).fetchone():
@@ -295,16 +383,7 @@ def morning(flask_app: Flask, now: datetime) -> int:
                 continue
             if not (total := sum(n for _, n in items)):
                 continue
-            payload = {**morning_text(items), "badge": total, "tag": "morning"}
-            reached = False
-            for th, info in found:
-                status = SEND(info, payload, ks, TTL_MORNING)
-                if status in (404, 410):
-                    forget(conn, [th])
-                elif not 200 <= status < 300:
-                    logger.warning("morning push rejected: status %s", status)
-                reached = reached or 200 <= status < 300
-            sent += reached
+            sent += _deliver_one(conn, found, {**morning_text(items), "badge": total, "tag": "morning"}, ks, TTL_MORNING, "morning")
         conn.execute("INSERT OR IGNORE INTO push_morning (day, people, ran_at) VALUES (?, ?, ?)", (today, sent, auth._iso(now.astimezone(timezone.utc))))
     return sent
 
@@ -323,6 +402,7 @@ def _check_send() -> None:
             self.rfile.read(int(self.headers.get("Content-Length", 0)))
             seen.append({k.lower(): v for k, v in self.headers.items()})
             self.send_response(status[0])
+            self.send_header("Location", f"http://127.0.0.1:{self.server.server_port}/push/redirected")  # 3xx 일 때만 뜻이 있다
             self.end_headers()
 
         def log_message(self, *args: object) -> None:
@@ -341,6 +421,9 @@ def _check_send() -> None:
             assert SEND(sub, message("kpi_back"), (pub, priv), TTL_EVENT) == code, code
         assert seen[0]["ttl"] == str(TTL_EVENT) and seen[0]["content-encoding"] == "aes128gcm"
         assert seen[0]["authorization"].startswith("vapid t=") and f"k={pub}" in seen[0]["authorization"]  # 개인키로 서명 · 공개키 짝
+        for code in (301, 302, 307, 308):  # 푸시 서버가 다른 주소로 넘기려 해도 따라가지 않는다 — 실패(0), 요청은 한 번뿐 (구독이 안쪽 망으로 새로 넘기는 길을 막음)
+            status[0], before = code, len(seen)
+            assert SEND(sub, message("kpi_back"), (pub, priv), TTL_EVENT) == 0 and len(seen) == before + 1, code
         srv.shutdown()
         with socket.socket() as s:  # 아무도 듣지 않는 포트
             s.bind(("127.0.0.1", 0))
