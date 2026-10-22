@@ -15,6 +15,7 @@ import os
 import sys
 import tempfile
 import threading
+from contextlib import contextmanager
 from datetime import date, datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -2194,10 +2195,11 @@ def check_push_targets(hr) -> None:
 
 def check_push_api(hr) -> None:
     """휴대폰 알림 구독 주소 (2026-10-22): 공개키 · 휴대폰 세션만 등록 · 주소·키 모양 검사 · 로그아웃·해제·새 등록 때 구독을 지움.
-    키는 검사가 만든 가짜 — 끝나면 환경 값·표를 되돌린다. 주소는 가상(example.invalid) 또는 공개된 푸시 서버 모양."""
+    키는 검사가 만든 가짜 — 끝나면 환경 값을 되돌리고, 이 검사가 만든 세션 · QR 값 · 구독 줄을 지운다. 주소는 가상(example.invalid) 또는 공개된 푸시 서버 모양."""
     import push
     print("휴대폰 알림 구독 주소")
     env = {k: os.environ.get(k) for k in ("HR_PUSH_PUBLIC", "HR_PUSH_PRIVATE")}
+    had = {t: {r[0] for r in q(f"SELECT {col} FROM {t}")} for t, col in (("sessions", "token_hash"), ("phone_codes", "code_hash"))}  # 시작 때 있던 것
     seen: list[str] = []
     real_qr = auth._qr_rows
     auth._qr_rows = lambda text: (seen.append(text), real_qr(text))[1]  # QR 에 담긴 1회용 값을 엿본다 (check_phone 과 같음)
@@ -2220,6 +2222,10 @@ def check_push_api(hr) -> None:
     def sub(client, endpoint=ep, p256dh=device, secret_=secret, headers=ORIGIN, body=None):
         return client.post("/api/push/subscribe", base_url=BASE, headers=headers,
                            json=body if body is not None else {"endpoint": endpoint, "keys": {"p256dh": p256dh, "auth": secret_}})
+
+    def armed(client, label: str) -> None:
+        """해제 · 로그아웃 · 새 등록 검사 앞에서 — 지울 구독 1줄이 정말 있었는지 (없으면 '지워짐'이 그냥 통과해 버린다)."""
+        ok(sub(client).status_code == 200 and rows() == [(3, ep)], f"(검사용) {label} 앞에 구독 1줄이 있음")
 
     try:
         for k in env:
@@ -2269,8 +2275,11 @@ def check_push_api(hr) -> None:
         refused("localhost", endpoint="https://localhost/x")
         refused("점 없는 이름", endpoint="https://intranet/x")
         refused("끝에 점이 붙은 localhost", endpoint="https://localhost./x")
-        for suffix in ("local", "internal", "lan", "home"):
+        for suffix in ("local", "internal", "lan", "home", "localhost"):
             refused(f".{suffix} 이름", endpoint=f"https://printer.{suffix}/x")
+        refused("숫자가 아닌 포트", endpoint="https://fcm.googleapis.com:abc/fcm/send/x")
+        refused("65535 를 넘는 포트", endpoint="https://fcm.googleapis.com:99999/fcm/send/x")
+        ok(sub(phone, endpoint="https://push.example.invalid:443/fcm/send/x").status_code == 200, "알맞은 포트(443)가 붙은 주소는 받음")
         long_ep = "https://fcm.googleapis.com/" + "a" * 973  # 정확히 1000자
         ok(len(long_ep) == 1000 and sub(phone, endpoint=long_ep).status_code == 200 and rows() == [(3, long_ep)], "주소 1000자는 받음")
         refused("주소 1001자", endpoint=long_ep + "a")
@@ -2285,30 +2294,37 @@ def check_push_api(hr) -> None:
           "8" * 64, auth._iso(auth._now()), auth._iso(auth._now()), auth._iso(auth._now() + timedelta(days=30)))
         x("INSERT INTO push_subscriptions (token_hash, user_id, endpoint, p256dh, auth, created_at) VALUES (?, 2, ?, 'k', 'a', ?)",
           "8" * 64, ep, auth._iso(auth._now()))
-        ok(len(rows()) == 2, "(검사용) 같은 주소를 쓰는 다른 사람의 앞 구독")
-        ok(sub(phone).status_code == 200 and rows() == [(3, ep)], "같은 푸시 주소로 구독하면 다른 세션의 앞 줄은 지움 (알림이 앞 사람에게 가지 않게)")
-        x("DELETE FROM sessions WHERE token_hash = ?", "8" * 64)
+        other_ep = "https://push.example.invalid/other-device"  # 다른 휴대폰의 구독 — 주소가 달라 건드리면 안 됨
+        x("INSERT INTO sessions (token_hash, user_id, created_at, last_seen_at, expires_at, kind) VALUES (?, 2, ?, ?, ?, 'phone')",
+          "7" * 64, auth._iso(auth._now()), auth._iso(auth._now()), auth._iso(auth._now() + timedelta(days=30)))
+        x("INSERT INTO push_subscriptions (token_hash, user_id, endpoint, p256dh, auth, created_at) VALUES (?, 2, ?, 'k', 'a', ?)",
+          "7" * 64, other_ep, auth._iso(auth._now()))
+        ok(sorted(rows()) == sorted([(3, ep), (2, ep), (2, other_ep)]), "(검사용) 같은 주소를 쓰는 다른 사람의 앞 구독 · 주소가 다른 구독")
+        ok(sub(phone).status_code == 200 and sorted(rows()) == sorted([(3, ep), (2, other_ep)]),
+           "같은 푸시 주소로 구독하면 다른 세션의 앞 줄은 지움 (알림이 앞 사람에게 가지 않게) — 주소가 다른 줄은 그대로")
+        x("DELETE FROM sessions WHERE token_hash IN (?, ?)", "8" * 64, "7" * 64)
+        ok(rows() == [(3, ep)], "(검사용) 가짜 세션을 지우면 구독도 함께 지워짐")
 
         ok(phone.post("/api/push/unsubscribe", base_url=BASE, headers=ORIGIN).json == {"ok": True} and rows() == [], "구독 해제 → 이 세션 줄 삭제")
         ok(phone.post("/api/push/unsubscribe", base_url=BASE, headers=ORIGIN).status_code == 200, "구독이 없어도 해제는 200")
         ok(phone.get("/api/me", base_url=BASE).status_code == 200, "해제해도 휴대폰 로그인은 그대로")
 
-        sub(phone)
+        armed(phone, "본인 해제")
         ok(pc.post("/api/phone/revoke", base_url=BASE, headers=ORIGIN).status_code == 200 and rows() == [], "본인이 휴대폰 해제 → 구독도 지워짐")
         pc, phone = phone_of("emp")
-        sub(phone)
-        ok(rows() == [(3, ep)] and hr.post("/api/members/3/phone/revoke", base_url=BASE, headers=ORIGIN).status_code == 200 and rows() == [],
+        armed(phone, "HR 해제")
+        ok(hr.post("/api/members/3/phone/revoke", base_url=BASE, headers=ORIGIN).status_code == 200 and rows() == [],
            "HR 이 그 사람 휴대폰 해제 → 구독도 지워짐")
         pc, phone = phone_of("emp")
-        sub(phone)
-        ok(rows() == [(3, ep)] and phone.post("/api/auth/logout", base_url=BASE, headers=ORIGIN).status_code == 200 and rows() == [],
+        armed(phone, "로그아웃")
+        ok(phone.post("/api/auth/logout", base_url=BASE, headers=ORIGIN).status_code == 200 and rows() == [],
            "휴대폰에서 로그아웃 → 구독도 지워짐")
 
         pc, phone = phone_of("emp")
-        sub(phone)
+        armed(phone, "새 휴대폰 등록")
         _, phone_b = phone_of("emp")
         ok(phone.get("/api/me", base_url=BASE).status_code == 401 and rows() == [], "같은 사람이 새 휴대폰을 등록하면 앞 휴대폰의 구독이 지워짐")
-        sub(phone_b)
+        armed(phone_b, "앞 사람 세션으로 다른 사람이 등록")
         pc2 = app.test_client()
         login(pc2, new_token("lead"))
         pc2.post("/api/phone/code", base_url=BASE, headers=ORIGIN)
@@ -2318,18 +2334,65 @@ def check_push_api(hr) -> None:
         ok(r.status_code == 200 and rows() == [], "휴대폰에 남은 앞 사람의 세션으로 다른 사람이 등록 → 앞 세션의 구독도 지워짐")
 
         pc3, phone_c = phone_of("emp")
-        sub(phone_c)
+        armed(phone_c, "PC 로그아웃")
         ok(pc3.post("/api/auth/logout", base_url=BASE, headers=ORIGIN).status_code == 200 and rows() == [(3, ep)],
            "PC 에서 로그아웃해도 휴대폰 구독은 남음 (그 세션의 줄만 지움)")
+        x("DELETE FROM push_subscriptions")
+
+        # 구독을 지우는 쪽이 고장 나도(표가 없거나 잠김 …) 끊는 일은 그대로 끝난다 — HR 의 분실 휴대폰 해제가 알림 표에 기대지 않게
+        @contextmanager
+        def forget_broken():
+            def boom(conn, hashes):
+                raise RuntimeError("검사용 고장")
+
+            real_forget, real_quiet = push.forget, auth.logger.disabled
+            push.forget, auth.logger.disabled = boom, True  # 경고 줄은 찍지 않는다
+            try:
+                yield
+            finally:
+                push.forget, auth.logger.disabled = real_forget, real_quiet
+
+        for why, act in (
+            ("본인 휴대폰 해제", lambda pc_, ph_: pc_.post("/api/phone/revoke", base_url=BASE, headers=ORIGIN)),
+            ("HR 의 휴대폰 해제", lambda pc_, ph_: hr.post("/api/members/3/phone/revoke", base_url=BASE, headers=ORIGIN)),
+            ("휴대폰 로그아웃", lambda pc_, ph_: ph_.post("/api/auth/logout", base_url=BASE, headers=ORIGIN)),
+        ):
+            pc_, ph_ = phone_of("emp")
+            armed(ph_, why)
+            hh = hashlib.sha256(cookie(ph_).encode()).hexdigest()
+            with forget_broken():
+                r = act(pc_, ph_)
+            ok(r.status_code == 200 and q("SELECT revoked_at IS NOT NULL FROM sessions WHERE token_hash = ?", hh) == [(1,)]
+               and ph_.get("/api/me", base_url=BASE).status_code == 401, f"구독 지우기가 고장 나도 끝남 (세션이 끊김): {why}")
+        _, ph_a = phone_of("emp")  # 새 휴대폰 등록: 앞 휴대폰을 끊는 길도 같음
+        armed(ph_a, "새 휴대폰 등록")
+        with forget_broken():
+            _, ph_b = phone_of("emp")
+        ok(ph_b.get("/api/me", base_url=BASE).json.get("kind") == "phone" and ph_a.get("/api/me", base_url=BASE).status_code == 401,
+           "구독 지우기가 고장 나도 새 휴대폰 등록은 끝남 (앞 휴대폰이 끊김)")
+        c = connect(os.environ["HR_DB_PATH"])
+        try:
+            ok(rows() == [(3, ep)] and push.targets(c, [3], auth._now()) == [], "못 지워 남은 줄은 보낼 대상이 아님 (끊긴 세션은 targets() 가 거름)")
+        finally:
+            c.close()
     finally:
         auth._qr_rows = real_qr
         for k, v in env.items():
             os.environ.pop(k, None)
             if v is not None:
                 os.environ[k] = v
-        x("DELETE FROM push_subscriptions")
-        x("DELETE FROM sessions WHERE token_hash = ?", "8" * 64)
-    ok(rows() == [] and all(os.environ.get(k) == v for k, v in env.items()), "끝나면 구독 표 · 키 환경 값을 되돌림")
+        c = connect(os.environ["HR_DB_PATH"])
+        try:  # 이 검사가 만든 세션 · QR 값을 지운다 (구독 줄은 세션과 함께 사라짐) — 뒤 검사가 앞의 상태를 그대로 본다
+            for t, col in (("sessions", "token_hash"), ("phone_codes", "code_hash")):
+                for (v,) in c.execute(f"SELECT {col} FROM {t}").fetchall():
+                    if v not in had[t]:
+                        c.execute(f"DELETE FROM {t} WHERE {col} = ?", (v,))
+            c.execute("DELETE FROM push_subscriptions")
+        finally:
+            c.close()
+    ok(rows() == [] and all(os.environ.get(k) == v for k, v in env.items())
+       and all({r[0] for r in q(f"SELECT {col} FROM {t}")} <= had[t] for t, col in (("sessions", "token_hash"), ("phone_codes", "code_hash"))),
+       "끝나면 구독 표 · 키 환경 값을 되돌리고, 이 검사가 만든 세션 · QR 값은 하나도 남지 않음")
 
 
 def year_day(n: int) -> str:

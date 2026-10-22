@@ -43,6 +43,7 @@ from __future__ import annotations
 import hashlib
 import html
 import json
+import logging
 import os
 import re
 import secrets
@@ -97,6 +98,7 @@ MESSAGES = {  # 안내 문구와 상태 코드
 }
 
 _opener = urllib.request.build_opener(NoRedirect)  # 확인 서버가 다른 곳으로 넘기면 따라가지 않는다
+logger = logging.getLogger(__name__)
 bp = Blueprint("auth", __name__)
 
 
@@ -371,16 +373,23 @@ def _phone_of(conn: sqlite3.Connection, user_id: int, now: datetime) -> dict | N
 
 
 def _forget_push(conn: sqlite3.Connection, token_hashes: list[str]) -> None:
-    """끊은 세션의 알림 구독 줄을 지운다. push 가 auth 를 불러오므로 함수 안에서 불러온다 (순환 import)."""
-    import push
-    push.forget(conn, token_hashes)
+    """끊은 세션의 알림 구독 줄을 지운다 — 반드시 세션을 끊은 뒤에 부른다. 지우다 실패해도 끊는 일은 그대로 끝난다
+    (HR 의 분실 휴대폰 해제가 알림 표에 기대지 않게. 남은 줄은 push.targets() 가 거른다). 로그에는 예외 종류만.
+    push 가 auth 를 불러오므로 함수 안에서 불러온다 (순환 import)."""
+    try:
+        import push
+        push.forget(conn, token_hashes)
+    except Exception as exc:
+        logger.warning("push cleanup failed: %s", type(exc).__name__)
 
 
 def _revoke_phone(conn: sqlite3.Connection, user_id: int, now: datetime) -> int:
-    _forget_push(conn, [r[0] for r in conn.execute(
-        "SELECT token_hash FROM sessions WHERE user_id = ? AND kind = 'phone' AND revoked_at IS NULL", (user_id,))])
-    return conn.execute("UPDATE sessions SET revoked_at = ? WHERE user_id = ? AND kind = 'phone' AND revoked_at IS NULL",
-                        (_iso(now), user_id)).rowcount
+    hashes = [r[0] for r in conn.execute(  # 끊으면 찾을 수 없으므로 먼저 적어 둔다
+        "SELECT token_hash FROM sessions WHERE user_id = ? AND kind = 'phone' AND revoked_at IS NULL", (user_id,))]
+    n = conn.execute("UPDATE sessions SET revoked_at = ? WHERE user_id = ? AND kind = 'phone' AND revoked_at IS NULL",
+                     (_iso(now), user_id)).rowcount
+    _forget_push(conn, hashes)
+    return n
 
 
 @bp.post("/api/phone/code")

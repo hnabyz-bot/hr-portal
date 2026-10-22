@@ -142,7 +142,7 @@ def forget(conn: Connection, token_hashes: Iterable[str]) -> None:
 
 # 점으로 이어진 DNS 이름이고 끝 칸은 글자로 시작한다 — IP(v4 · 127.1 · 정수 표기 · v6)와 점 없는 이름(localhost · 사내 서버 이름)은 안 맞는다.
 _HOST = re.compile(r"(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z][a-z0-9-]*")
-_INNER = (".local", ".internal", ".lan", ".home")  # 사내망에서 쓰는 이름 끝
+_INNER = (".local", ".internal", ".lan", ".home", ".localhost")  # 사내망 · 내 컴퓨터를 가리키는 이름 끝
 
 
 def _endpoint_ok(url: object) -> bool:
@@ -152,6 +152,7 @@ def _endpoint_ok(url: object) -> bool:
         return False
     try:
         u = urlsplit(url)
+        _ = u.port  # 숫자가 아니거나 65535 를 넘는 포트는 여기서 ValueError
     except ValueError:
         return False
     host = u.hostname or ""
@@ -202,8 +203,8 @@ def _webpush(info: dict, payload: dict, keys: tuple[str, str], ttl: int) -> int:
     """한 기기에 보내고 HTTP 상태 코드를 돌려준다 (성공 201). 푸시 서버 거절이면 그 코드, 연결 실패 · 깨진 구독이면 0 — 던지지 않는다."""
     try:
         from pywebpush import WebPushException, webpush  # 쓰는 자리에서 — 설치가 깨져도 앱이 뜨는 데는 영향 없게
-    except Exception as exc:
-        logger.warning("push send failed: %s", type(exc).__name__)
+    except Exception as exc:  # 서버 설치 문제 — 네트워크 실패("push send failed")와 로그에서 구별
+        logger.warning("push library unavailable: %s", type(exc).__name__)
         return 0
     try:
         return webpush(
@@ -262,12 +263,19 @@ def _check_send() -> None:
             dead = s.getsockname()[1]
         assert SEND({"endpoint": f"http://127.0.0.1:{dead}/x", "keys": sub["keys"]}, message("kpi_back"), (pub, priv), TTL_EVENT) == 0  # 연결 실패
         assert SEND({"endpoint": "http://127.0.0.1:1/x", "keys": {"p256dh": "x", "auth": "x"}}, message("kpi_back"), (pub, priv), TTL_EVENT) == 0  # 깨진 구독
-        real = sys.modules["pywebpush"]
+        real, lines = sys.modules["pywebpush"], []
+        handler = logging.Handler()
+        handler.emit = lambda rec: lines.append(rec.getMessage())  # type: ignore[method-assign]
+        logger.addHandler(handler)
+        logger.disabled = False  # 이 한 건은 경고 문구를 확인한다
         sys.modules["pywebpush"] = None  # 설치가 깨진 흉내 — import 가 ImportError
         try:
             assert SEND(sub, message("kpi_back"), (pub, priv), TTL_EVENT) == 0  # 던지지 않고 0
+            assert len(lines) == 1 and lines[0].startswith("push library unavailable: ")  # 연결 실패("push send failed")와 다른 문구
         finally:
             sys.modules["pywebpush"] = real
+            logger.removeHandler(handler)
+            logger.disabled = True
     finally:
         logger.disabled = False
 
