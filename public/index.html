@@ -5827,7 +5827,7 @@ function rzZoneLabel(rates, i){ const z = rates.zones[i], prev = i ? rates.zones
   return z.max==null ? (prev==null ? '전체' : `${n(prev)}만원 이상`) : (prev==null ? '' : `${n(prev)}만원 이상 ~ `) + `${n(z.max)}만원 미만`; }
 function rzZoneBad(rates){ return rates.zones.some((z, i)=>i && z.max!=null && z.max<=rates.zones[i-1].max); }   // 상한이 앞 구간보다 커야 한다
 function rzGroup(rows, key, names){ return names.map(n=>{ const g = rows.filter(r=>key(r)===n); return g.length ? { n, c:g.length, b:g.reduce((t, r)=>t+r.before, 0), a:g.reduce((t, r)=>t+r.after, 0) } : null; }).filter(Boolean); }
-async function rzXlsx(buf){   // .xlsx의 첫째 시트 → 줄·칸 배열. xlsx는 zip에 든 XML이다 — 브라우저에 있는 기능(DecompressionStream·DOMParser)만 쓴다. 새 라이브러리를 들이지 않는다
+async function rzXlsx(buf, prefer){   // .xlsx의 첫째 시트(prefer = 그 이름의 시트가 있으면 그것) → 줄·칸 배열. xlsx는 zip에 든 XML이다 — 브라우저에 있는 기능(DecompressionStream·DOMParser)만 쓴다. 새 라이브러리를 들이지 않는다
   const dv = new DataView(buf), u8 = new Uint8Array(buf), td = new TextDecoder();
   if(dv.byteLength<22 || dv.getUint32(0, true)!==0x04034b50) throw new Error(dv.byteLength>4 && dv.getUint32(0)===0xD0CF11E0 ? 'OLD' : 'TYPE');   // D0CF… = 옛 형식(.xls)이거나 암호가 걸린 파일
   let e = dv.byteLength-22; while(e>0 && dv.getUint32(e, true)!==0x06054b50) e--;   // zip 맨 끝의 목차
@@ -5842,7 +5842,7 @@ async function rzXlsx(buf){   // .xlsx의 첫째 시트 → 줄·칸 배열. xls
     const text = f.method ? await new Response(new Blob([raw]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).text() : td.decode(raw);
     return new DOMParser().parseFromString(text, 'application/xml'); };
   const els = (d, n)=>[...d.getElementsByTagNameNS('*', n)];
-  const sheet = els(await xml('xl/workbook.xml'), 'sheet')[0];
+  const sheets = els(await xml('xl/workbook.xml'), 'sheet'), sheet = sheets.find(x=>x.getAttribute('name')===prefer) || sheets[0];
   const rid = sheet && [...sheet.attributes].find(a=>a.localName==='id' && a.prefix), rel = rid && els(await xml('xl/_rels/workbook.xml.rels'), 'Relationship').find(r=>r.getAttribute('Id')===rid.value);
   const path = rel ? rel.getAttribute('Target').replace(/^\/?(xl\/)?/, 'xl/') : 'xl/worksheets/sheet1.xml';
   const sst = els(await xml('xl/sharedStrings.xml'), 'si').map(si=>els(si, 't').filter(t=>t.parentNode.localName!=='rPh').map(t=>t.textContent).join(''));
@@ -5946,7 +5946,7 @@ async function rzLoad(kind, file, pw){   // 암호가 걸린 파일이면 암호
     if(rzLocked(buf)){ if(pw==null) return rzAskPw(kind, file); buf = await rzUnlockBuf(buf, pw); }
     if(kind==='contact'){ const c = await rzXlsx(buf); rz.lock = null; return msCtConfirm(file.name, c.rows); }   // 비상연락망 (구성원 설정)
     if(kind==='slip'){ const c = await rzXlsx(buf); rz.lock = null; return await psStage(file.name, c.rows, pw!=null); }   // 급여대장 (급여명세서 올리기, HR) — 암호는 넘기지 않고 풀었는지만
-    const x = await rzXlsx(buf), fields = kind==='pay' ? RZ_PAY : RZ_GRADE, h = rzHead(x.rows, fields);
+    const x = await rzXlsx(buf, kind==='grade' ? '명단' : null), fields = kind==='pay' ? RZ_PAY : RZ_GRADE, h = rzHead(x.rows, fields);   // 평가 결과 보고서(evReport)는 등급이 '명단' 시트에 있다
     rz.lock = null; rz.pick = { kind, file:file.name, sheet:x.sheet, rows:x.rows, at:h.at, head:h.head, map:rzGuess(h.head, fields) }; rzConfirm();
   }catch(e){
     if(e.message==='PW') return rzAskPw(kind, file, '암호가 맞지 않습니다. 다시 넣어 주세요.');
@@ -6041,10 +6041,11 @@ function csvText(lines){   // 엑셀에서 바로 열리는 CSV. 글자가 수�
   const cell = v=>{ let s = String(v ?? ''); if(typeof v==='string' && /^[=+\-@\t\r]/.test(s)) s = "'"+s; return `"${s.replace(/"/g, '""')}"`; };
   return '﻿' + lines.map(r=>r.map(cell).join(',')).join('\r\n');
 }
-async function rzSave(name, lines){   // 저장할 곳을 묻는다(크롬·엣지) — NAS 폴더를 고르면 PC에 파일이 남지 않는다. 물을 수 없는 브라우저에서는 내려받기 폴더로 간다
-  const blob = new Blob([csvText(lines)], { type:'text/csv;charset=utf-8' });
+async function rzSave(name, lines, xlsx){   // 저장할 곳을 묻는다(크롬·엣지) — NAS 폴더를 고르면 PC에 파일이 남지 않는다. 물을 수 없는 브라우저에서는 내려받기 폴더로 간다. xlsx = 서버가 만든 엑셀 파일(평가 결과 보고서)
+  const blob = xlsx || new Blob([csvText(lines)], { type:'text/csv;charset=utf-8' });
+  const type = xlsx ? { description:'엑셀 파일', accept:{ 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':['.xlsx'] } } : { description:'엑셀에서 열리는 표 (CSV)', accept:{ 'text/csv':['.csv'] } };
   if(window.showSaveFilePicker){
-    try{ const w = await (await showSaveFilePicker({ suggestedName:name, types:[{ description:'엑셀에서 열리는 표 (CSV)', accept:{ 'text/csv':['.csv'] } }] })).createWritable(); await w.write(blob); await w.close(); return kpiFlash('고른 곳에 저장했습니다.'); }
+    try{ const w = await (await showSaveFilePicker({ suggestedName:name, types:[type] })).createWritable(); await w.write(blob); await w.close(); return kpiFlash('고른 곳에 저장했습니다.'); }
     catch(e){ if(e.name==='AbortError') return; }   // 저장 창을 닫음
   }
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; a.click(); URL.revokeObjectURL(a.href);
@@ -8731,16 +8732,14 @@ function evResultPast(key, y){
   return { year:y, grade, comment, head, bonus:0, rows:rows.map(([action, weight, self, g])=>({ action, weight, self, grade:g })) };
 }
 function evExportGrade(p){ return p.appeal && p.appeal.status!=='DONE' ? '' : p.grade || ''; }   // 이의 처리 중이면 비운다 — 연봉 인상 계산이 그 사람을 "등급 없음"으로 둔다 (계약서도 처리 뒤 반영)
-function evExportLines(kind, list=evActive()){   // HR 엑셀 (인사담당자 2026-10-22): list = 한 사람 한 줄 · dist = 본부·평가 묶음별 등급 인원. 명단의 칸 제목 사번·이름·최종등급은 연봉 인상 계산(RZ_GRADE)이 그대로 읽는다
-  if(kind==='list') return [['본부','부서','사번','이름','직급','평가 묶음','총점','최종등급','상태','이의 신청'], ...list.map(p=>{ const a = p.appeal;
-    return [p.div, p.team || '본부 직속', p.no || '', p.name, p.title, EV_POOL_NAME[evPool(p)], evIsLine(p) ? '' : +evTotal(p).toFixed(1), evExportGrade(p),
-      EV_STAGES[p.stage].replace('등급', '배정'),   // '본부장 등급 대기'의 '등급' 글자가 첫 줄에 오면 연봉 인상 계산이 그 줄까지 제목으로 읽는다 (rzHead)
-      !a ? '' : a.status==='OPEN' ? `처리 중 (지금 ${p.grade})` : a.status==='CEO' ? `대표이사 확인 대기 (${a.before} → ${a.after})` : a.before!==a.after ? `${a.before} → ${a.after} 반영` : '유지']; })];
-  const cols = [...CT_GRADES, '처리 중'], count = ps=>[...cols.map(g=>ps.filter(p=>(evExportGrade(p) || '처리 중')===g).length), ps.length];   // 처리 중 = 아직 등급이 없거나 이의 처리 중
-  const all = count(list);
-  return [['본부', ...cols, '합계'], ...[...new Set(list.map(p=>p.div))].map(d=>[d, ...count(list.filter(p=>p.div===d))]),
-    ['전체 (명)', ...all], ['전체 (%)', ...all.map(n=>list.length ? Math.round(n*1000/list.length)/10 : 0)],
-    [], ['평가 묶음', ...cols, '합계'], ...EV_POOLS.map(k=>[EV_POOL_NAME[k], ...count(evPoolList(k).filter(p=>list.includes(p)))])];
+function evReportData(list=evActive()){   // HR 보고용 엑셀 (인사담당자 2026-10-22 — "바로 보고할 수 있을 정도로"): 서버(backend/eval_report.py)가 표·그래프로 꾸민다. 명단은 본부 → 부서 → 팀장 먼저 → 이름
+  const divAt = {}; list.forEach(p=>{ if(!(p.div in divAt)) divAt[p.div] = Object.keys(divAt).length; });
+  const people = [...list].sort((a, b)=>divAt[a.div]-divAt[b.div] || (a.team||'').localeCompare(b.team||'') || (b.title==='팀장')-(a.title==='팀장') || a.name.localeCompare(b.name)).map(p=>{ const a = p.appeal;
+    return { div:p.div, team:p.team || '본부 직속', no:p.no || '', name:p.name, title:p.title, pool:EV_POOL_NAME[evPool(p)], total:evIsLine(p) ? null : +evTotal(p).toFixed(1), grade:evExportGrade(p),
+      stage:EV_STAGES[p.stage].replace('등급', '배정'),   // '본부장 등급 대기'의 '등급' 글자가 첫 사람 줄에 오면 연봉 인상 계산이 그 줄까지 제목으로 읽는다 (rzHead)
+      appeal:!a ? '' : a.status==='OPEN' ? `처리 중 (지금 ${p.grade})` : a.status==='CEO' ? `대표이사 확인 대기 (${a.before} → ${a.after})` : a.before!==a.after ? `${a.before} → ${a.after} 반영` : '유지' }; });
+  return { year:KPI_YEAR, date:kpiDay(0), released:evRelease.at || null, appeals:list.filter(p=>p.appeal).length, open:list.filter(p=>p.appeal && p.appeal.status!=='DONE').length, people,
+    pools:EV_POOLS.map(k=>{ const q = evQuota(evPoolList(k).length); return { name:EV_POOL_NAME[k], quota:q.mode==='GROUPED' ? `A·B 합계 ${q.upper}명` : `A·B·D 각 ${q.A}명`, ok:!evPoolCheck(k).errors.length }; }) };
 }
 function evrSelfCheck(){   // 브라우저 콘솔에서 evrSelfCheck() 실행 (시연 상태는 끝나면 되돌린다)
   const ok = (c,m)=>{ if(!c) throw new Error('evrSelfCheck 실패: '+m); };
@@ -8788,11 +8787,13 @@ function evrSelfCheck(){   // 브라우저 콘솔에서 evrSelfCheck() 실행 (�
     evSyncContracts(); ok(lc.grade==='C' && lc.ability===ctRaise(lc.abilityBefore, ctAbilityPct(ctRates, ctBefore(lc), 'C')), '공개 등급 → 계약서 능력급');
     evAppeal(choi,'line','재검토 요청','2027-01-16'); evSyncContracts();
     ok(lc.gradeWait && lc.grade===null && lc.ability===lc.abilityBefore, '이의 처리 중이면 계약서 대기');
-    const first = evActive()[0]; first.stage = 'GRADE';   // 첫 줄에 '본부장 등급 대기'가 와도 제목은 한 줄
-    const xl = evExportLines('list'), xh = rzHead(xl, RZ_GRADE), xg = rzReadGrades(xl, xh.at, rzGuess(xh.head, RZ_GRADE));
-    ok(xh.at===0 && !xg.bad.length && xg.list.length===evActive().filter(p=>evExportGrade(p)).length && !xg.list.some(x=>x.name===choi.name) && xg.list.some(x=>x.name===hong.name && x.grade==='A'), '엑셀 명단: 연봉 인상 계산이 그대로 읽고, 이의 처리 중인 사람은 등급을 비운다');
-    const xd = evExportLines('dist'), tot = xd.find(r=>r[0]==='전체 (명)'), n = evActive().length;
-    ok(tot.at(-1)===n && tot.slice(1, -1).reduce((s, v)=>s+v, 0)===n && xd.filter(r=>EV_POOLS.some(k=>r[0]===EV_POOL_NAME[k])).reduce((s, r)=>s+r.at(-1), 0)===n && tot[6]===1, '엑셀 분포: 칸 합 = 묶음 합 = 인원, 이의 처리 중 1명');
+    evActive().forEach(p=>{ p.stage = 'GRADE'; });   // 첫 사람 줄에 '본부장 등급 대기'가 와도 제목은 한 줄
+    const rd = evReportData(), rp = rd.people;
+    const sheet = [['2026년 인사평가 결과 명단'], ['기준일'], [], ['No','본부','부서','사번','이름','직급','평가 묶음','총점','최종등급','상태','이의 신청'],   // 서버 _roster 와 같은 줄 모양
+      ...rp.map((x, i)=>[i+1, x.div, x.team, x.no, x.name, x.title, x.pool, x.total ?? '현장직', x.grade, x.stage, x.appeal])];
+    const xh = rzHead(sheet, RZ_GRADE), xg = rzReadGrades(sheet, xh.at, rzGuess(xh.head, RZ_GRADE));
+    ok(xh.at===3 && !xg.bad.length && xg.list.length===rp.filter(x=>x.grade).length && !xg.list.some(x=>x.name===choi.name) && xg.list.some(x=>x.name===hong.name && x.grade==='A') && rd.open===1, '보고서 명단: 연봉 인상 계산이 그대로 읽고, 이의 처리 중인 사람은 등급을 비운다');
+    ok(rp.length===evActive().length && rp.every((x, i)=>i===0 || x.div===rp[i-1].div || !rp.slice(0, i).some(y=>y.div===x.div)) && rd.pools.every(k=>k.ok), '보고서: 본부끼리 모이고 묶음 정원 기준 충족');
     const r = evResultPast('emp', 2025); ok(r.grade==='B' && evScore(r.rows)===94, '지난 결과 점수 = 가중치 × 등급 비율');
   } finally {
     evRelease.at = snap.at;
@@ -8903,13 +8904,18 @@ function evResHrPanel(){
       ${appeals.some(p=>p.appeal.status==='CEO') ? kpiNote('등급 변경이 대표이사 확인을 기다립니다: ' + appeals.filter(p=>p.appeal.status==='CEO').map(p=>`${escapeHtml(p.name)} (${p.appeal.before} → ${p.appeal.after})`).join(', '), 'warning') : ''}
       ${open.map(answerForm).join('')}
     </div>
-    <div class="card" style="margin-bottom:14px;"><div class="card-title"><span>전체 결과 <span class="more">시연 인원 ${evActive().length}명</span></span><span style="display:flex; gap:6px;"><button type="button" class="btn sm" onclick="evExport('list')" title="엑셀에서 열리는 CSV 파일 — 한 사람 한 줄">${icon('download')}명단 내려받기</button><button type="button" class="btn sm" onclick="evExport('dist')" title="엑셀에서 열리는 CSV 파일 — 본부·평가 묶음별 등급 인원">${icon('download')}분포 내려받기</button></span></div>
+    <div class="card" style="margin-bottom:14px;"><div class="card-title"><span>전체 결과 <span class="more">시연 인원 ${evActive().length}명</span></span><button type="button" class="btn sm" onclick="evReport()" title="요약(표·그래프)과 명단이 든 엑셀 파일">${icon('download')}보고서 엑셀 내려받기</button></div>
       <div class="ct-tbl"><table><thead><tr><th>이름</th><th>최종 등급</th><th class="num">총점</th><th>이의 신청</th><th></th></tr></thead><tbody>${evPersonRows(evActive(), true)}</tbody></table></div></div>`;
 }
 
 /* ----- 동작 ----- */
 function evDemoFill(){ evDemoFillData(); EV_POOLS.forEach(k=>{ evPoolLog[k].ceo = evPoolLog[k].ceo || { at:kpiDay(0), by:EV_RATERS.ceo }; }); kpiFlash(`시연용으로 ${evPeople.length}명 모두 확정까지 끝난 상태로 채웠습니다. 이제 "전 직원에게 결과 공개"를 누르세요.`); }
-function evExport(kind){ if(!orgIsHr()) return; rzSave(`평가결과_${KPI_YEAR}년_${kind==='list' ? '명단' : '분포'}.csv`, evExportLines(kind)); }   // 저장할 곳을 묻는다 (연봉 인상 계산과 같음)
+async function evReport(){   // HR: 보고용 엑셀 (요약 · 명단). 꾸민 표와 그래프는 서버가 만들고(HR만), 저장할 곳은 연봉 인상 계산처럼 묻는다
+  if(!orgIsHr()) return;
+  const r = await fetch('/api/eval/report', { method:'POST', headers:{ 'Content-Type':'application/json' }, body:JSON.stringify(evReportData()) }).catch(()=>null);
+  if(!r || !r.ok) return kpiFlash(r && r.status===403 ? 'HR만 내려받을 수 있습니다.' : '보고서를 만들지 못했습니다. 잠시 뒤 다시 눌러 주세요.', 'danger');
+  rzSave(`${KPI_YEAR}년 인사평가 결과.xlsx`, null, await r.blob());
+}
 function evPublish(){
   if(!orgIsHr()) return;
   if(evActive().some(p=>p.stage!=='DONE')) return kpiFlash('아직 확정되지 않은 사람이 있습니다. 평가 진행 탭에서 대표이사 확인과 HR 확정을 먼저 끝내 주세요.', 'danger');
