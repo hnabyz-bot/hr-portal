@@ -5201,7 +5201,7 @@ function buildGuide() {
 }
 function openGuide(from) {
   buildGuide(); guideFrom = from;
-  if (PORTAL && PORTAL.hours) $('#guideHours').textContent = OH().rows.map(r => r[0] + ' ' + r[1]).join(' · ');   // HR 이 정한 오픈시간 (포털 사본에만 있는 수정 7)
+  if (PORTAL && PORTAL.hours) $('#guideHours').innerHTML = OH().rows.map(r => r[0] + ' ' + r[1]).join(' · ');   // 이름은 xray-portal.js 가 HTML 로 바꿔 둠   // HR 이 정한 오픈시간 (포털 사본에만 있는 수정 7)
   const go = $('#btnGuideGo'); go.textContent = from === 'tutorial' ? '출동!' : '닫기';
   if (from === 'tutorial') { state = 'guide'; cancelCharge(); hud.root.hidden = true; tutBox.hidden = true; }
   show('scrGuide'); $('#scrGuide').scrollTop = 0;
@@ -6139,7 +6139,7 @@ function nowMs() { try { if (PORTAL && typeof PORTAL.now === 'function') { const
 // 포털: HR 이 탕비실에서 바꾼 오픈시간(PORTAL.hours — 하루 종일 여는 날 · 잠시 닫기 포함)을 쓴다. 없으면(예시 모드) 아래 값 (포털 사본에만 있는 수정 7)
 const OPEN_DEF = { slots: [[0, 540], [720, 810], [930, 960], [1080, 1440]], rows: [['평일 점심', '12:00~13:30'], ['오후 휴식', '15:30~16:00'], ['퇴근 후', '18:00~다음날 9:00'], ['주말', '하루 종일']], weekend: true, days: new Set(), closed: null };
 function OH() { return (PORTAL && PORTAL.hours) || OPEN_DEF; }
-function pausedAt(ms) { const c = OH().closed; return !!c && (!c.until || ms < c.until); }   // HR 이 잠시 닫음 — 다시 열 시각이 지나면 저절로 열려요
+function pausedAt(ms) { const c = OH().closed; return !!c && ms >= c.since && (!c.until || ms < c.until); }   // HR 이 잠시 닫음 [since, until) — 지난 닫기도 기록이라 무제한권이 그 동안을 빼고 세요
 function kstDay(ms) { return Math.floor((ms + 9 * 3600e3) / 864e5); }
 function isOpenAt(ms) {
   const h = OH(), k = new Date(ms + 9 * 3600e3), dow = k.getUTCDay(), m = k.getUTCHours() * 60 + k.getUTCMinutes();

@@ -119,7 +119,8 @@
 
   // ---- 오픈시간 (2026-10-22 인사담당자 — HR 이 탕비실에서 바꾼다): 게임 isOpenAt 이 hours 를 쓴다 (게임의 "포털 사본에만 있는 수정 7") ----
   //   slots = [[시작, 끝)] 분 — 끝이 시작보다 이르면 다음날 아침까지라 두 칸으로 · rows = 안내창 표 · days = 하루 종일 여는 날(kstDay 번호)
-  //   closed = {msg: HR 이 적은 한 줄(HTML 로 바꿔 둠), until: 다시 여는 때(ms) | null}
+  //   rows 의 이름 · closed.msg 는 HR 이 적은 글이라 HTML 로 바꿔 둔다(게임이 innerHTML 로 그린다)
+  //   closed = {msg, since: 닫은 때, until: 다시 여는 때 | null} (ms) — 다시 열린 뒤에도 기록으로 남는다(1시간 무제한권이 닫힌 동안을 빼고 센다)
   const hours = { slots: [], rows: [], weekend: true, days: new Set(), closed: null };
   const hm = m => Math.floor(m / 60) + ':' + String(m % 60).padStart(2, '0');
   const esc = v => String(v).replace(/[&<>"']/g, c => '&#' + c.charCodeAt(0) + ';');
@@ -127,11 +128,11 @@
     const d = await getJSON('/api/game/hours');
     Object.assign(hours, {
       slots: d.slots.flatMap(s => s.from < s.to ? [[s.from, s.to]] : [[s.from, 1440], [0, s.to]]),
-      rows: d.slots.map(s => [s.name, hm(s.from) + '~' + (s.to === 0 ? '24:00' : (s.to < s.from ? '다음날 ' : '') + hm(s.to))])
+      rows: d.slots.map(s => [esc(s.name), hm(s.from) + '~' + (s.to === 0 ? '24:00' : (s.to < s.from ? '다음날 ' : '') + hm(s.to))])
         .concat([['주말', d.weekend === 'all' ? '하루 종일' : '평일과 같은 시간']], d.days.length ? [['공휴일 등', '하루 종일']] : []),
       weekend: d.weekend === 'all',
       days: new Set(d.days.map(x => Date.UTC(+x.date.slice(0, 4), +x.date.slice(5, 7) - 1, +x.date.slice(8, 10)) / 864e5)),
-      closed: d.closed && { msg: esc(d.closed.msg), until: d.closed.until },
+      closed: d.closed && { msg: esc(d.closed.msg), since: d.closed.since, until: d.closed.until },
     });
   }
 
@@ -150,7 +151,11 @@
     const foot = document.querySelector('.rk-foot span');
     if (foot) foot.textContent = '이번 주 랭킹은 매주 월요일 0시에 초기화돼요. 이번 주에 한 판이라도 한 직원이 올라가요.';
     document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') push(true); else { pull(); loadHours().catch(() => {}); } });
-    setInterval(() => { if (document.visibilityState === 'visible') loadHours().catch(() => {}); }, 5 * 60e3);   // 켜 둔 채로 있어도 HR 이 바꾼 오픈시간 · 잠시 닫기를 5분 안에
+    // 켜 둔 채로 있어도 HR 이 바꾼 오픈시간 · 잠시 닫기를 5분 안에 — 단 그 5분 안에 사람이 화면을 만졌을 때만.
+    // 서버에 묻는 것마다 로그인이 연장되므로, 아무도 안 쓰는 PC 가 게임 화면을 켜 둔 채로 4시간 자동 로그아웃을 피하지 않게
+    let touched = Date.now();
+    for (const ev of ['pointerdown', 'keydown']) window.addEventListener(ev, () => { touched = Date.now(); }, true);
+    setInterval(() => { if (document.visibilityState === 'visible' && Date.now() - touched < 5 * 60e3) loadHours().catch(() => {}); }, 5 * 60e3);
     window.addEventListener('pagehide', () => push(true));
     window.XRSQ_PORTAL = {
       rk, refresh, hours,

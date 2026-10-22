@@ -9119,10 +9119,10 @@ async function phoneRevoke(){
    시각 = 한국 시간 0시부터 센 분, 10분 단위. 끝이 시작보다 이르면 다음날 아침까지(끝 0 = 24:00). 잠시 닫기는 다시 열 시각(until, ms)이 지나면 저절로 열린다. */
 const GH_DEMO = { slots:[{ name:'평일 점심', from:720, to:810 }, { name:'오후 휴식', from:930, to:960 }, { name:'퇴근 후', from:1080, to:540 }], weekend:'all', days:[], closed:null };
 const GH = { d:null, state:'', at:0, draft:null };   // state: '' 아직 · loading · ok · err (실제 로그인)
+async function ghFetch(){ const r = await fetch('/api/game/hours'); if(!r.ok) throw new Error(r.status); GH.d = await r.json(); GH.at = Date.now(); return GH.d; }
 async function ghLoad(){
   GH.state = 'loading';
-  try { const r = await fetch('/api/game/hours'); if(!r.ok) throw new Error(r.status); GH.d = await r.json(); GH.state = 'ok'; } catch(e){ GH.state = 'err'; }
-  GH.at = Date.now();
+  try { await ghFetch(); GH.state = 'ok'; } catch(e){ GH.state = 'err'; GH.at = Date.now(); }
   if(currentNav.id==='pantry') renderContent();
 }
 function ghData(){ return AUTH.live ? GH.d : (GH.d ||= structuredClone(GH_DEMO)); }
@@ -9151,17 +9151,18 @@ function ghCard(){
       ${days.map((x, i)=>`${ghYear(days, i)}<div class="gh-day"><span>${ghDay(x.date, true)}</span>${escapeHtml(x.name)}</div>`).join('')}</details>` : ''}
     <div class="list-sub" style="margin-top:8px;">근무시간에는 새 게임을 시작할 수 없고, 하던 판은 지금 구역까지만 하고 끝나요. 점수는 그대로 기록돼요.</div>`;
 }
-async function ghSave(next, done){   // 통째로 저장 → 표 다시 그림. done = 성공 안내
+async function ghSave(change, done){   // change(지금 값) → 저장할 값. 서버는 통째로 바꾸므로 저장 직전에 최신 값을 받아 그 위에 얹는다(다른 HR 이 방금 바꾼 것을 덮지 않게)
   const err = t=>{ const e = document.getElementById('ghErr'); if(e) e.innerHTML = kpiNote(escapeHtml(t), 'danger'); else kpiFlash(t, 'danger'); };
   if(AUTH.live){
     let r, j = {};
-    try { r = await fetch('/api/game/hours', { method:'POST', headers:{ 'Content-Type':'application/json' }, body:JSON.stringify(next) }); j = await r.json().catch(()=>({})); } catch(e){}
+    try { const next = change(await ghFetch()); r = await fetch('/api/game/hours', { method:'POST', headers:{ 'Content-Type':'application/json' }, body:JSON.stringify(next) }); j = await r.json().catch(()=>({})); } catch(e){}
     if(!r || !r.ok) return err(j.error || '저장하지 못했어요. 잠시 뒤 다시 해 주세요.');
     GH.d = j; GH.at = Date.now();
-  } else GH.d = next;
+  } else GH.d = change(ghData());
   orgCloseModal(); kpiFlash(done);
 }
-function ghEdit(){   // 오픈시간 바꾸기 — 초안(GH.draft)에 담고 저장을 눌러야 반영
+async function ghEdit(){   // 오픈시간 바꾸기 — 최신 값을 받아 초안(GH.draft)에 담고, 저장을 눌러야 반영
+  if(AUTH.live) try { await ghFetch(); } catch(e){}
   GH.draft = structuredClone(ghData()); ghEditDraw();
 }
 function ghEditDraw(){
@@ -9189,7 +9190,7 @@ function ghDayAdd(){
 function ghEditSave(){
   const d = GH.draft, bad = d.slots.find(x=>!x.name.trim()) ? '시간대 이름을 적어 주세요. 예: 평일 점심' : d.slots.find(x=>x.from===x.to) ? '시작과 끝이 같은 시간대가 있어요.' : '';
   if(bad) return document.getElementById('ghErr').innerHTML = kpiNote(bad, 'danger');
-  ghSave({ ...d, slots:d.slots.map(x=>({ ...x, name:x.name.trim() })) }, '오픈시간을 바꿨어요. 게임에도 바로 반영돼요.');
+  ghSave(now=>({ ...now, slots:d.slots.map(x=>({ ...x, name:x.name.trim() })), weekend:d.weekend, days:d.days }), '오픈시간을 바꿨어요. 켜져 있는 게임에는 몇 분 안에 반영돼요.');   // 잠시 닫기는 지금 값 그대로
 }
 function ghCloseEdit(){   // 잠시 닫기 — 한 줄 · 다시 열 시각(비우면 "다시 열기"를 누를 때까지)
   orgModal(`<div class="gh-edit"><div class="card-title"><span>게임 잠시 닫기</span><button type="button" class="x-btn" onclick="orgCloseModal()" aria-label="닫기">${icon('x')}</button></div><div id="ghErr"></div>
@@ -9204,9 +9205,12 @@ function ghCloseSave(){
   const until = ghUntil(document.getElementById('ghUntilD').value, +document.getElementById('ghUntilT').value);
   const why = until===null ? '' : until <= Date.now() ? '다시 열 시각은 지금보다 뒤여야 해요.' : until > Date.now() + 366*864e5 ? '다시 열 시각은 1년 안으로 골라 주세요.' : '';
   if(why) return document.getElementById('ghErr').innerHTML = kpiNote(why, 'danger');
-  ghSave({ ...ghData(), closed:{ msg:document.getElementById('ghMsg').value.trim(), until } }, until ? `게임을 닫았어요. ${ghWhen(until)}에 저절로 열려요.` : '게임을 닫았어요. "다시 열기"를 누르면 열려요.');
+  const msg = document.getElementById('ghMsg').value.trim();
+  ghSave(now=>({ ...now, closed:{ msg, since:Date.now(), until } }), until ? `게임을 닫았어요. ${ghWhen(until)}에 저절로 열려요.` : '게임을 닫았어요. "다시 열기"를 누르면 열려요.');
 }
-function ghReopen(){ ghSave({ ...ghData(), closed:null }, '게임을 다시 열었어요.'); }
+function ghReopen(){   // 닫았던 기록은 남긴다(until = 지금) — 게임의 1시간 무제한권이 닫혀 있던 동안을 빼고 센다
+  ghSave(now=>{ const c = now.closed, on = c && !(c.until && c.until <= Date.now()); return on ? { ...now, closed:{ ...c, until:Math.max(Date.now(), c.since) } } : now; }, '게임을 다시 열었어요.');
+}
 function ghSelfCheck(){   // 콘솔에서 ghSelfCheck() — 표 글 · 한국 시각 바꾸기
   const ok = (c, m)=>{ if(!c) throw new Error('ghSelfCheck: '+m); };
   ok(JSON.stringify(ghRows(GH_DEMO))===JSON.stringify([['평일 점심','12:00~13:30'],['오후 휴식','15:30~16:00'],['퇴근 후','18:00~다음날 9:00'],['주말','하루 종일']]), '예전 오픈시간 글 그대로 (게임 OPEN_DEF rows 와 같게)');

@@ -188,7 +188,9 @@ def gift_claim() -> Response:
 # ---------------- 오픈시간 (2026-10-22 인사담당자 — HR 이 탕비실 "게임 오픈시간" 표에서 바꾼다) ----------------
 # 게임(public/xray-portal.js → 게임 isOpenAt)과 탕비실 표(index.html pantryGame)가 이 값을 쓴다. 시각 = 한국 시간 0시부터 센 분, 10분 단위.
 # 끝이 시작보다 이르면(18:00~09:00) 다음날 아침까지 — 평일마다 [시작, 24시) + [0시, 끝). 끝 0 = 24시.
-# weekend "all" = 토·일 하루 종일, "slots" = 평일과 같은 시간대. days = 하루 종일 여는 날(공휴일 등). closed = 잠시 닫기 (until 이 지나면 저절로 열림).
+# weekend "all" = 토·일 하루 종일, "slots" = 평일과 같은 시간대. days = 하루 종일 여는 날(공휴일 등).
+# closed = 잠시 닫기 {msg, since, until(ms) | null} — [since, until) 동안 닫힘. 다시 열 시각이 지나거나 "다시 열기"(until = 그때)를 해도
+#   기록으로 남겨 둔다: 게임의 1시간 무제한권이 닫혀 있던 동안을 빼고 세야 해서. 다음 잠시 닫기가 덮어쓴다.
 HOURS_DEFAULT = {
     "slots": [{"name": "평일 점심", "from": 720, "to": 810}, {"name": "오후 휴식", "from": 930, "to": 960},
               {"name": "퇴근 후", "from": 1080, "to": 540}],
@@ -204,6 +206,7 @@ HOURS_DEFAULT = {
     "closed": None,
 }
 SLOT_MAX, DAY_MAX, CLOSE_DAYS = 10, 200, 366
+CLOCK_SLACK = 10 * 60_000  # since 는 HR 화면의 시계 — 서버보다 조금 빨라도 받는다
 DAY_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
 
 
@@ -217,7 +220,7 @@ def _min(v: object) -> bool:
 
 
 def hours_clean(b: object, now: datetime, today: date) -> dict | None:
-    """화면이 보낸(또는 저장된) 오픈시간 → 지금 쓸 모양. 지난 날 · 다시 열 시각이 지난 닫기는 뺀다. 모양이 틀리면 None."""
+    """화면이 보낸(또는 저장된) 오픈시간 → 지금 쓸 모양. 지난 날은 뺀다(닫기 기록은 남김 — 위). 모양이 틀리면 None."""
     if not isinstance(b, dict):
         return None
     slots, days, closed = b.get("slots"), b.get("days"), b.get("closed")
@@ -244,23 +247,25 @@ def hours_clean(b: object, now: datetime, today: date) -> dict | None:
             out["days"].append({"date": day, "name": name})
     out["days"].sort(key=lambda d: d["date"])
     if closed is not None:
-        msg, until, now_ms = _text(closed.get("msg"), 40, empty=True), closed.get("until"), int(now.timestamp() * 1000)
-        if msg is None or not (until is None or (type(until) is int and until <= now_ms + CLOSE_DAYS * 864e5)):
+        msg, since, until = _text(closed.get("msg"), 40, empty=True), closed.get("since"), closed.get("until")
+        now_ms = int(now.timestamp() * 1000)
+        if (msg is None or type(since) is not int or not 0 < since <= now_ms + CLOCK_SLACK
+                or not (until is None or (type(until) is int and since <= until <= now_ms + CLOSE_DAYS * 864e5))):
             return None
-        if until is None or until > now_ms:   # 다시 열 시각이 지났으면 이미 열린 것
-            out["closed"] = {"msg": msg, "until": until}
+        out["closed"] = {"msg": msg, "since": since, "until": until}
     return out
 
 
 def _hours(conn) -> dict:
-    """저장된 것(없으면 기본값)에서 지난 날 · 지난 닫기를 뺀 지금 모양. 저장된 것은 저장할 때 같은 검사를 통과했다."""
+    """저장된 것(없으면 기본값)에서 지난 날을 뺀 지금 모양. 저장된 것은 저장할 때 같은 검사를 통과했다."""
     row = conn.execute("SELECT data FROM game_hours WHERE id = 1").fetchone()
     return hours_clean(json.loads(row[0]) if row else HOURS_DEFAULT, auth._now(), auth._today())
 
 
 @bp.get("/api/game/hours")
 def hours_get() -> Response:
-    """로그인한 누구나 — 게임 · 탕비실 표. {slots: [{name, from, to}], weekend, days: [{date, name}], closed: {msg, until(ms) | null} | null}"""
+    """로그인한 누구나 — 게임 · 탕비실 표. {slots: [{name, from, to}], weekend, days: [{date, name}], closed: {msg, since(ms), until(ms) | null} | null}
+    closed 는 다시 열 시각이 지나도 남는다 — 지금 닫혀 있나는 화면이 since <= 지금 < until 로 본다."""
     return jsonify(_hours(auth._db()))
 
 

@@ -685,10 +685,11 @@ def check_game(hr) -> None:
         ok(d["days"][0] == {"date": "2027-01-01", "name": "신정"} and len(d["days"]) == 24, "공휴일이 미리 들어 있음 · 지난 날(12/25)은 빠짐")
         ok(put(emp, d).status_code == 403 and put(lead, d).status_code == 403, "HR 이 아니면 못 바꿈")
         ok(put(hr, d, headers={}).status_code == 403, "포털 화면에서만 (Origin)")
-        until = int(t0.timestamp() * 1000) + 3600_000
+        now_ms = int(t0.timestamp() * 1000)
+        since, until = now_ms - 60_000, now_ms + 3600_000
         want = {"slots": [{"name": "점심", "from": 720, "to": 780}, {"name": "밤", "from": 1200, "to": 0}], "weekend": "slots",
                 "days": [{"date": "2027-01-01", "name": "신정"}, {"date": "2027-03-02", "name": "창립기념일"}],
-                "closed": {"msg": "연말 결산 기간이에요", "until": until}}
+                "closed": {"msg": "연말 결산 기간이에요", "since": since, "until": until}}
         r = put(hr, {**want, "slots": [{"name": " 점심 ", "from": 720, "to": 780}, want["slots"][1]],
                      "days": [want["days"][1], {"date": "2026-12-25", "name": "지난 날"}, want["days"][0]]})
         ok(r.status_code == 200 and r.json == want, "HR 이 저장 → 이름 앞뒤 빈칸 · 지난 날은 빼고 날짜순")
@@ -696,11 +697,13 @@ def check_game(hr) -> None:
         log = q("SELECT actor_user_id, actor_is_hr, before_data, after_data FROM audit_logs WHERE action = 'GAME_HOURS_SET'")
         ok(len(log) == 1 and log[0][:2] == (1, 1) and json.loads(log[0][2])["weekend"] == "all" and json.loads(log[0][3]) == want,
            "감사로그 GAME_HOURS_SET (누가 · 전 · 후)")
-        auth._now = lambda: t0 + timedelta(hours=1)
-        ok(hours(emp).json["closed"] is None, "다시 열 시각이 되면 저절로 열림")
+        auth._now = lambda: t0 + timedelta(hours=2)
+        ok(hours(emp).json["closed"] == want["closed"], "다시 열 시각이 지나도 닫았던 기록은 남음 (화면은 열림으로 봄 · 무제한권 계산용)")
         auth._now = lambda: t0
-        ok(put(hr, {**want, "closed": {"msg": "", "until": None}}).json["closed"] == {"msg": "", "until": None}, "다시 열 시각 없이 닫기 (한 줄은 비워도 됨)")
-        ok(put(hr, {**want, "closed": {"msg": "x", "until": until - 7200_000}}).json["closed"] is None, "이미 지난 시각까지 닫기 = 열린 채")
+        ok(put(hr, {**want, "closed": {"msg": "", "since": since, "until": None}}).json["closed"] == {"msg": "", "since": since, "until": None},
+           "다시 열 시각 없이 닫기 (한 줄은 비워도 됨)")
+        ok(put(hr, {**want, "closed": {"msg": "", "since": since, "until": now_ms}}).json["closed"]["until"] == now_ms, "다시 열기 = 지금까지 닫았던 기록")
+        ok(put(hr, {**want, "closed": {"msg": "", "since": now_ms + 300_000, "until": None}}).status_code == 200, "HR 화면 시계가 조금 빨라도 받음 (10분까지)")
         slot = lambda **k: {**want, "slots": [{"name": "점심", "from": 720, "to": 780, **k}]}  # noqa: E731
         day = lambda **k: {**want, "days": [{"date": "2027-03-02", "name": "창립기념일", **k}]}  # noqa: E731
         for bad, why in (({**want, "slots": "x"}, "시간대 목록이 아님"), ({**want, "slots": want["slots"] * 6}, "시간대 12개"),
@@ -708,9 +711,11 @@ def check_game(hr) -> None:
                          (slot(**{"from": "720"}), "시각이 글자"), (slot(**{"from": True}), "시각이 참·거짓"), (slot(name=" "), "이름 비어 있음"),
                          (slot(name="가" * 13), "이름 13자"), ({**want, "weekend": "none"}, "주말 값"), (day(date="2027-02-30"), "없는 날"),
                          (day(date="2027-3-2"), "날짜 모양"), (day(name=""), "날 이름 비어 있음"), ({**want, "days": want["days"] * 2}, "같은 날 두 번"),
-                         ({**want, "closed": {"msg": "가" * 41, "until": None}}, "한 줄 41자"),
-                         ({**want, "closed": {"msg": "", "until": until + 366 * 86_400_000}}, "1년 넘게 닫기"),
-                         ({**want, "closed": {"msg": "", "until": str(until)}}, "다시 열 시각이 글자"), ({**want, "closed": "x"}, "닫기 모양"),
+                         ({**want, "closed": {"msg": "가" * 41, "since": since, "until": None}}, "한 줄 41자"),
+                         ({**want, "closed": {"msg": "", "since": since, "until": now_ms + 366 * 86_400_000 + 60_000}}, "1년 넘게 닫기"),
+                         ({**want, "closed": {"msg": "", "since": since, "until": str(until)}}, "다시 열 시각이 글자"),
+                         ({**want, "closed": {"msg": "", "until": until}}, "닫은 때 없음"), ({**want, "closed": {"msg": "", "since": now_ms + 700_000, "until": None}}, "닫은 때가 10분 넘게 뒤"),
+                         ({**want, "closed": {"msg": "", "since": since, "until": since - 1}}, "다시 열 시각이 닫은 때보다 앞"), ({**want, "closed": "x"}, "닫기 모양"),
                          ([], "객체가 아님")):
             ok(put(hr, bad).status_code == 400, f"틀린 오픈시간은 저장 안 함 ({why})")
     finally:
