@@ -6463,6 +6463,8 @@ function ctSelfCheck(){   // 브라우저 콘솔에서 ctSelfCheck() 실행
   ok(JSON.stringify(ctScrub(same))===JSON.stringify(same), '주민번호가 아닌 칸(날짜 · 6자리 · 글자)은 그대로');
   const cs = ctScrub([['사번','이름','생년월일'], ['230101-5','가상','900315-1'+'234567']]);
   ok(cs[1][0]==='230101-5' && cs[1][2]==='900315-*', '사원코드 칸은 건드리지 않는다 (6자리-숫자 모양의 사번이 깨지지 않게)');
+  const rc = ['900315'+'-'+'1234567', '900315'+'1234567', '900315'+' '+'1234567', '900315'+' - '+'1234567', '900315－'+'1234567', ' 900315'+'1234567 '];
+  ok(rc.every(ctCodeRrn) && !['230101-5', 'CT-A1', '10301', '900315', '900315-12345', '900315'+'12345678', '900315'+'123456', '', null].some(ctCodeRrn), '사번 칸 주민번호 모양 (6+7자리 · 줄표 · 띄어쓰기 · 붙여 쓰기)은 걸리고, 보통 사번 (6자리-1자리 · 영문 · 짧은 숫자 · 14자리)은 안 걸린다');
   const ser = (y, m, d)=>Math.round((Date.UTC(y, m-1, d) - Date.UTC(1899, 11, 30)) / 864e5), yr = new Date().getFullYear();
   ok(ctBirth6(1).b6==='' && ctBirth6(10315).b6==='' && ctBirth6(32947).b6==='900315' && ctBirth6(ser(1929, 12, 31)).b6==='' && ctBirth6(ser(1930, 1, 1)).b6==='300101', '엑셀 일련번호 생년월일은 1930-01-01 이후만 (1 · 10315 같은 엉뚱한 숫자는 읽을 수 없음)');
   ok(ctBirth6(ser(yr-10, 5, 1)).b6==='' && ctBirth6(ser(yr-16, 5, 1)).b6!=='' && ctBirth6(51225).b6==='', '… 그리고 15년 전보다 나중이면 읽을 수 없음 (앞 0이 떨어진 051225 같은 숫자)');
@@ -6749,6 +6751,7 @@ function ctRrn6(v){   // 주민번호로 보이는 칸이면 앞 6자리(YYMMDD)
   const t = String(v ?? '').normalize('NFKC').trim();   // NFKC: 전각 줄표(－) · 전각 숫자를 보통 글자로
   return /^\d{6}(?:\s*[-–—−]\s*|\s+)[\d*]{1,7}$|^\d{6}[\d*]{7}$/.test(t) ? t.slice(0, 6) : /^\d{12}$/.test(t) ? ('0'+t).slice(0, 6) : '';   // 앞 6자리 + (줄표 · 줄표 둘레 띄어쓰기 · 띄어쓰기 · 붙여 쓰기) + 뒷자리(가린 것 · 짧은 것도) · 앞 0이 떨어진 12자리 숫자
 }
+function ctCodeRrn(v){ return /^\d{6}\s*[-–—−]?\s*\d{7}$/.test(String(v ?? '').normalize('NFKC').trim()); }   // 사번 칸에 주민번호 전체(앞 6자리 + 뒤 7자리 — 줄표 · 띄어쓰기 · 붙여 쓰기)가 들어온 것. 사번은 users.employee_no 에 그대로 남으므로 올리지 않는다 (서버 contract.py RRN_LIKE 도 막는다)
 function ctBirth6(v){   // 생년월일 칸 → { b6:'YYMMDD' | '', fromRrn }. 주민번호면 앞 6자리만 꺼낸다. 숫자 모양 글자도 숫자로 본다(rzXlsx는 칸을 모두 글자로 준다)
   const t = String(v ?? '').normalize('NFKC').trim(), n = /^\d+(\.\d+)?$/.test(t) ? +t : NaN, ymd = d=>d.slice(2, 4)+d.slice(5, 7)+d.slice(8), rrn = ctRrn6(t);
   let b6 = '';
@@ -6824,6 +6827,8 @@ function ctBlock(){   // 올릴 수 없는 이유 하나 (빈 글자 = 올릴 �
   const P = ctPlan().filter(x=>x.st==='up' || x.st==='none'), [lo, hi] = ctSpan(k.year), name = x=>x.p.head.name;
   let a = P.filter(x=>x.p.bad.length);
   if(a.length) return `읽을 수 없는 칸이 있는 사람이 있어요 (${ctWho(a.map(name))}). 엑셀을 고쳐 다시 고르거나 그 사람을 이번에서 빼 주세요.`;
+  a = P.filter(x=>ctCodeRrn(x.p.head.code));
+  if(a.length) return `사번 칸이 주민번호처럼 보이는 사람이 있어요 (${ctWho(a.map(name))}). 사번 칸에 주민등록번호가 들어간 것 같아요. 엑셀의 사번 칸을 고쳐 다시 고르거나 그 사람을 이번에서 빼 주세요.`;
   a = P.filter(x=>x.p.head.code && !PS_CODE.test(x.p.head.code));
   if(a.length) return `사원코드 모양이 다른 사람이 있어요 (${ctWho(a.map(name))}). 영문·숫자·-로 20자까지예요. 엑셀을 고치거나 그 사람을 이번에서 빼 주세요.`;
   a = P.filter(x=>x.p.start && (x.p.start<lo || x.p.start>hi));
@@ -7151,7 +7156,7 @@ async function ctSend(){   // 창의 [발송]: 고른 발송 전 줄을 서명 �
     sel.forEach(r=>{ const why = ctWhy(D.by.get(r.userId)); if(why) skipped.push({ id:r.id, why }); else { Object.assign(r, { status:'SENT', sentAt:kpiDay(0), due }); sent++; } });
   }
   const name = id=>(sel.find(r=>r.id===id) || {}).name || '?', held = skipped.map(s=>`${name(s.id)} (${s.why})`), gone = new Set(skipped.map(s=>s.id)), users = sel.filter(r=>!gone.has(r.id)).map(r=>r.userId);
-  ctUi.sel = new Set(); orgCloseModal();
+  ctUi.sel = new Set(); ctUi.due = ''; orgCloseModal();   // 마감일은 보낸 뒤 비운다 — 다음 발송 창은 그날 + 14일로 시작
   if(AUTH.live) await ctAdminLoad(ctYear);
   kpiFlash(`${sent}명에게 발송했어요.${held.length ? `<br>보내지 않은 사람: ${held.map(escapeHtml).join(', ')}` : ''}`, held.length ? 'warning' : 'success');
   if(ctUi.mail && users.length) ctMail(users);
@@ -7159,7 +7164,7 @@ async function ctSend(){   // 창의 [발송]: 고른 발송 전 줄을 서명 �
 function ctMailWaiting(){ ctMail(ctData().L.filter(x=>x.r.status==='SENT').map(x=>x.r.userId)); }   // [서명 안 한 n명에게 메일 쓰기] — 서명 대기 · 기한 지남
 function ctMail(ids){   // 하이웍스 메일 쓰기 창을 새 창으로 열고 받는 사람을 채운다 (설계 4.6). 회사 안 직원 번호(mailNo)를 쉼표로 이어 한 창에 — 여러 명이 한 번에 채워지는지는 Task 12에서 하이웍스에 로그인한 브라우저로 확인한다.
   // 번호가 없는 사람의 메일 주소는 ;로 이어 복사하고 붙여넣기 안내. 글과 보내기는 HR이 직접 한다
-  if(AUTH.live && !orgLive()){ if(!ORG_LIVE.state) orgLoad(); return wsNotice('조직도 명단을 아직 불러오지 못했어요. 잠시 뒤 다시 눌러 주세요.'); }
+  if(AUTH.live && !orgLive()){ if(ORG_LIVE.state!=='loading') orgLoad(); return wsNotice('조직도 명단을 아직 불러오지 못했어요. 잠시 뒤 다시 눌러 주세요.'); }
   const org = orgPeople(), mem = ctMembers();   // 실제 명단은 uid(DB 번호)로, 시연 명단은 이름으로 찾는다
   const ppl = ids.map(id=>AUTH.live ? org.find(m=>m.uid===id) : org.find(m=>m.name===(mem.find(x=>x.id===id) || {}).name)).filter(Boolean);
   const nos = ppl.filter(m=>m.mailNo).map(m=>encodeURIComponent(m.mailNo)), rest = ppl.filter(m=>!m.mailNo && m.email).map(m=>m.email), lost = ids.length - nos.length - rest.length;
@@ -7191,7 +7196,7 @@ function ctCancelAsk(id){   // [파기] — 서명 대기 · 서명 완료 줄. 
   orgModal(`<div class="ct-dlg"><div class="card-title"><span>계약서 파기 · ${e(r.name)} ${e(r.title)}</span>${ctDlgX}</div>
     <div class="ps-ask">${e(r.name)} 님의 ${r.status==='SIGNED' ? '서명 완료' : '서명 대기'} 계약서를 파기할까요?</div>
     ${r.status==='SIGNED' ? kpiNote('<b>서명을 마친 계약서예요.</b> 계약을 없던 것으로 할 때만 파기해요. 연봉이 바뀐 것은 [새 계약으로 바꾸기]를 써요.', 'warning') : ''}
-    <div class="field"><label for="ctF_reason">파기 사유 (필수)</label><input id="ctF_reason" maxlength="200" autocomplete="off" placeholder="예: 금액 오류, 퇴사" oninput="ctDlgErr('')"></div>
+    <div class="field"><label for="ctF_reason">파기 사유 (필수)</label><input id="ctF_reason" maxlength="200" autocomplete="off" placeholder="예: 계약 기간 오기재" oninput="ctDlgErr('')"><div class="list-sub" style="margin:4px 0 0;">금액이나 이름은 적지 마세요 (사유는 잠그지 않고 저장돼요)</div></div>
     <div role="radiogroup" aria-label="파기한 뒤에 할 일">
       ${opt('resend', '파기 후 재발송', '같은 조건으로 바로 서명 대기가 돼요 · 서명 마감일은 원래대로')}
       ${opt('draft', '파기 후 새로 쓰기', '같은 내용이 발송 전으로 생겨요 · 조정한 뒤에 발송해요')}
@@ -7334,10 +7339,10 @@ function ctZipAsk(){   // [서명본 내려받기 (n명)] (시안 그림 9). 시
 async function ctZipGo(){   // 서버가 만든 zip을 받아 저장할 곳을 물어 둔다 (저장 창이 안 뜨면 내려받기 폴더로 — rzSave)
   if(ctUi.busy) return;
   const year = ctYear, go = document.getElementById('ctDlgGo'); ctUi.busy = true; if(go) go.disabled = true;
-  let r = null, j = {};
-  try { r = await fetch(`/api/contracts/${year}/zip`); if(!r.ok) j = await r.json().catch(()=>({})); } catch(e){}
-  if(!r || !r.ok){ ctUi.busy = false; if(go) go.disabled = false; return ctDlgErr(j.error || '내려받지 못했어요. '+NET_ERR); }
-  const saved = await rzSave(`연봉계약서_${year}_서명본.zip`, null, await r.blob());
+  let blob = null, j = {};
+  try { const r = await fetch(`/api/contracts/${year}/zip`); if(r.ok) blob = await r.blob(); else j = await r.json().catch(()=>({})); } catch(e){}   // 받는 도중에 끊겨 blob() 이 실패해도 여기서 잡는다 (busy 가 남아 계약서 단추가 모두 멈추지 않게)
+  if(!blob){ ctUi.busy = false; if(go) go.disabled = false; return ctDlgErr(j.error || '내려받지 못했어요. '+NET_ERR); }
+  const saved = await rzSave(`연봉계약서_${year}_서명본.zip`, null, blob);
   ctUi.busy = false;
   if(saved) orgCloseModal(); else if(go) go.disabled = false;   // 저장 창을 닫았으면 창은 그대로
 }
@@ -7660,6 +7665,14 @@ async function ctFlowCheck(){   // 브라우저 콘솔에서 await ctFlowCheck()
     const N2 = cp(R1); N2[1][9] = '900315 - '+'1234567';
     await ctStage('가상.xlsx', N2, false);
     ok(ctUi.pick.r.people[0].b6==='900315' && ctUi.pick.r.people[0].fromRrn && ctBlock()==='' && !JSON.stringify(ctUi.pick).includes('234567'), '줄표 둘레에 띄어 쓴 주민번호도 읽고, 뒷자리는 화면 자료에 없다');
+    for(const c of ['900315'+'-'+'1234567', '900315'+'1234567', '900315'+' '+'1234567']){   // 사번 칸에 주민번호가 들어오면 올릴 수 없다 (users.employee_no 에 그대로 남지 않게)
+      const K = cp(R1); K[1][0] = c;
+      await ctStage('가상.xlsx', K, false);
+      const why = ctBlock(), n0 = CT_MEM.rows.length;
+      await ctUpload();
+      ok(why.includes('사번 칸') && why.includes('주민번호') && why.includes('홍길동') && !why.includes('1234567') && document.getElementById('ctGo')?.disabled && document.getElementById('ctBlockMsg')?.textContent===why && CT_MEM.rows.length===n0 && !CT_MEM.rows.some(r=>r.code===c), '사번 칸이 주민번호 모양이면 올릴 수 없다 (이유에 값은 없다) · 올리기를 눌러도 아무것도 안 생긴다');
+    }
+    const K2 = cp(R1); K2[1][0] = '230101-5'; await ctStage('가상.xlsx', K2, false); ok(ctBlock()==='', '6자리-숫자 모양의 보통 사번은 올릴 수 있다');
     const M = cp(R1).map(r=>r.slice()); M[0][9] = '생일';   // 칸 이름이 달라 못 찾는 필수 칸은 창에서 고른다
     await ctStage('가상.xlsx', M, false);
     ok(ctUi.pick.r.missing.join()==='birth' && ctBlock().includes('생년월일') && document.getElementById('ctCol_birth'), '못 찾은 필수 칸은 고르기 칸');
@@ -7716,6 +7729,9 @@ async function ctFlowCheck(){   // 브라우저 콘솔에서 await ctFlowCheck()
     ok(hong.status==='SENT' && kim2.status==='SENT' && hong.due===kpiDay(10) && hong.sentAt===kpiDay(0) && sin.status==='DRAFT', '발송 → 서명 대기 · 마감일 · 보낸 날 (포털 꺼진 사람은 그대로)');
     ok(kpiMsg.msg.includes('2명에게 발송했어요.') && kpiMsg.msg.includes('신에스') && kpiMsg.msg.includes('포털 사용 꺼짐') && kpiMsg.type==='warning', '발송 알림 + 보내지 못한 사람과 이유');
     ok(!document.getElementById('orgModal') && ctUi.sel.size===0, '창이 닫히고 고른 것이 비워진다');
+    ok(ctUi.due==='', '발송이 되면 마감일은 비운다');
+    ctUi.sel = new Set([sin.id]); ctSendAsk();
+    ok(ctUi.due===kpiDay(14) && document.getElementById('ctDue')?.value===kpiDay(14), '다음 발송 창은 고친 마감일(10일)이 아니라 다시 발송일 + 14일로 시작한다'); orgCloseModal(); ctUi.sel = new Set();
     ok(opened.length===1 && opened[0]===`${HW_MAIL}&user_nos=1001,1002`, '발송한 뒤 메일 창: 보낸 두 사람의 번호만 쉼표로');
     view(d=>{
       const trs = [...d.querySelectorAll('.ct-grid tbody tr')], w = [...d.querySelectorAll('.ct-grid .ct-pill')].map(p=>p.getBoundingClientRect().width);
@@ -7736,6 +7752,16 @@ async function ctFlowCheck(){   // 브라우저 콘솔에서 await ctFlowCheck()
     AUTH.live = true; ORG_LIVE.state = 'ok'; ORG_LIVE.people = [{ uid:1, mailNo:'11', email:'a@example.test' }, { uid:2, mailNo:'', email:'b@example.test' }, { uid:3, mailNo:'', email:'' }];   // 실제 명단은 uid로 찾는다
     opened.length = 0; copied.length = 0; ctMail([1, 2, 3]); await tick(); AUTH.live = false;
     ok(opened[0]===`${HW_MAIL}&user_nos=11` && copied.join()==='b@example.test' && document.getElementById('wsToast')?.textContent.includes('1명은 메일 주소가 없어'), '실제 명단: uid로 찾고 · 번호 없으면 메일 주소 · 둘 다 없으면 알림');
+    {   // 조직도 명단을 못 받은 뒤(err)에는 메일을 누를 때 다시 받으러 간다 · 받는 중(loading)에는 또 받지 않는다
+      const f0 = window.fetch, r0 = window.renderContent, hits = []; window.fetch = async u=>{ hits.push(String(u)); return new Response('{}', { status:500 }); }; window.renderContent = ()=>{};
+      AUTH.live = true; opened.length = 0;
+      try {
+        ORG_LIVE.state = 'err'; ctMail([1]); await tick(); await tick();
+        ok(hits.join()==='/api/org' && ORG_LIVE.state==='err' && !opened.length && document.getElementById('wsToast')?.textContent.includes('조직도 명단'), '메일: 명단을 못 받은 상태(err)에서 누르면 다시 받으러 가고, 안내를 보인다');
+        ORG_LIVE.state = 'loading'; hits.length = 0; ctMail([1]); await tick();
+        ok(!hits.length, '메일: 받는 중(loading)에는 또 받지 않는다');
+      } finally { window.fetch = f0; window.renderContent = r0; AUTH.live = false; }
+    }
     const cfg = CT_MEM.settings; CT_MEM.settings = null;   // 계약서 설정이 없으면 발송을 막는다
     view(d=>ok(d.textContent.includes('아직 없어요'), '계약서 설정이 없으면 "아직 없어요"'));
     ctUi.sel = new Set([sin.id]); ctSendAsk();
@@ -7874,13 +7900,16 @@ async function ctFlowCheck(){   // 브라우저 콘솔에서 await ctFlowCheck()
       const calls = [], reply = {}, saved = [], L1 = { ...full, id:901, userId:31, name:'가상정', ...SENT }, L2 = { ...full, id:902, userId:32, name:'가상무' };
       const setRows = rows=>{ Object.assign(CT_LIVE, { rows }); reply['/api/contracts/admin'] = { body:{ year:Y, rows, ready:true, settings:true } }; };
       window.fetch = async (u, o = {})=>{ const p = String(u).split('?')[0]; calls.push({ u:p, m:o.method || 'GET', b:o.body ? JSON.parse(o.body) : null }); const x = reply[p] || { body:{ ok:true } };
+        if(x.broken) return { ok:true, status:200, blob:()=>Promise.reject(new TypeError('network error')), json:async ()=>({}) };
         return x.blob ? new Response(x.blob) : new Response(JSON.stringify(x.body), { status:x.status || 200, headers:{ 'Content-Type':'application/json' } }); };
       window.showSaveFilePicker = async o=>({ createWritable:async ()=>({ write:async b=>{ saved.push([o.suggestedName, b.size]); }, close:async ()=>{} }) });
       AUTH.live = true; window.renderContent = ()=>{};   // 실제 모드의 홈 화면은 로그인 자료(AUTH.me)가 있어야 그려진다 — 다시 그리기는 건너뛴다
       Object.assign(CT_LIVE, { state:'ok', year:Y, ready:true, settings:true }); MS_LIVE.state = 'ok'; MS_LIVE.list = []; ORG_LIVE.state = 'ok';
       Object.assign(ctCfg, { state:'ok', cfg:{ ceo:'○○○', addr:CT_COMPANY.addr, kind:CT_COMPANY.kind, sealId:1 }, url:'' }); setRows([L1, L2]);
       reply['/api/contracts/901/cancel'] = { status:409, body:{ error:'진행 중인 <b>다른</b> 계약서가 있어요.' } };
-      ctCancelAsk(901); put({ reason:'가상 사유' }); radio('resend'); await ctCancelGo(901);
+      ctCancelAsk(901);
+      ok(!document.getElementById('ctF_reason').placeholder.includes('금액') && T().includes('금액이나 이름은 적지 마세요') && T().includes('잠그지 않고 저장돼요'), '파기 창: 사유 칸 아래에 금액 · 이름을 적지 말라는 안내 (예시 글에도 금액이 없다)');
+      put({ reason:'가상 사유' }); radio('resend'); await ctCancelGo(901);
       ok(JSON.stringify(calls.find(c=>c.u==='/api/contracts/901/cancel').b)===JSON.stringify({ reason:'가상 사유', then:'resend' }) && err().includes('진행 중인') && document.getElementById('ctDlgErr').innerHTML.includes('&lt;b&gt;') && modal() && ctUi.busy===false, '실제: 파기는 {reason, then}으로 보내고 서버의 409 말을 창에 (글자 그대로) 보인다');
       reply['/api/contracts/901/cancel'] = { body:{ ok:true, id:903 } }; calls.length = 0; await ctCancelGo(901);
       ok(!modal() && calls.map(c=>c.m+' '+c.u).join()==='POST /api/contracts/901/cancel,GET /api/contracts/admin', '실제: 파기가 되면 창이 닫히고 현황을 다시 받는다');
@@ -7902,7 +7931,10 @@ async function ctFlowCheck(){   // 브라우저 콘솔에서 await ctFlowCheck()
       reply[`/api/contracts/${Y}/zip`] = { blob:new Blob(['PK'], { type:'application/zip' }) }; setRows([L1, L2]); ctZipAsk();
       ok(!!document.getElementById('ctDlgGo') && !T().includes('서버가 만들어요'), '서명본 창(실제): 내려받기 단추가 있다');
       await ctZipGo(); ok(saved.length===1 && saved[0][0]===`연봉계약서_${Y}_서명본.zip` && saved[0][1]===2 && !modal(), '실제: zip을 받아 연봉계약서_YYYY_서명본.zip으로 저장 (저장 위치를 묻는다)');
-      reply[`/api/contracts/${Y}/zip`] = { status:404, body:{ error:'내려받을 서명본이 없습니다.' } }; ctZipAsk(); await ctZipGo(); ok(err().includes('서명본이 없') && modal() && saved.length===1, '실제: 서버가 거절하면 창에 보인다'); orgCloseModal();
+      reply[`/api/contracts/${Y}/zip`] = { broken:true }; ctZipAsk(); await ctZipGo();   // 받는 도중에 끊겨 blob() 이 실패
+      ok(ctUi.busy===false && !document.getElementById('ctDlgGo').disabled && err().includes('내려받지 못했어요') && modal() && saved.length===1, '실제: 받는 도중 끊겨도 (blob 읽기 실패) 계약서 단추가 멈추지 않는다 · 내려받기 단추가 다시 눌리고 창에 안내 · 저장하지 않는다');
+      reply[`/api/contracts/${Y}/zip`] = { blob:new Blob(['PK'], { type:'application/zip' }) }; await ctZipGo(); ok(saved.length===2 && !modal(), '실제: 끊긴 뒤 다시 누르면 받아진다');
+      reply[`/api/contracts/${Y}/zip`] = { status:404, body:{ error:'내려받을 서명본이 없습니다.' } }; ctZipAsk(); await ctZipGo(); ok(err().includes('서명본이 없') && modal() && saved.length===2, '실제: 서버가 거절하면 창에 보인다'); orgCloseModal();
       ctCfg.url = URL.createObjectURL(new Blob(['y'])); const gone = ctCfg.url; ctDrop();
       ok(revoked.includes(gone) && ctCfg.url==='' && ctCfg.state==='' && CT_LIVE.rows.length===0 && CT_LIVE.state==='', '로그아웃(ctDrop): 직인 Blob 주소를 버리고 받아 둔 계약 자료를 지운다');
       AUTH.live = false; window.renderContent = keep2.render;

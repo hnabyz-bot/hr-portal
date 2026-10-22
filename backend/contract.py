@@ -41,7 +41,8 @@ hash(서명 때 저장한 문서 고유번호, 서명 전 null) · canSign(서�
 줄을 넣기 전에도 알 수 있어서, 다른 줄로 옮겨 붙이면 풀리지 않으면서 번호(id)를 몰라도 잠글 수 있다. body · company · sign · ask 는 JSON 글(ask 는 문의 글 한 줄을 JSON 글자로),
 pdf 와 직인 그림은 바이트 그대로. 설정 data 의 aad 는 "ct|settings", 직인 그림은 "ct|seal|직인번호"(직인 줄은 바꾸지 않는다).
 body = {code, name, dept, title, birth6, base, ability, pos, site, qual, reason} — 이름 · 소속(팀 이름, 팀이 없으면 본부) · 직급은 올릴 때의 명단 값을 고정하고 모두 글자다("" 가능).
-company = {name, ceo, addr, kind} — 발송 때 그 줄에 고정. sign = {image, name, consent, ip, ua, kind, blocks, tpl} — 서명 그림은 base64 글자, blocks = 서명할 때 해시를 매기고 PDF 에 그린 본문 블록 그대로, tpl = 그때의 양식 판 번호(고유번호를 다시 확인할 때 필요).
+company = {name, ceo, addr, kind} — 발송 때 그 줄에 고정. sign = {image, name, consent, ip, ua, kind, blocks, tpl, salt} — 서명 그림은 base64 글자, blocks = 서명할 때 해시를 매기고 PDF 에 그린 본문 블록 그대로, tpl = 그때의 양식 판 번호,
+salt = 서명할 때 뽑은 무작위 16바이트(16진수 글자) — 고유번호는 tpl · salt · blocks 를 묶은 SHA-256 이라 다시 확인하려면 둘 다 필요하다 (salt 는 이 잠근 기록에만 있고 화면 · 목록에는 내주지 않는다 — 양식은 공개이고 본문에 금액이 있어서 소금이 없으면 DB 사본만으로 금액을 맞혀 볼 수 있다).
 다음 차수(파기 후 재발송 · 새 계약)를 만들 때는 내용을 풀어 새 차수 자리(aad)로 다시 잠근다 — 그대로 옮긴 글은 풀리지 않는다.
 
 감사로그에는 행동 · 해 · 인원 수 · 계약서/직원 번호 · 마감일 · 문서 고유번호 · 바뀐 설정 칸 이름만 남긴다 (이름 · 금액 · 생년월일 · 사유는 넣지 않는다).
@@ -56,6 +57,7 @@ import functools
 import io
 import json
 import logging
+import os
 import re
 import zipfile
 from datetime import datetime, timezone
@@ -89,6 +91,7 @@ PNG_HEAD = b"\x89PNG\r\n\x1a\n"
 REASON_MAX = 200
 ASK_MAX = 200
 ZIP_HEAD = ("이름", "사원코드", "차수", "서명 일시", "문서 고유번호")
+RRN_LIKE = re.compile(r"[0-9]{6}[- ]?[0-9]{7}")  # 주민등록번호 모양 (앞 6자리 + 뒤 7자리 — 붙었거나 대시 · 공백이 낀 것). 사번 칸에 잘못 들어온 것은 users.employee_no 에 그대로 남으므로 받지 않는다
 BAD_FILE_CHARS = re.compile(r'[\x00-\x1f\\/:*?"<>|]')  # Windows 파일 이름에 못 쓰는 글자
 CFG_TEXT = {"ceo": ("대표이사 이름", 20), "addr": ("소재지", 100), "kind": ("사업의 종류", 30)}
 PAY = {"base": "기본급", "ability": "능력급", "pos": "직책수당", "site": "현장관리수당", "qual": "자격수당"}
@@ -249,6 +252,8 @@ def _row_error(r: object, year: int) -> str | None:
         return "칸이 맞지 않습니다"
     if type(r["userId"]) is not int or r["userId"] < 1:
         return "직원 번호가 올바르지 않습니다"
+    if isinstance(r["code"], str) and RRN_LIKE.fullmatch(r["code"]):  # 값은 되돌려 쓰지 않는다 (오류 글 · 로그에 남지 않게)
+        return "사원코드가 주민등록번호 모양입니다 — 사번 칸을 확인해 주세요"
     if not isinstance(r["code"], str) or not (r["code"] == "" or payslip.CODE.fullmatch(r["code"])):
         return "사원코드 모양이 올바르지 않습니다"
     return _pay_error(r, year)
@@ -643,7 +648,8 @@ def sign(key: bytes, cid: int) -> Response:
         raise kpi._Refuse(MSG_UNREADABLE, 409)
     signed_at = auth._iso(auth._now())
     blocks = _blocks(v, company, signed_at)
-    digest = contract_doc.doc_hash(blocks)
+    tpl, salt = contract_doc.TPL, os.urandom(16).hex()  # 소금은 서명 기록(잠금)에만 둔다 — 고유번호가 금액을 맞혀 보는 데 쓰이지 않게
+    digest = contract_doc.doc_hash(blocks, salt, tpl)
     esign = {"signedAt": _kst(signed_at).strftime("%Y-%m-%d %H:%M"), "name": name, "hash": digest,
              "how": _how(g.session_kind)}
     try:
@@ -653,7 +659,7 @@ def sign(key: bytes, cid: int) -> Response:
         raise kpi._Refuse(MSG_SIGN_IMG, 400) from None
     record = {"image": base64.b64encode(image).decode(), "name": name, "consent": True, "ip": auth._client_ip(),
               "ua": request.headers.get("User-Agent", "")[:300], "kind": g.session_kind,
-              "blocks": blocks, "tpl": contract_doc.TPL}  # 해시를 매기고 PDF 에 그린 본문 그대로 — 나중에 양식이 바뀌어도 서명한 본문을 이걸로 내준다
+              "blocks": blocks, "tpl": tpl, "salt": salt}  # 해시를 매기고 PDF 에 그린 본문 그대로 — 나중에 양식이 바뀌어도 서명한 본문을 이걸로 내준다
     with kpi._txn(conn):
         if conn.execute("SELECT status FROM contracts WHERE id = ?", (cid,)).fetchone()[0] != "SENT":
             raise kpi._Refuse(MSG_NOT_SENT, 409)

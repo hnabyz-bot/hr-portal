@@ -7,8 +7,8 @@
 --   (그래서 표 이름도 contracts 이다. 색인 이름은 001 의 idx_contracts_user 와 겹치지 않게 idx_contracts_live_user.)
 -- 금액 · 이름 · 생년월일 · 서명 그림이 들어 있는 칸(body · company · sign · pdf · ask, 설정 data, 직인 png)은 서버 .env 의 HR_PAY_KEY 로 잠가(AES-GCM) 둔다
 --   (급여명세서 · 원천징수영수증과 같은 열쇠). 잠근 글 = 12바이트 nonce + 내용 + 16바이트 태그 → 29바이트 이상 BLOB 만 받는다.
---   잠그지 않는 칸: 문서 고유번호(doc_hash — 소문자 16진수 64자, SHA-256) · 파기 사유(cancel_reason — 1~200자 글 그대로) · 상태 · 날짜 칸(starts_on · due_on · sent_at · signed_at · replaced_on · cancelled_at · ask_at · ask_closed_at) · 회차 · 직원 · 차수 번호.
---   서명 기록(sign)에는 서명 그림 · 입력한 성명 · 동의 · IP · 브라우저(User-Agent) · 로그인 종류 · 서명한 본문이 잠겨 들어 있고, 조정 사유는 잠근 내용(body) 안에 있다.
+--   잠그지 않는 칸: 문서 고유번호(doc_hash — 소문자 16진수 64자, 소금을 섞은 SHA-256 — 소금은 서명 기록(sign)의 잠긴 글 안에만 있어서 이 칸만으로는 금액을 맞혀 볼 수 없다) · 파기 사유(cancel_reason — 1~200자 글 그대로) · 상태 · 날짜 칸(starts_on · due_on · sent_at · signed_at · replaced_on · cancelled_at · ask_at · ask_closed_at) · 회차 · 직원 · 차수 번호.
+--   서명 기록(sign)에는 서명 그림 · 입력한 성명 · 동의 · IP · 브라우저(User-Agent) · 로그인 종류 · 서명한 본문 · 양식 판 번호 · 고유번호의 소금이 잠겨 들어 있고, 조정 사유는 잠근 내용(body) 안에 있다.
 --
 -- 상태 흐름 (트리거 trg_contract_live_status):  DRAFT 발송 전 → SENT 서명 대기 → SIGNED 서명 완료 → REPLACED 새 계약으로 바뀜
 --   SENT · SIGNED 는 CANCELLED(파기)로도 간다. 그 밖의 짝(건너뛰기 · 되돌리기)은 거부. 상태가 그대로인 UPDATE 는 막지 않는다.
@@ -67,7 +67,7 @@ CREATE TABLE contracts (
     seal_id      INTEGER NULL REFERENCES contract_seals(id),   -- 발송 때 고정한 직인
     signed_at    TEXT    NULL,       -- 서명한 때
     sign         BLOB    NULL CHECK (sign IS NULL OR (typeof(sign) = 'blob' AND length(sign) > 28)),   -- 잠근 서명 (서명 그림 · 입력한 성명 · 동의 · IP · 브라우저 · 로그인 종류)
-    doc_hash     TEXT    NULL CHECK (doc_hash IS NULL OR (typeof(doc_hash) = 'text' AND length(doc_hash) = 64 AND doc_hash NOT GLOB '*[^0-9a-f]*')),   -- 문서 고유번호 (SHA-256, 잠그지 않음)
+    doc_hash     TEXT    NULL CHECK (doc_hash IS NULL OR (typeof(doc_hash) = 'text' AND length(doc_hash) = 64 AND doc_hash NOT GLOB '*[^0-9a-f]*')),   -- 문서 고유번호 (소금 섞은 SHA-256 — 소금은 잠근 sign 안에, 이 칸은 잠그지 않음)
     pdf          BLOB    NULL CHECK (pdf IS NULL OR (typeof(pdf) = 'blob' AND length(pdf) > 28)),   -- 잠근 서명본 PDF
     replaced_on  TEXT    NULL CHECK (replaced_on IS NULL OR (replaced_on GLOB '20[0-9][0-9]-[01][0-9]-[0-3][0-9]' AND date(replaced_on) IS replaced_on)),   -- 새 계약으로 바뀐 날(새 계약 시작일)
     cancelled_at TEXT    NULL,       -- 파기한 때와 사람 · 사유

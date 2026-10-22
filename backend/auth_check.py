@@ -1295,6 +1295,10 @@ def check_contracts(hr) -> None:
         blob = q(f"SELECT {field} FROM contracts WHERE year = ? AND user_id = ? AND version = ?", year, uid, ver)[0][0]
         return json.loads(AESGCM(raw_key).decrypt(blob[:12], blob[12:], f"ct|{year}|{uid}|{ver}|{field}".encode()))
 
+    def hash_ok(m):  # 서명 기록의 소금 · 양식 판으로 본문(blocks)의 고유번호를 다시 계산한 값 = 저장한 값 (m = mine/한 건 보기의 줄). 소금이 없는 기록이면 확인할 수 없는 것 → 거짓 (오류 아님)
+        rec_ = opened(m["userId"], "sign", m["version"], m["year"])
+        return "salt" in rec_ and contract_doc.doc_hash(m["blocks"], rec_["salt"], rec_["tpl"]) == m["hash"]
+
     try:
         print("  - 권한")
         anon = app.test_client()
@@ -1341,13 +1345,17 @@ def check_contracts(hr) -> None:
             "직책수당 음수": [row(A, pos=-1)], "자격수당 실수": [row(A, qual=0.5)],
             "시작일 회차 전": [row(A, start=f"{Y}-02-28")], "시작일 회차 뒤": [row(A, start=f"{Y + 1}-03-01")], "시작일 없는 날": [row(A, start=f"{Y}-02-30")],
             "시작일 모양": [row(A, start=f"{Y}-4-1")], "시작일 숫자": [row(A, start=20270401)],
-            "사원코드 한글": [row(A, code="가나")], "사원코드 21자": [row(A, code="A" * 21)], "칸이 더 있음": [{**row(A), "extra": 1}], "start 칸 빠짐": [no_start],
+            "사원코드 주민번호 모양(대시)": [row(A, code="900315" + "-" + "1234567")], "사원코드 주민번호 모양(붙임)": [row(A, code="900315" + "1234567")],
+            "사원코드 주민번호 모양(공백)": [row(A, code="900315" + " " + "1234567")], "사원코드 한글": [row(A, code="가나")], "사원코드 21자": [row(A, code="A" * 21)], "칸이 더 있음": [{**row(A), "extra": 1}], "start 칸 빠짐": [no_start],
             "줄이 사전 아님": ["x"], "줄 없음": [], "2001줄": [row(A)] * 2001}
         wrong = [k for k, rs in rows_bad.items() if up(hr, rs).status_code != 400]
         wrong += [k for k, r in (("회차 1999", post(hr, "/api/contracts/1999", {"rows": [row(A)]})), ("회차 글자", post(hr, "/api/contracts/20x7", {"rows": [row(A)]})),
                                  ("rows 목록 아님", post(hr, f"/api/contracts/{Y}", {"rows": "x"})), ("본문 2MB 넘음", post(hr, f"/api/contracts/{Y}", {"rows": [row(A)], "pad": "x" * 2_100_000})))
                   if r.status_code != 400]
         ok(not wrong and snap() == before, f"직원 · 금액 · 생년월일 · 시작일 · 사원코드 · 칸 · 줄 수 · 회차 모양 — 틀리면 400, 아무것도 안 바뀜 {wrong}")
+        r = up(hr, [row(A, code="900315" + "-" + "1234567")])
+        ok(r.status_code == 400 and "주민등록번호" in r.json["error"] and "900315" not in r.json["error"] and snap() == before and code_of(A) is None,
+           "사원코드 칸에 주민번호 모양(앞 6자리 + 뒤 7자리 — 대시 · 붙임 · 공백)이 들어오면 400 · 이유에 값은 없음 · users.employee_no 에도 안 들어감")
         ok(up(hr, [row(A, code="CT-A1"), row(B, code="CT-A1")]).status_code == 400 and snap() == before, "같은 요청 안에서 두 사람에게 같은 사원코드를 붙이면 400 (아무것도 안 바뀜)")
 
         print("  - 올리기 · 잠금 · 사원코드 기억")
@@ -1621,17 +1629,24 @@ def check_contracts(hr) -> None:
         st = q("SELECT status, signed_at, doc_hash FROM contracts WHERE id = ?", ia)[0]
         ok(r.status_code == 200 and set(r.json) == {"signedAt", "hash"} and r.json["signedAt"] == auth._iso(t) and len(h) == 64 and set(h) <= set("0123456789abcdef")
            and st == ("SIGNED", auth._iso(t), h), "서명 → 서명 완료 · 서명한 때 · 문서 고유번호(SHA-256 64자) 저장 (마감 14일이 지난 뒤에도 받음)")
-        ok(len(spy) == 1 and contract_doc.doc_hash(spy[0][0]) == h and spy[0][1]["seal_png"] == base64.b64decode(PNG) and spy[0][1]["sign_png"] == base64.b64decode(PNG)
+        rec = opened(A, "sign")
+        ok(len(spy) == 1 and contract_doc.doc_hash(spy[0][0], rec["salt"], rec["tpl"]) == h and spy[0][1]["seal_png"] == base64.b64decode(PNG) and spy[0][1]["sign_png"] == base64.b64decode(PNG)
            and spy[0][1]["esign"] == {"signedAt": kst.strftime("%Y-%m-%d %H:%M"), "name": "가상계약A", "how": "하이웍스 로그인", "hash": h},
            "서명본에 넣은 것: 그 본문의 고유번호 · 발송 때 고정한 직인 (지금 설정의 새 직인이 아님) · 서명 그림 · 전자서명 정보 (한국 시각 · 이름 · 본인 확인 방법)")
-        rec = opened(A, "sign")
-        ok(set(rec) == {"image", "name", "consent", "ip", "ua", "kind", "blocks", "tpl"} and rec["name"] == "가상계약A" and rec["consent"] is True and rec["kind"] == "pc" and isinstance(rec["ip"], str)
+        ok(set(rec) == {"image", "name", "consent", "ip", "ua", "kind", "blocks", "tpl", "salt"} and rec["name"] == "가상계약A" and rec["consent"] is True and rec["kind"] == "pc" and isinstance(rec["ip"], str)
            and base64.b64decode(rec["image"]) == base64.b64decode(PNG) and rec["blocks"] == spy[0][0] and rec["tpl"] == contract_doc.TPL,
-           "서명 기록 (잠금): 그림 · 입력한 성명 · 동의 · IP · 브라우저 · 로그인 종류 · 해시를 매기고 PDF 에 그린 본문 블록 그대로 · 그때의 양식 판 번호")
+           "서명 기록 (잠금): 그림 · 입력한 성명 · 동의 · IP · 브라우저 · 로그인 종류 · 해시를 매기고 PDF 에 그린 본문 블록 그대로 · 그때의 양식 판 번호 · 고유번호의 소금")
+        unsalted = hashlib.sha256(json.dumps({"tpl": rec["tpl"], "blocks": rec["blocks"]}, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+        ok(len(rec["salt"]) == 32 and set(rec["salt"]) <= set("0123456789abcdef") and h != unsalted and h == contract_doc.doc_hash(rec["blocks"], rec["salt"], rec["tpl"])
+           and h != contract_doc.doc_hash(rec["blocks"], "0" * 32, rec["tpl"]),
+           "고유번호 = 소금(16바이트 무작위 16진수 32자) 을 섞은 해시 — 공개된 양식 · 본문만으로 계산한 번호(소금 없음)와 다르다 (금액을 맞혀 보는 데 못 쓴다)")
         mine_y = by_id(ca)[ia]
         ok(t.date() != kst.date() and mine_y["status"] == "SIGNED" and mine_y["signedAt"] == auth._iso(t) and mine_y["hash"] == h and mine_y["canSign"] is False
            and mine_y["blocks"] == want_blocks(kst.date().isoformat()) and kdate(kst) in text_of(mine_y["blocks"]) and "(서명한 날)" not in text_of(mine_y["blocks"])
-           and contract_doc.doc_hash(mine_y["blocks"]) == h, "mine: 서명한 줄의 본문 = 체결일 (서명한 때의 한국 날짜 — UTC 로는 전날) · 본문의 고유번호 = 저장한 고유번호")
+           and hash_ok(mine_y), "mine: 서명한 줄의 본문 = 체결일 (서명한 때의 한국 날짜 — UTC 로는 전날) · 본문 + 서명 기록의 소금 · 양식 판으로 다시 계산한 고유번호 = 저장한 고유번호")
+        shown = [json.dumps(mine_y, ensure_ascii=False), get(ca, f"/api/contracts/{ia}").text, get(hr, f"/api/contracts/{ia}").text, json.dumps(admin(Y).json, ensure_ascii=False),
+                 str(audit("CONTRACT_SIGNED")), str(q("SELECT doc_hash FROM contracts WHERE id = ?", ia))]
+        ok(not any(rec["salt"] in t_ for t_ in shown), "소금은 화면(mine · 한 건 보기 · HR 현황) · 감사로그 · 잠그지 않는 칸 어디에도 나오지 않는다 — 잠근 서명 기록에만 있다")
         ok(mine_y["how"] == "하이웍스 로그인" and base64.b64decode(mine_y["signImage"]) == base64.b64decode(PNG) and "how" not in row_y and "signImage" not in row_y
            and get(ca, f"/api/contracts/{ia}").json == mine_y and get(hr, f"/api/contracts/{ia}").json == {**mine_y, "canSign": False}
            and not any("how" in m or "signImage" in m for m in admin(Y).json["rows"]),
@@ -1660,7 +1675,7 @@ def check_contracts(hr) -> None:
         finally:
             contract_doc.TPL, contract_doc.build_blocks = real_tpl, real_build
         ok(got_mine[ia]["blocks"] == got_one["blocks"] == got_hr["blocks"] == rec["blocks"] == spy[0][0] != patched and got_mine[ia]["hash"] == got_one["hash"] == got_hr["hash"] == h
-           and contract_doc.doc_hash(got_one["blocks"]) == h and got_mine[a_y1]["blocks"] == patched,
+           and contract_doc.doc_hash(got_one["blocks"], rec["salt"], rec["tpl"]) == h and got_mine[a_y1]["blocks"] == patched,
            "양식 (판 번호 · 문장) 이 바뀐 뒤에도 mine · 한 건 보기 (본인 · HR) 는 서명한 줄에 서명할 때의 본문을 그대로 내줌 — 고유번호도 그대로 맞음 · 서명 전 줄만 새 양식")
 
         print("  - 두 번 동시에 서명 → 하나만")
@@ -1735,7 +1750,7 @@ def check_contracts(hr) -> None:
            "새 계약 서명 → 옛 줄이 '새 계약으로 바뀜' (바뀐 날 = 새 시작일 · 옛 서명 · 고유번호 · 서명본 그대로) · 서명 완료는 하나뿐 · 감사로그 CONTRACT_REPLACED (옛 번호 · 새 번호)")
         rows_a = by_id(ca)
         ok([(m["version"], m["status"]) for m in rows_a.values() if m["year"] == Y] == [(2, "SIGNED"), (1, "REPLACED")] and rows_a[ia]["replacedOn"] == f"{Y}-09-01"
-           and all(contract_doc.doc_hash(rows_a[c]["blocks"]) == rows_a[c]["hash"] for c in (ia, v2)) and get(ca, f"/api/contracts/{ia}/pdf").data == pdf and get(hr, f"/api/contracts/{ia}/pdf").data == pdf,
+           and all(hash_ok(rows_a[c]) for c in (ia, v2)) and opened(A, "sign")["salt"] != opened(A, "sign", 2)["salt"] and get(ca, f"/api/contracts/{ia}/pdf").data == pdf and get(hr, f"/api/contracts/{ia}/pdf").data == pdf,
            "바뀐 뒤에도 옛 줄의 본문은 서명 때와 같은 고유번호 · 옛 서명본 PDF 도 그대로 내줌")
         before = snap()
         ok(cn(ia).status_code == 409 and cn(ia, "none").status_code == 409 and snap() == before, "'새 계약으로 바뀜' 줄은 파기할 수 없음 (409)")
@@ -1799,7 +1814,7 @@ def check_contracts(hr) -> None:
         ok(r.status_code == 200 and q("SELECT status FROM contracts WHERE id = ?", jid) == [("CANCELLED",)] and q("SELECT sign, doc_hash, pdf, signed_at, body FROM contracts WHERE id = ?", jid)[0] == signed_before
            and q("SELECT status, version, prev_id, signed_at FROM contracts WHERE id = ?", j2) == [("SENT", 2, jid, None)], "서명 완료 줄도 파기 후 재발송 — 서명 · 서명본은 그대로 남고 새 차수는 서명 대기")
         mj = by_id(cj)
-        ok(mj[jid]["status"] == "CANCELLED" and mj[jid]["canSign"] is False and contract_doc.doc_hash(mj[jid]["blocks"]) == mj[jid]["hash"] and mj[j2]["canSign"] is True
+        ok(mj[jid]["status"] == "CANCELLED" and mj[jid]["canSign"] is False and hash_ok(mj[jid]) and mj[j2]["canSign"] is True
            and get(cj, f"/api/contracts/{jid}/pdf").data == unsealed(J, "pdf"), "서명 뒤 파기한 줄: mine 에 남고 본문은 서명 때와 같은 고유번호 · 서명본 PDF 도 그대로 내줌")
         r = sg(cj, j2, J)
         ok(r.status_code == 200 and q("SELECT status FROM contracts WHERE user_id = ? ORDER BY version", J) == [("CANCELLED",), ("SIGNED",)] and len(audit("CONTRACT_REPLACED")) == 1,
@@ -1808,7 +1823,7 @@ def check_contracts(hr) -> None:
         live = q("SELECT COUNT(*) FROM contracts WHERE user_id = ? AND status IN ('DRAFT', 'SENT', 'SIGNED')", K)
         mk = by_id(ck)[kid]
         ok(r.status_code == 200 and r.json.get("id") is None and q("SELECT status FROM contracts WHERE id = ?", kid) == [("CANCELLED",)] and live == [(0,)]
-           and mk["status"] == "CANCELLED" and contract_doc.doc_hash(mk["blocks"]) == mk["hash"] and get(ck, f"/api/contracts/{kid}/pdf").data == unsealed(K, "pdf") and cn(kid, "none").status_code == 409,
+           and mk["status"] == "CANCELLED" and hash_ok(mk) and get(ck, f"/api/contracts/{kid}/pdf").data == unsealed(K, "pdf") and cn(kid, "none").status_code == 409,
            "파기만 → 다음 차수 없음 · 살아 있는 줄 없음 · 파기한 서명본은 계속 볼 수 있음 · 또 파기하면 409")
 
         print("  - 새 계약을 파기 후 재발송한 줄을 서명해도 옛 줄이 '바뀜' (앞 차수가 파기한 줄이어도 서명 완료는 하나)")

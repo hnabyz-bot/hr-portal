@@ -19,6 +19,7 @@ import base64
 import hashlib
 import io
 import json
+import logging
 import math
 import re
 from datetime import date, timedelta
@@ -35,6 +36,8 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.pdfmetrics import registerFontFamily, stringWidth
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import Flowable, KeepTogether, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+
+logger = logging.getLogger(__name__)
 
 TPL = "2027-1"  # 양식 판 번호 — 문장·표를 고치면 올린다(문서 고유번호에도 들어간다)
 COMPANY_NAME = "㈜에이치앤아비즈"
@@ -156,9 +159,11 @@ def build_blocks(*, company: dict, worker: dict, pay: dict, start: str, end: str
     ]
 
 
-def doc_hash(blocks: list) -> str:
-    """서명 시점 본문의 고유번호(SHA-256) — 양식 판 번호와 블록 전체를 한 번에 묶는다."""
-    body = json.dumps({"tpl": TPL, "blocks": blocks}, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+def doc_hash(blocks: list, salt: str, tpl: str = TPL) -> str:
+    """서명 시점 본문의 고유번호(SHA-256) — 양식 판 번호 · 소금 · 블록 전체를 한 번에 묶는다.
+    소금(서명 때 뽑은 16바이트 무작위, 16진수 글자)은 서명 기록(잠금)에만 있다 — 양식은 공개이고 블록에는 이름 · 금액이 들어 있어서, 소금이 없으면 DB 사본만으로 금액을 맞혀 볼 수 있다.
+    서버는 서명할 때 저장한 값을 그대로 내줄 뿐 다시 계산하지 않는다 (다시 확인할 때만 서명 기록의 tpl · salt 로 계산한다)."""
+    body = json.dumps({"tpl": tpl, "salt": salt, "blocks": blocks}, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(body.encode()).hexdigest()
 
 
@@ -176,7 +181,8 @@ def _fonts() -> tuple[str, str]:
     """(보통, 굵게) 글꼴 이름. 굵은 글꼴 파일이 없으면 굵게도 보통 글꼴 — 한글 글꼴에서 Helvetica-Bold 로 새지 않게 한다."""
     from export_utils import _register_korean_font  # 가져오는 데 무거워서 여기서(계산·본문 규칙만 쓰는 쪽은 안 부른다)
     font = _register_korean_font()
-    if font == "Helvetica":
+    if font == "Helvetica":  # 서버에 한글 글꼴이 없다 — 서명본에 한글이 빈칸으로 나오니 서명이 저장되기 전에 알아챌 수 있게 (자료는 남기지 않는다)
+        logger.error("연봉계약서 서명본: 한글 글꼴을 찾지 못해 Helvetica 로 그림 — 한글이 보이지 않는다 (fonts-nanum 설치 확인)")
         return font, "Helvetica-Bold"
     bold = font + "Bold"
     if bold not in pdfmetrics.getRegisteredFontNames():
@@ -366,8 +372,11 @@ def selfcheck() -> None:
     text = json.dumps(b, ensure_ascii=False)
     assert "가상하나 (생년월일 900315)" in text and "49,665,095원" in text and "200,000원" in text and "현장관리수당/자격수당" in text
     assert "2027년 3월 1일부터 2028년 2월 29일" in text and "2027년 2월 10일" in text and b[-1] == {"t": "signs", "employer": "㈜에이치앤아비즈 대표이사 ○○○", "worker": "가상하나"}
-    assert doc_hash(b) == doc_hash(json.loads(text)) and len(doc_hash(b)) == 64
-    assert doc_hash(b) != doc_hash(build_blocks(company=co, worker=wk, pay={**pay, "qual": 50001}, start="2027-03-01", end="2028-02-29", signed_on="2027-02-10"))
+    salt = "ab" * 16  # 소금 모양 (16진수 32자)
+    assert doc_hash(b, salt) == doc_hash(json.loads(text), salt) and len(doc_hash(b, salt)) == 64 and set(doc_hash(b, salt)) <= set("0123456789abcdef")
+    assert doc_hash(b, salt) != doc_hash(build_blocks(company=co, worker=wk, pay={**pay, "qual": 50001}, start="2027-03-01", end="2028-02-29", signed_on="2027-02-10"), salt)
+    assert doc_hash(b, salt) != doc_hash(b, "cd" * 16) and doc_hash(b, salt) == doc_hash(b, salt, TPL)  # 소금이 다르면 다른 번호 · 같은 본문 + 같은 소금 = 같은 번호
+    assert doc_hash(b, salt, "2099-9") != doc_hash(b, salt) and doc_hash(b, salt, "2099-9") == doc_hash(b, salt, "2099-9")  # 양식 판 번호도 번호에 들어간다
     assert "(서명한 날)" in json.dumps(build_blocks(company=co, worker=wk, pay={"base": 1, "ability": 0, "pos": 0, "site": 0, "qual": 0},
                                                  start="2027-03-01", end="2028-02-29", signed_on=None), ensure_ascii=False)
     # 표 모양: 첫 표는 머리 2줄 · 8칸, 둘째 표는 머리 1줄 · 6칸. 굵게는 총액과 계약 기간뿐. 직급이 없으면 소속만.
@@ -379,9 +388,22 @@ def selfcheck() -> None:
     assert build_blocks(company=co, worker={**wk, "title": ""}, pay=pay, start="2027-03-01", end="2028-02-29", signed_on=None)[1]["rows"][2][3] == "가상팀"
     # 서명본 PDF — 구조만 본다(글꼴이 없는 CI 에서도 만들어져야 한다). 모양은 사람이 눈으로 확인한다.
     png = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==")  # 1x1 PNG
-    pdf = render_pdf(b, seal_png=png, sign_png=png, esign={"signedAt": "2027-02-10 14:22", "name": "가상하나", "how": "하이웍스 로그인", "hash": doc_hash(b)})
+    pdf = render_pdf(b, seal_png=png, sign_png=png, esign={"signedAt": "2027-02-10 14:22", "name": "가상하나", "how": "하이웍스 로그인", "hash": doc_hash(b, salt)})
     assert pdf.startswith(b"%PDF") and pdf.rstrip().endswith(b"%%EOF") and len(pdf) > 2000
     assert render_pdf(b, seal_png=None, sign_png=None, esign=None).startswith(b"%PDF")
+    # 한글 글꼴이 없으면(Helvetica 로 떨어지면) 오류 로그를 남긴다 — 글 속에 이름 · 금액은 없다
+    import export_utils
+    seen, handler = [], logging.Handler()
+    handler.emit = lambda rec: seen.append((rec.levelno, rec.getMessage()))
+    logger.addHandler(handler)
+    real_font = export_utils._register_korean_font
+    export_utils._register_korean_font = lambda: "Helvetica"
+    try:
+        assert _fonts() == ("Helvetica", "Helvetica-Bold")
+    finally:
+        export_utils._register_korean_font = real_font
+        logger.removeHandler(handler)
+    assert len(seen) == 1 and seen[0][0] == logging.ERROR and "Helvetica" in seen[0][1] and "가상" not in seen[0][1]
     # 그림 크기 상한 — 바이트는 작아도 픽셀이 큰 PNG 는 그리기 전에 거부한다(머리글만 읽는다). 머리글만 있는 가짜 PNG 로 본다.
     import struct, zlib
 
