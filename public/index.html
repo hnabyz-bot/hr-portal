@@ -1273,7 +1273,9 @@
   .ps-pill.draft{ background:#FFF4DE; color:#8A5A00; }
   .ps-pill.open{ background:var(--bg-success); color:var(--success); }
   .ps-act{ display:flex; gap:6px; justify-content:flex-end; flex-wrap:wrap; }
-  .org-modal .card:has(.ps-cf){ max-width:640px; }
+  .org-modal .card:has(.ps-cf), .org-modal .card:has(.ct-cf){ max-width:640px; }
+  .ct-badrow{ display:flex; gap:8px; align-items:center; justify-content:space-between; padding:4px 0; } .ct-badrow .btn{ flex:none; }
+  .ct-no > div{ margin-top:6px; font-size:var(--fs-xs); line-height:1.6; } .ct-no small{ color:var(--text-muted); }
   .org-modal .card:has(.ps-prev){ max-width:820px; }
   .ps-chk > div.bad{ background:var(--bg-danger); } .ps-chk > div.bad small, .ps-chk > div.bad b{ color:var(--danger); }
   .ps-tot{ margin-top:10px; padding:10px 12px; border:1px solid var(--border); border-radius:var(--radius-sm); }
@@ -3561,7 +3563,7 @@ function orgModal(html){
   d.innerHTML = `<div class="card" role="dialog" aria-modal="true">${html}</div>`; document.body.appendChild(d);
   const f = d.querySelector('input, select, button, a[href]'); if(f) f.focus();
 }
-function orgCloseModal(keepFocus){ const d = document.getElementById('orgModal'); if(d){ if(!keepFocus && d.querySelector('.ps-cf')) ps.pick = null; if(!keepFocus && d.querySelector('.wh-cf')) whDrop(); d.remove(); } if(!keepFocus && orgReturnFocus){ orgReturnFocus.focus(); orgReturnFocus = null; } }   // 급여대장 확인 창을 닫으면(X · 바깥 · Esc) 읽은 자료도 버린다 — 창을 바꿔 그릴 때(keepFocus)는 남긴다
+function orgCloseModal(keepFocus){ const d = document.getElementById('orgModal'); if(d){ if(!keepFocus && d.querySelector('.ps-cf')) ps.pick = null; if(!keepFocus && d.querySelector('.ct-cf')) ctUi.pick = null; if(!keepFocus && d.querySelector('.wh-cf')) whDrop(); d.remove(); } if(!keepFocus && orgReturnFocus){ orgReturnFocus.focus(); orgReturnFocus = null; } }   // 급여대장 · 계약 금액 확인 창을 닫으면(X · 바깥 · Esc) 읽은 자료도 버린다 — 창을 바꿔 그릴 때(keepFocus)는 남긴다
 function orgCopy(text, btn){ if(!navigator.clipboard) return; navigator.clipboard.writeText(text).then(()=>{ btn.textContent='복사됨'; setTimeout(()=>btn.textContent='복사', 1200); }); }
 function orgShow(id){
   const m = orgFind(id), c = orgVisibleContacts(m);
@@ -6401,6 +6403,31 @@ function ctSelfCheck(){   // 브라우저 콘솔에서 ctSelfCheck() 실행
   ok(ctCancel(c, false, '오류', 't') && ctCancel(c, true, ' ', 't') && c.status==='SIGNED', '파기: HR·사유 필수');
   ok(['hr','hrl'].every(k=>ctActive(ctContracts, ctActor(k).pid)), 'HR 담당자·HR 팀장도 본인 계약서가 있다');
   const list = [c]; ok(!ctResend(list, c, true, '금액 오류', '2026-10-02 10:00') && list.length===2 && c.status==='CANCELLED' && list[1].status==='SENT' && list[1].version===2 && ctActive(list, 1)===list[1], '재발송: 원본 보존 + 새 버전');
+  {   // 계약 금액 엑셀 읽기 (ctGuess · ctBirth6 · ctXlDate · ctRead) — 가상 줄
+  const H = [['사번','이름','부서','직급','지금 기본급','새 기본급','지금 능력급','새 능력급','직책수당','현장관리수당','자격수당','지금 기본급에 든 연구보조비','생년월일','계약 시작일']];
+  const g = ctGuess(H[0].map(rzNorm), CT_FIELDS);
+  ok(g.base===5 && g.ability===7 && g.birth===12 && g.start===13 && g.code===0, '새 기본급 · 새 능력급만 — 지금 금액과 연구보조비 칸은 안 읽음');
+  ok(ctGuess(['이름','기본급','능력급','생년월일'], CT_FIELDS).base===1, '"새"가 없으면 기본급');
+  ok(ctGuess(['이름','지금기본급','생년월일'], CT_FIELDS).base===-1, '비슷한 이름은 맞추지 않음');
+  ok(ctBirth6('900315').b6==='900315' && ctBirth6(900315).b6==='900315' && ctBirth6('1990-03-15').b6==='900315' && ctBirth6(32947).b6==='900315', '생년월일 모양 넷 (32947 = 엑셀 일련번호 1990-03-15)');
+  const rr = ctBirth6('900315-1'+'234567'); ok(rr.b6==='900315' && rr.fromRrn && !JSON.stringify(rr).includes('234567'), '주민번호에서 앞 6자리만 남김');
+  ok(ctBirth6(312254123456).b6==='031225', '앞 0이 떨어진 12자리 주민번호');
+  ok(JSON.stringify(ctScrub([['900315-1'+'234567', 312254123456, 'abc', 5]]))==='[["900315-*","031225-*","abc",5]]', '읽은 줄을 두기 전에 주민번호 칸은 앞 6자리만 남긴다');
+  ok(ctBirth6(51225).b6==='', '앞 0이 떨어진 051225가 미래 날짜(엑셀 일련번호)로 읽히면 읽을 수 없음');
+  ok(ctBirth6('900230').b6==='' && ctBirth6('').b6==='' && ctBirth6('abc').b6==='', '없는 날 · 빈칸');
+  ok(ctXlDate(46447)==='2027-03-01' && ctXlDate('2027-03-15')==='2027-03-15' && ctXlDate('x')==='', '계약 시작일: 일련번호 · 글자');
+  ok(ctXlDate('46447')==='2027-03-01' && ctBirth6('32947').b6==='900315' && ctBirth6('312254123456').b6==='031225' && ctBirth6('51225').b6==='', '실제 엑셀 읽기(rzXlsx)는 칸을 모두 글자로 준다 — 숫자 모양 글자도 숫자처럼');
+  const R = [H[0], ['A1','가상하나','가상팀','프로',1,2418900,1,1211000,'','',0,0,'900315',''], ['A2','가상둘','가상팀','프로',1,'2,000,000.5',1,0,0,0,0,0,'',''], ['합계','','','','','','','','','','','','','']];
+  const rd = ctRead(R);
+  ok(rd.people.length===2 && rd.people[0].base===2418900 && rd.people[0].pos===0 && !rd.people[0].bad.length, '빈 수당 칸 = 0원');
+  ok(rd.people[1].bad.some(x=>x.includes('기본급')) && rd.people[1].bad.some(x=>x.includes('생년월일')) && rd.skip===1, '소수 금액 · 생년월일 없음은 bad · 합계 줄은 건너뜀');
+  const rs = ctRead(R.map(r=>r.map(c=>String(c)))), E = [H[0], ['A3','가상셋','가상팀','프로','','2,300,000','','1,000,000','','','','','900315-1'+'234567','46447'], ['A4','가상넷','임원','프로','','5000000','','0','','','','','',''], ['A5','가상닷','가상팀','프로','','-5','','1e12','','','','','','']];   // 글자만 든 줄 (rzXlsx가 주는 모양) · 임원 · 음수 · 10억 초과
+  ok(rs.people.length===2 && rs.people[0].base===2418900 && rs.people[0].b6==='900315' && rs.people[1].bad.length===rd.people[1].bad.length, '글자만 든 줄도 같게 읽는다');
+  const re = ctRead(E);
+  ok(re.people.length===2 && re.exec===1 && re.people[0].base===2300000 && re.people[0].ability===1000000 && re.people[0].fromRrn && re.people[0].b6==='900315' && re.people[0].start==='2027-03-01' && !re.people[0].bad.length, '쉼표 금액 · 주민번호 글자 · 일련번호 계약 시작일 · 임원 줄은 뺀다');
+  ok(re.people[1].bad.includes('기본급 음수') && re.people[1].bad.includes('능력급 10억 초과') && re.people[1].bad.includes('생년월일 없음'), '음수 · 10억 초과 · 생년월일 없음');
+  ok(ctRead([['이름','생년월일','기본급'], ['가상','900315','1000']]).missing.join()==='ability', '필수 칸(능력급)을 못 찾으면 missing');
+  }
   return 'ctSelfCheck 통과';
 }
 
@@ -6629,6 +6656,272 @@ function ctContent(){
   return `${roleSwitcher()}${ctSwitch()}${kpiMsg ? kpiNote(kpiMsg.msg, kpiMsg.type) : ''}${body}`;
 }
 
+/* ---------------- HR: 계약 금액 올리기 · 확인 (2026-10-22 인사담당자 — 연봉계약서 실제화, 설계 4.2 · 5.2 · 5.3) ----------------
+   HR이 고른 계약 금액 엑셀(열기 암호 가능)을 이 PC 화면 안에서 읽어(ctRead) 직원과 맞추고(psMatch) 사람별 내용만 서버에 올린다 — 파일과 암호는 보내지 않는다.
+   올리면 그 사람들의 "발송 전" 계약서가 새로 생기거나 바뀐다. 이미 발송·서명한 사람, 대상 아님, HR이 뺀 줄은 올리지 않는다. 시연(서버 없음)은 CT_MEM에만 둔다 — 새로 고치면 사라진다.
+   생년월일 칸이 주민번호면 앞 6자리만 읽고 뒷자리는 읽는 순간 버린다(ctScrub · ctBirth6) — 근로자 주민번호 전체·뒷자리는 받지 않는다 */
+const CT_FIELDS = [ ['code','사원코드',['사원코드','사번','사원번호']], ['name','이름',['이름','사원명','성명']], ['dept','부서',['부서','부서명','소속']],
+  ['birth','생년월일',['생년월일','주민번호','주민등록번호']], ['base','기본급',['새기본급','기본급']], ['ability','능력급',['새능력급','능력급']], ['pos','직책수당',['직책수당']],
+  ['site','현장관리수당',['현장관리수당','업무수당']], ['qual','자격수당',['자격수당']], ['start','계약 시작일',['계약시작일']] ];   // 후보는 앞의 이름이 먼저 — "새 기본급"이 있으면 옛 금액인 "기본급"보다 먼저 쓴다
+const CT_NEED = ['name', 'birth', 'base', 'ability'], CT_MONEY = ['base', 'ability', 'pos', 'site', 'qual'], CT_LABEL = Object.fromEntries(CT_FIELDS.map(f=>[f[0], f[1]]));   // CT_NEED = 없으면 올릴 수 없는 칸
+const ctUi = { pick:null, f:'all', q:'', due:'', sel:new Set() };   // pick = 확인 창에 띄운 파일 { file, locked, year, rows, members, r, auto, to, err, busy, loading } · to = 줄마다 올릴 직원 번호 — null 아직 · 'skip' 이번에서 빼기
+const CT_MEM = { rows:[], settings:{ ceo:'○○○', addr:CT_COMPANY.addr, kind:CT_COMPANY.kind }, seq:0 };   // 시연 기억 — rows = 서버 admin 줄과 같은 모양
+const CT_LIVE = { state:'', year:null, rows:[], ready:false, settings:false, mine:[], mineState:'', division:null };   // 실제: GET /api/contracts/admin 답(state: '' 아직 · loading · ok · err) · mine · division은 직원·본부장 화면이 쓴다
+let ctAdminN = 0;
+async function ctAdminLoad(year){   // 실제 로그인 HR: 그 회차의 계약서 전부 (확인 창의 "이미 발송"과 현황 목록이 쓴다). 늦게 온 옛 답은 버린다
+  const n = ++ctAdminN; CT_LIVE.state = 'loading';
+  try {
+    const r = await fetch('/api/contracts/admin?year='+year);
+    if(!r.ok) throw new Error(r.status);
+    const j = await r.json();
+    if(n===ctAdminN) Object.assign(CT_LIVE, { year:j.year, rows:j.rows, ready:j.ready, settings:j.settings, state:'ok' });
+  } catch(e){ if(n===ctAdminN) CT_LIVE.state = 'err'; }
+}
+function ctMembers(){   // 맞출 명단 — 실제는 구성원 설정 명단(비활성 포함: 대상 아님 · 이미 발송을 가리려면 전원이 필요하다), 시연은 시연 인물
+  return AUTH.live ? MS_LIVE.list : CT_PEOPLE.map(p=>({ id:p.pid, name:p.name, title:p.title, team:p.team, division:p.division, no:'', use:true, ct:true, active:true, hr:p.key==='hr' || p.key==='hrl', me:p.key===kpiRole,
+    lead:p.title==='본부장' ? 'DIVISION' : p.title==='팀장' ? 'TEAM' : '', birthday:p.birthday || '' }));
+}
+function ctOff(m){ return !m.ct || !m.active || m.lead==='DIVISION' || m.lead==='CEO'; }   // 대상 아님 — 이번에 만들지 않는다 (서버 _blocked와 같은 뜻)
+function ctSpan(year){ return [`${year}-03-01`, ctFebEnd(year+1)]; }   // 회차 계약 기간 (서버 round_period)
+function ctWho(a, n = 3){ return a.slice(0, n).join(', ') + (a.length>n ? ` 외 ${a.length-n}명` : ''); }   // 이름은 몇 명만 — 나머지는 "외 n명"
+
+/* ----- 읽기 (순수 로직, ctSelfCheck가 검증) ----- */
+function ctGuess(head, fields){   // 어느 칸인지 맞추기: 이름이 똑같은 칸만 (rzGuess와 달리 글자가 든 칸은 찾지 않는다 — "지금 기본급에 든 연구보조비"가 기본급이 되면 안 된다). 못 찾으면 -1
+  const m = {};
+  fields.forEach(([k, , names])=>{ m[k] = names.map(n=>head.indexOf(rzNorm(n))).find(i=>i>=0) ?? -1; });
+  return m;
+}
+function ctXlDate(v){   // 계약 시작일 칸: 엑셀 날짜(일련번호 1~60000 = 1899-12-30부터 며칠) 또는 글자 → 'YYYY-MM-DD'. 읽지 못하면 ''. rzXlsx는 칸을 모두 글자로 주니("32947") 숫자 모양 글자도 숫자로 본다
+  const t = String(v ?? '').trim(), n = /^\d+(\.\d+)?$/.test(t) ? +t : NaN;
+  return n>=1 && n<=60000 ? new Date(Date.UTC(1899, 11, 30) + Math.floor(n) * 864e5).toISOString().slice(0, 10) : msDate(t);
+}
+function ctB6Ok(s){ const y = +s.slice(0, 2), m = +s.slice(2, 4), d = +s.slice(4); return [1900, 2000].some(c=>{ const t = new Date(Date.UTC(c+y, m-1, d)); return t.getUTCMonth()===m-1 && t.getUTCDate()===d; }); }   // 19YY · 20YY 중 하나로 있는 날 (서버 birth6_ok)
+function ctBirth6(v){   // 생년월일 칸 → { b6:'YYMMDD' | '', fromRrn }. 주민번호면 앞 6자리만 꺼낸다 — 뒷자리는 변수에 두지 않는다. 숫자 모양 글자도 숫자로 본다(rzXlsx는 칸을 모두 글자로 준다)
+  const t = String(v ?? '').trim(), n = /^\d+(\.\d+)?$/.test(t) ? +t : NaN, ymd = d=>d.slice(2, 4)+d.slice(5, 7)+d.slice(8);
+  let b6 = '', fromRrn = false;
+  if(/^\d{6}(?:-[\d*]{1,7}|[\d*]{7})$|^\d{12}$/.test(t)){ b6 = (t.length===12 ? '0'+t : t).slice(0, 6); fromRrn = true; }   // 900315-1****** · 13자리 · 앞 0이 떨어진 12자리 숫자
+  else if(/^\d{6}$/.test(t)) b6 = t;   // YYMMDD (msDate는 900315를 9003년으로 읽으니 먼저 본다)
+  else if(n>=1 && n<=60000){ const d = ctXlDate(t); b6 = d<=ctYmd(new Date()) ? ymd(d) : ''; }   // 엑셀 날짜 칸 (앞 0이 떨어진 051225 같은 숫자가 미래 날짜로 읽히면 읽을 수 없음으로 막는다)
+  else { const d = msDate(t), x = !d && t.match(/^(\d{2})\s*[-./]\s*(\d{1,2})\s*[-./]\s*(\d{1,2})$/); b6 = d ? ymd(d) : x ? x[1]+x[2].padStart(2, '0')+x[3].padStart(2, '0') : ''; }   // 1990-03-15 · 19900315 · 90.03.15
+  return { b6:b6 && ctB6Ok(b6) ? b6 : '', fromRrn };
+}
+function ctScrub(rows){   // 주민번호로 보이는 칸(13자리 · 앞 0이 떨어진 12자리 숫자)은 앞 6자리만 남긴다 — 읽은 줄을 화면 자료에 두기 전에 (칸을 다시 고를 때 쓰려고 줄은 남긴다)
+  const cut = c=>{ const t = typeof c==='number' ? String(c) : typeof c==='string' ? c.trim() : '';
+    return /^\d{6}-?\d{7}$|^\d{12}$/.test(t) ? (t.length===12 ? '0'+t : t).slice(0, 6)+'-*' : c; };
+  return rows.map(r=>r.map(cut));
+}
+function ctRead(rows, map0){   // 제목 줄 아래를 사람 한 줄씩. 합계 줄·빈 줄은 건너뛰고(skip) 부서가 "임원"인 줄은 뺀다(exec). map0 = HR이 칸을 고른 뒤의 칸 번호 (없으면 이름으로 찾는다)
+  const h = rzHead(rows, CT_FIELDS), map = map0 || ctGuess(h.head, CT_FIELDS), missing = CT_NEED.filter(k=>map[k]<0), people = [];
+  let skip = 0, exec = 0;
+  if(!missing.length) rows.slice(h.at+1).forEach((r, ri)=>{
+    const get = k=>map[k]>=0 ? r[map[k]] : '', name = String(get('name') ?? '').trim(), dept = String(get('dept') ?? '').trim();
+    if(!name || /^(합계|총계|소계|계)$/.test(rzNorm(name))){ if(r.some(c=>rzNorm(c))) skip++; return; }
+    if(RZ_EXEC.includes(rzNorm(dept))) return void exec++;
+    const p = { i:h.at+ri+2, head:{ code:String(get('code') ?? '').trim(), name, dept }, ...ctBirth6(get('birth')), bad:[] };   // i = 엑셀 줄 번호
+    if(!p.b6) p.bad.push(rzNorm(get('birth')) ? '생년월일 읽을 수 없음' : '생년월일 없음');
+    CT_MONEY.forEach(k=>{   // 빈칸 = 0원. 소수는 반올림하지 않고 막는다 (엑셀 수식의 0.5원 같은 것 — 1e-6 안은 계산 오차로 본다)
+      const n = rzNum(get(k)); p[k] = 0;
+      if(!Number.isFinite(n)) p.bad.push(`${CT_LABEL[k]} 숫자 아님`);
+      else if(n<0) p.bad.push(`${CT_LABEL[k]} 음수`);
+      else if(Math.abs(n - Math.round(n)) > 1e-6) p.bad.push(`${CT_LABEL[k]} 소수`);
+      else if(n>1e9) p.bad.push(`${CT_LABEL[k]} 10억 초과`);
+      else p[k] = Math.round(n);
+    });
+    if(!p.base && !p.bad.some(x=>x.startsWith('기본급'))) p.bad.push('기본급 0원');
+    p.start = '';
+    if(map.start>=0 && rzNorm(r[map.start])){ p.start = ctXlDate(r[map.start]); if(!p.start) p.bad.push('계약 시작일 읽을 수 없음'); }
+    people.push(p);
+  });
+  return { at:h.at, head:h.head, map, people, skip, exec, missing };
+}
+
+/* ----- 확인 창 ----- */
+function ctSentMap(year){   // 그 회차에 이미 발송(서명 대기 · 서명 완료)한 직원 번호 → 상태 (서버 _store가 409로 막는 사람)
+  const m = new Map();
+  (AUTH.live ? (CT_LIVE.year===year ? CT_LIVE.rows : []) : CT_MEM.rows.filter(r=>r.year===year)).forEach(r=>{ if(r.status==='SENT' || r.status==='SIGNED') m.set(r.userId, r.status); });
+  return m;
+}
+function ctPlan(){   // 읽은 줄마다 어떻게 되나: up 올림 · skip HR이 뺌 · none 직원을 아직 못 맞춤 · off 대상 아님 · sent 이미 발송
+  const k = ctUi.pick, sent = ctSentMap(k.year);
+  return k.r.people.map((p, i)=>{
+    const t = k.to[i], m = t===null || t==='skip' ? null : k.members.find(x=>x.id===t);
+    return { p, i, m, st:t==='skip' ? 'skip' : !m ? 'none' : ctOff(m) ? 'off' : sent.has(m.id) ? 'sent' : 'up', sent:m && sent.get(m.id) };
+  });
+}
+function ctReread(k, map){ k.r = ctRead(k.rows, map); k.auto = psMatch(k.r.people, k.members); k.to = k.auto.map(x=>x.id); }
+async function ctStage(fileName, rows, locked){   // 계약 금액 줄 → 확인 창. 파일 고르기(rzLoad 'contract')·검사가 부른다. locked = 암호를 풀어 읽었나(암호 자체는 받지 않는다)
+  const year = ctPeriod(new Date()).year;   // 처음은 다가오는 회차
+  if(AUTH.live){   // 맞출 명단 · 그 회차에 이미 발송한 사람
+    if(MS_LIVE.state!=='ok') await msLoad();
+    await ctAdminLoad(year);
+    if(MS_LIVE.state!=='ok' || CT_LIVE.state!=='ok'){ ctUi.pick = null; orgCloseModal(); return kpiFlash('직원 명단이나 계약서 현황을 불러오지 못했어요. 잠시 뒤 다시 해 주세요.', 'danger'); }
+  }
+  const k = ctUi.pick = { file:fileName, locked:!!locked, year, rows:ctScrub(rows), members:ctMembers() };
+  ctReread(k); ctConfirm();
+}
+function ctBlock(){   // 올릴 수 없는 이유 하나 (빈 글자 = 올릴 수 있다). 확인 창의 단추와 안내가 이것만 본다. 서버(contract.py)가 거절할 모양도 미리 막는다. 대상 아님 · 이미 발송 · 뺀 줄은 올리지 않으니 보지 않는다
+  const k = ctUi.pick;
+  if(!k) return '고른 계약 금액 파일이 없어요.';
+  if(AUTH.live && CT_LIVE.state==='ok' && !CT_LIVE.ready) return '서버에 계약서 잠금 열쇠가 없어 올릴 수 없어요. 개발본부장께 서버 설정(HR_PAY_KEY)을 부탁해 주세요.';
+  if(k.r.missing.length) return `${k.r.missing.map(x=>CT_LABEL[x]).join(' · ')} 칸을 찾지 못했어요. 어느 칸인지 골라 주세요.`;
+  if(!(Number.isInteger(k.year) && k.year>=2000 && k.year<=2099)) return '회차를 골라 주세요.';
+  if(AUTH.live && (k.loading || CT_LIVE.state!=='ok' || CT_LIVE.year!==k.year)) return k.loading ? '이 회차의 계약서 현황을 불러오는 중이에요.' : '이 회차의 계약서 현황을 불러오지 못했어요. 회차를 다시 골라 주세요.';
+  const P = ctPlan().filter(x=>x.st==='up' || x.st==='none'), [lo, hi] = ctSpan(k.year), name = x=>x.p.head.name;
+  let a = P.filter(x=>x.p.bad.length);
+  if(a.length) return `읽을 수 없는 칸이 있는 사람이 있어요 (${ctWho(a.map(name))}). 엑셀을 고쳐 다시 고르거나 그 사람을 이번에서 빼 주세요.`;
+  a = P.filter(x=>x.p.head.code && !PS_CODE.test(x.p.head.code));
+  if(a.length) return `사원코드 모양이 다른 사람이 있어요 (${ctWho(a.map(name))}). 영문·숫자·-로 20자까지예요. 엑셀을 고치거나 그 사람을 이번에서 빼 주세요.`;
+  a = P.filter(x=>x.p.start && (x.p.start<lo || x.p.start>hi));
+  if(a.length) return `계약 시작일이 ${lo} ~ ${hi} 밖인 사람이 있어요 (${ctWho(a.map(name))}). 엑셀을 고치거나 그 사람을 이번에서 빼 주세요.`;
+  if(P.some(x=>x.st==='none')) return '못 맞춘 사람은 직원을 고르거나 "이번에서 빼기"를 골라 주세요.';
+  return P.length ? '' : '올릴 사람이 없어요.';
+}
+function ctPick(i, v){   // 줄 고르기: '' 아직 · 'skip' 이번에서 빼기 · 'auto' 처음 맞춘 대로 · 직원 번호
+  const k = ctUi.pick, m = k.members.find(x=>String(x.id)===v);
+  k.to[i] = m ? m.id : v==='skip' ? 'skip' : v==='auto' ? k.auto[i].id : null; k.err = '';   // 고르기를 바꾸면 지난 서버 답(빨간 글)은 지운다
+  ctConfirm();
+}
+function ctSetCol(f, v){ const k = ctUi.pick; k.err = ''; ctReread(k, { ...k.r.map, [f]:+v }); ctConfirm(); }   // 못 찾은 필수 칸을 HR이 고르면 다시 읽는다
+async function ctSetYear(v){   // 회차 바꾸기: 실제는 그 회차의 계약서를 서버에서 다시 받는다 ("이미 발송"이 회차마다 다르다)
+  const k = ctUi.pick, y = +v; if(!k || k.busy) return;
+  k.year = y; k.err = '';
+  if(AUTH.live){ k.loading = true; ctConfirm(); await ctAdminLoad(y); if(ctUi.pick!==k || k.year!==y) return; k.loading = false; }
+  ctConfirm();
+}
+function ctConfirm(){   // 확인 창 (설계 4.2 · 시안 그림 2). 고르기를 바꾸거나 서버 답을 보일 때만 다시 그린다 — 스크롤 자리와 초점은 지킨다
+  const k = ctUi.pick, r = k.r, P = ctPlan(), block = ctBlock(), e = escapeHtml, won = n=>n.toLocaleString('ko-KR')+'원', [lo, hi] = ctSpan(k.year), upYear = ctPeriod(new Date()).year;
+  const by = st=>P.filter(x=>x.st===st), ups = by('up'), miss = by('none'), offs = by('off'), sents = by('sent'), names = (a, f = x=>x.p.head.name)=>e(ctWho(a.map(f)));
+  const who = p=>`<b>${e(p.head.name)}</b> <small>${e([p.head.code, p.head.dept].filter(Boolean).join(' · '))}</small>`;
+  const sel = f=>`<label><span>${CT_LABEL[f]} *</span><select id="ctCol_${f}" class="need" onchange="ctSetCol('${f}', this.value)"><option value="-1">(없음)</option>${r.head.map((h, i)=>h ? `<option value="${i}" ${r.map[f]===i ? 'selected' : ''}>${e(h)} (${rzCol(i)}열)</option>` : '').join('')}</select></label>`;
+  const found = CT_FIELDS.filter(([f])=>r.map[f]>=0).map(([f, label])=>`<span>${label}${r.head[r.map[f]] && r.head[r.map[f]]!==rzNorm(label) ? ` ← ${e(r.head[r.map[f]])}` : ''}</span>`).join('');
+  const opts = i=>{ const cur = String(k.to[i]), taken = new Set(k.to.filter(t=>t!==null && t!=='skip').map(String)), free = k.members.filter(m=>cur===String(m.id) || !taken.has(String(m.id))).sort((a, b)=>a.name.localeCompare(b.name, 'ko'));   // 다른 줄이 가져간 직원은 빼고
+    return `<option value="">직원 고르기</option>${free.map(m=>`<option value="${e(String(m.id))}" ${String(m.id)===cur ? 'selected' : ''}>${e(m.name)} · ${e(m.team || m.division || '')}${m.active===false ? ' (비활성)' : !m.ct ? ' (계약서 꺼짐)' : ''}</option>`).join('')}<option value="skip" ${cur==='skip' ? 'selected' : ''}>이번에서 빼기</option>`; };
+  const why = (x, p)=>x.why==='SAME' ? `같은 이름 ${k.members.filter(m=>rzNorm(m.name)===rzNorm(p.head.name)).length}명` : PS_WHY[x.why];
+  const um = P.filter(x=>k.auto[x.i].id===null).map(({ p, i })=>   // 처음에 못 맞춘 줄 (고른 뒤에도 남겨 둔다 — 잘못 골랐으면 다시 고르게. 대상 아님 · 이미 발송인 직원을 골라도 같다)
+    `<div class="ps-um"><div>${who(p)}</div><span class="ps-why">${why(k.auto[i], p)}</span><select id="ctSel${i}" class="${k.to[i]===null ? 'need' : ''}" aria-label="${e(p.head.name)} — 맞출 직원" onchange="ctPick(${i}, this.value)">${opts(i)}</select>${k.auto[i].why==='CODE' ? '<span class="ps-why" style="grid-column:1 / -1;">같은 이름의 직원에게 다른 사원코드가 붙어 있어요. 전에 직원을 잘못 골라 붙은 코드라면 구성원 설정에서 그 직원의 사원코드를 지운 뒤 다시 올려 주세요.</span>' : ''}</div>`).join('');
+  const badAll = P.filter(x=>x.p.bad.length && x.st!=='off' && x.st!=='sent'), badLive = badAll.filter(x=>x.st!=='skip');
+  const badHtml = badAll.length ? `<div class="ps-bad"><b>읽을 수 없는 칸이 있는 사람 ${badAll.length}명${badLive.length ? ' — 올릴 수 없어요' : ' — 모두 이번에서 뺐어요'}</b>${badAll.map(x=>`<div class="ct-badrow"><span>${who(x.p)} — ${e(x.p.bad.join(' · '))}</span><button type="button" class="btn sm" id="ctSk${x.i}" onclick="ctPick(${x.i}, '${x.st==='skip' ? 'auto' : 'skip'}')">${x.st==='skip' ? '되돌리기' : '이번에서 빼기'}</button></div>`).join('')}</div>` : '';
+  const offWhy = m=>!m.active ? '비활성' : !m.ct ? '연봉계약서 꺼짐' : m.lead==='CEO' ? '대표이사' : '본부장';
+  const no = [offs.length && `<div><b>대상 아님 ${offs.length}명</b> ${names(offs, x=>`${x.m.name}(${offWhy(x.m)})`)} <small>— 연봉계약서가 꺼진 사람 · 비활성 · 본부장 · 대표이사는 만들지 않아요</small></div>`,
+    sents.length && `<div><b>이미 발송 ${sents.length}명</b> ${names(sents, x=>`${x.m.name}(${x.sent==='SIGNED' ? '서명 완료' : '서명 대기'})`)} <small>— 그대로 둬요. 서명 대기는 [파기] 후 새로 쓰고, 서명 완료는 [새 계약으로 바꾸기]를 써요</small></div>`].filter(Boolean);
+  const linked = new Set([...k.to.filter(t=>t!==null && t!=='skip'), ...k.auto.map(a=>a.id).filter(v=>v!==null)]), sentIds = ctSentMap(k.year);
+  const absent = k.members.filter(m=>!ctOff(m) && !linked.has(m.id) && !sentIds.has(m.id)), withStart = ups.filter(x=>x.p.start), self = ups.filter(x=>x.m.me);
+  const bday = ups.filter(x=>{ const md = msBirthMd(x.p.b6); return md && x.m.birthday && md!==x.m.birthday; }), noUse = ups.filter(x=>!x.m.use);
+  const know = [withStart.length && kpiNote(`<b>계약 시작일이 있는 사람 ${withStart.length}명</b>: ${names(withStart, x=>`${x.p.head.name} ${x.p.start}`)} — 그 날부터 ${hi}까지 계약해요. 없는 사람은 ${lo}부터예요.`, 'info'),
+    self.length && kpiNote('<b>HR 본인 계약서가 들어 있어요</b> — 올리면 다른 직원처럼 발송 전 계약서가 생겨요.', 'info'),
+    absent.length && kpiNote(`<b>파일에 없는 계약 대상자 ${absent.length}명</b>: ${names(absent, m=>m.name)} — 이번에 만들지 않아요.`, 'warning'),
+    bday.length && kpiNote(`<b>생일이 달라요</b> — 음력 생일일 수 있어요 (${bday.length}명: ${names(bday)}). 구성원 설정의 생일과 엑셀의 생년월일이 달라요. 맞는 사람인지 확인해 주세요.`, 'warning'),
+    noUse.length && kpiNote(`<b>포털 사용이 꺼진 사람 ${noUse.length}명</b>: ${names(noUse)} — 올리기는 되지만 발송은 막혀요. 포털을 쓰지 못해 서명할 수 없어요. 포털 사용을 켠 뒤 발송하거나 포털 밖에서 종이로 계약해 주세요.`, 'warning'),
+    r.people.some(p=>p.fromRrn) && kpiNote('주민번호 칸에서 앞 6자리만 읽었어요 — 뒷자리는 읽는 순간 버렸어요.', 'info')].filter(Boolean);
+  const body = r.missing.length ? `${kpiNote(`<b>${r.missing.map(x=>CT_LABEL[x]).join(' · ')}</b> 칸을 찾지 못했어요. 아래에서 어느 칸인지 골라 주세요.`, 'danger')}<div class="rz-map">${r.missing.map(sel).join('')}</div>`
+    : `<div class="rz-chk ps-chk"><div><small>읽은 사람</small><b>${r.people.length}명</b></div><div><small>직원과 맞춤 → 이번에 올림</small><b>${ups.length}명</b></div><div class="${miss.length ? 'bad' : ''}"><small>못 맞춘 사람</small><b>${miss.length}명</b></div></div>
+    <div class="ps-tot"><div class="ps-sums"><div><small>기본급 계</small><b>${won(ups.reduce((t, x)=>t + x.p.base, 0))}</b></div><div><small>능력급 계</small><b>${won(ups.reduce((t, x)=>t + x.p.ability, 0))}</b></div><div><small>총 계약 연봉 계</small><b>${won(ups.reduce((t, x)=>t + ctCalc(x.p).annual, 0))}</b></div></div>
+      <div class="ps-totmsg warn">올릴 사람만 더했어요. 사람마다 총 계약 연봉을 계약서 계산식으로 셈했어요 — 연봉 인상 계산 결과와 맞춰 보세요</div></div>
+    <div class="ps-chips"><b>읽은 칸 ${CT_FIELDS.filter(([f])=>r.map[f]>=0).length}칸</b>${found}</div>
+    ${badHtml}
+    ${no.length ? `<div class="ps-tot ct-no"><b>이번에 만들지 않는 사람</b>${no.join('')}</div>` : ''}
+    ${know.length ? `<div class="ps-ums"><div class="ps-ums-t"><b>알아 둘 것</b></div>${know.join('')}</div>` : ''}
+    ${um ? `<div class="ps-ums"><div class="ps-ums-t"><b>못 맞춘 사람</b><small>직원을 고르거나 이번에서 뺍니다</small></div>${um}</div>` : ''}
+    ${r.skip || r.exec ? `<div class="list-sub" style="margin-top:8px;">${[r.skip && `건너뛴 줄 ${r.skip}개 (합계 줄 · 이름이 없는 줄)`, r.exec && `부서가 "임원"인 ${r.exec}줄은 뺐어요`].filter(Boolean).join(' · ')}</div>` : ''}`;
+  const html = `<div class="ct-cf"><div class="card-title"><span>연봉계약서 금액 올리기 — 읽은 내용 확인</span><button type="button" class="x-btn" onclick="ctUi.pick=null; orgCloseModal()" aria-label="닫기">${icon('x')}</button></div>
+    <div class="list-sub rz-file" style="margin:0 0 12px;">${icon('clip')} <b>${e(k.file)}</b> · ${k.locked ? '암호를 풀어 ' : ''}이 PC 화면 안에서만 읽었어요</div>
+    <div class="field-row"><div class="field"><label for="ctYear">회차</label><select id="ctYear" onchange="ctSetYear(this.value)">${[upYear, upYear-1].map((y, j)=>`<option value="${y}" ${y===k.year ? 'selected' : ''}>${y}년 회차 · ${j ? '진행 중인' : '다가오는'} 계약</option>`).join('')}</select></div>
+      <div class="field"><label for="ctSpan">재직자 계약 기간</label><input id="ctSpan" readonly value="${lo} ~ ${hi}"></div></div>
+    ${body}
+    ${k.err ? `<div id="ctErr" style="margin-top:12px;">${kpiNote(e(k.err), 'danger')}</div>` : ''}
+    <div class="ps-foot"><span class="ps-block" id="ctBlockMsg">${e(block)}</span><button type="button" class="btn" onclick="ctUi.pick=null; orgCloseModal(); rzPick('contract')">다른 파일 고르기</button><button type="button" class="btn coral" id="ctGo" ${block ? 'disabled' : ''} onclick="ctUpload()">올리기 (발송 전)</button></div></div>`;
+  const old = document.querySelector('#orgModal .ct-cf') && document.querySelector('#orgModal .card'), top = old ? old.scrollTop : 0, fid = document.activeElement?.id;
+  orgModal(html);
+  if(old){ if(fid) document.getElementById(fid)?.focus({ preventScroll:true }); document.querySelector('#orgModal .card').scrollTop = top; }
+}
+async function ctUpload(){   // 확인 창의 "올리기 (발송 전)". 실제 = 서버에 사람별 내용만, 시연 = CT_MEM
+  const k = ctUi.pick; if(!k || k.busy || ctBlock()) return;
+  const year = k.year, up = ctPlan().filter(x=>x.st==='up'), list = up.map(({ p, m })=>({ userId:m.id, code:p.head.code, birth6:p.b6, base:p.base, ability:p.ability, pos:p.pos, site:p.site, qual:p.qual, start:p.start || null }));   // 대상 아님 · 이미 발송 · 뺀 줄은 빠진다
+  if(AUTH.live){
+    k.busy = true; k.err = '';
+    document.querySelectorAll('#orgModal .ct-cf :is(input, select, button:not(.x-btn))').forEach(el=>{ el.disabled = true; });   // 기다리는 동안 고치지 못하게 (닫기 X는 둔다)
+    const go = document.getElementById('ctGo'); if(go) go.textContent = '올리는 중…';
+    let r = null, j = {};
+    try { r = await fetch('/api/contracts/'+year, { method:'POST', headers:{ 'Content-Type':'application/json' }, body:JSON.stringify({ rows:list }) }); j = await r.json().catch(()=>({})); } catch(e){}
+    k.busy = false;
+    const ours = ()=>ctUi.pick===k && !!document.querySelector('#orgModal .ct-cf');   // 기다리는 사이 창을 닫았거나 다른 파일을 골랐으면 그 창은 건드리지 않는다
+    if(!r || !r.ok){
+      const msg = j.error || '올리지 못했어요. 인터넷 연결을 확인하고 잠시 뒤 다시 해 주세요.';
+      await ctAdminLoad(year);   // 그사이 발송한 사람이 생겼을 수 있다 — 창의 "이미 발송"을 새로
+      if(!ours()) return kpiFlash(escapeHtml(msg), 'danger');
+      k.err = msg; return ctConfirm();   // 창은 그대로 — 파일을 다시 고르고 암호를 다시 넣지 않아도 되게
+    }
+    if(ours()){ ctUi.pick = null; orgCloseModal(); }
+    MS_LIVE.state = '';   // 사원코드가 비어 있던 직원에게 서버가 이번 사원코드를 기억했다
+    await ctAdminLoad(year);
+  } else {   // 시연: 서버(contract.py _store)와 같은 규칙 — 발송 전 줄은 바꾸고, 없으면 새 차수
+    up.forEach(({ m }, j)=>{
+      const s = list[j], old = CT_MEM.rows.find(x=>x.year===year && x.userId===s.userId && x.status==='DRAFT');
+      const ver = old ? old.version : Math.max(0, ...CT_MEM.rows.filter(x=>x.year===year && x.userId===s.userId).map(x=>x.version)) + 1;
+      const row = { id:old ? old.id : ++CT_MEM.seq, year, userId:s.userId, version:ver, status:'DRAFT', start:s.start || ctSpan(year)[0], end:ctSpan(year)[1], code:s.code, name:m.name, dept:m.team || m.division, title:m.title || '',
+        birth6:s.birth6, base:s.base, ability:s.ability, pos:s.pos, site:s.site, qual:s.qual, annual:ctCalc(s).annual, reason:'', sentAt:null, due:null, late:false, signedAt:null, replacedOn:null, cancelledAt:null, cancelReason:null, ask:null, prevId:null };
+      if(old) Object.assign(old, row); else CT_MEM.rows.push(row);
+    });
+    ctUi.pick = null; orgCloseModal();
+  }
+  kpiFlash(`${list.length}명 계약서를 올렸어요. 아직 발송 전이에요.`);
+}
+async function ctFlowCheck(){   // 브라우저 콘솔에서 await ctFlowCheck() 실행 — 시연 모드로 계약 금액 읽기 · 확인 창 · 올리기를 끝까지 (끝나면 시연 기억을 되돌린다)
+  const ok = (c, msg)=>{ if(!c) throw new Error('ctFlowCheck 실패: '+msg); };
+  const keep = [AUTH.live, ctUi.pick, kpiMsg, structuredClone(CT_MEM), CT_PEOPLE[0].birthday], cp = a=>a.map(r=>r.slice());
+  const Y = ctPeriod(new Date()).year, txt = ()=>document.querySelector('#orgModal .ct-cf')?.textContent || '';
+  const H = ['사번','이름','부서','직급','새 기본급','새 능력급','직책수당','현장관리수당','자격수당','생년월일','계약 시작일'];   // 가상 금액 · 이름은 시연 명단(홍길동)과 맞는 한 줄 + 못 읽는 줄(가상둘)
+  const line = (code, name, base, birth, start = '')=>[code, name, '국내영업팀', '대리', base, 1211000, '', '', 0, birth, start];
+  const R = [H, line('A1', '홍길동', 2418900, '900315'), line('A2', '가상둘', '2,000,000.5', ''), ['합계', ...Array(10).fill('')]], R1 = [H, line('A1', '홍길동', 2418900, '900315')];
+  const serial = ymd=>Math.round((Date.UTC(+ymd.slice(0, 4), +ymd.slice(5, 7)-1, +ymd.slice(8)) - Date.UTC(1899, 11, 30)) / 864e5);
+  try {
+    AUTH.live = false; CT_MEM.rows = []; CT_MEM.seq = 0;
+    await ctStage('가상.xlsx', R, false);
+    ok(ctUi.pick && document.querySelector('#orgModal .ct-cf') && ctUi.pick.year===Y && txt().includes('이 PC 화면 안에서만'), '확인 창 · 다가오는 회차가 기본');
+    ok(ctBlock().includes('가상둘') && txt().includes('가상둘'), '읽을 수 없는 칸이 있는 사람은 올릴 수 없다');
+    ctPick(1, 'skip'); ok(ctBlock()==='', '그 줄을 이번에서 빼면 풀린다');
+    ctPick(1, 'auto'); ok(ctBlock().includes('가상둘'), '되돌리면 다시 막힌다');
+    ctPick(1, '3'); ok(ctPlan()[1].st==='off' && ctBlock()==='' && document.getElementById('ctSel1')?.value==='3' && txt().includes('대상 아님 1명'), '대상 아님인 직원을 골라도 그 줄의 고르기 칸은 남는다 (올리지 않으니 읽을 수 없는 칸도 보지 않는다)');
+    ctPick(1, 'skip'); await ctUpload();
+    const g = CT_MEM.rows, id0 = g[0]?.id;
+    ok(g.length===1 && g[0].status==='DRAFT' && g[0].birth6==='900315' && g[0].userId===1 && g[0].base===2418900 && g[0].year===Y && g[0].start===`${Y}-03-01` && g[0].end===ctFebEnd(Y+1) && g[0].annual===ctCalc({ base:2418900, ability:1211000 }).annual, '올리면 발송 전 한 줄 (서버 줄 모양)');
+    ok(!ctUi.pick && !document.getElementById('orgModal') && kpiMsg.msg==='1명 계약서를 올렸어요. 아직 발송 전이에요.', '창이 닫히고 알림');
+    const U = cp(R1); U[1][4] = 2500000;
+    await ctStage('가상.xlsx', U, false); await ctUpload();
+    ok(CT_MEM.rows.length===1 && CT_MEM.rows[0].id===id0 && CT_MEM.rows[0].base===2500000, '발송 전 계약서는 다시 올리면 바뀐다 (새로 생기지 않는다)');
+    CT_MEM.rows[0].status = 'SENT';
+    await ctStage('가상.xlsx', R1, false);
+    ok(txt().includes('이미 발송 1명') && txt().includes('서명 대기') && ctBlock().includes('올릴 사람이 없'), '이미 발송한 사람은 올리지 않는다');
+    await ctSetYear(String(Y-1)); ok(ctBlock()==='' && !txt().includes('이미 발송 1명'), '회차를 바꾸면 그 회차의 발송 현황으로 본다');
+    await ctSetYear(String(Y)); CT_MEM.rows[0].status = 'DRAFT'; ctConfirm();
+    ok(ctBlock()==='' && !txt().includes('생일이 달라요') && !txt().includes('포털 사용이 꺼진'), '발송 전이면 다시 올릴 수 있다 · 경고 없음');
+    ctUi.pick.members.find(m=>m.id===1).use = false; ctConfirm(); ok(ctBlock()==='' && txt().includes('포털 사용이 꺼진'), '포털 사용 꺼짐은 알리기만 (올리기는 된다)');
+    ctUi.pick.members.find(m=>m.id===1).ct = false; ctConfirm(); ok(txt().includes('대상 아님 1명') && ctBlock().includes('올릴 사람이 없'), '연봉계약서가 꺼진 사람은 대상 아님 · 올리지 않는다');
+    CT_PEOPLE[0].birthday = '03-16'; await ctStage('가상.xlsx', R1, false);
+    ok(txt().includes('생일이 달라요') && !ctBlock(), '생일이 구성원 설정과 다르면 알리기만');
+    CT_PEOPLE[0].birthday = '03-15'; await ctStage('가상.xlsx', R1, false); ok(!txt().includes('생일이 달라요'), '생일이 같으면 알리지 않는다');
+    const N = cp(R1); N[1][9] = '900315-1'+'234567';
+    await ctStage('가상.xlsx', N, false);
+    ok(ctUi.pick.r.people[0].b6==='900315' && txt().includes('주민번호 칸에서 앞 6자리만 읽었어요') && !JSON.stringify(ctUi.pick).includes('234567'), '주민번호는 앞 6자리만 남기고 뒷자리는 화면 자료에 없다');
+    const M = cp(R1).map(r=>r.slice()); M[0][9] = '생일';   // 칸 이름이 달라 못 찾는 필수 칸은 창에서 고른다
+    await ctStage('가상.xlsx', M, false);
+    ok(ctUi.pick.r.missing.join()==='birth' && ctBlock().includes('생년월일') && document.getElementById('ctCol_birth'), '못 찾은 필수 칸은 고르기 칸');
+    ctSetCol('birth', 9); ok(!ctUi.pick.r.missing.length && ctUi.pick.r.people[0].b6==='900315' && ctBlock()==='' && !document.getElementById('ctCol_birth'), '칸을 고르면 다시 읽는다');
+    const S = cp(R1); S[1][10] = String(serial(`${Y+3}-01-01`));   // rzXlsx는 날짜 칸도 글자("46447")로 준다
+    await ctStage('가상.xlsx', S, false); ok(ctBlock().includes('계약 시작일') && ctBlock().includes(`${Y}-03-01`), '회차 밖 계약 시작일은 올릴 수 없다');
+    S[1][10] = String(serial(`${Y}-03-15`)); await ctStage('가상.xlsx', S, false); ok(ctBlock()==='' && txt().includes('계약 시작일이 있는 사람'), '회차 안의 계약 시작일 (엑셀 일련번호)');
+    await ctUpload(); ok(CT_MEM.rows[0].start===`${Y}-03-15` && CT_MEM.rows[0].end===ctFebEnd(Y+1), '계약 시작일이 줄에 들어간다');
+    await ctStage('가상.xlsx', R1, false);
+    document.getElementById('orgModal').click();
+    ok(!ctUi.pick && !document.getElementById('orgModal'), '바깥을 눌러 닫으면 읽은 자료도 버린다');
+  } finally {
+    orgCloseModal(); [AUTH.live, ctUi.pick, kpiMsg] = keep; Object.assign(CT_MEM, keep[3]);
+    if(keep[4]===undefined) delete CT_PEOPLE[0].birthday; else CT_PEOPLE[0].birthday = keep[4];
+    renderContent();
+  }
+  return 'ctFlowCheck 통과';
+}
+
 /* ---------------- 연봉 인상 계산 (HR 전용) ----------------
    인사평가가 확정되고 매년 1~2월 연봉 인상안이 정해지면, 전 직원의 새 금액을 한 번에 계산한다 (인사담당자 2026-10-13).
    - 인상안의 모양: 기본급은 전 직원 같은 %, 능력급은 페이존(작년 총 계약 연봉 구간, "이상 ~ 미만") × 등급 칸의 %를 지금 능력급에 곱한다. 인상 후 100원 단위 반올림(ctRaise)
@@ -6829,6 +7122,7 @@ async function rzLoad(kind, file, pw){   // 암호가 걸린 파일이면 암호
     if(rzLocked(buf)){ if(pw==null) return rzAskPw(kind, file); buf = await rzUnlockBuf(buf, pw); }
     if(kind==='contact'){ const c = await rzXlsx(buf); rz.lock = null; return msCtConfirm(file.name, c.rows); }   // 비상연락망 (구성원 설정)
     if(kind==='slip'){ const c = await rzXlsx(buf); rz.lock = null; return await psStage(file.name, c.rows, pw!=null); }   // 급여대장 (급여명세서 올리기, HR) — 암호는 넘기지 않고 풀었는지만
+    if(kind==='contract'){ const c = await rzXlsx(buf); rz.lock = null; return await ctStage(file.name, c.rows, pw!=null); }   // 계약 금액 (연봉계약서 올리기, HR)
     const x = await rzXlsx(buf, kind==='grade' ? '명단' : null), fields = kind==='pay' ? RZ_PAY : RZ_GRADE, h = rzHead(x.rows, fields);   // 평가 결과 보고서(evReport)는 등급이 '명단' 시트에 있다
     rz.lock = null; rz.pick = { kind, file:file.name, sheet:x.sheet, rows:x.rows, at:h.at, head:h.head, map:rzGuess(h.head, fields) }; rzConfirm();
   }catch(e){
@@ -6836,7 +7130,7 @@ async function rzLoad(kind, file, pw){   // 암호가 걸린 파일이면 암호
     rz.lock = null; orgCloseModal();
     kpiFlash({ OLD:'옛 형식(.xls) 파일이라 읽지 못했습니다. 엑셀에서 열어 <b>.xlsx로 다시 저장</b>한 뒤 골라 주세요.',
       ENC:'이 파일에 걸린 암호 방식은 읽지 못합니다. 엑셀에서 열어 <b>파일 → 정보 → 통합 문서 보호 → 암호 설정</b>으로 암호를 다시 걸어 저장해 주세요.',
-      BIG:'파일이 너무 커서 읽지 못했습니다. 필요 없는 시트를 지우고 다시 저장해 주세요.' }[e.message] || (kind==='contact' ? '엑셀 파일(.xlsx)을 읽지 못했습니다. 비상연락망 파일이 맞는지 확인해 주세요.' : kind==='slip' ? '엑셀 파일(.xlsx)을 읽지 못했습니다. 급여 프로그램에서 내려받은 급여대장이 맞는지 확인해 주세요.' : '엑셀 파일(.xlsx)을 읽지 못했습니다. 급여 프로그램에서 내려받은 파일이 맞는지 확인해 주세요.'), 'danger');
+      BIG:'파일이 너무 커서 읽지 못했습니다. 필요 없는 시트를 지우고 다시 저장해 주세요.' }[e.message] || (kind==='contact' ? '엑셀 파일(.xlsx)을 읽지 못했습니다. 비상연락망 파일이 맞는지 확인해 주세요.' : kind==='slip' ? '엑셀 파일(.xlsx)을 읽지 못했습니다. 급여 프로그램에서 내려받은 급여대장이 맞는지 확인해 주세요.' : kind==='contract' ? '엑셀 파일(.xlsx)을 읽지 못했습니다. 계약 금액을 적은 엑셀이 맞는지 확인해 주세요.' : '엑셀 파일(.xlsx)을 읽지 못했습니다. 급여 프로그램에서 내려받은 파일이 맞는지 확인해 주세요.'), 'danger');
   }
 }
 function rzAskPw(kind, file, err){   // 암호를 묻는 창. 틀리면 err와 함께 다시 뜬다
@@ -6856,6 +7150,7 @@ function rzUnlock(){   // 푸는 데 몇 초 걸린다 — 그동안 단추와 �
   go.disabled = el.disabled = true; go.textContent = '여는 중…';
   return rzLoad(k.kind, k.file, el.value);
 }
+function rzCol(i){ let s = '', n = i+1; while(n){ s = String.fromCharCode(64 + (n-1)%26 + 1) + s; n = Math.floor((n-1)/26); } return s; }   // 칸 번호 → 엑셀 열 이름 (0 → A, 26 → AA)
 function rzConfirm(){
   const k = rz.pick, pay = k.kind==='pay', fields = pay ? RZ_PAY : RZ_GRADE, need = RZ_NEED[k.kind].filter(f=>k.map[f]<0), won = n=>n.toLocaleString('ko-KR')+'원';
   const names = a=>escapeHtml([...new Set(a)].slice(0, 5).join(', ')) + (new Set(a).size>5 ? ` 외 ${new Set(a).size-5}명` : '');
@@ -6870,7 +7165,7 @@ function rzConfirm(){
     boxes = `<div><small>읽은 등급</small><b>${count}명</b></div><div><small>등급 없는 사람</small><b>${gm ? rz.pay.people.length-Object.keys(gm.g).length+'명' : '–'}</b></div><div><small>급여 자료에 없는 이름</small><b>${gm ? new Set(gm.miss).size+'명' : '–'}</b></div>`;
     notes = [!gm && '급여 자료를 고르면 이름을 맞춰 봅니다', r.bad.length && `<b>읽지 못한 등급</b>(S · A · B · C · D가 아님): ${names(r.bad)}`, gm && gm.miss.length && `<b>급여 자료에 없는 이름</b>: ${names(gm.miss)}`, gm && gm.dup.length && `<b>같은 이름이 여러 명이라 못 붙임</b>: ${names(gm.dup)} — 사번 칸을 넣어 주세요`];
   }
-  const col = i=>{ let s = '', n = i+1; while(n){ s = String.fromCharCode(64 + (n-1)%26 + 1) + s; n = Math.floor((n-1)/26); } return s; };
+  const col = rzCol;
   const sel = ([f, label])=>`<label><span>${label}${RZ_NEED[k.kind].includes(f) ? ' *' : ''}</span><select class="${need.includes(f)?'need':''}" onchange="rz.pick.map.${f}=+this.value; rzConfirm()"><option value="-1">(없음)</option>${k.head.map((h, i)=>h ? `<option value="${i}" ${k.map[f]===i?'selected':''}>${escapeHtml(h)} (${col(i)}열)</option>` : '').join('')}</select></label>`;
   orgModal(`<div class="card-title"><span>읽은 내용 확인 · ${pay?'급여 자료':'평가 등급'}</span><button type="button" class="x-btn" onclick="orgCloseModal()" aria-label="닫기">${icon('x')}</button></div>
     <div class="list-sub rz-file" style="margin:0 0 10px;">${icon('clip')} <b>${escapeHtml(k.file)}</b>${k.sheet ? ` · ${escapeHtml(k.sheet)} 시트` : ''} · 제목 줄 ${k.at+1}번째</div>
