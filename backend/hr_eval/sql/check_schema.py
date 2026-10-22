@@ -116,6 +116,7 @@ def apply_schema(path: str) -> sqlite3.Connection | None:
         "kpi_memos",
         "kpi_memo_replies",
         "kpi_mutes",
+        "game_hours",
     }
     missing = expected - tables
     _report(not missing, f"테이블 {len(expected)}개 생성", f"누락: {sorted(missing)}")
@@ -1055,6 +1056,21 @@ def check_kpi_review_tables(conn: sqlite3.Connection) -> None:
         conn.execute(f"DELETE FROM {tbl} WHERE user_id = {user} AND year = 2029")
 
 
+def check_game_hours_table(conn: sqlite3.Connection) -> None:
+    """게임 오픈시간 (015 — KPI 2단계 ② 가 014 를 먼저 써서 판 15) — 한 줄짜리 표. 모양(시간대 · 날짜)은 backend/game.py hours_clean 이 본다."""
+    print("27. 게임 오픈시간 (015)")
+    hr = conn.execute("SELECT id FROM users WHERE employee_no='T001'").fetchone()[0]
+    ver = conn.execute("PRAGMA user_version").fetchone()[0]
+    _report(ver >= 15, f"판 번호가 15 이상 — {ver}", f"실제 {ver}")
+    ins = "INSERT INTO game_hours (id, data, updated_at, updated_by) VALUES (?, ?, '2027-03-02T09:00:00Z', ?)"
+    conn.execute(ins, (1, '{"slots": [], "weekend": "all", "days": [], "closed": null}', hr))
+    _report(True, "오픈시간 한 줄 저장 (JSON 객체)")
+    for args, why in (((1, "{}", hr), "두 번째 줄(같은 번호)"), ((2, "{}", hr), "번호 2"), ((3, "[]", hr), "객체가 아닌 JSON"),
+                      ((4, "{", hr), "깨진 JSON"), ((5, "{}", 9999), "없는 바꾼 사람"), ((6, "{}", None), "바꾼 사람 비어 있음")):
+        ok, _ = _rejects(conn, ins, args)
+        _report(ok, f"오픈시간 {why} 거부")
+
+
 def main() -> int:
     print("=" * 62)
     print("SQLite 스키마 적용 + 제약조건 동작 검사")
@@ -1079,6 +1095,7 @@ def main() -> int:
             check_kpi_progress_tables(conn)
             check_withholding_tables(conn)
             check_kpi_review_tables(conn)
+            check_game_hours_table(conn)
         finally:
             conn.close()
 
