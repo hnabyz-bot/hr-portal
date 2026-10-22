@@ -7338,6 +7338,36 @@ async function whSelfCheck(){   // 브라우저 콘솔에서 await whSelfCheck()
       ok(wh.up===null && wh.pick===null && !document.getElementById('orgModal') && !k.busy, '다 올리면 확인 창 자료와 올리던 자료를 놓는다 (wh.up · wh.pick)');
     } finally { orgCloseModal(); [wh.ask, kpiMsg] = ka; }
   } finally { [AUTH.live, payShow, WH_LIVE.mine, wh.mem, whOrig] = keep; }
+  const wd = [whMark, kpiOwner, kpiFlash, URL.createObjectURL, HTMLAnchorElement.prototype.click, whPrintUrl, whOrig, window.open, window.setTimeout, window.matchMedia], got = [], seen = [], box = document.createElement('div');   // 다섯째 부분: 내려받기 · 인쇄 길 (whMark · 다운로드 · 틀은 가짜로 바꿔 끼우고 끝나면 되돌린다). 해 1999 = 지금 화면에 있는 진짜 단추와 겹치지 않게
+  try {
+    box.innerHTML = `<button onclick="whDown(1999, 'emp')">내려받기</button><button onclick="whPrint(1999, 'emp')">인쇄</button>`; document.body.appendChild(box);
+    const [bd, bp] = box.children, marked = Uint8Array.of(7, 7, 7);
+    whOrig = { year:1999, who:'emp', bytes:Uint8Array.of(1, 2, 3), state:'ok' };
+    kpiOwner = ()=>'가상출력'; kpiFlash = m=>got.push(['flash', m]);
+    whMark = async (b, n)=>{ seen.push([bd.disabled, bp.disabled, bd.textContent, bp.textContent].join()); got.push(['mark', b.join(), n]); return marked; };
+    URL.createObjectURL = b=>{ got.push(['blob', b]); return 'blob:whSelfCheck'; };
+    HTMLAnchorElement.prototype.click = function(){ got.push(['down', this.download]); };
+    whPrintUrl = u=>got.push(['print', u]);
+    await Promise.all([whDown(1999, 'emp'), whDown(1999, 'emp')]); await whPrint(1999, 'emp');
+    const blobs = got.filter(g=>g[0]==='blob').map(g=>g[1]), bytes = await Promise.all(blobs.map(b=>b.arrayBuffer().then(a=>new Uint8Array(a).join())));
+    ok(got.map(g=>g[0]).join()==='mark,blob,down,mark,blob,print' && got.filter(g=>g[0]==='mark').every(g=>g[1]==='1,2,3' && g[2]==='가상출력') && blobs.every(b=>b.type==='application/pdf') && bytes.join('|')==='7,7,7|7,7,7' && got[2][1]==='원천징수영수증_1999귀속.pdf' && got[5][1]==='blob:whSelfCheck', '내려받기 · 인쇄: 원본에 kpiOwner 이름으로 워터마크(whMark)한 바이트를 Blob으로 넘긴다 · 두 번 눌러도 한 번');
+    ok(seen.join('|')==='true,true,만드는 중…,인쇄|true,true,내려받기,만드는 중…' && !bd.disabled && !bp.disabled && bd.textContent==='내려받기' && bp.textContent==='인쇄', '만드는 동안 두 단추를 막고 누른 단추에 "만드는 중…" · 끝나면 되돌린다');
+    got.length = 0; whMark = async ()=>{ AUTH.locked = true; return marked; };   // 만드는 사이 로그아웃 · 세션 끝(authLock)
+    try { await whDown(1999, 'emp'); await whPrint(1999, 'emp'); } finally { AUTH.locked = false; }
+    ok(!got.length && !bd.disabled && !bp.disabled, '만드는 사이 로그아웃하면 내려받지도 인쇄 틀을 만들지도 않는다 · 단추는 되돌린다');
+    whPrintUrl = wd[5]; URL.createObjectURL = wd[3];
+    const later = []; let printed = 0;
+    Object.defineProperty(navigator, 'pdfViewerEnabled', { configurable:true, value:true }); window.matchMedia = ()=>({ matches:false }); window.setTimeout = (fn, ms)=>later.push([fn, ms]);   // 여기부터 기다림 없이 한 번에 — 진짜 인쇄 창은 띄우지 않는다
+    whPrintUrl(URL.createObjectURL(new Blob(['x'])));
+    const f = whPrintFrame; Object.defineProperty(f, 'contentWindow', { value:{ focus(){}, print(){ printed++; } } }); f.onload();
+    window.setTimeout = wd[8]; window.matchMedia = wd[9];
+    ok(f.isConnected && printed===1 && f.onload===null && later.length===1 && WH_PRINT_KEEP===600000 && later[0][1]===WH_PRINT_KEEP, '인쇄: 숨긴 틀의 인쇄 창 한 번 · 다시 load돼도 또 뜨지 않게 onload를 지운다 · print()가 돌아온 뒤 10분 타이머');
+    later[0][0]();
+    ok(!f.isConnected && whPrintFrame===null && String(authLock).includes('whPrintGone()'), '10분 뒤(그리고 로그아웃 authLock 때) 인쇄 틀과 PDF 주소를 치운다');
+    got.length = 0; Object.defineProperty(navigator, 'pdfViewerEnabled', { configurable:true, value:false });
+    window.open = ()=>null; whPrintUrl(URL.createObjectURL(new Blob(['x']))); window.open = ()=>({}); whPrintUrl(URL.createObjectURL(new Blob(['x'])));
+    ok(got.map(g=>g[1]).join('|')==='브라우저가 새 창을 막아 바로 인쇄할 수 없습니다. 내려받기로 받은 파일을 열어 인쇄해 주세요.|PDF를 내려받았습니다. 받은 파일을 열어 인쇄해 주세요.', '인쇄 안내: 새 창이 막혔을 때 · PDF를 화면에 못 여는 브라우저(새 창이 내려받기가 된다)');
+  } finally { box.remove(); [whMark, kpiOwner, kpiFlash, URL.createObjectURL, HTMLAnchorElement.prototype.click, whPrintUrl, whOrig, window.open, window.setTimeout, window.matchMedia] = wd; delete navigator.pdfViewerEnabled; whPrintGone(); }
   return 'whSelfCheck 통과';
 }
 
@@ -7497,27 +7527,39 @@ async function whMark(bytes, name, when = new Date()){   // 내려받기 · 인�
   }
   return doc.save();
 }
+let whBusy = false;   // 워터마크 PDF를 만드는 중 — 두 번 눌러 두 번 받거나 인쇄 틀이 바뀌지 않게
 async function whDown(year, who, print){   // 내려받기 · 인쇄(print) — 원본에 워터마크(whMark)를 얹은 새 PDF로. 출력한 사람 = 누른 사람(kpiOwner — HR이 직원 것을 받아도 HR 이름), 일시 = 누른 때. 파일 이름에 실명을 넣지 않는다(PC에 남는 이름). 열어 둔 원본이 있으면 그 바이트로
-  const when = new Date(), o = whOrig, bytes = o && o.year===year && o.who===who && o.bytes || await whPdfBytes(year, who);
-  const out = bytes && await whMark(bytes, kpiOwner(), when).catch(()=>null);
-  if(!out) return kpiFlash(`원본 PDF를 ${print ? '인쇄하지' : '내려받지'} 못했습니다. 잠시 뒤 다시 해 주세요.`, 'danger');
-  const url = URL.createObjectURL(new Blob([out], { type:'application/pdf' }));
-  if(print) return whPrintUrl(url);
-  const a = Object.assign(document.createElement('a'), { href:url, download:`원천징수영수증_${year}귀속.pdf` });
-  document.body.appendChild(a); a.click(); a.remove();
-  setTimeout(()=>URL.revokeObjectURL(url), 1000);   // 내려받기가 시작된 뒤에 버린다 (바로 버리면 막히는 브라우저가 있다)
+  if(whBusy) return;
+  whBusy = true;   // 만드는 동안(처음엔 pdf-lib을 불러와 몇 초) 두 단추를 막고 누른 단추에 "만드는 중…"
+  const bs = [...document.querySelectorAll('[onclick^="whDown("],[onclick^="whPrint("]')], me = bs.find(b=>b.getAttribute('onclick').startsWith(`${print ? 'whPrint' : 'whDown'}(${year},`)), label = me?.innerHTML;
+  bs.forEach(b=>b.disabled = true); if(me) me.textContent = '만드는 중…';
+  try {
+    const when = new Date(), o = whOrig, bytes = o && o.year===year && o.who===who && o.bytes || await whPdfBytes(year, who);
+    const out = bytes && await whMark(bytes, kpiOwner(), when).catch(()=>null);
+    if(AUTH.locked) return;   // 만드는 사이 로그아웃 · 세션 끝 — authLock이 치운 뒤에 내려받거나 인쇄 틀을 만들지 않는다
+    if(!out) return kpiFlash(`원본 PDF를 ${print ? '인쇄하지' : '내려받지'} 못했습니다. 잠시 뒤 다시 해 주세요.`, 'danger');
+    const url = URL.createObjectURL(new Blob([out], { type:'application/pdf' }));
+    if(print) return whPrintUrl(url);
+    const a = Object.assign(document.createElement('a'), { href:url, download:`원천징수영수증_${year}귀속.pdf` });
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url), 1000);   // 내려받기가 시작된 뒤에 버린다 (바로 버리면 막히는 브라우저가 있다)
+  } finally { whBusy = false; bs.forEach(b=>b.disabled = false); if(me) me.innerHTML = label; }
 }
 function whPrint(year, who){ return whDown(year, who, true); }
-let whPrintFrame = null;   // 인쇄용 숨긴 틀 — 다음 인쇄 · 로그아웃 때 치운다(인쇄 창이 떠 있는 동안 치우면 인쇄가 끊기는 브라우저가 있다)
+let whPrintFrame = null;   // 인쇄용 숨긴 틀(주민등록번호가 든 워터마크 PDF) — print()가 돌아오고 WH_PRINT_KEEP 뒤 · 다음 인쇄 · 로그아웃 때 치운다(인쇄 창이 떠 있는 동안 치우면 인쇄가 끊기는 브라우저가 있다)
+const WH_PRINT_KEEP = 600000;   // 10분 — PDF가 오래 남지 않게 끝을 두되, 열어 둔 인쇄 창이 끊기지 않을 만큼 길게(크롬 PDF 틀의 print()가 인쇄 창이 닫힐 때까지 멈추는지 확인 못 함). 다음 인쇄 · 로그아웃 · 401 때는 더 일찍 치운다
 function whPrintGone(){ const f = whPrintFrame; whPrintFrame = null; if(f){ URL.revokeObjectURL(f.src); f.remove(); } }
 function whPrintUrl(url){   // 숨긴 틀(iframe)에 워터마크 PDF를 열어 그 인쇄 창을 띄운다. PDF를 화면에 못 여는 브라우저(휴대폰 · 'PDF 내려받기' 설정)나 틀 인쇄가 막히면 새 창에 PDF를 열어 거기서 인쇄하게
   whPrintGone();
   const open = ()=>{ const w = window.open(url, '_blank'); setTimeout(()=>URL.revokeObjectURL(url), 60000);
-    kpiFlash(w ? '이 브라우저에서는 바로 인쇄할 수 없어 새 창에 PDF를 열었습니다. 열린 PDF에서 인쇄해 주세요.' : '이 브라우저에서는 바로 인쇄할 수 없습니다. 내려받기로 받은 파일을 열어 인쇄해 주세요.', 'warning'); };
+    kpiFlash(!w ? '브라우저가 새 창을 막아 바로 인쇄할 수 없습니다. 내려받기로 받은 파일을 열어 인쇄해 주세요.' : navigator.pdfViewerEnabled ? '이 브라우저에서는 바로 인쇄할 수 없어 새 창에 PDF를 열었습니다. 열린 PDF에서 인쇄해 주세요.' : 'PDF를 내려받았습니다. 받은 파일을 열어 인쇄해 주세요.', 'warning'); };   // PDF를 화면에 못 여는 브라우저(안드로이드 크롬 · 'PDF 내려받기' 설정)는 새 창이 곧 내려받기가 된다
   if(!navigator.pdfViewerEnabled || matchMedia('(pointer:coarse)').matches) return open();
   const f = whPrintFrame = Object.assign(document.createElement('iframe'), { src:url, title:'인쇄용 원천징수영수증', tabIndex:-1 });
   f.setAttribute('aria-hidden', 'true'); f.style.cssText = 'position:fixed; right:0; bottom:0; width:1px; height:1px; border:0; opacity:0; pointer-events:none;';
-  f.onload = ()=>{ try { f.contentWindow.focus(); f.contentWindow.print(); } catch(e){ if(whPrintFrame===f) whPrintFrame = null; f.remove(); open(); } };
+  f.onload = ()=>{ f.onload = null;   // 틀이 다시 load돼도 인쇄 창이 또 뜨지 않게
+    try { f.contentWindow.focus(); f.contentWindow.print(); } catch(e){ if(whPrintFrame===f) whPrintFrame = null; f.remove(); return open(); }
+    setTimeout(()=>{ if(whPrintFrame===f) whPrintGone(); }, WH_PRINT_KEEP);
+  };
   document.body.appendChild(f);
 }
 
