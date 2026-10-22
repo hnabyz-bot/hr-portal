@@ -186,22 +186,33 @@ def months_get() -> Response:
         {"ym": r[0], "payDate": r[1], "status": r[2], "people": r[3], "revised": bool(r[4]), "uploadedAt": r[5], "openedAt": r[6]} for r in rows])
 
 
+def remember_codes(conn, pairs: list[tuple[int, str]]) -> str | None:
+    """(직원 번호, 사원코드) 쌍을 기억한다 — 코드가 비어 있던 직원에게 붙인다(users.employee_no). 다른 직원에게 붙은 코드면 안내 문구를 돌려준다(그때는 아무것도 붙이지 않음).
+    직원 번호가 명단에 있는지는 부르는 쪽이 먼저 확인한다. 급여명세서 · 연봉계약서가 같은 규칙을 쓴다."""
+    no = {r[0]: r[1] for r in conn.execute("SELECT id, employee_no FROM users")}
+    holder = {c: uid for uid, c in no.items() if c}
+    remember = []  # 사원코드가 비어 있던 직원에게 기억할 것
+    for uid, code in pairs:
+        if holder.get(code, uid) != uid:
+            return f"사원코드 {code}이(가) 이미 다른 직원에게 붙어 있습니다. 전에 직원을 잘못 골랐다면 구성원 설정에서 그 직원의 사원코드를 지운 뒤 다시 올려 주세요."
+        if code not in holder and no[uid] is None:
+            holder[code], no[uid] = uid, code
+            remember.append((code, uid))
+    conn.executemany("UPDATE users SET employee_no = ? WHERE id = ?", remember)
+    return None
+
+
 def _store(conn, ym: str, pay_date: str, plan: list[tuple[int, str, dict]], key: bytes) -> tuple[int, str] | None:
     """한 트랜잭션 안에서: 공개 중이면 409 → 직원·사원코드 확인 → 그 달을 지우고 다시 넣기 → 달 줄 → 감사로그. 문제가 있으면 (상태, 문구)."""
     row = conn.execute("SELECT status FROM payslip_months WHERE ym = ?", (ym,)).fetchone()
     if row and row[0] == "OPEN":
         return 409, MSG_OPEN
-    no = {r[0]: r[1] for r in conn.execute("SELECT id, employee_no FROM users")}
-    holder = {c: uid for uid, c in no.items() if c}
-    remember = []  # 사원코드가 비어 있던 직원에게 기억할 것
-    for uid, code, slip in plan:
-        if uid not in no:
+    known = {r[0] for r in conn.execute("SELECT id FROM users")}
+    for uid, _, slip in plan:
+        if uid not in known:
             return 400, _shape(slip["head"]["name"], "포털에 없는 직원입니다")
-        if holder.get(code, uid) != uid:
-            return 400, f"사원코드 {code}이(가) 이미 다른 직원에게 붙어 있습니다. 전에 직원을 잘못 골랐다면 구성원 설정에서 그 직원의 사원코드를 지운 뒤 다시 올려 주세요."
-        if code not in holder and no[uid] is None:
-            holder[code], no[uid] = uid, code
-            remember.append((code, uid))
+    if (why := remember_codes(conn, [(uid, code) for uid, code, _ in plan])) is not None:
+        return 400, why
     conn.execute(
         "INSERT INTO payslip_months (ym, pay_date, status, people, uploaded_at, uploaded_by) VALUES (?, ?, 'DRAFT', ?, ?, ?)"
         " ON CONFLICT (ym) DO UPDATE SET pay_date = excluded.pay_date, status = 'DRAFT', people = excluded.people,"
@@ -209,7 +220,6 @@ def _store(conn, ym: str, pay_date: str, plan: list[tuple[int, str, dict]], key:
         (ym, pay_date, len(plan), auth._iso(auth._now()), g.actor.user_id))
     conn.execute("DELETE FROM payslips WHERE ym = ?", (ym,))  # 다시 올리면 '봤음'도 새로
     conn.executemany("INSERT INTO payslips (ym, user_id, data) VALUES (?, ?, ?)", [(ym, uid, seal(key, ym, uid, slip)) for uid, _, slip in plan])
-    conn.executemany("UPDATE users SET employee_no = ? WHERE id = ?", remember)
     auth._audit(conn, AuditEntry.by(g.actor, action="PAYSLIP_UPLOAD", entity_type="payslip_month", entity_id=None, after_data={"ym": ym, "people": len(plan)}))
     return None
 

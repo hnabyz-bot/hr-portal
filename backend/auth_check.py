@@ -1171,6 +1171,305 @@ def check_withholding(hr) -> None:
             os.environ["HR_PAY_KEY"] = had
 
 
+def check_contracts(hr) -> None:
+    """연봉계약서 서버 ① (2026-10-22): 설정 · 직인 · 올리기 · 현황 · 조정 · 빼기 · 발송 — 잠가 저장 · HR 만 · 열쇠가 없으면 503 · 이미 발송한 사람은 409.
+    사람 · 금액 · 대표이사 이름 · 직인 그림은 전부 가짜."""
+    import base64
+    import io
+    import unittest
+    from datetime import timedelta
+
+    from cryptography.exceptions import InvalidTag
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+    from PIL import Image
+
+    import contract_doc
+
+    print("연봉계약서 ① (설정 · 올리기 · 현황 · 조정 · 빼기 · 발송)")
+    emp = app.test_client()
+    login(emp, new_token("emp"))
+    raw_key = bytes(range(32))
+    key, had = base64.b64encode(raw_key).decode(), os.environ.pop("HR_PAY_KEY", None)  # 열쇠는 글자로 적지 않고 여기서 만든다
+    real_now = auth._now
+    get = lambda c, p: c.get(p, base_url=BASE)  # noqa: E731
+    post = lambda c, p, body=None, headers=ORIGIN: c.post(p, base_url=BASE, headers=headers, json=body)  # noqa: E731
+    PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="  # 1x1 그림
+    buf = io.BytesIO()
+    Image.new("RGBA", (2, 2), (200, 0, 0, 255)).save(buf, "PNG")
+    PNG2 = base64.b64encode(buf.getvalue()).decode()
+    Y = contract_doc.upcoming_year(auth._today())
+    first, last = contract_doc.round_period(Y)
+    day = lambda n: (auth._today() + timedelta(days=n)).isoformat()  # noqa: E731
+    A, B, C, D, E, F, G, H, I = range(131, 140)  # A 보통 · B 포털 꺼짐 · C 계약서 꺼짐 · D 본부장 · E 나중에 비활성 · F 빼기 · G 나중에 계약서 꺼짐 · H 처음부터 비활성 · I 다른 회차와 함께 발송
+    for uid in (A, B, C, D, E, F, G, H, I):
+        x("INSERT INTO users (id, name, email, department_id, hiworks_user_no, portal_enabled, has_contract, title, is_active, deactivated_at)"
+          " VALUES (?, ?, ?, 2, ?, ?, ?, ?, ?, ?)",
+          uid, f"가상계약{'ABCDEFGHI'[uid - A]}", f"ct{uid}@example.invalid", f"HW-{uid}", int(uid != B), int(uid != C), "프로" if uid == A else None,
+          int(uid != H), "2027-01-01T00:00:00Z" if uid == H else None)
+    x("INSERT INTO user_roles (user_id, role) VALUES (?, 'DIVISION_HEAD')", D)
+
+    def row(uid, **kw):
+        return {"userId": uid, "code": "", "birth6": "900315", "base": 2418900, "ability": 1211000, "pos": 300000, "site": 0, "qual": 0, "start": None, **kw}
+
+    up = lambda c, rows, year=Y: post(c, f"/api/contracts/{year}", {"rows": rows})  # noqa: E731
+    admin = lambda year=Y, c=hr: get(c, f"/api/contracts/admin?year={year}")  # noqa: E731
+    rows_of = lambda year=Y, c=hr: {r["userId"]: r for r in admin(year, c).json["rows"]}  # noqa: E731
+    cfg = {"ceo": "○○○", "addr": "가상시 가상구 가상로 1", "kind": "가상 서비스업", "seal": PNG}
+    sv = lambda **kw: post(hr, "/api/contracts/settings", {**cfg, **kw})  # noqa: E731
+    cfg_of = lambda: get(hr, "/api/contracts/settings").json  # noqa: E731
+    send = lambda ids, due=None, c=hr: post(c, "/api/contracts/send", {"ids": ids, "due": due or day(14)})  # noqa: E731
+    adj = lambda cid, **kw: post(hr, f"/api/contracts/{cid}/adjust", {"base": 2600000, "ability": 1211000, "pos": 300000, "site": 0, "qual": 0,  # noqa: E731
+                                                                      "birth6": "900315", "start": None, "reason": "가상 사유", **kw})
+    snap = lambda: (q("SELECT * FROM contracts ORDER BY id"), q("SELECT * FROM contract_settings"), q("SELECT * FROM contract_seals ORDER BY id"),  # noqa: E731
+                    q("SELECT id, employee_no FROM users ORDER BY id"), q("SELECT COUNT(*) FROM audit_logs"))
+    audit = lambda action: q("SELECT entity_type, entity_id, after_data FROM audit_logs WHERE action = ? ORDER BY id", action)  # noqa: E731
+    code_of = lambda uid: q("SELECT employee_no FROM users WHERE id = ?", uid)[0][0]  # noqa: E731
+
+    def opened(uid, field, ver=1, year=Y):  # 열쇠로 풀어 본 그 칸 (DB 의 잠근 글 → JSON)
+        blob = q(f"SELECT {field} FROM contracts WHERE year = ? AND user_id = ? AND version = ?", year, uid, ver)[0][0]
+        return json.loads(AESGCM(raw_key).decrypt(blob[:12], blob[12:], f"ct|{year}|{uid}|{ver}|{field}".encode()))
+
+    try:
+        print("  - 권한")
+        anon = app.test_client()
+        ok(anon.get("/api/contracts/admin", base_url=BASE).status_code == 401 and anon.post(f"/api/contracts/{Y}", base_url=BASE, headers=ORIGIN, json={}).status_code == 401,
+           "로그인 없이는 401")
+        denied = [get(emp, "/api/contracts/admin"), get(emp, "/api/contracts/settings"), get(emp, "/api/contracts/settings/seal"), post(emp, "/api/contracts/settings", cfg),
+                  up(emp, [row(A)]), send([1], c=emp), post(emp, "/api/contracts/1/adjust", {}), post(emp, "/api/contracts/1/remove")]
+        ok(all(r.status_code == 403 for r in denied), "직원은 현황 · 설정 · 직인 · 올리기 · 발송 · 조정 · 빼기 모두 403 (열쇠 검사보다 먼저)")
+        ok(post(hr, f"/api/contracts/{Y}", {"rows": [row(A)]}, headers={}).status_code == 403, "Origin 없으면 403")
+
+        print("  - 서버에 열쇠가 없을 때")
+        ok(admin().json == {"ready": False, "settings": False, "year": Y, "rows": []}, "현황은 ready 거짓 · 줄 없음 (오류 아님)")
+        ok(cfg_of() == {"ready": False, "settings": None}, "설정도 ready 거짓")
+        before = snap()
+        writes = [up(hr, [row(A)]), sv(), send([1]), post(hr, "/api/contracts/1/adjust", {}), post(hr, "/api/contracts/1/remove")]
+        ok(all(r.status_code == 503 and "HR_PAY_KEY" in r.json["error"] for r in writes) and snap() == before, "쓰기는 모두 503 + 설정 안내 (아무것도 저장 안 됨)")
+        os.environ["HR_PAY_KEY"] = base64.b64encode(bytes(range(31))).decode()
+        ok(admin().json["ready"] is False and up(hr, [row(A)]).status_code == 503, "32바이트가 아닌 열쇠는 없는 것과 같음")
+        os.environ["HR_PAY_KEY"] = key
+
+        print("  - 설정 — 모양이 틀리면 400")
+        ok(cfg_of() == {"ready": True, "settings": None} and admin().json["settings"] is False, "설정이 아직 없으면 settings null · 현황 settings 거짓")
+        before = snap()
+        r = sv(seal=None)
+        ok(r.status_code == 400 and "직인" in r.json["error"], "처음에는 직인 없이 저장할 수 없음 (400)")
+        bad_cfg = {"대표이사 빈칸": {"ceo": "   "}, "대표이사 21자": {"ceo": "가" * 21}, "대표이사 제어문자": {"ceo": "가\x00나"}, "대표이사 짝 없는 글자": {"ceo": "가\ud800"},
+                   "대표이사 글자 아님": {"ceo": 5}, "소재지 101자": {"addr": "가" * 101}, "소재지 없음": {"addr": None}, "종류 31자": {"kind": "가" * 31},
+                   "직인 PNG 아님": {"seal": base64.b64encode(b"hello").decode()}, "직인 base64 아님": {"seal": "%%%"}, "직인 글자 아님": {"seal": 7},
+                   "직인 머리만 PNG": {"seal": base64.b64encode(b"\x89PNG\r\n\x1a\n" + b"junk" * 20).decode()},
+                   "직인 500KB 넘음": {"seal": base64.b64encode(b"\x89PNG\r\n\x1a\n" + b"0" * 500_000).decode()}}
+        wrong = [k for k, ch in bad_cfg.items() if sv(**ch).status_code != 400]
+        ok(not wrong and snap() == before, f"이름 · 소재지 · 종류 글자 규칙, 직인은 PNG 머리 · 읽을 수 있는 그림 · 500KB 이하 — 틀리면 400, 아무것도 안 바뀜 {wrong}")
+
+        print("  - 올리기 — 모양이 틀리면 400 (아무것도 안 바뀜)")
+        no_start = row(A)
+        del no_start["start"]
+        rows_bad = {
+            "같은 직원 두 번": [row(A), row(A)], "연봉계약서 꺼진 직원": [row(C)], "본부장": [row(D)], "비활성 직원": [row(H)], "포털에 없는 직원": [row(99999)],
+            "직원 번호 글자": [row("131")], "직원 번호 참/거짓": [row(True)], "직원 번호 0": [row(0)],
+            "생년월일 없는 날": [row(A, birth6="900230")], "생년월일 5자리": [row(A, birth6="90315")], "생년월일 숫자": [row(A, birth6=900315)],
+            "기본급 0원": [row(A, base=0)], "기본급 음수": [row(A, base=-1)], "기본급 실수": [row(A, base=2418900.5)], "기본급 실수(.0)": [row(A, base=2418900.0)],
+            "기본급 글자": [row(A, base="2418900")], "기본급 참/거짓": [row(A, base=True)], "능력급 10억 초과": [row(A, ability=1_000_000_001)],
+            "직책수당 음수": [row(A, pos=-1)], "자격수당 실수": [row(A, qual=0.5)],
+            "시작일 회차 전": [row(A, start=f"{Y}-02-28")], "시작일 회차 뒤": [row(A, start=f"{Y + 1}-03-01")], "시작일 없는 날": [row(A, start=f"{Y}-02-30")],
+            "시작일 모양": [row(A, start=f"{Y}-4-1")], "시작일 숫자": [row(A, start=20270401)],
+            "사원코드 한글": [row(A, code="가나")], "사원코드 21자": [row(A, code="A" * 21)], "칸이 더 있음": [{**row(A), "extra": 1}], "start 칸 빠짐": [no_start],
+            "줄이 사전 아님": ["x"], "줄 없음": [], "2001줄": [row(A)] * 2001}
+        wrong = [k for k, rs in rows_bad.items() if up(hr, rs).status_code != 400]
+        wrong += [k for k, r in (("회차 1999", post(hr, "/api/contracts/1999", {"rows": [row(A)]})), ("회차 글자", post(hr, "/api/contracts/20x7", {"rows": [row(A)]})),
+                                 ("rows 목록 아님", post(hr, f"/api/contracts/{Y}", {"rows": "x"})), ("본문 2MB 넘음", post(hr, f"/api/contracts/{Y}", {"rows": [row(A)], "pad": "x" * 2_100_000})))
+                  if r.status_code != 400]
+        ok(not wrong and snap() == before, f"직원 · 금액 · 생년월일 · 시작일 · 사원코드 · 칸 · 줄 수 · 회차 모양 — 틀리면 400, 아무것도 안 바뀜 {wrong}")
+        ok(up(hr, [row(A, code="CT-A1"), row(B, code="CT-A1")]).status_code == 400 and snap() == before, "같은 요청 안에서 두 사람에게 같은 사원코드를 붙이면 400 (아무것도 안 바뀜)")
+
+        print("  - 올리기 · 잠금 · 사원코드 기억")
+        r = up(hr, [row(A, code="CT-A1"), row(B, birth6="000229", start=f"{Y}-04-15"), row(E), row(F), row(G, site=100000, qual=50000)])
+        ok(r.status_code == 200 and r.json == {"saved": 5}, "5명 올림 → saved 5")
+        ids = {uid: cid for cid, uid in q("SELECT id, user_id FROM contracts WHERE year = ?", Y)}
+        st = {uid: q("SELECT status, version, starts_on, prev_id FROM contracts WHERE id = ?", cid)[0] for uid, cid in ids.items()}
+        ok(set(ids) == {A, B, E, F, G} and all(v[:2] == ("DRAFT", 1) and v[3] is None for v in st.values()) and st[A][2] == first and st[B][2] == f"{Y}-04-15",
+           "모두 발송 전 · 1차 · 시작일은 비우면 회차 시작일")
+        blobs = [b[0] for b in q("SELECT body FROM contracts WHERE year = ?", Y)]
+        ok(all(len(b) > 28 and all(w.encode() not in b for w in ("가상", "2418900", "1211000", "900315", "CT-A1", "프로")) for b in blobs),
+           "DB 에는 잠긴 글만 (이름 · 금액 · 생년월일 · 사원코드가 그대로 없음)")
+        want = {"code": "CT-A1", "name": "가상계약A", "dept": "가상팀", "title": "프로", "birth6": "900315", "base": 2418900, "ability": 1211000, "pos": 300000,
+                "site": 0, "qual": 0, "reason": ""}
+        ok(opened(A, "body") == want and opened(B, "body")["title"] == "" and opened(B, "body")["code"] == "", "열쇠로 풀면 명단에서 채운 이름 · 소속 · 직급(없으면 빈 글자)과 올린 값")
+        blob = q("SELECT body FROM contracts WHERE id = ?", ids[A])[0][0]
+        aad_wrong = [f"ct|{ids[A]}|{Y}|{A}|body", f"ct|{Y}|{B}|1|body", f"ct|{Y}|{A}|2|body", f"ct|{Y}|{A}|1|company", f"ct|{Y + 1}|{A}|1|body"]
+
+        def fails(aad):
+            try:
+                AESGCM(raw_key).decrypt(blob[:12], blob[12:], aad.encode())
+            except InvalidTag:
+                return True
+            return False
+
+        ok(all(fails(a) for a in aad_wrong), "다른 직원 · 다른 해 · 다른 차수 · 다른 칸 자리로 옮기면 안 풀림 (aad)")
+        ok(code_of(A) == "CT-A1" and code_of(B) is None, "비어 있던 직원에게 올린 사원코드를 기억")
+        n_rows, id_a = q("SELECT COUNT(*) FROM contracts")[0][0], ids[A]
+        r = up(hr, [row(A, code="CT-A9", base=2500000, start=f"{Y}-05-01")])
+        ok(r.json == {"saved": 1} and q("SELECT COUNT(*) FROM contracts")[0][0] == n_rows and q("SELECT id, version, status FROM contracts WHERE year = ? AND user_id = ?", Y, A) == [(id_a, 1, "DRAFT")]
+           and opened(A, "body")["base"] == 2500000 and opened(A, "body")["code"] == "CT-A9" and q("SELECT starts_on FROM contracts WHERE id = ?", ids[A]) == [(f"{Y}-05-01",)],
+           "같은 사람을 다시 올리면 발송 전 줄이 바뀜 (줄 수 · 번호 · 차수 그대로)")
+        ok(code_of(A) == "CT-A1", "이미 사원코드가 있는 직원은 다른 코드로 올려도 그대로")
+        up(hr, [row(A, code="CT-A1")])
+        r = up(hr, [row(B, code="CT-A1")])
+        ok(r.status_code == 400 and "이미 다른 직원에게 붙어" in r.json["error"] and code_of(B) is None, "남의 사원코드는 400 (급여명세서와 같은 안내)")
+        ok(up(hr, [row(B, code="CT-B1", birth6="000229", start=f"{Y}-04-15")]).status_code == 200 and code_of(B) == "CT-B1", "빈 직원에게는 붙음")
+
+        print("  - 현황")
+        rows = rows_of()
+        names = ["id", "year", "userId", "version", "status", "start", "end", "code", "name", "dept", "title", "birth6", "base", "ability", "pos", "site", "qual",
+                 "annual", "reason", "sentAt", "due", "late", "signedAt", "replacedOn", "cancelledAt", "cancelReason", "ask", "prevId"]
+        ra = rows[A]
+        ok(set(rows) == {A, B, E, F, G} and all(set(r) == set(names) for r in rows.values()), "현황 줄 모양: 이름 · 금액 · 상태 · 시각 · 문의 · 앞 차수")
+        ok(ra["status"] == "DRAFT" and ra["code"] == "CT-A1" and ra["name"] == "가상계약A" and ra["dept"] == "가상팀" and ra["title"] == "프로" and ra["start"] == first and ra["end"] == last
+           and ra["year"] == Y and ra["version"] == 1 and ra["late"] is False and ra["ask"] is None and ra["prevId"] is None and ra["sentAt"] is None and ra["due"] is None
+           and ra["reason"] == "" and rows[B]["start"] == f"{Y}-04-15" and rows[B]["birth6"] == "000229" and rows[B]["title"] == "", "A · B 줄 내용")
+        ok(ra["annual"] == contract_doc.calc(2418900, 1211000, 300000)["annual"] == 49535908
+           and rows[G]["annual"] == contract_doc.calc(2418900, 1211000, 300000, 100000, 50000)["annual"] and rows[G]["annual"] != ra["annual"],
+           "총 계약 연봉은 contract_doc.calc 와 같음 (양식 샘플 49,535,908 · 현장관리수당은 연봉에서 빠짐)")
+        ok(admin(Y + 1).json["rows"] == [] and admin("abc").status_code == 400 and admin("1999").status_code == 400 and get(hr, "/api/contracts/admin").json["year"] == contract_doc.upcoming_year(auth._today()),
+           "다른 회차는 비어 있고, 해 모양이 틀리면 400, 해를 안 보내면 다가오는 회차")
+
+        print("  - 설정 없이 발송")
+        before = snap()
+        r = send([ids[A]])
+        ok(r.status_code == 409 and r.json["error"] == "계약서 설정에서 대표이사 이름과 직인을 먼저 넣어 주세요." and snap() == before, "설정이 없으면 발송 409 (아무것도 안 바뀜)")
+
+        print("  - 설정 저장 · 직인")
+        r = sv()
+        seal1 = q("SELECT seal_id FROM contract_settings")[0][0]
+        want_cfg = {"ceo": "○○○", "addr": "가상시 가상구 가상로 1", "kind": "가상 서비스업", "sealId": seal1}
+        ok(r.status_code == 200 and r.json == {"ready": True, "settings": want_cfg} and cfg_of() == {"ready": True, "settings": want_cfg} and admin().json["settings"] is True,
+           "저장하면 읽을 수 있고 현황 settings 참")
+        cfg_blob, seal_blob = q("SELECT data FROM contract_settings")[0][0], q("SELECT png FROM contract_seals WHERE id = ?", seal1)[0][0]
+        ok(all(w.encode() not in cfg_blob for w in ("○○○", "가상시", "서비스업")) and len(cfg_blob) > 28 and len(seal_blob) > 28 and not seal_blob.startswith(b"\x89PNG"),
+           "DB 에는 잠긴 글만 (대표이사 이름 · 소재지 · 직인 그림이 그대로 없음)")
+        ok(json.loads(AESGCM(raw_key).decrypt(cfg_blob[:12], cfg_blob[12:], b"ct|settings")) == {k: cfg[k] for k in ("ceo", "addr", "kind")}
+           and AESGCM(raw_key).decrypt(seal_blob[:12], seal_blob[12:], f"ct|seal|{seal1}".encode()) == base64.b64decode(PNG), "설정은 aad ct|settings · 직인은 ct|직인번호 로 풀림")
+        r = get(hr, "/api/contracts/settings/seal")
+        ok(r.status_code == 200 and r.mimetype == "image/png" and r.data == base64.b64decode(PNG), "지금 직인 그림을 돌려줌")
+        ok(audit("CONTRACT_SETTINGS") == [("contract_settings", None, '{"fields": ["ceo", "addr", "kind", "seal"]}')], "감사로그 CONTRACT_SETTINGS — 바뀐 칸 이름만")
+
+        print("  - 조정 (발송 전만)")
+        before = snap()
+        adj_bad = {"사유 빈칸": {"reason": "  "}, "사유 201자": {"reason": "가" * 201}, "사유 제어문자": {"reason": "가\x00"}, "사유 글자 아님": {"reason": 5}, "기본급 0": {"base": 0},
+                   "기본급 실수": {"base": 2600000.5}, "생년월일": {"birth6": "900230"}, "시작일 회차 밖": {"start": f"{Y}-02-28"}, "자격수당 음수": {"qual": -5},
+                   "칸이 더 있음": {"extra": 1}}
+        wrong = [k for k, ch in adj_bad.items() if adj(ids[A], **ch).status_code != 400]
+        no_reason = {"base": 2600000, "ability": 1211000, "pos": 300000, "site": 0, "qual": 0, "birth6": "900315", "start": None}
+        wrong += ["사유 칸 없음"] if post(hr, f"/api/contracts/{ids[A]}/adjust", no_reason).status_code != 400 else []
+        ok(not wrong and snap() == before, f"사유 1~200자(제어문자 거부) · 금액 · 생년월일 · 시작일 모양 — 틀리면 400, 아무것도 안 바뀜 {wrong}")
+        ok(adj(99999).status_code == 404 and adj(0).status_code == 404 and post(hr, "/api/contracts/99999999999/adjust", {}).status_code == 404 and snap() == before, "없는 계약서 번호는 404")
+        r = adj(ids[A], base=2600000, start=f"{Y}-05-01", reason="  가상 조정  ")
+        ra = rows_of()[A]
+        ok(r.status_code == 200 and ra["base"] == 2600000 and ra["start"] == f"{Y}-05-01" and ra["reason"] == "가상 조정" and ra["annual"] == contract_doc.calc(2600000, 1211000, 300000)["annual"],
+           "조정 → 금액 · 시작일 · 사유(앞뒤 공백은 뺌)가 바뀌고 총 계약 연봉도 다시 셈")
+        ok(opened(A, "body")["name"] == "가상계약A" and opened(A, "body")["code"] == "CT-A1" and opened(A, "body")["title"] == "프로", "이름 · 소속 · 직급 · 사원코드는 올릴 때 그대로")
+        ok(adj(ids[A], base=2418900, start=None, reason="가상 되돌림").status_code == 200 and rows_of()[A]["start"] == first and rows_of()[A]["base"] == 2418900, "시작일을 비우면 회차 시작일")
+        ok([(a[0], a[1], sorted(json.loads(a[2]))) for a in audit("CONTRACT_ADJUST")] == [("contract", ids[A], ["userId", "year"])] * 2, "감사로그 CONTRACT_ADJUST (조정 두 번) — 계약서 번호 · 해 · 직원 번호만")
+
+        print("  - 빼기 (발송 전만)")
+        n_rows = q("SELECT COUNT(*) FROM contracts")[0][0]
+        ok(post(hr, "/api/contracts/99999/remove").status_code == 404 and q("SELECT COUNT(*) FROM contracts")[0][0] == n_rows, "없는 계약서 번호는 404")
+        r = post(hr, f"/api/contracts/{ids[F]}/remove")
+        ok(r.status_code == 200 and q("SELECT COUNT(*) FROM contracts")[0][0] == n_rows - 1 and not q("SELECT 1 FROM contracts WHERE id = ?", ids[F])
+           and audit("CONTRACT_REMOVED") == [("contract", ids[F], json.dumps({"year": Y, "userId": F}))], "빼기 → 줄이 지워짐 + 감사로그 CONTRACT_REMOVED")
+        ok(post(hr, f"/api/contracts/{ids[F]}/remove").status_code == 404, "지운 줄을 또 빼면 404")
+
+        print("  - 발송")
+        x("UPDATE users SET is_active = 0, deactivated_at = '2027-01-01T00:00:00Z' WHERE id = ?", E)
+        x("UPDATE users SET has_contract = 0 WHERE id = ?", G)
+        bad_send = [{"ids": [], "due": day(14)}, {"ids": "1", "due": day(14)}, {"ids": [ids[A], ids[A]], "due": day(14)}, {"ids": [True], "due": day(14)}, {"ids": [0], "due": day(14)},
+                    {"ids": [2**40], "due": day(14)}, {"ids": ["1"], "due": day(14)}, {"ids": list(range(1, 2002)), "due": day(14)}, {"due": day(14)},
+                    {"ids": [ids[A]], "due": day(-1)}, {"ids": [ids[A]], "due": f"{Y}-02-30"}, {"ids": [ids[A]]}, {"ids": [ids[A]], "due": "내일"}, {"ids": [ids[A]], "due": 20270301}]
+        before = snap()
+        wrong = [i for i, b in enumerate(bad_send) if post(hr, "/api/contracts/send", b).status_code != 400]
+        ok(not wrong and snap() == before, f"ids 모양 · 마감일(어제 · 없는 날 · 빈칸 · 숫자) 틀리면 400, 아무것도 안 바뀜 {wrong}")
+        r = send([ids[B]], day(0))
+        ok(r.status_code == 200 and r.json == {"sent": 0, "skipped": [{"id": ids[B], "why": "포털 사용 꺼짐"}]} and audit("CONTRACT_SEND") == [], "마감일이 오늘이면 통과 · 포털 사용이 꺼진 사람은 건너뜀 (보낸 사람이 없으면 감사로그 없음)")
+        r = send([ids[A], ids[B], ids[E], ids[G], ids[F]])
+        ok(r.status_code == 200 and r.json == {"sent": 1, "skipped": [{"id": ids[B], "why": "포털 사용 꺼짐"}, {"id": ids[E], "why": "비활성"},
+                                                                         {"id": ids[G], "why": "연봉계약서 대상 아님"}, {"id": ids[F], "why": "발송 전이 아님"}]},
+           "발송 → A 만 나가고, 나머지는 이유와 함께 건너뜀 (포털 꺼짐 · 비활성 · 계약서 대상 아님 · 지워진 줄)")
+        a = q("SELECT status, sent_at, sent_by, due_on, seal_id, company FROM contracts WHERE id = ?", ids[A])[0]
+        company = opened(A, "company")
+        ok(a[:5] == ("SENT", a[1], 1, day(14), seal1) and a[1] and company == {"name": contract_doc.COMPANY_NAME, **{k: cfg[k] for k in ("ceo", "addr", "kind")}}
+           and all(w.encode() not in a[5] for w in ("○○○", "가상시")), "A 는 서명 대기 · 보낸 때와 사람 · 마감일 · 그때의 설정(잠금)과 직인 번호가 고정됨")
+        ok([q("SELECT status FROM contracts WHERE id = ?", ids[u])[0][0] for u in (B, E, G)] == ["DRAFT"] * 3, "건너뛴 사람은 그대로 발송 전")
+        ok(audit("CONTRACT_SEND") == [("contract_year", None, json.dumps({"year": Y, "people": 1, "due": day(14)}))], "감사로그 CONTRACT_SEND — 해 · 인원 수 · 마감일 (회차별 한 줄)")
+        ra = rows_of()[A]
+        ok(ra["status"] == "SENT" and ra["due"] == day(14) and ra["sentAt"] and ra["late"] is False, "현황: 서명 대기 · 마감일 · 보낸 때")
+        ok(send([ids[A]]).json == {"sent": 0, "skipped": [{"id": ids[A], "why": "발송 전이 아님"}]}, "다시 발송하면 건너뜀")
+
+        print("  - 발송한 뒤에는 건드릴 수 없음")
+        before = snap()
+        r = up(hr, [row(A, base=3000000)])
+        ok(r.status_code == 409 and "이미 발송" in r.json["error"], "발송한 사람을 다시 올리면 409")
+        ok(up(hr, [row(B, base=3100000), row(A, base=3000000)]).status_code == 409 and snap() == before, "발송한 사람이 섞여 있으면 전부 409 (다른 사람도 안 바뀜)")
+        ok(adj(ids[A]).status_code == 409 and post(hr, f"/api/contracts/{ids[A]}/remove").status_code == 409 and snap() == before, "조정 · 빼기도 409")
+
+        print("  - 설정을 바꿔도 이미 보낸 계약서는 그대로 · 여러 회차를 함께 발송")
+        n_audit = len(audit("CONTRACT_SETTINGS"))
+        ok(sv(seal=None).status_code == 200 and len(audit("CONTRACT_SETTINGS")) == n_audit, "바뀐 것이 없으면 그대로 (감사로그 더하지 않음)")
+        r = sv(ceo="△△△", seal=None)
+        ok(r.status_code == 200 and cfg_of()["settings"] == {**want_cfg, "ceo": "△△△"} and q("SELECT COUNT(*) FROM contract_seals") == [(1,)]
+           and audit("CONTRACT_SETTINGS")[-1][2] == '{"fields": ["ceo"]}', "직인을 안 보내면 직인은 그대로 (바뀐 칸 이름 ceo 만 감사로그)")
+        r = sv(ceo="△△△", seal=PNG2)
+        seal2 = q("SELECT seal_id FROM contract_settings")[0][0]
+        ok(r.status_code == 200 and seal2 == seal1 + 1 and q("SELECT COUNT(*) FROM contract_seals") == [(2,)] and audit("CONTRACT_SETTINGS")[-1][2] == '{"fields": ["seal"]}'
+           and get(hr, "/api/contracts/settings/seal").data == base64.b64decode(PNG2), "직인을 보내면 새 직인 줄이 생기고 지금 직인이 바뀜 (옛 줄은 남음)")
+        ok(opened(A, "company")["ceo"] == "○○○" and q("SELECT seal_id FROM contracts WHERE id = ?", ids[A]) == [(seal1,)]
+           and q("SELECT 1 FROM contract_seals WHERE id = ?", seal1) != [], "이미 보낸 A 의 대표이사 이름 · 직인은 그대로")
+        ok(up(hr, [row(I)]).json == {"saved": 1} and up(hr, [row(A, code="CT-A1"), row(I)], Y + 1).json == {"saved": 2}, "A 는 다른 회차에는 새로 올릴 수 있음")
+        i_y = q("SELECT id FROM contracts WHERE year = ? AND user_id = ?", Y, I)[0][0]
+        a_y1, i_y1 = (q("SELECT id FROM contracts WHERE year = ? AND user_id = ?", Y + 1, u)[0][0] for u in (A, I))
+        r = send([i_y, a_y1, i_y1], day(7))
+        ok(r.json == {"sent": 3, "skipped": []} and [json.loads(a[2]) for a in audit("CONTRACT_SEND")[1:]] == [{"year": Y, "people": 1, "due": day(7)}, {"year": Y + 1, "people": 2, "due": day(7)}],
+           "두 회차를 함께 보내면 회차별로 감사로그 한 줄씩")
+        ok(opened(A, "company", year=Y + 1)["ceo"] == "△△△" and q("SELECT seal_id FROM contracts WHERE id = ?", a_y1) == [(seal2,)], "그다음 발송부터는 바뀐 설정과 직인이 들어감")
+
+        print("  - 마감이 지나면 late")
+        for days, a_late, i_late in ((6, False, False), (7, False, False), (8, False, True), (14, False, True), (15, True, True)):
+            auth._now = lambda days=days: real_now() + timedelta(days=days)
+            late_hr = app.test_client()  # 시계를 옮기면 세션이 끊기므로 그 시계로 다시 로그인
+            login(late_hr, new_token("hr"))
+            got = rows_of(Y, late_hr)
+            ok(got[A]["late"] is a_late and got[I]["late"] is i_late, f"{days}일 뒤: 마감 14일 · 7일 — 마감일 당일까지는 late 거짓, 지나면 참")
+        auth._now = real_now
+
+        print("  - 헤더 · 감사로그")
+        calls = [admin(), get(hr, "/api/contracts/settings"), get(hr, "/api/contracts/settings/seal"), up(hr, [row(A)]), send([ids[A]]), up(hr, []), get(emp, "/api/contracts/admin"),
+                 anon.get("/api/contracts/admin", base_url=BASE)]
+        ok([r.status_code for r in calls] == [200, 200, 200, 409, 200, 400, 403, 401]
+           and all(r.headers.get("Cache-Control") == "no-store" and r.headers.get("Referrer-Policy") == "no-referrer" for r in calls),
+           "성공 · 거절(400 · 401 · 403 · 409) 응답 모두 Cache-Control: no-store + Referrer-Policy: no-referrer")
+        logs = q("SELECT action, entity_type, entity_id, after_data FROM audit_logs WHERE action LIKE 'CONTRACT%' ORDER BY id")
+        ok({"CONTRACT_SETTINGS", "CONTRACT_UPLOAD", "CONTRACT_ADJUST", "CONTRACT_REMOVED", "CONTRACT_SEND"} <= {a[0] for a in logs}, "감사로그 SETTINGS · UPLOAD · ADJUST · REMOVED · SEND")
+        ok(all(set(json.loads(a[3])) == {"year", "people"} for a in logs if a[0] == "CONTRACT_UPLOAD"), "올리기 감사로그에는 해와 인원 수만")
+        ok(not any(w in str(logs) for w in ("가상", "2418900", "2600000", "900315", "000229", "CT-A", "CT-B", "○○○", "△△△", "프로")), "감사로그에 이름 · 금액 · 생년월일 · 사원코드 · 직급 · 사유 · 대표이사 이름 없음")
+
+        print("  - 열쇠가 바뀌어 안 풀리는 줄")
+        os.environ["HR_PAY_KEY"] = base64.b64encode(bytes(range(1, 33))).decode()
+        with unittest.TestCase().assertLogs("contract", "ERROR") as cm:  # 로그는 잡아 두어 검사 출력에 ERROR 가 섞이지 않게
+            r = admin()
+        ok(r.status_code == 200 and r.json["rows"] == [] and r.json["ready"] is True and r.json["settings"] is False
+           and sorted(rec.args[0] for rec in cm.records if rec.args) == sorted(c[0] for c in q("SELECT id FROM contracts WHERE year = ?", Y))
+           and not any(w in line for line in cm.output for w in ("가상", "2418900", "900315", "CT-A")), "목록은 그 줄들을 건너뜀 (오류 아님) · 서버 로그에는 계약서 번호만")
+        before = snap()
+        with unittest.TestCase().assertLogs("contract", "ERROR"):
+            r = adj(ids[B])
+        ok(r.status_code == 409 and snap() == before, "열 수 없는 발송 전 줄의 조정은 409 (아무것도 안 바뀜)")
+    finally:
+        os.environ.pop("HR_PAY_KEY", None)
+        if had is not None:
+            os.environ["HR_PAY_KEY"] = had
+        auth._now = real_now
+
+
 def check_eval_report(hr) -> None:
     """평가 결과 보고용 엑셀 (2026-10-22): HR 만 · 받은 값 검사 · 시트 둘(요약 · 명단) · 연봉 인상 계산이 읽는 칸 제목 · '=' 글자는 수식이 아님."""
     import io
@@ -2830,6 +3129,7 @@ def main() -> int:
     check_kpi_sched(hr)
     check_payslips(hr)
     check_withholding(hr)
+    check_contracts(hr)
     check_eval_report(hr)
 
     acts = {r[0] for r in q("SELECT action FROM audit_logs")}
