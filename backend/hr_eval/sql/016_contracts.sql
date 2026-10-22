@@ -7,7 +7,8 @@
 --   (그래서 표 이름도 contracts 이다. 색인 이름은 001 의 idx_contracts_user 와 겹치지 않게 idx_contracts_live_user.)
 -- 금액 · 이름 · 생년월일 · 서명 그림이 들어 있는 칸(body · company · sign · pdf · ask, 설정 data, 직인 png)은 서버 .env 의 HR_PAY_KEY 로 잠가(AES-GCM) 둔다
 --   (급여명세서 · 원천징수영수증과 같은 열쇠). 잠근 글 = 12바이트 nonce + 내용 + 16바이트 태그 → 29바이트 이상 BLOB 만 받는다.
---   문서 고유번호(doc_hash)는 잠그지 않는다 — 소문자 16진수 64자(SHA-256).
+--   잠그지 않는 칸: 문서 고유번호(doc_hash — 소문자 16진수 64자, SHA-256) · 파기 사유(cancel_reason — 1~200자 글 그대로) · 상태 · 날짜 칸(starts_on · due_on · sent_at · signed_at · replaced_on · cancelled_at · ask_at · ask_closed_at) · 회차 · 직원 · 차수 번호.
+--   서명 기록(sign)에는 서명 그림 · 입력한 성명 · 동의 · IP · 브라우저(User-Agent) · 로그인 종류 · 서명한 본문이 잠겨 들어 있고, 조정 사유는 잠근 내용(body) 안에 있다.
 --
 -- 상태 흐름 (트리거 trg_contract_live_status):  DRAFT 발송 전 → SENT 서명 대기 → SIGNED 서명 완료 → REPLACED 새 계약으로 바뀜
 --   SENT · SIGNED 는 CANCELLED(파기)로도 간다. 그 밖의 짝(건너뛰기 · 되돌리기)은 거부. 상태가 그대로인 UPDATE 는 막지 않는다.
@@ -71,7 +72,7 @@ CREATE TABLE contracts (
     replaced_on  TEXT    NULL CHECK (replaced_on IS NULL OR (replaced_on GLOB '20[0-9][0-9]-[01][0-9]-[0-3][0-9]' AND date(replaced_on) IS replaced_on)),   -- 새 계약으로 바뀐 날(새 계약 시작일)
     cancelled_at TEXT    NULL,       -- 파기한 때와 사람 · 사유
     cancelled_by INTEGER NULL REFERENCES users(id),
-    cancel_reason TEXT   NULL CHECK (cancel_reason IS NULL OR (typeof(cancel_reason) = 'text' AND length(cancel_reason) BETWEEN 1 AND 200)),   -- 글자 수
+    cancel_reason TEXT   NULL CHECK (cancel_reason IS NULL OR (typeof(cancel_reason) = 'text' AND length(cancel_reason) BETWEEN 1 AND 200)),   -- 파기 사유 (잠그지 않고 글 그대로 — 1~200자)
     ask          BLOB    NULL CHECK (ask IS NULL OR (typeof(ask) = 'blob' AND length(ask) > 28)),   -- 잠근 문의 글
     ask_at       TEXT    NULL,       -- 문의를 보낸 때
     ask_closed_at TEXT   NULL,       -- 문의를 확인한 때와 사람
