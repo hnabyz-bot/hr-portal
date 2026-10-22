@@ -1,8 +1,9 @@
 """휴대폰 알림 바탕 (2026-10-22 인사담당자 — 휴대폰 알림 · 앱 아이콘 숫자, 설계 docs/superpowers/specs/2026-10-22-push-notifications-design.md).
-표(017_push.sql) · 알림 문구 · 근무시간 · 키 · 보낼 대상 · 보내기 함수 · 구독 주소(API)만 둔다. 처리할 일 개수 · 아침 묶음 · 일이 생길 때 보내기는 뒤 작업에서 이 파일에 더한다.
+표(017_push.sql) · 알림 문구 · 근무시간 · 키 · 보낼 대상 · 보내기 함수 · 구독 주소(API) · 처리할 일 개수 · 아침 9시 묶음을 둔다. 일이 생길 때 보내기는 뒤 작업에서 이 파일에 더한다.
 
   python -m push check    자체 검증 (CI) — 문구 · 근무시간 · 키 모양 · 진짜 pywebpush 로 가짜 푸시 서버에 보내 보기
   python -m push keygen   서버에서 한 번 — HR_PUSH_PUBLIC · HR_PUSH_PRIVATE 두 줄을 출력만 한다 (.env 에는 사람이 붙인다)
+  python -m push morning  평일 9시(KST) 묶음 — 서버 예약 작업이 부른다. 보낸 사람 수만 출력. 같은 날 두 번 돌지 않는다
 
   GET  /api/push/key          공개키 {"key"} — 키가 없으면 404 (화면이 알림 켜기 칸을 숨긴다)
   POST /api/push/subscribe    휴대폰 세션만. {"endpoint": https 푸시 서버 주소, "keys": {"p256dh", "auth"}} → 이 세션의 구독 1줄(덮어씀)
@@ -29,9 +30,10 @@ from urllib.parse import urlsplit
 
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec
-from flask import Blueprint, Response, g, jsonify, request
+from flask import Blueprint, Flask, Response, g, jsonify, request
 
 import auth
+from hr_eval.domain.models import Role
 
 logger = logging.getLogger(__name__)
 bp = Blueprint("push", __name__)
@@ -117,20 +119,27 @@ def keygen() -> tuple[str, str]:
     return _b64u_enc(pub), _b64u_enc(key.private_numbers().private_value.to_bytes(32, "big"))
 
 
+# 받을 수 있는 구독 = 휴대폰 세션이 살아 있는 구독 (구독 p · 세션 s · 직원 u). 값 둘: 마지막 사용 하한 · 지금 — targets() 와 morning() 의 정리가 같은 조건을 써서 어긋나지 않게 한 곳에 둔다.
+_FROM = "push_subscriptions p JOIN sessions s ON s.token_hash = p.token_hash JOIN users u ON u.id = s.user_id"
+_LIVE = ("p.user_id = s.user_id AND s.kind = 'phone' AND s.revoked_at IS NULL AND s.last_seen_at > ? AND s.expires_at > ?"
+         " AND u.is_active = 1 AND u.portal_enabled = 1")
+
+
+def _live_args(now: datetime) -> tuple[str, str]:
+    now = now.astimezone(timezone.utc)
+    return auth._iso(now - auth.PHONE_IDLE), auth._iso(now)
+
+
 def targets(conn: Connection, uids: Iterable[int], now: datetime) -> list[tuple[int, str, dict]]:
     """uids 중 알림을 받을 기기 — [(user_id, token_hash, subscription_info)]. 휴대폰 세션이 살아 있는 구독만:
     해제 안 됨 · 마지막 사용 30일 안 · 만료 전 · 활성 직원 · 포털 사용 켜짐. PC 세션 구독은 받지 않는다."""
     ids = sorted({int(u) for u in uids})
     if not ids:
         return []
-    now = now.astimezone(timezone.utc)
     rows = conn.execute(
-        "SELECT s.user_id, p.token_hash, p.endpoint, p.p256dh, p.auth"
-        " FROM push_subscriptions p JOIN sessions s ON s.token_hash = p.token_hash JOIN users u ON u.id = s.user_id"
-        f" WHERE s.user_id IN ({','.join('?' * len(ids))}) AND p.user_id = s.user_id AND s.kind = 'phone'"
-        " AND s.revoked_at IS NULL AND s.last_seen_at > ? AND s.expires_at > ? AND u.is_active = 1 AND u.portal_enabled = 1"
-        " ORDER BY s.user_id, p.token_hash",
-        (*ids, auth._iso(now - auth.PHONE_IDLE), auth._iso(now)),
+        f"SELECT s.user_id, p.token_hash, p.endpoint, p.p256dh, p.auth FROM {_FROM}"
+        f" WHERE s.user_id IN ({','.join('?' * len(ids))}) AND {_LIVE} ORDER BY s.user_id, p.token_hash",
+        (*ids, *_live_args(now)),
     ).fetchall()
     return [(uid, th, {"endpoint": ep, "keys": {"p256dh": k, "auth": a}}) for uid, th, ep, k, a in rows]
 
@@ -223,6 +232,81 @@ def _webpush(info: dict, payload: dict, keys: tuple[str, str], ttl: int) -> int:
 
 # (subscription_info, payload, (공개키, 개인키), ttl) → HTTP 상태 코드. 검사는 push.SEND 를 가짜로 바꿔 끼운다.
 SEND: Callable[[dict, dict, tuple[str, str], int], int] = _webpush
+
+
+def pending(flask_app: Flask, uid: int) -> list[tuple[str, int]]:
+    """그 사람이 처리할 일 [(종류, 개수)] — 0 인 종류는 빼고 LABELS 순서. 합은 그 사람 화면의 왼쪽 메뉴 숫자 합(homePortalTasks · TODO)과 같다:
+    화면이 부르는 서버 함수를 그 사람으로 세워 그대로 쓴다 (kpi.inbox · plan_json · progress_json). 평가 · 이의 신청은 서버 기능이 없어 0,
+    연봉계약서 문의는 알림만 보내고 세지 않는다 (설계 7장). 열쇠(HR_PAY_KEY)가 없으면 급여명세서 · 영수증 · 계약서는 0 — 화면의 목록도 비어 있다.
+    새 앱 컨텍스트를 먼저 연다: 요청 안에서 불러도(inline 보내기) 그 요청의 g.actor · g.db 를 덮어쓰지 않고, 여기서 연 DB 연결은 컨텍스트가 닫힐 때 닫힌다."""
+    import kpi  # 쓰는 자리에서 — kpi 가 이 파일을 불러와도 순환하지 않게
+    import payslip
+
+    n: dict[str, int] = {}
+    with flask_app.app_context(), flask_app.test_request_context():
+        conn = auth._db()
+        g.actor = actor = auth.actor_of(conn, uid)
+        year = kpi.plan_year()
+        if payslip.pay_key() is not None:
+            for kind, sql in (
+                ("p1", "SELECT COUNT(*) FROM payslips p JOIN payslip_months m ON m.ym = p.ym WHERE p.user_id = ? AND m.status = 'OPEN' AND p.seen_at IS NULL"),
+                ("p2", "SELECT COUNT(*) FROM contracts WHERE user_id = ? AND status = 'SENT'"),
+                ("p3", "SELECT COUNT(*) FROM withholding w JOIN withholding_years y ON y.year = w.year WHERE w.user_id = ? AND y.status = 'OPEN' AND w.seen_at IS NULL"),
+            ):
+                n[kind] = conn.execute(sql, (uid,)).fetchone()[0]
+        box = kpi.inbox().get_json()
+        items = box["items"]
+        if actor.position is Role.CEO and conn.execute("SELECT 1 FROM ceo_delegation WHERE ceo_user_id = ?", (uid,)).fetchone():
+            items = [i for i in items if i["proxy"]]  # 맡긴 동안 대표이사 몫은 HR 의 몫 — 대표이사가 HR 권한도 가졌을 때만 HR 몫이 남는다 (설계 7장)
+        n["inbox"] = len(items)
+        plan = kpi.plan_json(conn, uid, year)
+        n["back"] = int(plan is not None and plan["noteKind"] == "RETURNED")
+        with kpi._txn(conn):  # 진행 기록은 표 여럿을 읽는다 — 화면이 부르는 곳(progress_get)과 같이 한 트랜잭션 안에서
+            prog = kpi.progress_json(conn, uid, year)
+        n["prev"] = prog["todo"]["prev"] if prog else 0
+        n["memos"] = box["review"]["memos"]
+        if actor.is_hr or actor.position in (Role.TEAM_LEADER, Role.DIVISION_HEAD, Role.CEO):  # 월간 확인 · 새 답글은 이 사람들만 (화면 kvCanUse)
+            n["check"], n["replies"] = box["review"]["check"], box["review"]["replies"]
+    return [(k, n[k]) for k in LABELS if n.get(k)]
+
+
+def morning(flask_app: Flask, now: datetime) -> int:
+    """평일(한국 시간) 아침 묶음 — 휴대폰 구독이 있는 활성 직원 중 처리할 일이 1건 이상인 사람에게 한 통씩(제목 = 개수 합, 내용 = 종류 이름, 앱 아이콘 숫자 = 합).
+    보낸 사람 수(푸시 서버가 받아 준 사람)를 돌려준다. 주말 · 알림 키 없음 · 오늘 이미 돌렸음이면 0 (키가 없으면 기록도 쓰지 않는다).
+    푸시 서버가 구독이 없어졌다(404 · 410)고 하면 그 줄을 지운다. 세션이 끝났거나 직원이 비활성인 구독 줄은 같은 일에서 함께 정리한다.
+    한 사람의 개수 세기나 보내기가 실패해도 다음 사람으로 넘어간다. 앱 안에 예약 작업을 두지 않는다 — 서버 예약 작업이 python -m push morning 으로 부른다."""
+    k = now.astimezone(auth.KST)
+    if k.weekday() >= 5 or (ks := keys()) is None:
+        return 0
+    today, sent = k.date().isoformat(), 0
+    with flask_app.app_context():
+        conn = auth._db()
+        if conn.execute("SELECT 1 FROM push_morning WHERE day = ?", (today,)).fetchone():
+            return 0
+        conn.execute(f"DELETE FROM push_subscriptions WHERE token_hash NOT IN (SELECT p.token_hash FROM {_FROM} WHERE {_LIVE})", _live_args(now))  # targets() 가 절대 고르지 않을 줄
+        devices: dict[int, list[tuple[str, dict]]] = {}
+        for uid, th, info in targets(conn, [r[0] for r in conn.execute("SELECT DISTINCT user_id FROM push_subscriptions")], now):
+            devices.setdefault(uid, []).append((th, info))
+        for uid, found in devices.items():  # ponytail: 사람마다 차례로 센다 — 수십 명이면 몇 초, 느려지면 사람 여럿을 한 번에 세는 쪽으로
+            try:
+                items = pending(flask_app, uid)
+            except Exception as exc:  # 한 사람의 고장이 나머지 아침 알림을 막지 않게 — 로그에는 예외 종류만
+                logger.warning("morning pending failed: %s", type(exc).__name__)
+                continue
+            if not (total := sum(n for _, n in items)):
+                continue
+            payload = {**morning_text(items), "badge": total, "tag": "morning"}
+            reached = False
+            for th, info in found:
+                status = SEND(info, payload, ks, TTL_MORNING)
+                if status in (404, 410):
+                    forget(conn, [th])
+                elif not 200 <= status < 300:
+                    logger.warning("morning push rejected: status %s", status)
+                reached = reached or 200 <= status < 300
+            sent += reached
+        conn.execute("INSERT OR IGNORE INTO push_morning (day, people, ran_at) VALUES (?, ?, ?)", (today, sent, auth._iso(now.astimezone(timezone.utc))))
+    return sent
 
 
 def _check_send() -> None:
@@ -338,5 +422,9 @@ if __name__ == "__main__":
         public, private = keygen()
         print(f"HR_PUSH_PUBLIC={public}")
         print(f"HR_PUSH_PRIVATE={private}")
+    elif sys.argv[1:] == ["morning"]:
+        from app import app  # 서버가 뜰 때와 같은 설정(DB 위치 …) — 보낸 사람 수만 출력한다
+
+        print(morning(app, auth._now()))
     else:
-        sys.exit("사용법: python -m push check | keygen")
+        sys.exit("사용법: python -m push check | keygen | morning")
