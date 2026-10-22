@@ -1197,6 +1197,12 @@ def check_contracts(hr) -> None:
     buf = io.BytesIO()
     Image.new("RGBA", (2, 2), (200, 0, 0, 255)).save(buf, "PNG")
     PNG2 = base64.b64encode(buf.getvalue()).decode()
+    Image.frombytes("RGB", (40, 40), os.urandom(40 * 40 * 3)).save(buf := io.BytesIO(), "PNG")  # 머리는 멀쩡하지만 그림 데이터가 깨졌거나 잘린 직인 — 머리만 읽으면 지나가지만 PDF 를 만들 때 터진다
+    noise = buf.getvalue()
+    PNG_BROKEN = base64.b64encode(noise[:len(noise) // 2] + b"\xff" * 20 + noise[len(noise) // 2 + 20:]).decode()
+    PNG_CUT = base64.b64encode(noise[:-60]).decode()
+    Image.new("1", (9000, 9000)).save(buf := io.BytesIO(), "PNG")  # 작은 파일인데 픽셀이 8100만 — 풀기 전에 크기로 거부해야 한다
+    PNG_HUGE = base64.b64encode(buf.getvalue()).decode()
     Y = contract_doc.upcoming_year(auth._today())
     first, last = contract_doc.round_period(Y)
     day = lambda n: (auth._today() + timedelta(days=n)).isoformat()  # noqa: E731
@@ -1258,9 +1264,10 @@ def check_contracts(hr) -> None:
                    "대표이사 글자 아님": {"ceo": 5}, "소재지 101자": {"addr": "가" * 101}, "소재지 없음": {"addr": None}, "종류 31자": {"kind": "가" * 31},
                    "직인 PNG 아님": {"seal": base64.b64encode(b"hello").decode()}, "직인 base64 아님": {"seal": "%%%"}, "직인 글자 아님": {"seal": 7},
                    "직인 머리만 PNG": {"seal": base64.b64encode(b"\x89PNG\r\n\x1a\n" + b"junk" * 20).decode()},
+                   "직인 그림 데이터가 깨짐": {"seal": PNG_BROKEN}, "직인 그림 끝이 잘림": {"seal": PNG_CUT}, "직인 그림 픽셀이 너무 큼": {"seal": PNG_HUGE},
                    "직인 500KB 넘음": {"seal": base64.b64encode(b"\x89PNG\r\n\x1a\n" + b"0" * 500_000).decode()}}
         wrong = [k for k, ch in bad_cfg.items() if sv(**ch).status_code != 400]
-        ok(not wrong and snap() == before, f"이름 · 소재지 · 종류 글자 규칙, 직인은 PNG 머리 · 읽을 수 있는 그림 · 500KB 이하 — 틀리면 400, 아무것도 안 바뀜 {wrong}")
+        ok(not wrong and snap() == before, f"이름 · 소재지 · 종류 글자 규칙, 직인은 PNG 머리 · 끝까지 읽히는 그림 · 500KB 이하 — 틀리면 400, 아무것도 안 바뀜 {wrong}")
 
         print("  - 올리기 — 모양이 틀리면 400 (아무것도 안 바뀜)")
         no_start = row(A)

@@ -32,12 +32,14 @@ from __future__ import annotations
 
 import base64
 import functools
+import io
 import json
 import logging
 from typing import NamedTuple
 
 from cryptography.exceptions import InvalidTag
 from flask import Blueprint, Response, g, jsonify, request
+from PIL import Image  # reportlab 이 이미 끌고 오는 Pillow
 
 import auth
 import contract_doc
@@ -149,13 +151,15 @@ def _text(v: object, label: str, limit: int) -> str:
 
 
 def _png(v: object) -> bytes:
-    """직인 그림(base64 PNG) → 바이트. PNG 머리가 아니거나 500KB 를 넘거나 그림으로 읽을 수 없으면 400 (서명 때 PDF 를 못 만드는 그림을 미리 막는다)."""
+    """직인 그림(base64 PNG) → 바이트. PNG 머리가 아니거나 500KB 를 넘거나 끝까지 읽히지 않으면 400 (서명 때 PDF 를 못 만드는 그림을 미리 막는다 —
+    보낸 계약서의 직인은 바꿀 수 없어서, 깨진 그림이 들어가면 그 직인으로 보낸 계약서는 서명할 수 없다)."""
     try:
         raw = base64.b64decode(v, validate=True) if isinstance(v, str) else b""
         if not raw.startswith(PNG_HEAD) or len(raw) > SEAL_MAX:
             raise ValueError
-        contract_doc._reader(raw, "직인")
-    except (OSError, ValueError):
+        contract_doc._reader(raw, "직인")  # 크기를 먼저 본다(너무 크면 풀기 전에 거부 — 메모리가 늘지 않게)
+        Image.open(io.BytesIO(raw)).load()  # 머리만 멀쩡하고 그림 데이터가 깨진 파일은 풀어 봐야 드러난다
+    except (OSError, ValueError, SyntaxError, Image.DecompressionBombError):
         raise _bad(f"직인 그림은 {SEAL_MAX // 1000}KB 이하의 PNG 그림이어야 합니다") from None
     return raw
 
