@@ -2,7 +2,6 @@
 계약서 설정(대표이사 이름·소재지·사업의 종류)·직인 그림은 급여명세서와 같은 서버 .env 의 HR_PAY_KEY 로 잠가(AES-GCM) 둔다 — 열쇠 읽기는 payslip.pay_key.
 
 app.py 가 bp 를 붙인다. 세션 검사는 auth._guard 가 모든 /api/* 에 하므로 여기서는 g.actor 만 쓴다.
-(문의 · 내려받기는 뒤 작업에서 더한다.)
 
   GET  /api/contracts/settings        계약서 설정 {"ready", "settings": {ceo, addr, kind, sealId} | null} (HR)
   GET  /api/contracts/settings/seal   지금 직인 그림 PNG (HR)
@@ -24,6 +23,12 @@ app.py 가 bp 를 붙인다. 세션 검사는 auth._guard 가 모든 /api/* 에 
   GET  /api/contracts/<id>/seal       그 줄에 고정된 직인 PNG (본인 · HR). 발송 전 줄은 지금 설정의 직인
   POST /api/contracts/<id>/sign       {name, consent: true, image: base64 PNG} 서명 (본인) → {signedAt, hash}. 마감이 지나도 받는다
   GET  /api/contracts/<id>/pdf        서명할 때 만들어 잠가 둔 서명본 PDF 그대로 (본인 · HR). 서명한 줄만 (새 계약으로 바뀜 · 서명 뒤 파기 포함)
+  POST /api/contracts/<id>/ask        {text} HR 에 문의 (본인, 서명 대기 줄만). 1~200자. 확인 전 문의가 있으면 409 — HR 이 확인한 뒤에는 다시 보낼 수 있다 → {ok}
+  POST /api/contracts/<id>/ask/close  문의를 "확인함"으로 (HR). 글은 지우지 않는다. 문의가 없거나 이미 확인했으면 409 → {ok}
+
+  GET  /api/contracts/division        ?year= 본부장 현황 (본부장만, 아니면 403) {"year", "rows": [{name, team, status, late, signedOn, due}]} — 자기 본부 사람의 살아 있는 줄
+                                      (발송 전 · 서명 대기 · 서명 완료). 금액 · 생년월일 · 차수 · 문의는 보내지 않는다 (access.Act.VIEW_CONTRACT_STATUS)
+  GET  /api/contracts/<year>/zip      그 회차 서명 완료 줄의 서명본 PDF 묶음 + 서명정보.csv (HR, 보관용 — zip 에는 암호가 없다). 풀리지 않는 줄은 건너뛰고, 하나도 없으면 404
 
 계약서 한 줄(admin 의 rows) = {id, year, userId, version, status, start, end, code, name, dept, title, birth6, base, ability, pos, site, qual, annual, reason,
 sentAt, due, late, signedAt, replacedOn, cancelledAt, cancelReason, ask: {text, at, closedAt} | null, prevId}. late = 서명 대기인데 마감일이 지남.
@@ -39,16 +44,19 @@ company = {name, ceo, addr, kind} — 발송 때 그 줄에 고정. sign = {imag
 다음 차수(파기 후 재발송 · 새 계약)를 만들 때는 내용을 풀어 새 차수 자리(aad)로 다시 잠근다 — 그대로 옮긴 글은 풀리지 않는다.
 
 감사로그에는 행동 · 해 · 인원 수 · 계약서/직원 번호 · 마감일 · 문서 고유번호 · 바뀐 설정 칸 이름만 남긴다 (이름 · 금액 · 생년월일 · 사유는 넣지 않는다).
-서버 로그에도 풀리지 않는 줄의 계약서 번호만 남긴다.
+서버 로그에도 풀리지 않는 줄의 계약서 번호만 남긴다 (문의 글도 어디에도 남기지 않는다).
 """
 
 from __future__ import annotations
 
 import base64
+import csv
 import functools
 import io
 import json
 import logging
+import re
+import zipfile
 from datetime import datetime, timezone
 from typing import NamedTuple
 
@@ -61,7 +69,7 @@ import contract_doc
 import kpi
 import payslip
 from hr_eval.domain import access
-from hr_eval.domain.models import AuditEntry
+from hr_eval.domain.models import AuditEntry, Role, position_of
 from withholding import _no_store, _seal, _unseal, _year
 
 bp = Blueprint("contract", __name__)
@@ -77,6 +85,9 @@ SEAL_MAX = 500_000  # 직인 그림 (base64 를 푼 바이트)
 SIGN_MAX = 200_000  # 서명 그림 (같음)
 PNG_HEAD = b"\x89PNG\r\n\x1a\n"
 REASON_MAX = 200
+ASK_MAX = 200
+ZIP_HEAD = ("이름", "사원코드", "차수", "서명 일시", "문서 고유번호")
+BAD_FILE_CHARS = re.compile(r'[\x00-\x1f\\/:*?"<>|]')  # Windows 파일 이름에 못 쓰는 글자
 CFG_TEXT = {"ceo": ("대표이사 이름", 20), "addr": ("소재지", 100), "kind": ("사업의 종류", 30)}
 PAY = {"base": "기본급", "ability": "능력급", "pos": "직책수당", "site": "현장관리수당", "qual": "자격수당"}
 ROW_KEYS = {"userId", "code", "birth6", "start", *PAY}
@@ -117,7 +128,7 @@ def _keyed(fn):
 
 
 def _hr_write(fn):
-    """쓰는 길의 앞 검사 — HR 이 아니면 403, 서버에 열쇠가 없으면 503. 열쇠를 첫 인자로 넘긴다."""
+    """쓰는 길 (과 서명본 묶음) 의 앞 검사 — HR 이 아니면 403, 서버에 열쇠가 없으면 503. 열쇠를 첫 인자로 넘긴다."""
     keyed = _keyed(fn)
 
     @functools.wraps(fn)
@@ -378,15 +389,19 @@ def settings_post(key: bytes) -> Response:
 
 
 # ---------------- 현황 ----------------
+def _round(arg: str | None) -> int:
+    """회차(해) 글자 → 해. 없으면(None) 다가오는 회차, 모양이 틀리면 400."""
+    if (year := contract_doc.upcoming_year(auth._today()) if arg is None else _year(arg)) is None:
+        raise kpi._Refuse("회차(해)는 2000~2099 입니다.", 400)
+    return year
+
+
 @bp.get("/api/contracts/admin")
 def admin() -> Response:
     """그 회차(기본 = 다가오는 회차)의 계약서 전부 + 서버에 열쇠가 있는지(ready) · 계약서 설정이 있는지(settings)."""
     if (denied := auth._hr_only()) is not None:
         return denied
-    arg = request.args.get("year")
-    year = contract_doc.upcoming_year(auth._today()) if arg is None else _year(arg)
-    if year is None:
-        return jsonify(error="회차(해)는 2000~2099 입니다."), 400
+    year = _round(request.args.get("year"))
     conn, key = auth._db(), payslip.pay_key()
     return jsonify(ready=key is not None, settings=key is not None and _settings(conn, key) is not None, year=year,
                    rows=_rows(conn, key, "c.year = ?", (year,)) if key else [])
@@ -716,3 +731,102 @@ def replace(key: bytes, cid: int) -> Response:
         new = _follow(conn, key, cid, year, uid, b["start"], {**body, **{k: b[k] for k in PAY}, "reason": reason})
         _log(conn, "CONTRACT_REPLACE", "contract", cid, contract=cid)
     return jsonify(ok=True, id=new)
+
+
+# ---------------- 문의 · 본부장 현황 · 서명본 묶음 ----------------
+@bp.post(f"/api/contracts/{CID}/ask")
+@_keyed
+def ask(key: bytes, cid: int) -> Response:
+    """HR 에 문의 (본인, 서명 대기 줄만). 글은 잠가 저장하고 감사로그에는 계약서 번호만 남긴다. 확인 전 문의가 있으면 409 —
+    HR 이 확인한 뒤에는 다시 보낼 수 있다(그때 확인 표시를 비운다). 문의 중에도 서명은 할 수 있다."""
+    b = _json()
+    conn, me = auth._db(), g.actor.user_id
+    with kpi._txn(conn):
+        row = conn.execute("SELECT user_id, year, version, status, sent_at, ask, ask_closed_at FROM contracts WHERE id = ?", (cid,)).fetchone()
+        if row is None or row[4] is None:  # 발송 전 줄은 직원에게 없는 것
+            raise kpi._Refuse(MSG_NOT_FOUND, 404)
+        uid, year, ver, status, _, old, closed = row
+        if uid != me:
+            raise kpi._Refuse("본인의 계약서에만 문의할 수 있습니다.", 403)
+        if set(b) != {"text"}:
+            raise _bad("칸이 맞지 않습니다")
+        text = _text(b["text"], "문의 글", ASK_MAX)
+        if status != "SENT":
+            raise kpi._Refuse("서명 대기 중인 계약서에만 문의할 수 있어요.", 409)
+        if old is not None and closed is None:
+            raise kpi._Refuse("확인 전인 문의가 있어요. HR이 확인하면 다시 문의할 수 있어요.", 409)
+        conn.execute("UPDATE contracts SET ask = ?, ask_at = ?, ask_closed_at = NULL, ask_closed_by = NULL WHERE id = ?",
+                     (_lock(key, _aad(year, me, ver, "ask"), text), auth._iso(auth._now()), cid))
+        _log(conn, "CONTRACT_ASK", "contract", cid, contract=cid)
+    return jsonify(ok=True)
+
+
+@bp.post(f"/api/contracts/{CID}/ask/close")
+def ask_close(cid: int) -> Response:
+    """문의를 "확인함"으로 (HR). 글은 그대로 두고 확인한 때와 사람만 적는다 — 서명한 뒤나 파기한 줄의 문의도 확인할 수 있다. 문의가 없거나 이미 확인했으면 409."""
+    if (denied := auth._hr_only()) is not None:
+        return denied
+    conn = auth._db()
+    with kpi._txn(conn):
+        row = conn.execute("SELECT ask, ask_closed_at FROM contracts WHERE id = ?", (cid,)).fetchone()
+        if row is None:
+            raise kpi._Refuse(MSG_NOT_FOUND, 404)
+        if row[0] is None or row[1] is not None:
+            raise kpi._Refuse("확인할 문의가 없어요.", 409)
+        conn.execute("UPDATE contracts SET ask_closed_at = ?, ask_closed_by = ? WHERE id = ?", (auth._iso(auth._now()), g.actor.user_id, cid))
+        _log(conn, "CONTRACT_ASK_CLOSED", "contract", cid, contract=cid)
+    return jsonify(ok=True)
+
+
+@bp.get("/api/contracts/division")
+def division() -> Response:
+    """본부장 현황: 자기 본부 사람의 살아 있는 계약서 (발송 전 · 서명 대기 · 서명 완료) 의 이름 · 팀 · 상태 · 마감 지남 · 서명한 날 · 마감일만.
+    누가 볼 수 있는지는 줄마다 access.can (Act.VIEW_CONTRACT_STATUS) 이 정한다. 잠근 내용은 열지 않으므로 금액 · 생년월일 · 차수 · 문의는 응답에 넣을 수 없다."""
+    if g.actor.position is not Role.DIVISION_HEAD:
+        raise kpi._Refuse("본부장만 볼 수 있어요.", 403)
+    year, today, rows = _round(request.args.get("year")), auth._today().isoformat(), []
+    for status, due, signed_at, uid, name, team, dept, parent, roles in auth._db().execute(
+            "SELECT c.status, c.due_on, c.signed_at, u.id, u.name, d.name, d.id, d.parent_id,"
+            " (SELECT group_concat(r.role) FROM user_roles r WHERE r.user_id = u.id)"
+            " FROM contracts c JOIN users u ON u.id = c.user_id JOIN departments d ON d.id = u.department_id"
+            " WHERE c.year = ? AND c.status IN ('DRAFT', 'SENT', 'SIGNED') ORDER BY d.name, u.name, c.version", (year,)):
+        who = access.Target(uid, dept if parent else None, parent or dept, position_of(Role(r) for r in roles.split(",")) if roles else None)  # 팀이면 부모가 본부, 본부 바로 아래면 팀 없음
+        if access.can(g.actor, access.Act.VIEW_CONTRACT_STATUS, who):
+            rows.append({"name": name, "team": team, "status": status, "late": status == "SENT" and today > due,
+                         "signedOn": _kst(signed_at).date().isoformat() if signed_at else None, "due": due})
+    return jsonify(year=year, rows=rows)
+
+
+@bp.get("/api/contracts/<year>/zip")
+@_hr_write
+def zip_get(key: bytes, year: str) -> Response:
+    """그 회차 서명 완료 줄의 서명본 PDF 를 zip 하나로 (HR, 보관용): YYYY_사원코드 (없으면 직원 번호)_이름.pdf 들과 서명정보.csv. zip 에는 암호가 없다
+    (파이썬 표준 기능으로는 암호 zip 을 만들 수 없다 — 화면이 NAS 에 둘 때 다시 암호를 걸라고 안내한다). 풀리지 않는 줄은 건너뛰고 (서버 로그에 계약서 번호만), 하나도 없으면 404."""
+    y, today = _round(year), auth._today().isoformat()
+    conn, buf, sheet, taken = auth._db(), io.BytesIO(), [], set()  # 메모리에 만든다 — 한 회차 수백 명(수십 MB)까지, 더 커지면 임시 파일로
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        for r in conn.execute(f"SELECT {COLS}, c.doc_hash, c.pdf FROM contracts c WHERE c.year = ? AND c.status = 'SIGNED' ORDER BY c.user_id", (y,)):
+            try:
+                v = _view(key, r, today, hr=False)
+                pdf = _unseal(key, _aad(y, v["userId"], v["version"], "pdf"), r[-1])
+            except (InvalidTag, ValueError):
+                logger.error(LOG_UNREADABLE, r[0])
+                continue
+            stem = BAD_FILE_CHARS.sub("_", f"{y}_{v['code'] or v['userId']}_{v['name']}")
+            member, n = f"{stem}.pdf", 1
+            while member in taken:  # 이름이 겹치면 _2, _3 …
+                n += 1
+                member = f"{stem}_{n}.pdf"
+            taken.add(member)
+            z.writestr(member, pdf)
+            sheet.append((v["name"], v["code"], v["version"], _kst(v["signedAt"]).strftime("%Y-%m-%d %H:%M"), r[-2]))
+        if sheet:
+            out = io.StringIO()
+            w = csv.writer(out, lineterminator="\r\n")
+            w.writerow(ZIP_HEAD)
+            w.writerows(sheet)
+            z.writestr("서명정보.csv", out.getvalue().encode("utf-8-sig"))  # BOM 이 있어야 엑셀이 한글을 바로 읽는다
+    if not sheet:
+        raise kpi._Refuse("내려받을 서명본이 없습니다.", 404)
+    _log(conn, "CONTRACT_ZIP", "contract_year", None, year=y, people=len(sheet))
+    return Response(buf.getvalue(), mimetype="application/zip", headers={"Content-Disposition": f'attachment; filename="contracts_{y}.zip"'})

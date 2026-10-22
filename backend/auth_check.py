@@ -1224,12 +1224,15 @@ def check_withholding(hr) -> None:
 
 
 def check_contracts(hr) -> None:
-    """연봉계약서 서버 ① ② (2026-10-22): ① 설정 · 직인 · 올리기 · 현황 · 조정 · 빼기 · 발송 — 잠가 저장 · HR 만 · 열쇠가 없으면 503 · 이미 발송한 사람은 409.
+    """연봉계약서 서버 ① ② ③ (2026-10-22): ① 설정 · 직인 · 올리기 · 현황 · 조정 · 빼기 · 발송 — 잠가 저장 · HR 만 · 열쇠가 없으면 503 · 이미 발송한 사람은 409.
     ② 직원 보기 · 서명 (서명본 PDF · 고유번호) · 파기 · 새 계약으로 바꾸기 — 본인 · HR 만 · 서명한 줄은 못 바꿈 · 동시에 두 번 서명은 하나만.
+    ③ HR에 문의 · 확인함 · 본부장 현황(금액 없이) · 서명본 zip — 문의는 본인 서명 대기 줄만 · 현황은 자기 본부 사람만 · zip 은 HR 만, 안 풀리는 줄은 건너뜀.
     사람 · 금액 · 대표이사 이름 · 직인 그림은 전부 가짜."""
     import base64
+    import csv
     import io
     import unittest
+    import zipfile
     from datetime import timedelta
 
     from cryptography.exceptions import InvalidTag
@@ -1238,7 +1241,7 @@ def check_contracts(hr) -> None:
 
     import contract_doc
 
-    print("연봉계약서 ① ② (설정 · 올리기 · 현황 · 조정 · 빼기 · 발송 · 직원 보기 · 서명 · 파기 · 새 계약)")
+    print("연봉계약서 ① ② ③ (설정 · 올리기 · 현황 · 조정 · 빼기 · 발송 · 직원 보기 · 서명 · 파기 · 새 계약 · 문의 · 본부장 현황 · 서명본 zip)")
     emp = app.test_client()
     login(emp, new_token("emp"))
     raw_key = bytes(range(32))
@@ -1268,6 +1271,7 @@ def check_contracts(hr) -> None:
           uid, f"가상계약{'ABCDEFGHI'[uid - A]}", f"ct{uid}@example.invalid", f"HW-{uid}", int(uid != B), int(uid != C), "프로" if uid == A else None,
           int(uid != H), "2027-01-01T00:00:00Z" if uid == H else None)
     x("INSERT INTO user_roles (user_id, role) VALUES (?, 'DIVISION_HEAD')", D)
+    M, N, O, Q, R = range(143, 148)  # ③ M 서명본 PDF 만 안 풀림 · N 본부 바로 아래 · O 다른 본부의 팀 · Q 다른 본부 바로 아래 · R 같은 본부의 다른 본부장
 
     def row(uid, **kw):
         return {"userId": uid, "code": "", "birth6": "900315", "base": 2418900, "ability": 1211000, "pos": 300000, "site": 0, "qual": 0, "start": None, **kw}
@@ -1554,7 +1558,7 @@ def check_contracts(hr) -> None:
         ok(row_y["blocks"] == want_blocks() and "(서명한 날)" in text_of(row_y["blocks"]) and row_y["hash"] is None and row_y["canSign"] is True and row_y["ask"] is None
            and "△△△" in text_of(row_y1["blocks"]) and "△△△" not in text_of(row_y["blocks"]),
            "서명 대기 본문 = 발송 때 고정한 회사 칸 (설정을 바꿔도 옛 것은 그대로) · 서명한 날은 아직 (서명한 날) · 고유번호 없음")
-        nonce = os.urandom(12)  # 문의 글 (잠금 = nonce + 암호문) — 문의 길은 뒤 작업이라 칸에 직접 넣는다
+        nonce = os.urandom(12)  # 확인 전 문의 글 (잠금 = nonce + 암호문) — 문의 길을 거치지 않고 칸에 직접 넣어 둔다
         x("UPDATE contracts SET ask = ?, ask_at = ? WHERE id = ?",
           nonce + AESGCM(raw_key).encrypt(nonce, json.dumps("가상 문의 글", ensure_ascii=False).encode(), f"ct|{Y + 1}|{I}|1|ask".encode()), "2026-10-01T00:00:00Z", i_y1)
         ask_row = next(m for m in mine(ci).json["rows"] if m["id"] == i_y1)
@@ -1842,6 +1846,186 @@ def check_contracts(hr) -> None:
            and not any(w in str(logs) for w in ("가상", "2418900", "2700000", "2750000", "900315", "승진", "파기 사유", "금액 오류", "○○○", "△△△", "프로")),
            "서명 · 파기 · 새 계약 · 보기 감사로그에 이름 · 금액 · 생년월일 · 사유 · 대표이사 이름 없음")
 
+        print("  - 문의 (HR에 문의 → HR 가 확인함)")
+        ok(send([d3], day(9)).json == {"sent": 1, "skipped": []}, "A 의 다음 해 3차 줄(발송 전)을 서명 대기로 보내 둠 — 문의 검사용")
+        ask_text = ("가상 금액 확인 요청 " + "나" * 200)[:200]
+        askp = lambda c, cid, text=ask_text: post(c, f"/api/contracts/{cid}/ask", {"text": text})  # noqa: E731
+        askc = lambda cid, c=hr: post(c, f"/api/contracts/{cid}/ask/close")  # noqa: E731
+        ask_db = lambda cid: q("SELECT ask, ask_at, ask_closed_at, ask_closed_by FROM contracts WHERE id = ?", cid)[0]  # noqa: E731
+        hr_row = lambda cid, year: next(m for m in admin(year).json["rows"] if m["id"] == cid)  # noqa: E731
+        ask_log = json.dumps({"contract": d3})
+        before = snap()
+        ok([askp(c, d3).status_code for c in (emp, cl, cd, hr)] == [403] * 4 and askp(anon, d3).status_code == 401
+           and post(ca, f"/api/contracts/{d3}/ask", {"text": "가상"}, headers={}).status_code == 403
+           and askp(ca, 99999).status_code == 404 and askp(ca, ib).status_code == 404 and snap() == before,
+           "문의는 본인 줄만: 남의 계약서에는 누구도 (HR 도) 403 · 없는 번호와 남의 발송 전 줄 404 · 로그인 없이 401 · Origin 없이 403 (아무것도 안 바뀜)")
+        ok([askp(ca, c).status_code for c in (v2, ia, a_y1)] == [409] * 3 and snap() == before,
+           "서명 대기가 아닌 줄 (서명 완료 · 새 계약으로 바뀜 · 파기) 에는 문의할 수 없음 409")
+        ask_bad = {"빈 글": {"text": ""}, "공백만": {"text": "   "}, "201자": {"text": "가" * 201}, "제어문자": {"text": "가\x00나"}, "짝 없는 글자": {"text": "가\ud800"},
+                   "글자 아님": {"text": 5}, "칸이 더 있음": {"text": "가상", "extra": 1}, "칸 없음": {}, "목록": ["가상"]}
+        wrong = [k for k, b in ask_bad.items() if post(ca, f"/api/contracts/{d3}/ask", b).status_code != 400]
+        ok(not wrong and snap() == before, f"문의 글은 1~200자 (제어문자 · 짝 없는 글자 · 글자 아님 · 칸이 틀리면 400, 아무것도 안 바뀜) {wrong}")
+        r = askp(ca, d3)
+        got = ask_db(d3)
+        ok(r.status_code == 200 and r.json == {"ok": True} and got[0] and len(got[0]) > 28 and ask_text[:12].encode() not in got[0] and got[1] and got[2] is None and got[3] is None
+           and opened(A, "ask", ver=3, year=Y + 1) == ask_text, "200자 문의 → 잠가 저장 (DB 에 글이 그대로 없음 · 열쇠로 풀면 그 글) · 보낸 때 · 확인 표시는 비어 있음")
+        ok(hr_row(d3, Y + 1)["ask"] == {"at": got[1], "closedAt": None, "text": ask_text} and by_id(ca)[d3]["ask"] == {"at": got[1], "closedAt": None}
+           and ask_text not in str(mine(ca).json) and get(ca, f"/api/contracts/{d3}").json["ask"] == {"at": got[1], "closedAt": None}
+           and audit("CONTRACT_ASK") == [("contract", d3, ask_log)],
+           "HR 현황에는 글 · 보낸 때 · 확인한 때 / 직원 줄 (mine · 한 건) 에는 보낸 때 · 확인한 때만 (글 없음) · 감사로그 CONTRACT_ASK — 계약서 번호만")
+        before = snap()
+        ok(askp(ca, d3, "가상 둘째 문의").status_code == 409 and snap() == before, "확인 전에 또 문의하면 409 (첫 문의는 그대로)")
+        ok([askc(d3, c).status_code for c in (emp, cl, cd, ca)] == [403] * 4 and askc(99999).status_code == 404 and askc(v2).status_code == 409 and askc(ib).status_code == 409
+           and post(hr, f"/api/contracts/{d3}/ask/close", headers={}).status_code == 403 and anon.post(f"/api/contracts/{d3}/ask/close", base_url=BASE, headers=ORIGIN).status_code == 401
+           and snap() == before, "확인함은 HR 만 (직원 · 팀장 · 본부장 · 문의한 본인도 403) · 없는 번호 404 · 문의가 없는 줄 409 (아무것도 안 바뀜)")
+        r = askc(d3)
+        done = ask_db(d3)
+        ok(r.status_code == 200 and r.json == {"ok": True} and done[:2] == got[:2] and done[2] and done[3] == 1
+           and hr_row(d3, Y + 1)["ask"] == {"at": got[1], "closedAt": done[2], "text": ask_text} and by_id(ca)[d3]["ask"] == {"at": got[1], "closedAt": done[2]}
+           and audit("CONTRACT_ASK_CLOSED") == [("contract", d3, ask_log)],
+           "확인함 → 확인한 때와 사람이 적힘 (글 · 보낸 때는 그대로) · 직원 줄에도 확인한 때 · 감사로그 CONTRACT_ASK_CLOSED — 계약서 번호만")
+        before = snap()
+        ok(askc(d3).status_code == 409 and snap() == before, "이미 확인한 문의는 또 확인할 수 없음 409")
+        k1, k2, gate2, codes2 = client_of(A), client_of(A), threading.Barrier(2), []
+        again = ["  가상 다시 문의 하나  ", "가상 다시 문의 둘  "]
+
+        def go_ask(c, text):
+            gate2.wait()
+            codes2.append(askp(c, d3, text).status_code)
+
+        ths = [threading.Thread(target=go_ask, args=a) for a in zip((k1, k2), again)]
+        for th in ths:
+            th.start()
+        for th in ths:
+            th.join()
+        again_ask = hr_row(d3, Y + 1)["ask"]
+        ok(sorted(codes2) == [200, 409] and again_ask["text"] in [s.strip() for s in again] and again_ask["closedAt"] is None and ask_db(d3)[2:] == (None, None)
+           and len(audit("CONTRACT_ASK")) == 2, "확인한 뒤에는 다시 문의할 수 있음 (확인 표시가 비워지고 새 글 · 앞뒤 공백은 뺌) · 동시에 두 번 보내면 하나만 200 · 나머지 409")
+        r = sg(ca, d3, A)
+        ok(r.status_code == 200 and hr_row(d3, Y + 1)["status"] == "SIGNED" and hr_row(d3, Y + 1)["ask"]["text"] == again_ask["text"] and askp(ca, d3).status_code == 409,
+           "문의 중에도 서명할 수 있음 · 서명한 뒤에도 문의 글은 HR 현황에 남음 · 서명 완료 줄에는 새 문의 409")
+        ok(askc(d3).status_code == 200 and ask_db(d3)[2] and len(audit("CONTRACT_ASK_CLOSED")) == 2, "서명 완료 줄의 문의도 HR 가 확인함으로 표시할 수 있음")
+        ok(not any(w in str(q("SELECT action, entity_type, entity_id, after_data FROM audit_logs WHERE action LIKE 'CONTRACT%'")) for w in ("가상", "나나나", "다시 문의")),
+           "감사로그에 문의 글 없음")
+
+        print("  - 본부장 현황 (금액 없이)")
+
+        def mkuser(uid, name, dept=2):
+            x("INSERT INTO users (id, name, email, department_id, hiworks_user_no, portal_enabled, has_contract) VALUES (?, ?, ?, ?, ?, 1, 1)",
+              uid, name, f"ct{uid}@example.invalid", dept, f"HW-{uid}")
+
+        def raw_row(year, uid, status, ver=1, **kw):
+            """열쇠 없이 바로 넣은 줄 — UPDATE 가 아니라 INSERT 라 트리거에 안 걸린다. 칸은 아무 글 (kw 로 넘긴 칸만 내용이 있다)."""
+            cols = {"year": year, "user_id": uid, "version": ver, "status": status, "starts_on": f"{year}-03-01", "body": junk(), "created_at": stamp, "created_by": 1}
+            if status != "DRAFT":
+                cols.update(sent_at=stamp, sent_by=1, due_on=day(10), company=junk(), seal_id=seal1)
+            if status in ("SIGNED", "REPLACED"):
+                cols.update(signed_at=stamp, sign=junk(), doc_hash="a" * 64, pdf=junk())
+            if status == "REPLACED":
+                cols.update(replaced_on=f"{year}-06-01")
+            if status == "CANCELLED":
+                cols.update(cancelled_at=stamp, cancelled_by=1, cancel_reason="가상")
+            cols.update(kw)
+            x(f"INSERT INTO contracts ({', '.join(cols)}) VALUES ({', '.join('?' * len(cols))})", *cols.values())
+
+        x("INSERT INTO departments (code, name, level, parent_id) VALUES ('CT-D2', '가상본부둘', 'DIVISION', NULL)")
+        div2 = q("SELECT id FROM departments WHERE code = 'CT-D2'")[0][0]
+        x("INSERT INTO departments (code, name, level, parent_id) VALUES ('CT-T2', '가상둘팀', 'TEAM', ?)", div2)
+        team2 = q("SELECT id FROM departments WHERE code = 'CT-T2'")[0][0]
+        for uid, name, dept in ((M, "가상계약M", 2), (N, "가상계약N", 1), (O, "가상계약O", team2), (Q, "가상계약Q", div2), (R, "가상계약R", 2)):  # 본부 1 = 가상본부 (팀 2 = 가상팀)
+            mkuser(uid, name, dept)
+        x("INSERT INTO user_roles (user_id, role) VALUES (?, 'DIVISION_HEAD')", R)
+        x("UPDATE users SET led_department_id = 1 WHERE id = ?", D)  # 본부장 D 가 맡은 본부 (소속은 팀 2 라서 맡은 부서를 정해야 본부장으로 보인다)
+        YY = Y + 2  # 이 검사만 쓰는 회차 — 줄은 내용을 안 풀어도 되는 모양으로 바로 넣는다
+        raw_row(YY, A, "SENT", due_on=day(-3))  # 마감이 3일 지남
+        raw_row(YY, B, "DRAFT")
+        raw_row(YY, I, "SENT", due_on=day(5))
+        raw_row(YY, J, "SIGNED", signed_at="2027-03-01T16:30:00Z")  # 한국 시각으로는 다음 날 01:30
+        raw_row(YY, K, "CANCELLED")
+        raw_row(YY, L, "REPLACED", ver=1)
+        raw_row(YY, L, "SIGNED", ver=2, signed_at="2027-03-01T10:00:00Z")
+        for uid in (N, 2, O, Q, R):  # N 본부 바로 아래 · 2 팀장 · O Q 다른 본부 · R 같은 본부의 다른 본부장
+            raw_row(YY, uid, "DRAFT")
+        divp = lambda c, year=None: get(c, "/api/contracts/division" + (f"?year={year}" if year else ""))  # noqa: E731
+        want_div = [{"name": n, "team": t, "status": s, "late": late, "signedOn": on, "due": due} for n, t, s, late, on, due in (
+            ("가상계약A", "가상팀", "SENT", True, None, day(-3)), ("가상계약B", "가상팀", "DRAFT", False, None, None), ("가상계약I", "가상팀", "SENT", False, None, day(5)),
+            ("가상계약J", "가상팀", "SIGNED", False, "2027-03-02", day(10)), ("가상계약L", "가상팀", "SIGNED", False, "2027-03-01", day(10)),
+            ("가상계약N", "가상본부", "DRAFT", False, None, None), ("가상2", "가상팀", "DRAFT", False, None, None))]
+        want_div.sort(key=lambda m: (m["team"], m["name"]))  # 팀 이름 · 사람 이름 순
+        res = divp(cd, YY)
+        ok(res.status_code == 200 and res.json == {"year": YY, "rows": want_div} and all(set(m) == {"name", "team", "status", "late", "signedOn", "due"} for m in res.json["rows"])
+           and not any(w in res.get_data(as_text=True) for w in ("base", "ability", "birth6", "annual", "userId", "version", "ask", "reason", "code", "2418900", "900315")),
+           "본부장: 자기 본부 사람 (팀원 · 팀장 · 본부 바로 아래) 의 살아 있는 줄만 — 파기 · 바뀜 · 다른 본부 · 같은 본부의 다른 본부장은 안 나옴 / 마감 지남 · 서명한 날 (한국 날짜) 이 맞고 금액 · 생년월일 · 차수 · 문의 없음")
+        x("UPDATE users SET led_department_id = ? WHERE id = ?", div2, D)
+        other = divp(cd, YY)
+        x("UPDATE users SET led_department_id = 1 WHERE id = ?", D)
+        ok(sorted(m["name"] for m in other.json["rows"]) == ["가상계약O", "가상계약Q"], "다른 본부를 맡은 본부장은 그 본부 사람만 보임")
+        ok([divp(c, YY).status_code for c in (emp, cl, hr, ca)] == [403] * 4 and divp(anon, YY).status_code == 401 and divp(cd, "abc").status_code == 400
+           and divp(cd, "1999").status_code == 400 and divp(cd).json["year"] == Y,
+           "본부장이 아니면 403 (직원 · 팀장 · HR 는 연봉계약 관리 화면을 씀) · 해 모양이 틀리면 400 · 해를 안 보내면 다가오는 회차")
+
+        print("  - 서명본 묶음 (zip)")
+
+        def box(k, uid, year, field, data):  # 열쇠 k 로 잠근 칸 (자리 = 그 줄의 1차 칸) — 서버가 잠그는 모양 그대로
+            nonce = os.urandom(12)
+            return nonce + AESGCM(k).encrypt(nonce, data, f"ct|{year}|{uid}|1|{field}".encode())
+
+        def readable(year, uid, name, code, pdf, pdf_key=raw_key):
+            """내용도 서명본도 풀리는 서명 완료 줄. pdf_key 가 다르면 서명본만 안 풀린다."""
+            body = {"code": code, "name": name, "dept": "가상팀", "title": "", "birth6": "900315", "base": 2418900, "ability": 1211000, "pos": 300000, "site": 0, "qual": 0, "reason": ""}
+            raw_row(year, uid, "SIGNED", body=box(raw_key, uid, year, "body", json.dumps(body, ensure_ascii=False).encode()), pdf=box(pdf_key, uid, year, "pdf", pdf))
+
+        readable(Y, M, "가상계약M", "", b"%PDF-m", pdf_key=bytes(range(1, 33)))  # 서명본만 다른 열쇠로 잠긴 줄
+        m_id = q("SELECT id FROM contracts WHERE year = ? AND user_id = ?", Y, M)[0][0]
+        zp = lambda year, c=hr: get(c, f"/api/contracts/{year}/zip")  # noqa: E731
+        before = snap()
+        ok([zp(Y, c).status_code for c in (emp, cl, cd, ca)] == [403] * 4 and zp(Y, anon).status_code == 401 and zp("abc").status_code == 400 and zp(1999).status_code == 400
+           and zp(2098).status_code == 404 and snap() == before and audit("CONTRACT_ZIP") == [],
+           "묶음은 HR 만 (직원 · 팀장 · 본부장 403) · 해 모양이 틀리면 400 · 서명한 줄이 없는 회차는 404 (아무것도 안 바뀜, 감사로그 없음)")
+        with unittest.TestCase().assertLogs("contract", "ERROR") as cm:
+            r = zp(Y)
+        zf = zipfile.ZipFile(io.BytesIO(r.data))
+        files = {i.filename: zf.read(i) for i in zf.infolist()}
+        want_pdf = {f"{Y}_CT-A1_가상계약A.pdf": unsealed(A, "pdf", ver=2), f"{Y}_{I}_가상계약I.pdf": unsealed(I, "pdf"), f"{Y}_{J}_가상계약J.pdf": unsealed(J, "pdf", ver=4)}
+        ok(r.status_code == 200 and r.mimetype == "application/zip" and r.headers["Content-Disposition"] == f'attachment; filename="contracts_{Y}.zip"'
+           and set(files) == {*want_pdf, "서명정보.csv"} and all(files[n] == p and p.startswith(b"%PDF") for n, p in want_pdf.items()) and zf.testzip() is None
+           and all(i.compress_type == zipfile.ZIP_DEFLATED and not i.flag_bits & 1 for i in zf.infolist()),
+           "zip: 서명 완료 세 명의 서명본 PDF (이름 YYYY_사원코드 (없으면 직원 번호)_이름.pdf · 저장된 그대로) + 서명정보.csv · 암호 없는 deflate")
+        kst_of = lambda s: (datetime.strptime(s, "%Y-%m-%dT%H:%M:%SZ") + timedelta(hours=9)).strftime("%Y-%m-%d %H:%M")  # noqa: E731
+        want_csv = []
+        for uid, ver, name, code in ((A, 2, "가상계약A", "CT-A1"), (I, 1, "가상계약I", ""), (J, 4, "가상계약J", "")):
+            signed_at, doc_hash = q("SELECT signed_at, doc_hash FROM contracts WHERE year = ? AND user_id = ? AND version = ?", Y, uid, ver)[0]
+            want_csv.append([name, code, str(ver), kst_of(signed_at), doc_hash])
+        parsed = list(csv.reader(io.StringIO(files["서명정보.csv"].decode("utf-8-sig"))))
+        ok(files["서명정보.csv"].startswith(b"\xef\xbb\xbf") and parsed[0] == ["이름", "사원코드", "차수", "서명 일시", "문서 고유번호"] and sorted(parsed[1:]) == sorted(want_csv),
+           "서명정보.csv: utf-8-sig · 머리 이름 / 사원코드 / 차수 / 서명 일시 (한국 시각, 분까지) / 문서 고유번호 · 서명한 세 명")
+        ok({rec.args[0] for rec in cm.records if rec.args} == {l1, m_id} and not any(w in line for line in cm.output for w in ("가상", "2418900", "900315", "CT-A")),
+           "안 풀리는 줄 (L: 내용이 안 풀림 · M: 서명본만 다른 열쇠) 은 묶음에서 빠지고 200 · 서버 로그에는 계약서 번호만")
+        ok(audit("CONTRACT_ZIP") == [("contract_year", None, json.dumps({"year": Y, "people": 3}))], "감사로그 CONTRACT_ZIP — 해 · 인원 수만")
+        r = zp(Y + 1)
+        z1 = zipfile.ZipFile(io.BytesIO(r.data))
+        ok(r.status_code == 200 and sorted(z1.namelist()) == sorted([f"{Y + 1}_CT-A1_가상계약A.pdf", "서명정보.csv"])
+           and z1.read(f"{Y + 1}_CT-A1_가상계약A.pdf") == unsealed(A, "pdf", ver=3, year=Y + 1), "다른 회차는 그 회차의 서명 완료 줄만")
+        Y3, bad_name = Y + 3, "가상" + '/\\:*?"<>|' + "이름"
+        for uid in (148, 149, 150):
+            mkuser(uid, f"가상계약Z{uid}")
+        readable(Y3, 148, bad_name, "", b"%PDF-1")
+        readable(Y3, 149, "가상같음", "SAME", b"%PDF-2")
+        readable(Y3, 150, "가상같음", "SAME", b"%PDF-3")
+        r = zp(Y3)
+        z3 = zipfile.ZipFile(io.BytesIO(r.data))
+        want3 = {f"{Y3}_148_가상" + "_" * 9 + "이름.pdf": b"%PDF-1", f"{Y3}_SAME_가상같음.pdf": b"%PDF-2", f"{Y3}_SAME_가상같음_2.pdf": b"%PDF-3"}
+        ok(set(z3.namelist()) == {*want3, "서명정보.csv"} and all(z3.read(n) == p for n, p in want3.items())
+           and bad_name in [c[0] for c in csv.reader(io.StringIO(z3.read("서명정보.csv").decode("utf-8-sig")))],
+           "파일 이름: Windows 에서 못 쓰는 글자 (\\ / : * ? \" < > |) 는 _ 로 바꾸고 같은 이름이 겹치면 _2 를 붙임 · 서명정보.csv 에는 원래 이름")
+        ok(audit("CONTRACT_ZIP") == [("contract_year", None, json.dumps({"year": y, "people": n})) for y, n in ((Y, 3), (Y + 1, 1), (Y3, 3))]
+           and not any(w in str(audit("CONTRACT_ZIP")) for w in ("가상", "CT-A", "SAME")), "감사로그 CONTRACT_ZIP 은 회차마다 한 줄 (해 · 인원 수만, 이름 · 사원코드 없음)")
+        with unittest.TestCase().assertLogs("contract", "ERROR"):  # 묶음 (Y) 이 안 풀리는 줄을 로그로 남기므로 잡아 두어 검사 출력에 ERROR 가 섞이지 않게
+            calls = [askp(ca, d3), askc(d3), askc(d3, ca), divp(cd, YY), divp(emp, YY), zp(Y), zp(Y, emp), zp(2098)]
+        ok([r.status_code for r in calls] == [409, 409, 403, 200, 403, 200, 403, 404]
+           and all(r.headers.get("Cache-Control") == "no-store" and r.headers.get("Referrer-Policy") == "no-referrer" for r in calls),
+           "문의 · 확인함 · 본부장 현황 · 묶음 — 성공 · 거절 응답 모두 Cache-Control: no-store + Referrer-Policy: no-referrer")
+
         print("  - 열쇠가 바뀌어 안 풀리는 줄")
         os.environ["HR_PAY_KEY"] = base64.b64encode(bytes(range(1, 33))).decode()
         with unittest.TestCase().assertLogs("contract", "ERROR") as cm:  # 로그는 잡아 두어 검사 출력에 ERROR 가 섞이지 않게
@@ -1858,7 +2042,15 @@ def check_contracts(hr) -> None:
             rm, r1, r2, r3, r4 = mine(ca), get(ca, f"/api/contracts/{v2}"), get(ca, f"/api/contracts/{v2}/pdf"), get(ca, f"/api/contracts/{v2}/seal"), sg(ci, i_y1, I)
         ok(rm.status_code == 200 and rm.json == {"rows": []} and (r1.status_code, r2.status_code, r4.status_code) == (409, 409, 409) and r3.status_code == 404 and snap() == before
            and not any(w in line for line in cm.output for w in ("가상", "2418900", "900315", "CT-A")), "직원 길도 같음: mine 은 빈 목록 · 보기 · 서명본 · 서명은 409 · 직인은 404 (아무것도 안 바뀜, 서버 로그에는 번호만)")
+        with unittest.TestCase().assertLogs("contract", "ERROR") as cm:
+            rz = zp(Y)
+        ok(rz.status_code == 404 and {rec.args[0] for rec in cm.records if rec.args} == {c[0] for c in q("SELECT id FROM contracts WHERE year = ? AND status = 'SIGNED'", Y)}
+           and not any(w in line for line in cm.output for w in ("가상", "2418900", "900315", "CT-A")), "묶음: 열쇠가 바뀌어 하나도 안 풀리면 404 (500 아님) · 서버 로그에는 계약서 번호만")
+        res = divp(cd, Y)
+        ok(res.status_code == 200 and len(res.json["rows"]) > 0, "본부장 현황은 잠근 내용을 풀지 않으므로 열쇠가 바뀌어도 그대로")
     finally:
+        x("UPDATE users SET led_department_id = NULL WHERE id = ?", D)  # 본부장 현황 검사에서 정한 맡은 본부 · 다른 본부장은 되돌린다
+        x("DELETE FROM user_roles WHERE user_id = ?", R)
         os.environ.pop("HR_PAY_KEY", None)
         if had is not None:
             os.environ["HR_PAY_KEY"] = had
