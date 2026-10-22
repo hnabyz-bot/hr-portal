@@ -1683,7 +1683,7 @@ function wcEnter(skip){   // 들어간다: 서서히 사라지고 이 창(탭)�
   const el = document.getElementById('welcome'); if(el.classList.contains('out')) return;
   try{ sessionStorage.setItem('wcSeen', '1'); if(skip) localStorage.setItem('wcSkipUntil', wcDay(7)); }catch(_){}
   el.classList.add('out'); setTimeout(()=>{ document.documentElement.classList.remove('wc-on'); el.classList.remove('out'); }, matchMedia('(prefers-reduced-motion:reduce)').matches ? 0 : 500);
-  setTimeout(()=>{ if(typeof tourFirst==='function' && tourFirst()) return; if(typeof homeTodayPop==='function') homeTodayPop(); });   // 처음 온 브라우저에는 사이트 둘러보기를, 그 뒤로는 오늘 할 일을 보여 준다. 한 박자 늦추는 것은 Esc로 들어올 때 같은 키 입력에 창이 닫히지 않게
+  setTimeout(()=>{ if(typeof tourFirst==='function' && tourFirst()) return; if(typeof todayPopAuto==='function') todayPopAuto(); });   // 처음 온 브라우저에는 사이트 둘러보기를, 그 뒤로는 오늘 할 일을 보여 준다. 한 박자 늦추는 것은 Esc로 들어올 때 같은 키 입력에 창이 닫히지 않게
 }
 (function(){
   const el = document.getElementById('welcome'), skip = document.getElementById('wcSkip');
@@ -1864,7 +1864,13 @@ function homePortalRows(pre=''){   // 인사포털이 만든 일의 줄. pre = �
   return homePortalTasks().map(p=>`<div class="hm-row" onclick="${pre}goTo('${p.nav}','${p.tab}')"><span class="hm-go">${icon('chevR')}</span><span class="t">${p.title}<span class="hm-tag">인사포털</span></span><small>${NAV.find(n=>n.id===p.nav).label}</small><span class="badge warning">${p.badge}</span></div>`);
 }
 /* 오늘 할 일 팝업 (2026-10-12, 인사담당자 지시) — 환영 페이지에서 들어오면 바로 뜬다(wcEnter). 홈 "오늘의 업무"와 같은 목록을 한눈에 보는 용도라 체크는 없다:
-   인사포털 일은 누르면 그 화면으로, 개인 업무는 나의 업무로 간다. 환영 페이지가 뜨지 않는 날에는 이 창도 뜨지 않는다 */
+   인사포털 일은 누르면 그 화면으로, 개인 업무는 나의 업무로 간다.
+   환영 페이지가 뜨지 않을 때('일주일간 보지 않기' · 오픈 7일 뒤)에도 사이트에 새로 들어오면(새 창 · 앱을 새로 열기) 뜬다 — 맨 아래 (2026-10-22, 인사담당자 지시) */
+let authReady = Promise.resolve();   // 로그인 확인(authBoot)이 끝나면 풀린다 — 맨 아래에서 authBoot()로 바꿔 끼운다
+async function todayPopAuto(){   // 들어올 때 자동으로: 내 업무 · KPI가 다 온 뒤에(시연 목록이 잠깐 뜨지 않게), 로그인 안내 · 둘러보기 · 다른 창이 없을 때만
+  await authReady;
+  if(!AUTH.locked && !tour.steps && !document.getElementById('orgModal')) homeTodayPop();
+}
 function homeTodayPop(){
   const today = kpiDay(0), t = celebParse(today), [left, done] = wsTodayCount(), close = 'orgCloseModal(); ';
   const rows = [...homePortalRows(close), ...wsSorted(wsAll().filter(x=>wsIn(x, 'today', today))).map(x=>{ const fin = x.state==='완료', [when, late] = wsWhen(x, today);
@@ -11101,9 +11107,10 @@ async function authBoot(){
   kpiSetRole(authRole(AUTH.me));
   await wsPull(true);   // 나의 업무 · 나의 일상을 서버에서 (이 기기에 적어 둔 것은 처음 한 번 합친다)
   await Promise.all([payLoadMine(), whFetchMine()]);   // 메뉴 숫자용: 공개됐는데 아직 안 연 내 급여명세서 · 원천징수영수증
-  kpiLiveLoad();   // 메뉴 · 홈의 처리할 KPI 숫자 — 기다리지 않는다 (다 오면 다시 그린다)
+  const kpi = kpiLiveLoad();   // 메뉴 · 홈의 처리할 KPI 숫자 — 기다리지 않는다 (다 오면 다시 그린다)
   renderSidebar(); renderContent();
   if(code) installNotice(null, true);   // 방금 등록한 휴대폰: 홈 화면에 추가하는 순서
+  return kpi;   // 오늘 할 일 창(todayPopAuto)은 KPI까지 온 뒤에 — 처리할 KPI 줄이 빠지지 않게
 }
 // ponytail: 창을 닫았는지는 서버가 알 수 없어 화면이 판단한다. 개발자 도구로 표시를 만들면 넘어갈 수 있다 — 세션 쿠키는 브라우저를 끄면 사라지고, 서버 만료(4시간·12시간)는 그대로
 function authEntered(){   // 하이웍스 메뉴로 연 창인가. 표시는 창마다 따로(sessionStorage) — 창을 닫으면 사라지고 새로 고침에는 남는다
@@ -11122,7 +11129,9 @@ renderContent();
 a11yEnhance(document.body);
 wcOpen(orgMembers.find(m=>m.name===KPI_USERS[kpiRole].name)?.hireDate || '');   // 환영 페이지: 신규 입사자(입사 후 7일)에게도 — 맨 위 script에서는 입사일을 몰라 여기서 한 번 더 본다
 if(!document.documentElement.classList.contains('wc-on')) tourFirst();   // 환영 페이지가 뜨지 않는 날에 처음 온 브라우저: 바로 사이트 둘러보기
-authBoot();
+authReady = authBoot();
+const navType = performance.getEntriesByType('navigation')[0]?.type || 'navigate';   // navigate = 새로 들어옴(새 창 · 앱을 새로 열기 · 링크). reload = 새로 고침, back_forward = 뒤로 가기
+if(!document.documentElement.classList.contains('wc-on') && navType==='navigate') todayPopAuto();   // 환영 페이지가 뜨지 않을 때도 오늘 할 일 (뜰 때는 들어가는 순간 wcEnter가 부른다). 창(앱)을 닫았다 열어도 남는 표시(sessionStorage)에 기대지 않는다
 </script>
 </body>
 </html>
