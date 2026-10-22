@@ -1632,6 +1632,10 @@ def check_contracts(hr) -> None:
         ok(t.date() != kst.date() and mine_y["status"] == "SIGNED" and mine_y["signedAt"] == auth._iso(t) and mine_y["hash"] == h and mine_y["canSign"] is False
            and mine_y["blocks"] == want_blocks(kst.date().isoformat()) and kdate(kst) in text_of(mine_y["blocks"]) and "(서명한 날)" not in text_of(mine_y["blocks"])
            and contract_doc.doc_hash(mine_y["blocks"]) == h, "mine: 서명한 줄의 본문 = 체결일 (서명한 때의 한국 날짜 — UTC 로는 전날) · 본문의 고유번호 = 저장한 고유번호")
+        ok(mine_y["how"] == "하이웍스 로그인" and base64.b64decode(mine_y["signImage"]) == base64.b64decode(PNG) and "how" not in row_y and "signImage" not in row_y
+           and get(ca, f"/api/contracts/{ia}").json == mine_y and get(hr, f"/api/contracts/{ia}").json == {**mine_y, "canSign": False}
+           and not any("how" in m or "signImage" in m for m in admin(Y).json["rows"]),
+           "서명한 줄: mine · 한 건 보기(본인 · HR)에 본인 확인 방법(how — 서명본 PDF 와 같은 글) · 서명 그림(signImage) / 서명 대기 줄 · HR 현황(admin) 줄에는 없다")
         pdf, stored = unsealed(A, "pdf"), q("SELECT pdf FROM contracts WHERE id = ?", ia)[0][0]
         r = get(ca, f"/api/contracts/{ia}/pdf")
         ok(pdf.startswith(b"%PDF") and b"%PDF" not in stored and r.status_code == 200 and r.mimetype == "application/pdf" and r.data == pdf
@@ -1756,7 +1760,7 @@ def check_contracts(hr) -> None:
            "감사로그 CONTRACT_CANCELLED — 계약서 번호 · then (사유는 안 남김)")
         rows_a = by_id(ca)
         ok([(m["version"], m["status"], m["canSign"], m["hash"]) for m in rows_a.values() if m["year"] == Y + 1] == [(2, "SENT", True, None), (1, "CANCELLED", False, None)]
-           and all(set(m) == mine_keys for m in rows_a.values()) and rows_a[a_y1]["cancelledAt"] and sg(ca, a_y1, A).status_code == 409
+           and all(set(m) == mine_keys | ({"how", "signImage"} if m["signedAt"] else set()) for m in rows_a.values()) and rows_a[a_y1]["cancelledAt"] and sg(ca, a_y1, A).status_code == 409
            and [(m["version"], m["status"], m["cancelReason"]) for m in admin(Y + 1).json["rows"] if m["userId"] == A] == [(1, "CANCELLED", "가상 금액 오류"), (2, "SENT", None)],
            "mine: 새 차수가 서명 대기로, 파기한 줄은 '이전 계약서' (사유는 안 보임) — 파기한 줄은 서명할 수 없음 (409) · HR 현황에는 파기 사유")
         r = cn(new, "draft")
@@ -1780,6 +1784,8 @@ def check_contracts(hr) -> None:
         ok(rj.status_code == 200 and rk.status_code == 200 and [s[1]["esign"]["how"] for s in spy] == ["휴대폰 등록", "하이웍스 로그인"]
            and opened(J, "sign")["kind"] == "phone" and opened(K, "sign")["kind"] == "pc" and opened(K, "sign")["image"] == PNG_NOISE and spy[1][1]["sign_png"] == base64.b64decode(PNG_NOISE),
            "본인 확인 방법: 휴대폰 등록으로 들어온 창은 '휴대폰 등록' · 아니면 '하이웍스 로그인' / 한도 (200KB) 안의 큰 서명 그림은 받아 그대로 서명본에 넣음")
+        ok(by_id(cj)[jid]["how"] == "휴대폰 등록" and by_id(ck)[kid]["how"] == "하이웍스 로그인" and by_id(ck)[kid]["signImage"] == PNG_NOISE,
+           "화면에 주는 본인 확인 방법도 서명한 창의 종류 그대로 (휴대폰 등록 / 하이웍스 로그인) · 큰 서명 그림도 그대로")
         before = snap()
         ok(rp(kid, start=f"{Y}-04-15").status_code == 400 and rp(kid, start=f"{Y}-04-01").status_code == 400 and snap() == before,
            "바뀌는 날은 지금 계약 시작일 (4/15) 보다 뒤여야 함 — 같은 날 · 회차 안의 앞선 날 모두 400")

@@ -35,6 +35,7 @@ sentAt, due, late, signedAt, replacedOn, cancelledAt, cancelReason, ask: {text, 
 본인 · 한 건 보기의 줄 = 위에서 reason · cancelReason · ask.text 를 빼고 blocks(본문 블록 — contract_doc.build_blocks, 서명한 줄은 서명한 날(한국 날짜)이 들어간 것) ·
 hash(서명 때 저장한 문서 고유번호, 서명 전 null) · canSign(서명 대기이고 본인 것)을 더한 것. 서명한 줄(서명 완료 · 새 계약으로 바뀜 · 서명 뒤 파기)의 blocks 는 서명할 때 고유번호를 매기고 서명본 PDF 에 그린 그 본문을 서명 기록에 넣어 둔 것을 그대로 내준다 —
 양식(contract_doc.TPL · 문장)이 나중에 바뀌어도 서명한 본문은 그대로이고 hash 와 맞는다. 서명 전 줄만 지금 양식으로 만든다.
+서명한 줄에는 how(본인 확인 방법 글 — "휴대폰 등록" · "하이웍스 로그인", 서명본 PDF 의 전자서명 정보와 같은 _how) · signImage(서명 그림 base64 PNG, 200KB 이하)도 붙는다 — 서명 전 줄 · HR 현황(admin) 줄에는 없다.
 
 잠근 글 = 12바이트 nonce + AES-GCM(내용, aad). 계약서 칸의 aad = "ct|해|직원|차수|칸" (칸 = body · company · sign · pdf · ask) — 차수는 발송 뒤에 바뀌지 않고
 줄을 넣기 전에도 알 수 있어서, 다른 줄로 옮겨 붙이면 풀리지 않으면서 번호(id)를 몰라도 잠글 수 있다. body · company · sign · ask 는 JSON 글(ask 는 문의 글 한 줄을 JSON 글자로),
@@ -302,17 +303,25 @@ def _blocks(v: dict, company: dict, signed_at: str | None) -> list[dict]:
                                      signed_on=_kst(signed_at).date().isoformat() if signed_at else None)
 
 
+def _how(kind: str | None) -> str:
+    """서명한 창의 로그인 종류(세션 kind) → 전자서명 정보의 "본인 확인" 글. 서명본 PDF(sign)와 화면(_doc)이 같은 글을 쓰게 한 곳에 둔다."""
+    return "휴대폰 등록" if kind == "phone" else "하이웍스 로그인"
+
+
 def _doc(key: bytes, r: tuple, today: str, preview: dict | None = None) -> dict:
     """본인 · HR 이 계약서를 열 때의 한 줄 (r = DOC_COLS): _view(hr=False) + blocks + hash(서명 때 저장한 문서 고유번호, 서명 전 null) + canSign(서명 대기이고 본인 것).
-    본문: 서명한 줄은 서명 기록에 넣어 둔 그때의 블록 그대로(양식이 바뀌어도 서명한 본문은 그대로), 서명 전 줄은 회사 칸(발송 때 고정한 것, 발송 전 줄은 preview = 지금 설정)으로 지금 양식에서 만든다."""
+    본문: 서명한 줄은 서명 기록에 넣어 둔 그때의 블록 그대로(양식이 바뀌어도 서명한 본문은 그대로), 서명 전 줄은 회사 칸(발송 때 고정한 것, 발송 전 줄은 preview = 지금 설정)으로 지금 양식에서 만든다.
+    서명한 줄에는 서명 기록에서 how(본인 확인 방법 글 — 서명본 PDF 와 같은 _how) · signImage(서명 그림 base64 PNG)가 더 붙는다. 서명 전 줄에는 이 두 칸이 없다."""
     v = _view(key, r, today, hr=False)
     sign, company, _, doc_hash = r[-4:]
     aad = lambda field: _aad(v["year"], v["userId"], v["version"], field)  # noqa: E731
+    out = {}
     if v["signedAt"] is not None:
-        blocks = _unlock(key, aad("sign"), sign)["blocks"]
+        rec = _unlock(key, aad("sign"), sign)
+        blocks, out = rec["blocks"], {"how": _how(rec.get("kind")), "signImage": rec["image"]}
     else:
         blocks = _blocks(v, preview if company is None else _unlock(key, aad("company"), company), None)
-    return {**v, "blocks": blocks, "hash": doc_hash, "canSign": v["status"] == "SENT" and v["userId"] == g.actor.user_id}
+    return {**v, "blocks": blocks, "hash": doc_hash, "canSign": v["status"] == "SENT" and v["userId"] == g.actor.user_id, **out}
 
 
 def _rows(conn, key: bytes, where: str, args: tuple, *, doc: bool = False, order: str = "c.user_id, c.version") -> list[dict]:
@@ -636,7 +645,7 @@ def sign(key: bytes, cid: int) -> Response:
     blocks = _blocks(v, company, signed_at)
     digest = contract_doc.doc_hash(blocks)
     esign = {"signedAt": _kst(signed_at).strftime("%Y-%m-%d %H:%M"), "name": name, "hash": digest,
-             "how": "휴대폰 등록" if g.session_kind == "phone" else "하이웍스 로그인"}
+             "how": _how(g.session_kind)}
     try:
         pdf = contract_doc.render_pdf(blocks, seal_png=seal, sign_png=image, esign=esign)
     except Exception as e:  # 그림이 깨졌거나 너무 큼 — 서명본을 못 만들면 서명도 받지 않는다 (아직 저장한 것 없음)
