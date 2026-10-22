@@ -5423,12 +5423,12 @@ function ctPeriod(t){ const y = t.getMonth()>=2 ? t.getFullYear()+1 : t.getFullY
 function ctNewHirePeriod(hireDate){ const [y,m] = hireDate.split('-').map(Number); const endY = m>=3 ? y+1 : y; return { start:hireDate, end:ctFebEnd(endY) }; }
 function ctRound100(x){ return Math.round(x/100)*100; }
 function ctRaise(before, pct){ return ctRound100(before*(1+pct/100)); }
-function ctCalc(c){   // 양식 계산식: 시급 = (기본급+능력급+직책수당+명절상여/12)/209, 시간외 = 시급×10×1.5
+function ctCalc(c){   // 양식 계산식: 시급 = (기본급+능력급+직책수당+현장관리수당+명절상여/12)/209, 시간외 = 시급×10×1.5. 연봉에는 직책·현장관리·자격수당이 들어가지 않는다
   const bonus = c.base, pos = c.pos||0, site = c.site||0, qual = c.qual||0;
-  const hourly = (c.base + c.ability + pos + bonus/12) / 209;
+  const hourly = (c.base + c.ability + pos + site + bonus/12) / 209;
   const ot = hourly*10*1.5;
   const monthly = c.base + ot + c.ability + pos + site + qual;
-  const annual = (monthly - qual - pos)*12 + bonus;
+  const annual = (monthly - qual - pos - site)*12 + bonus;
   return { hourly:Math.round(hourly), ot:Math.round(ot), monthly:Math.round(monthly), annual:Math.round(annual), bonus };
 }
 function ctZoneOf(rates, annual){ const i = rates.zones.findIndex(z=>z.max==null || annual < z.max*10000); return i<0 ? rates.zones.length-1 : i; }   // 페이존: 작년 총 계약 연봉이 "이상 ~ 미만"인 구간
@@ -5507,6 +5507,12 @@ function ctSelfCheck(){   // 브라우저 콘솔에서 ctSelfCheck() 실행
   ok(ctNewHirePeriod('2026-09-14').end==='2027-02-28' && ctNewHirePeriod('2027-01-05').end==='2027-02-28', '신규 입사자 기간');
   ok(ctRaise(2418900,3)===2491500 && ctRaise(1211000,6)===1283700, '인상 후 100원 단위 반올림');
   const mk = o=>({ id:1, pid:1, version:1, status:'DRAFT', grade:'A', baseBefore:2418900, abilityBefore:1211000, base:0, ability:0, pos:0, adjReason:'', newHire:false, ...o });
+  const s2 = ctCalc({ base:2418900, ability:1211000, pos:300000, site:150000, qual:50000 });
+  ok(s2.hourly===20486 && s2.ot===307283 && s2.monthly===4437183 && s2.annual===49665095 && s2.bonus===2418900, '현장관리수당은 시급에 넣고 연봉에서 뺀다');
+  ok(ctCalc({ base:2491500, ability:1283700 }).annual===51224084, '수당 없는 사람은 예전과 같다');
+  const d = ctDocHtml(mk({ pid:1, site:150000, qual:50000, pos:300000, start:'2027-03-01', end:'2028-02-29' }));
+  ok(d.includes('현장관리수당/자격수당') && d.includes('200,000원') && !d.includes('<th>현장관리수당</th>'), '표: 현장관리수당/자격수당 한 칸(합)');
+  ok(d.includes('월급여 − 현장관리수당·자격수당, 직책수당') && d.includes('직책수당, 현장관리수당·자격수당은 사업주의 급여규정에 의거 지급한다') && d.includes('직책수당, 현장관리수당·자격수당은 연봉에 포함하지 않으며'), '조항 세 곳');
   const R = { base:3, zones:[{ max:4000, pct:{ A:9 } }, { max:null, pct:{ A:6 } }] };   // 시연 계약(연봉 4,000만원 이상)은 둘째 구간
   const a = mk({}); ctApplyRates(a, R); ok(a.base===2491500 && a.ability===1283700, '인상률 적용 (능력급은 페이존·등급 칸)');
   const adj = mk({ adjReason:'승진', base:1, ability:1 }); ctApplyRates(adj, R); ok(adj.base===1, 'HR 조정분은 인상률로 덮어쓰지 않음');
@@ -5569,16 +5575,16 @@ function ctDocHtml(c, forHash){
       <div class="k">근로자</div><div>${escapeHtml(p.name)} (${escapeHtml(p.rrn)})</div><div class="k">소속 · 직급</div><div>${escapeHtml(p.team||p.division)} · ${escapeHtml(p.title)}</div>
     </div>
     <h4>제1조 (임금)</h4>
-    <p>총 계약 연봉금액 : <b class="ct-amt">${ctWon(k.annual)}</b> <span class="list-sub" style="display:inline;">((월급여 − 자격수당, 직책수당) × 12 + 명절상여)</span></p>
+    <p>총 계약 연봉금액 : <b class="ct-amt">${ctWon(k.annual)}</b> <span class="list-sub" style="display:inline;">((월급여 − 현장관리수당·자격수당, 직책수당) × 12 + 명절상여)</span></p>
     <p>1) 급여 구성은 기본급과 수당으로 구성되며, 내역은 아래와 같다.</p>
     <div class="ct-tbl"><table>
       <tr><th colspan="5">월 급여 / 月</th><th colspan="2">연봉 외 수당</th><th>명절상여/年</th></tr>
-      <tr><th>계</th><th>시간급</th><th>기본급(209H)</th><th>시간외근로(10H)</th><th>능력급(209H)</th><th>현장관리수당</th><th>직책수당</th><th></th></tr>
-      <tr><td>${ctWon(k.monthly)}</td><td>${ctWon(k.hourly)}</td><td>${ctWon(c.base)}</td><td>${ctWon(k.ot)}</td><td>${ctWon(c.ability)}</td><td>${ctWon(c.site||0)}</td><td>${ctWon(c.pos||0)}</td><td>${ctWon(k.bonus)}</td></tr>
+      <tr><th>계</th><th>시간급</th><th>기본급(209H)</th><th>시간외근로(10H)</th><th>능력급(209H)</th><th>현장관리수당/자격수당</th><th>직책수당</th><th></th></tr>
+      <tr><td>${ctWon(k.monthly)}</td><td>${ctWon(k.hourly)}</td><td>${ctWon(c.base)}</td><td>${ctWon(k.ot)}</td><td>${ctWon(c.ability)}</td><td>${ctWon((c.site||0)+(c.qual||0))}</td><td>${ctWon(c.pos||0)}</td><td>${ctWon(k.bonus)}</td></tr>
     </table></div>
-    <p>2) 상기 월급여는 기본급 209시간, 시간외근로수당(연장/야간/휴일근로를 포함한다) 10시간 150% 상당액을 포함한다.<br>&nbsp;&nbsp;- 직책수당, 자격수당은 사업주의 급여규정에 의거 지급한다.</p>
+    <p>2) 상기 월급여는 기본급 209시간, 시간외근로수당(연장/야간/휴일근로를 포함한다) 10시간 150% 상당액을 포함한다.<br>&nbsp;&nbsp;- 직책수당, 현장관리수당·자격수당은 사업주의 급여규정에 의거 지급한다.</p>
     <p>3) 중도 입·퇴사자 월급여는 해당월의 일수로 일할 계산한다.</p>
-    <p>4) 직책수당, 자격수당은 연봉에 포함하지 않으며, 면직 시 해당월의 일수로 일할 계산한다.</p>
+    <p>4) 직책수당, 현장관리수당·자격수당은 연봉에 포함하지 않으며, 면직 시 해당월의 일수로 일할 계산한다.</p>
     <p>5) 교대수당은 매월 1일부터 말일 기간 동안 교대근무(주말근무) 4회 이상 시 일당 12,500원을 지급한다.</p>
     <p>6) 명절상여는 연봉에 포함되며(설, 추석 2회로 분할하여 지급), 근속 1년 이상자에 한하여 100% 지급되며, 근속 1년 미만의 경우 아래 표와 같이 지급된다.</p>
     <div class="ct-tbl"><table>
@@ -6106,7 +6112,7 @@ function rzOut(rows){
       <div class="list-sub" style="margin-top:10px;">굵은 숫자가 새 금액, 아래 작은 숫자가 지금 금액입니다. 기본급 · 능력급은 월 금액, 총 계약 연봉은 계약서 맨 위에 적히는 금액입니다.</div></div>
     <div class="card" id="rzSum"><div class="card-title"><span><i class="rz-step">4</i>인건비 요약 <span style="font-weight:500; color:var(--text-secondary);">총 계약 연봉 합계 기준</span></span><button class="btn sm" onclick="rzExport('sum')">${icon('download')} 요약 엑셀 저장</button></div>
       <div class="rz-sum">${tbl('본부별', '본부', rzGroup(rows, r=>r.div, [...ORG_TREE.map(d=>d.division), '그 외']), true)}${tbl('등급별', '등급', rzGroup(rows, r=>r.grade||'없음', [...CT_GRADES, '없음']), false)}</div>
-      <div class="list-sub" style="margin-top:10px;">직책수당 · 자격수당과 4대 보험 · 퇴직금은 들어 있지 않습니다(계약서의 총 계약 연봉과 같은 기준).</div></div>`;
+      <div class="list-sub" style="margin-top:10px;">직책수당 · 현장관리수당 · 자격수당과 4대 보험 · 퇴직금은 들어 있지 않습니다(계약서의 총 계약 연봉과 같은 기준).</div></div>`;
 }
 function rzSync(){   // 인상률·걸러 보기를 바꿨을 때: 인상률 입력칸은 그대로 두고 결과만 다시 그린다
   const rows = rzRows(), el = id=>document.getElementById(id);
