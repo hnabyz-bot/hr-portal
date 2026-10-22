@@ -24,6 +24,7 @@ import re
 from datetime import date, timedelta
 from xml.sax.saxutils import escape
 
+from PIL import Image  # reportlab 이 이미 끌고 오는 Pillow
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_CENTER
 from reportlab.lib.pagesizes import A4
@@ -167,6 +168,7 @@ _BOLD_FONTS = ["/usr/share/fonts/truetype/nanum/NanumGothicBold.ttf", "C:/Window
 _INK, _MUTED, _LINE, _SHADE = colors.HexColor("#1F2933"), colors.HexColor("#66707F"), colors.HexColor("#9AA6B2"), colors.HexColor("#F4F8FB")
 _W = 174 * mm  # A4 가로 210 − 좌우 여백 18
 # 글꼴에 없으면 그리는 쪽에서만 바꿀 글자(블록은 해시 대상이라 그대로). 맑은 고딕에는 U+2212(−)가 없어 빈칸으로 나온다.
+_MAX_IMG_SIDE, _MAX_IMG_PIXELS = 4000, 8_000_000  # 직인·서명 그림 한 변 / 전체 픽셀 상한 — 이보다 크면 PDF 를 만들기 전에 ValueError
 _SUBST = {"\xa0": " ", "−": "-"}
 
 
@@ -195,14 +197,27 @@ def _has_glyph(font: str, ch: str) -> bool:
     return cmap is None or ord(ch) in cmap
 
 
+def _reader(png: bytes, what: str) -> ImageReader:
+    """그림 읽개 — 머리글만 읽어 크기를 먼저 보고(getSize 는 풀어 읽지 않는다), 너무 크면 그리기 전에 거부한다.
+    바이트 수만 막으면 투명 PNG 한 장이 수천×수천 픽셀로 풀려 서버 메모리를 먹는다(서명 그림은 근로자가 보낸다)."""
+    try:
+        r = ImageReader(io.BytesIO(png))
+    except Image.DecompressionBombError:  # 1억 7천만 픽셀이 넘으면 Pillow 가 먼저 거부한다 — 같은 ValueError 로 맞춘다
+        raise ValueError(f"{what} 그림이 너무 커요") from None
+    w, h = r.getSize()
+    if w > _MAX_IMG_SIDE or h > _MAX_IMG_SIDE or w * h > _MAX_IMG_PIXELS:
+        raise ValueError(f"{what} 그림이 너무 커요({w}×{h})")
+    return r
+
+
 class _Signs(Flowable):
     """사업주 · 근로자 서명 줄 — 직인은 글 "(인)" 자리에 겹쳐 얹고, 서명은 이름 옆에 놓는다. 그림이 없으면 빈칸."""
 
     def __init__(self, employer, worker, seal_png, sign_png, font):
         super().__init__()
         self.employer, self.worker, self.font = employer, worker, font
-        self.seal = ImageReader(io.BytesIO(seal_png)) if seal_png else None
-        self.sign = ImageReader(io.BytesIO(sign_png)) if sign_png else None
+        self.seal = _reader(seal_png, "직인") if seal_png else None
+        self.sign = _reader(sign_png, "서명") if sign_png else None
 
     def wrap(self, aw, ah):
         return _W, 22 * mm
@@ -367,6 +382,20 @@ def selfcheck() -> None:
     pdf = render_pdf(b, seal_png=png, sign_png=png, esign={"signedAt": "2027-02-10 14:22", "name": "가상하나", "how": "하이웍스 로그인", "hash": doc_hash(b)})
     assert pdf.startswith(b"%PDF") and pdf.rstrip().endswith(b"%%EOF") and len(pdf) > 2000
     assert render_pdf(b, seal_png=None, sign_png=None, esign=None).startswith(b"%PDF")
+    # 그림 크기 상한 — 바이트는 작아도 픽셀이 큰 PNG 는 그리기 전에 거부한다(머리글만 읽는다). 머리글만 있는 가짜 PNG 로 본다.
+    import struct, zlib
+
+    def fake_png(w, h):
+        chunk = lambda t, d: struct.pack(">I", len(d)) + t + d + struct.pack(">I", zlib.crc32(t + d))
+        return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 6, 0, 0, 0)) + chunk(b"IDAT", zlib.compress(b"")) + chunk(b"IEND", b"")
+
+    for kw in ({"seal_png": fake_png(5000, 5000)}, {"sign_png": fake_png(5000, 5000)}, {"sign_png": fake_png(4000, 2001)}, {"seal_png": fake_png(4001, 1)}, {"sign_png": fake_png(60000, 60000)}):  # 마지막은 Pillow 폭탄 방지 구간
+        try:
+            render_pdf(b, **{"seal_png": None, "sign_png": None, "esign": None, **kw})
+            raise AssertionError("큰 그림을 받았다")
+        except ValueError:
+            pass
+    assert _reader(fake_png(4000, 2000), "직인").getSize() == (4000, 2000)  # 한 변 4000 · 800만 픽셀은 딱 통과
 
 
 if __name__ == "__main__":
