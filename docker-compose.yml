@@ -29,7 +29,7 @@ services:
       - HR_ENV=production
       - HIWORKS_FIRST_HR_USER_NO=${HIWORKS_FIRST_HR_USER_NO:-}
       - HIWORKS_SSO_LINK_BY_EMPLOYEE_NO=${HIWORKS_SSO_LINK_BY_EMPLOYEE_NO:-}
-      # 급여명세서 잠금 열쇠 (backend/payslip.py). 값은 서버 .env 에만 — 없으면 HR 의 명세서 올리기가 막힌다
+      # 급여명세서 · 원천징수영수증 잠금 열쇠 (backend/payslip.py · withholding.py). 값은 서버 .env 에만 — 없으면 HR 의 명세서 · 영수증 올리기가 막힌다
       - HR_PAY_KEY=${HR_PAY_KEY:-}
     volumes:
       - ./regulations:/app/regulations:ro

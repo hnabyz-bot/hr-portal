@@ -39,7 +39,7 @@
 - **글 규칙:** 사람이 쓴 글은 `kpi._chars`(제어문자 · 짝 없는 서로게이트 400)를 지난다. 앞뒤 공백을 뺀 길이로 센다.
 
 **2단계 ②에서 새로 정하는 것**
-- **DB:** 지금 판 12 → `013_kpi_review.sql`을 더한다. **다른 창의 원천징수영수증 브랜치(`feature/withholding-live`)가 `012_withholding.sql`을 쓰고 있다** — 그쪽이 먼저 합치면 그 번호가 013이 되므로, 우리 것은 main을 합치고 `014_kpi_review.sql`로 옮긴다(check_schema가 번호 빠짐 · 겹침을 막는다). 아래 "판 13"은 그때 "판 14"로 읽는다.
+- **DB:** 지금 판 12 → `013_kpi_review.sql`을 더한다. **다른 창의 원천징수영수증 브랜치(`feature/withholding-live`)가 `012_withholding.sql`을 쓰고 있다** — 그쪽이 먼저 합치면 그 번호가 013이 되므로, 우리 것은 main을 합치고 `014_kpi_review.sql`로 옮긴다(check_schema가 번호 빠짐 · 겹침을 막는다). **→ 10/22 원천징수영수증이 `013_withholding.sql`로 먼저 합쳐져, 우리 것은 `014_kpi_review.sql`(판 14)로 옮겼다.** 아래도 판 14로 맞춰 두었다.
 - **누가 무엇을 하나:**
   - 남의 KPI 보기(계획서 · 진행 기록 · 메모 · 명단): `_can_view` = HR · 본인 · 바로 위 관리자 · `can(actor, Act.VIEW_KPI, target_of(그 사람))`. 팀장 = 팀원, 본부장 = 본부의 팀장 · 팀원, 대표이사 = 본부장 · 팀장(+ 대표이사가 바로 위 관리자인 사람), HR = 전체.
   - **대표이사는 팀원의 이름 · KPI를 응답으로 받지 않는다** — 명단에는 팀마다 인원 · 평균 · 부진 수만 온다.
@@ -73,11 +73,11 @@
 
 ---
 
-### Task 1: DB 판 13 — 월간 확인 · 확인 메모 · 알람 끄기 · 알람 기준 · 경영계획
+### Task 1: DB 판 14 — 월간 확인 · 확인 메모 · 알람 끄기 · 알람 기준 · 경영계획
 
 **Files:**
-- Create: `backend/hr_eval/sql/013_kpi_review.sql`
-- Modify: `backend/hr_eval/sql/check_schema.py` (`expected` 표 목록 + 새 절 `25. KPI 현황 · 월간 확인 (013)`)
+- Create: `backend/hr_eval/sql/014_kpi_review.sql`
+- Modify: `backend/hr_eval/sql/check_schema.py` (`expected` 표 목록 + 새 절 `26. KPI 현황 · 월간 확인 (014)`)
 
 **Interfaces:**
 - Produces:
@@ -91,7 +91,7 @@
   - `kpi_month_checks` · `kpi_memos` · `kpi_mutes`는 `FOREIGN KEY (user_id, year) REFERENCES kpi_plans(user_id, year) ON DELETE RESTRICT`(012와 같다).
 - 맨 위 주석은 012처럼 쉬운 한국어로 쓴다. 표마다 무엇을 담는지, 감사로그에 무엇이 남고 무엇이 안 남는지 적는다.
 
-- [ ] **Step 1: 실패하는 검사 쓰기** — `check_schema.py`의 `expected`에 표 넷을 더하고 절 `print("25. KPI 현황 · 월간 확인 (013)")`을 넣는다. 다음이 거절되는지 본다.
+- [ ] **Step 1: 실패하는 검사 쓰기** — `check_schema.py`의 `expected`에 표 넷을 더하고 절 `print("26. KPI 현황 · 월간 확인 (014)")`을 넣는다. 다음이 거절되는지 본다.
   - `alarm_gap` 0 · 101, `biz_plan` `'{}'`(배열 아님)
   - `month` 13, 같은 (사람, 해, 달) 확인 둘
   - 빈 메모 `text` · 201자, `author_id = user_id`
@@ -102,8 +102,8 @@
   - 기간 줄을 새로 넣으면 `alarm_gap`이 20이다
 - [ ] **Step 2: 실패 확인** — `cd backend && python -m hr_eval.sql.check_schema`
 - [ ] **Step 3: 구현** — 위 Interfaces 그대로 쓴다.
-- [ ] **Step 4: 통과 확인** — `검사 N건 전부 통과`. `python -m auth_check`도 그대로 통과해야 한다(DB 판 13 적용).
-- [ ] **Step 5: 커밋** — `git commit -m "DB 판 13: KPI 월간 확인 · 확인 메모 · 알람 끄기 · 알람 기준 · 경영계획"`
+- [ ] **Step 4: 통과 확인** — `검사 N건 전부 통과`. `python -m auth_check`도 그대로 통과해야 한다(DB 판 14 적용).
+- [ ] **Step 5: 커밋** — `git commit -m "DB 판 14: KPI 월간 확인 · 확인 메모 · 알람 끄기 · 알람 기준 · 경영계획"`
 
 ---
 
@@ -521,18 +521,18 @@
 
 **Files:**
 - Modify:
-  - `CLAUDE.md`: 평가·성과에 "실제 로그인이면 KPI 현황 · 월간 점검 (2단계 ②)" 항목(코드가 지키는 약속만 — 보는 범위 · 대표이사 팀원 묶음 · 확인이 풀리는 방식 · 메모 규칙 · 알람 반올림 · 감사로그 · DB 판 13 · 시안과 달라진 점). ①에서 미룬 한 줄: 1단계 "HR 대신 처리" 줄의 범위에 "맡기지 않은 대표이사 몫 제외"를 넣는다. 2단계 ① 항목 끝의 "2단계 ②(다음 PR)" 줄을 "끝남"으로. 시연 KPI 현황 항목에 "실제 로그인은 위 2단계 ② 항목".
+  - `CLAUDE.md`: 평가·성과에 "실제 로그인이면 KPI 현황 · 월간 점검 (2단계 ②)" 항목(코드가 지키는 약속만 — 보는 범위 · 대표이사 팀원 묶음 · 확인이 풀리는 방식 · 메모 규칙 · 알람 반올림 · 감사로그 · DB 판 14 · 시안과 달라진 점). ①에서 미룬 한 줄: 1단계 "HR 대신 처리" 줄의 범위에 "맡기지 않은 대표이사 몫 제외"를 넣는다. 2단계 ① 항목 끝의 "2단계 ②(다음 PR)" 줄을 "끝남"으로. 시연 KPI 현황 항목에 "실제 로그인은 위 2단계 ② 항목".
   - 설계 문서 상태 줄: "2단계 ② 구현 (PR 준비 중)", 12장에 2026-10-21 결정 셋(표 하나로 · 이번 달 + 지난달 · 해 넘김 화면 없음)
   - `README.md` 메뉴 표(평가 · 성과 줄)
 - [ ] **Step 1: 로컬 전체 검사** — `export PYTHONIOENCODING=utf-8; for f in check-encoding.sh check-secrets.sh check-pii.sh check-public.sh; do bash .ci/$f; done; python .ci/check-html.py; cd backend && python -m hr_eval.selfcheck && python -m hr_eval.sql.check_schema && python -m hr_eval.sql.check_sqlite_features && python -m auth_check && python -m hr_eval.roster_sync --check` → 모두 통과
 - [ ] **Step 2: 시연 모드 확인** — 역할 일곱 × 평가 · 성과 탭 넷 × 화면, 홈 · 워크스페이스의 HTML이 이 계획 시작 커밋과 같다(①처럼 해시 비교). `kvSelfCheck()` · `kpiSelfCheck()` · `homeSelfCheck()` · `todoSelfCheck()` 통과.
-- [ ] **Step 3: 운영 DB 올리기 시험** — 판 12 자료(계획서 · 확정본 · 진행 기록 · 일정 변경 · 급여명세서)가 든 DB에서 `app`을 띄워 "DB 준비 완료 (판 13)"과 기존 줄이 그대로인지, 기존 `kpi_years` 줄의 `alarm_gap`이 20인지 본다.
+- [ ] **Step 3: 운영 DB 올리기 시험** — 판 13 자료(계획서 · 확정본 · 진행 기록 · 일정 변경 · 급여명세서 · 원천징수영수증)가 든 DB에서 `app`을 띄워 "DB 준비 완료 (판 14)"과 기존 줄이 그대로인지, 기존 `kpi_years` 줄의 `alarm_gap`이 20인지 본다.
 - [ ] **Step 4: 문서 고치기**
 - [ ] **Step 5: 커밋 · PR**
   - main이 그새 바뀌었으면(특히 원천징수영수증의 DB 판) 합치고 번호를 옮긴 뒤 Step 1부터 다시.
   - 인사담당자가 "올려줘"라고 하면 push한다.
   - PR 본문: 템플릿 항목 + 그림, `@holee9` 보안 확인 요청(넓어진 보는 범위 · 대표이사 팀원 묶음 · 메모 권한 · 새 API 열다섯).
-  - merge는 "merge 해줘"를 받은 뒤에만 한다. 합친 뒤 운영 반영과 "DB 준비 완료 (판 13)"을 확인한다.
+  - merge는 "merge 해줘"를 받은 뒤에만 한다. 합친 뒤 운영 반영과 "DB 준비 완료 (판 14)"을 확인한다.
 
 ---
 

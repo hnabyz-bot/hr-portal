@@ -916,6 +916,305 @@ def check_payslips(hr) -> None:
             os.environ["HR_PAY_KEY"] = had
 
 
+def check_withholding(hr) -> None:
+    """원천징수영수증 (2026-10-21): 잠가 저장 · 해 전체(묶음 · pending)/사람만 · 공개·내리기 · 본인은 공개된 해만 · 열쇠가 없으면 503.
+    사람·금액·PDF 는 전부 가짜."""
+    import base64
+    import unittest
+
+    from cryptography.exceptions import InvalidTag
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+    print("원천징수영수증")
+    emp, lead, ten = app.test_client(), app.test_client(), app.test_client()
+    login(emp, new_token("emp"))
+    login(lead, new_token("lead"))
+    login(ten, new_token("HW-10"))
+    raw_key = bytes(range(32))
+    key, had = base64.b64encode(raw_key).decode(), os.environ.pop("HR_PAY_KEY", None)  # 열쇠는 글자로 적지 않고 여기서 만든다
+    get = lambda c, p="/api/withholding": c.get(p, base_url=BASE)  # noqa: E731
+    post = lambda c, p, body=None, headers=ORIGIN: c.post(p, base_url=BASE, headers=headers, json=body)  # noqa: E731
+    years = lambda: get(hr, "/api/withholding/years")  # noqa: E731
+    mine = lambda c=emp: get(c).json["years"]  # noqa: E731
+    pdf_of = lambda c, y, user="": get(c, f"/api/withholding/{y}/pdf" + (f"?user={user}" if user else ""))  # noqa: E731
+    snap = lambda: (q("SELECT * FROM withholding_years ORDER BY year"), q("SELECT * FROM withholding ORDER BY year, user_id"),  # noqa: E731
+                    q("SELECT COUNT(*) FROM audit_logs"))
+
+    def sm(uid, settle=-123457):  # 요약 숫자 (가짜). 지방소득세 차감은 못 읽은 칸(null)
+        return {"gross": 45678900 + uid, "taxDecided": 1234567, "localDecided": 123456, "taxPrepaid": 1358024,
+                "localPrepaid": 135802, "taxSettle": settle, "localSettle": None}
+
+    def fake_pdf(uid, n=100):
+        return b"%PDF-1.4\n%fake " + str(uid).encode() + b"x" * n
+
+    def person(uid, s=None, pdf=None):
+        return {"userId": uid, "sum": s or sm(uid), "pdf": base64.b64encode(pdf or fake_pdf(uid)).decode()}
+
+    def wb(people, mode="all", reset=True, total=None):
+        return {"mode": mode, "reset": reset, "total": len(people) if total is None else total, "people": people}
+
+    def up(c, year, people, **kw):
+        return post(c, f"/api/withholding/{year}", wb(people, **kw))
+
+    try:
+        ok(app.test_client().get("/api/withholding", base_url=BASE).status_code == 401, "로그인 없이는 401")
+        ok(get(emp, "/api/withholding/years").status_code == 403, "직원은 해 목록을 못 봄 (403)")
+        ok(get(emp, "/api/withholding?user=3").status_code == 403 and get(emp, "/api/withholding?user=10").status_code == 403
+           and pdf_of(emp, 2025, 3).status_code == 403, "직원이 ?user= 를 붙이면 403 (본인 번호여도)")
+        ok(up(emp, 2025, [person(3)]).status_code == 403, "직원은 올리기 403 (열쇠 검사보다 먼저)")
+        ok(post(emp, "/api/withholding/2025/open").status_code == 403 and post(emp, "/api/withholding/2025/close").status_code == 403,
+           "직원은 공개·내리기 403")
+
+        print("  - 서버에 열쇠가 없을 때")
+        ok(years().json == {"ready": False, "years": []}, "해 목록 ready 거짓")
+        r = up(hr, 2025, [person(3)])
+        ok(r.status_code == 503 and "HR_PAY_KEY" in r.json["error"] and not q("SELECT 1 FROM withholding_years"), "올리기 503 + 설정 안내 (아무것도 저장 안 됨)")
+        ok(get(emp).status_code == 200 and get(emp).json == {"years": []}, "직원 목록은 빈 목록 (오류 아님)")
+        os.environ["HR_PAY_KEY"] = key
+
+        print("  - 모양이 틀리면 400 · 아무것도 안 바뀜")
+
+        def bad_sum(**ch):
+            s = sm(3)
+            s.update(ch)
+            return wb([person(3, s)])
+
+        no_tax = sm(3)
+        del no_tax["taxSettle"]
+        cases = [
+            ("mode 틀림", 2025, wb([person(3)], mode="both")),
+            ("귀속연도 1999", 1999, wb([person(3)])),
+            ("귀속연도 모양", "2025x", wb([person(3)])),
+            ("귀속연도 다른 나라 숫자", "202٥", wb([person(3)])),
+            ("sum 칸 하나 빠짐", 2025, wb([person(3, no_tax)])),
+            ("sum 칸 더 있음", 2025, bad_sum(extra=1)),
+            ("sum 값이 실수", 2025, bad_sum(gross=45678903.0)),
+            ("sum 값이 글자", 2025, bad_sum(gross="45678903")),
+            ("sum 값이 참/거짓", 2025, bad_sum(taxSettle=True)),
+            ("sum 값이 너무 큼", 2025, bad_sum(gross=100_000_000_001)),
+            ("pdf 가 %PDF 로 시작 안 함", 2025, wb([person(3, pdf=b"<html>" + b"x" * 100)])),
+            ("pdf 가 base64 아님", 2025, wb([{**person(3), "pdf": "%%%not base64%%%"}])),
+            ("pdf 3,000,000바이트 넘음", 2025, wb([person(3, pdf=fake_pdf(3, 3_000_000))])),  # base64 로는 4MB — 본문 한도 안
+            ("같은 직원 두 번", 2025, wb([person(3), person(3)])),
+            ("없는 직원", 2025, wb([person(999)])),
+            ("비활성 직원", 2025, wb([person(5)])),
+            ("직원 번호가 글자", 2025, wb([{**person(3), "userId": "3"}])),
+            ("사람 칸 더 있음", 2025, wb([{**person(3), "name": "가상3"}])),
+            ("0명", 2025, wb([])),
+            ("total 이 사람 수보다 적음", 2025, wb([person(3), person(10)], total=1)),
+            ("total 이 정수 아님", 2025, wb([person(3)], total="1")),
+            ("reset 이 참/거짓 아님", 2025, wb([person(3)], reset="yes")),
+        ]
+        before = snap()
+        for label, year, b in cases:
+            r = post(hr, f"/api/withholding/{year}", b)
+            ok(r.status_code == 400 and r.json["error"].startswith("영수증 내용의 모양이 올바르지 않습니다") and snap() == before, f"400 · 안 바뀜 ({label})")
+        r = up(hr, 2025, [person(3, pdf=fake_pdf(3, 1_800_000)), person(10, pdf=fake_pdf(10, 1_800_000))])
+        ok(r.status_code == 400 and snap() == before, "400 · 안 바뀜 (본문 4,700,000바이트 넘음)")
+        r = up(hr, 2025, [person(3)] * 201)
+        ok(r.status_code == 400 and "200" in r.json["error"] and snap() == before, "400 · 안 바뀜 (한 묶음 201명)")
+        ok(post(hr, "/api/withholding/2025", [1, 2]).status_code == 400 and snap() == before, "400 · 안 바뀜 (객체가 아닌 본문)")
+
+        print("  - 해 전체 올리기 (묶음 · pending)")
+        r = up(hr, 2025, [person(3), person(10)], total=3)
+        ok(r.status_code == 200 and r.json == {"saved": 2, "pending": 1}, "첫 묶음 2명 (전체 3명) → pending 1")
+        y = years().json
+        ok(y["ready"] is True and len(y["years"]) == 1 and y["years"][0]["uploadedAt"]
+           and {k: y["years"][0][k] for k in ("year", "status", "people", "pending", "revised", "openedAt")}
+           == {"year": 2025, "status": "DRAFT", "people": 2, "pending": 1, "revised": 0, "openedAt": None}
+           and y["years"][0]["users"] == [3, 10], "해 목록: DRAFT · 2명 · 남은 1명 · 수정 0 · 올라간 직원 번호")
+        r = post(hr, "/api/withholding/2025/open")
+        ok(r.status_code == 409 and "올리다 멈춘 해" in r.json["error"] and q("SELECT status FROM withholding_years") == [("DRAFT",)],
+           "다 올리기 전(pending 1)에는 공개 409")
+        before = snap()
+        ok(up(hr, 2025, [person(11)], mode="some", reset=False).status_code == 409 and snap() == before, "해 전체 올리기가 끝나지 않은 해에 사람만 409")
+        ok(up(hr, 2025, [person(11), person(12)], reset=False).status_code == 409 and snap() == before, "남은 사람보다 많은 묶음 409")
+        ok(up(hr, 2024, [person(11)], reset=False).status_code == 409 and snap() == before, "시작하지 않은 해에 이어 올리기 409")
+        ok(up(hr, 2025, [person(3)], reset=False).status_code == 400 and snap() == before, "이어 올리는 묶음에 이미 올린 직원 400")
+
+        print("  - 공개 전 (본인)")
+        ok(get(emp).json == {"years": []} and pdf_of(emp, 2025).status_code == 404 and post(emp, "/api/withholding/2025/seen").status_code == 404,
+           "공개 전에는 목록에 없음 · PDF 404 · '봤음' 404")
+        r = up(hr, 2025, [person(11)], reset=False)
+        ok(r.status_code == 200 and r.json == {"saved": 1, "pending": 0} and years().json["years"][0]["people"] == 3
+           and years().json["years"][0]["users"] == [3, 10, 11], "나머지 1명 → pending 0 · 3명 · 직원 번호 셋")
+
+        print("  - 잠금")
+        rows = q("SELECT user_id, sum, pdf FROM withholding WHERE year = 2025 ORDER BY user_id")
+        ok(len(rows) == 3 and all(len(b) > 28 and b"%PDF" not in b and b"4567890" not in b and b"1234567" not in b and b"123457" not in b
+                                  for _, s, p in rows for b in (s, p)), "DB 에는 잠긴 글만 (금액 숫자 · %PDF 가 그대로 없음)")
+        aes = AESGCM(raw_key)
+
+        def opens(blob, aad):
+            try:
+                return aes.decrypt(blob[:12], blob[12:], aad.encode())
+            except InvalidTag:
+                return None
+
+        s3, p3 = rows[0][1], rows[0][2]
+        ok(json.loads(opens(s3, "wh|2025|3|sum")) == sm(3) and opens(p3, "wh|2025|3|pdf") == fake_pdf(3)
+           and opens(s3, "wh|2025|10|sum") is None and opens(s3, "wh|2024|3|sum") is None and opens(p3, "wh|2025|3|sum") is None,
+           "열쇠로 풀리고, 다른 직원 · 다른 해 · 다른 종류 자리로 옮기면 안 풀림 (aad)")
+
+        def skipped(path, year, uid, want):  # 안 풀리는 줄: 서버 로그 한 줄(해 · 직원 번호만). 로그는 잡아 두어 검사 출력에 ERROR 가 섞이지 않게
+            with unittest.TestCase().assertLogs("withholding", "ERROR") as cm:
+                r = get(hr, path)
+            return (want(r) and [(rec.args, rec.levelname) for rec in cm.records] == [((year, uid), "ERROR")]
+                    and not any(w in cm.output[0] for w in ("가상", "45678", "%PDF")))
+
+        x("UPDATE withholding SET sum = ?, pdf = ? WHERE year = 2025 AND user_id = 10", s3, p3)  # 한 사람의 줄을 다른 사람 자리에 붙여 본다
+        ok(skipped("/api/withholding?user=10", 2025, 10, lambda r: r.status_code == 200 and r.json == {"years": []}),
+           "다른 직원 자리로 옮긴 줄은 목록에서 빠짐 (오류 아님) · 서버 로그에는 해 · 직원 번호만")
+        ok(skipped("/api/withholding/2025/pdf?user=10", 2025, 10, lambda r: r.status_code == 404), "옮긴 줄의 PDF 는 404 · 서버 로그에는 해 · 직원 번호만")
+        x("UPDATE withholding SET sum = ?, pdf = ? WHERE year = 2025 AND user_id = 10", rows[1][1], rows[1][2])
+
+        print("  - 공개")
+        r = post(hr, "/api/withholding/2025/open")
+        ok(r.status_code == 200 and r.json == {"status": "OPEN"}
+           and q("SELECT status, pending, opened_by, opened_at IS NOT NULL FROM withholding_years WHERE year = 2025") == [("OPEN", 0, 1, 1)],
+           "모두 올린 뒤 공개 → OPEN (누가 언제)")
+        ok(mine() == [{"year": 2025, "revised": False, "seen": False, "sum": sm(3)}], "직원 목록에 한 해 · 요약이 올린 그대로 (null 칸 포함) · 아직 안 봄")
+        r = pdf_of(emp, 2025)
+        ok(r.status_code == 200 and r.data == fake_pdf(3) and r.mimetype == "application/pdf"
+           and r.headers.get("Content-Disposition") == 'inline; filename="withholding_2025.pdf"', "PDF 바이트가 올린 그대로 · 파일 이름에 실명 없음")
+        ok(get(lead).json == {"years": []} and pdf_of(lead, 2025).status_code == 404 and post(lead, "/api/withholding/2025/seen").status_code == 404,
+           "영수증이 없는 직원은 빈 목록 · PDF 404 · '봤음' 404 (남의 것은 안 보임)")
+        ok(post(emp, "/api/withholding/2025/seen").json == {"ok": True} and mine()[0]["seen"] is True, "'봤음' → seen 참")
+        ok(post(emp, "/api/withholding/2025/seen").json == {"ok": True} and post(ten, "/api/withholding/2025/seen").json == {"ok": True},
+           "두 번 눌러도 됨 · 다른 직원도 봄")
+        ok(post(emp, "/api/withholding/abc/seen").status_code == 404 and post(emp, "/api/withholding/2024/seen").status_code == 404, "없는 해의 '봤음'은 404")
+        before = snap()
+        r = up(hr, 2025, [person(3), person(10), person(11)])
+        ok(r.status_code == 409 and r.json["error"] == "공개 중인 해입니다. 공개를 내린 뒤 다시 올리거나, 사람만 바꾸기로 올려 주세요." and snap() == before,
+           "공개 중인 해에 해 전체 409 (아무것도 안 바뀜)")
+        ok(up(hr, 2025, [person(12)], reset=False).status_code == 409 and snap() == before, "공개 중인 해에 이어 올리기 409")
+
+        print("  - HR 이 직원 것 보기 (?user=)")
+        views = lambda: q("SELECT action, actor_user_id, entity_type, entity_id, after_data FROM audit_logs"  # noqa: E731
+                          " WHERE action IN ('WITHHOLDING_VIEW', 'WITHHOLDING_PDF_VIEW') ORDER BY id")
+        n = len(views())
+        r = get(hr, "/api/withholding?user=3")
+        ok(r.status_code == 200 and r.json == {"years": [{"year": 2025, "status": "OPEN", "revised": False, "seen": True, "sum": sm(3)}]},
+           "HR 은 ?user= 로 직원 것을 봄 (status 포함)")
+        r = pdf_of(hr, 2025, 3)
+        ok(r.status_code == 200 and r.data == fake_pdf(3), "HR 은 ?user= 로 직원 PDF 를 봄")
+        ok(views()[n:] == [("WITHHOLDING_VIEW", 1, "user", 3, '{"years": 1}'), ("WITHHOLDING_PDF_VIEW", 1, "user", 3, '{"year": 2025}')],
+           "남의 것을 보면 감사로그 WITHHOLDING_VIEW · WITHHOLDING_PDF_VIEW (해 · 수만)")
+        n = len(views())
+        ok(get(hr, "/api/withholding?user=1").json == {"years": []} == get(hr).json and pdf_of(hr, 2025, 1).status_code == 404 and len(views()) == n,
+           "HR 본인 번호의 ?user= 는 ?user= 없는 것과 같음 (감사로그 없음)")
+        ok(all(get(hr, p).status_code == 404 for p in ("/api/withholding?user=abc", "/api/withholding?user=", "/api/withholding?user=999",
+                                                     "/api/withholding?user=-1", "/api/withholding/2025/pdf?user=999")),
+           "?user= 가 숫자가 아니거나 없는 직원이면 404")
+        ok(pdf_of(hr, "abc", 3).status_code == 404 and pdf_of(hr, 2099, 3).status_code == 404, "없는 해 PDF 는 404")
+
+        print("  - 사람만 바꾸기 · 더하기")
+        r = up(hr, 2025, [person(3, sm(3, settle=250000))], mode="some", reset=False)
+        ok(r.status_code == 200 and r.json == {"saved": 1, "pending": 0}, "공개 중인 해에 사람만 바꾸기 → 받음")
+        ok(mine() == [{"year": 2025, "revised": True, "seen": False, "sum": sm(3, settle=250000)}], "바뀐 사람: 바로 보임 · 수정됨 참 · '봤음' 다시 거짓 · 새 요약")
+        ok(mine(ten) == [{"year": 2025, "revised": False, "seen": True, "sum": sm(10)}], "다른 사람: 수정됨 아님 · '봤음' 그대로")
+        ok(up(hr, 2025, [person(12)], mode="some", reset=False).json == {"saved": 1, "pending": 0}
+           and q("SELECT revised, seen_at FROM withholding WHERE year = 2025 AND user_id = 12") == [(0, None)]
+           and (years().json["years"][0]["people"], years().json["years"][0]["revised"]) == (4, 1), "새 사람 더하기 → 수정됨 아님 (새 영수증) · 4명 · 수정 1명")
+        r = up(hr, 2024, [person(3)], mode="some", reset=False)
+        ok(r.json == {"saved": 1, "pending": 0} and q("SELECT status, pending, opened_at FROM withholding_years WHERE year = 2024") == [("DRAFT", 0, None)]
+           and [y["year"] for y in mine()] == [2025], "없는 해에 사람만 → 그 해를 DRAFT 로 만듦 (직원에게는 아직 안 보임)")
+        ok(up(hr, 2024, [person(3, sm(3, settle=1))], mode="some", reset=False).status_code == 200
+           and q("SELECT revised FROM withholding WHERE year = 2024 AND user_id = 3") == [(0,)], "공개한 적 없는 해에서 바꾸면 수정됨 아님")
+        ok([(y["year"], y["status"]) for y in get(hr, "/api/withholding?user=3").json["years"]] == [(2025, "OPEN"), (2024, "DRAFT")],
+           "HR 은 공개 전 해도 봄 · 최근 해부터")
+        ok(pdf_of(hr, 2024, 3).data == fake_pdf(3) and pdf_of(emp, 2024).status_code == 404, "공개 전 해 PDF: HR 은 봄, 본인은 404")
+        ok([y["year"] for y in years().json["years"]] == [2025, 2024], "해 목록은 최근 해부터")
+
+        print("  - 공개 내리기 → 해 전체 다시")
+        r = post(hr, "/api/withholding/2025/close")
+        ok(r.status_code == 200 and r.json == {"status": "DRAFT"} and get(emp).json == {"years": []} and pdf_of(emp, 2025).status_code == 404,
+           "공개 내리기 → 직원에게 다시 안 보임")
+        ok(up(hr, 2025, [person(3), person(10)], total=3).json == {"saved": 2, "pending": 1}
+           and up(hr, 2025, [person(11)], reset=False).json == {"saved": 1, "pending": 0}, "내린 해를 해 전체로 다시 (두 묶음)")
+        ok(q("SELECT user_id, revised, seen_at FROM withholding WHERE year = 2025 ORDER BY user_id") == [(3, 1, None), (10, 1, None), (11, 1, None)]
+           and (years().json["years"][0]["people"], years().json["years"][0]["revised"]) == (3, 3),
+           "공개했던 해를 해 전체로 다시 → 모든 줄 수정됨 · '봤음' 새로 · 빠진 사람(12)은 지워짐")
+        post(hr, "/api/withholding/2025/open")
+        ok((mine()[0]["revised"], mine()[0]["seen"]) == (True, False), "다시 공개: 수정됨 참 · '봤음' 거짓")
+
+        print("  - 그 밖")
+        ok(post(hr, "/api/withholding/2099/open").status_code == 404 and post(hr, "/api/withholding/2099/close").status_code == 404
+           and post(hr, "/api/withholding/abc/open").status_code == 404, "없는 해 공개 · 내리기는 404")
+        x("INSERT INTO withholding_years (year, status, pending, uploaded_at, uploaded_by) VALUES (2023, 'DRAFT', 0, '2026-01-01T00:00:00Z', 1)")
+        ok(post(hr, "/api/withholding/2023/open").status_code == 409, "줄이 하나도 없는 해는 공개 409")
+        x("DELETE FROM withholding_years WHERE year = 2023")
+        before = snap()
+        ok(post(hr, "/api/withholding/2026", wb([person(3)]), headers={}).status_code == 403 and snap() == before, "Origin 없으면 올리기 403")
+        ok(post(hr, "/api/withholding/2025/close", headers={}).status_code == 403 and post(emp, "/api/withholding/2025/seen", headers={}).status_code == 403,
+           "내리기 · '봤음'도 Origin 없으면 403")
+        os.environ.pop("HR_PAY_KEY")
+        ok(get(emp).json == {"years": []} and pdf_of(emp, 2025).status_code == 404 and years().json["ready"] is False,
+           "공개 중이어도 열쇠가 빠지면 직원 목록 빈 목록 · PDF 404 · ready 거짓")
+        os.environ["HR_PAY_KEY"] = key
+
+        for label, r in (("목록", get(emp)), ("해 목록", years()), ("?user=", get(hr, "/api/withholding?user=3")), ("PDF", pdf_of(emp, 2025)),
+                         ("올리기", up(hr, 2025, [person(3)], mode="some", reset=False)), ("올리기 409", up(hr, 2025, [person(3)])),
+                         ("공개", post(hr, "/api/withholding/2025/open")), ("봤음", post(emp, "/api/withholding/2025/seen")),
+                         ("직원 403", get(emp, "/api/withholding/years")), ("400", post(hr, "/api/withholding/1999", {}))):
+            ok(r.headers.get("Cache-Control") == "no-store", f"Cache-Control: no-store ({label})")
+
+        logs = q("SELECT action, after_data FROM audit_logs WHERE action LIKE 'WITHHOLDING%' ORDER BY id")
+        ok({"WITHHOLDING_UPLOAD", "WITHHOLDING_OPEN", "WITHHOLDING_CLOSE", "WITHHOLDING_VIEW", "WITHHOLDING_PDF_VIEW"} <= {a for a, _ in logs},
+           "감사로그 WITHHOLDING_UPLOAD · OPEN · CLOSE · VIEW · PDF_VIEW")
+        ok(all(set(json.loads(d)) <= {"year", "years", "mode", "people"} for _, d in logs), "감사로그에는 해 · 수 · 방식만")
+        datas = str([d for _, d in logs])
+        ok(not any(w in datas for w in ("가상", "45678", "1234567", "123457", "250000", "PDF", "pdf")), "감사로그에 이름 · 금액 · 파일 이름 없음")
+    finally:
+        os.environ.pop("HR_PAY_KEY", None)
+        if had is not None:
+            os.environ["HR_PAY_KEY"] = had
+
+
+def check_eval_report(hr) -> None:
+    """평가 결과 보고용 엑셀 (2026-10-22): HR 만 · 받은 값 검사 · 시트 둘(요약 · 명단) · 연봉 인상 계산이 읽는 칸 제목 · '=' 글자는 수식이 아님."""
+    import io
+    import zipfile
+    from urllib.parse import quote
+
+    from openpyxl import load_workbook
+    print("평가 결과 보고서")
+    lead = app.test_client()
+    login(lead, new_token("lead"))
+    post = lambda c, body, headers=ORIGIN: c.post("/api/eval/report", base_url=BASE, headers=headers, json=body)  # noqa: E731
+    man = lambda name, div, grade, total=85.5, appeal="": {"div": div, "team": "가상팀", "no": "", "name": name, "title": "사원",  # noqa: E731
+                                                           "pool": "가상본부 팀원", "total": total, "grade": grade, "stage": "확정", "appeal": appeal}
+    body = {"year": 2026, "date": "2026-10-22", "released": None, "appeals": 1, "open": 1,
+            "people": [man("가상일", "가상본부", "A"), man("=1+1", "가상본부", "", appeal="처리 중 (지금 C)"), man("가상삼", "가상지원", "C", None)],
+            "pools": [{"name": "가상본부 팀원", "quota": "A·B 합계 1명", "ok": True}]}
+
+    ok(app.test_client().post("/api/eval/report", base_url=BASE, headers=ORIGIN, json=body).status_code == 401, "로그인 없이는 401")
+    ok(post(lead, body).status_code == 403, "HR 이 아니면 403 (팀장)")
+    bad = [{**body, "year": "2026"}, {**body, "people": []}, {**body, "people": [man("가상", "가상본부", "X")]},
+           {**body, "people": [man("가\n상", "가상본부", "A")]}, {**body, "people": [man("가상", "가상본부", "A", 900)]},
+           {**body, "pools": [{"name": "묶음", "quota": "", "ok": "yes"}]}, [1, 2]]
+    ok(all(post(hr, b).status_code == 400 for b in bad), "형식 · 등급 · 줄바꿈 글자 · 총점 범위 · 묶음 값이 틀리면 400")
+    ok(post(hr, {**body, "people": [man("가상", "가상본부", "A")] * 3001}).status_code in (400, 413), "인원이 너무 많으면 거절")
+
+    r = post(hr, body)
+    ok(r.status_code == 200 and r.mimetype.endswith("spreadsheetml.sheet")
+       and r.headers["Content-Disposition"].endswith("filename*=UTF-8''" + quote("2026년 인사평가 결과.xlsx")), "HR → 엑셀 (파일 이름 한글)")
+    wb = load_workbook(io.BytesIO(r.data))
+    sm, ro = wb["요약"], wb["명단"]
+    head = [c.value for c in ro[4]]
+    ok(wb.sheetnames == ["요약", "명단"] and {"사번", "이름", "최종등급"} <= set(head), "시트 요약 · 명단, 명단 칸 제목은 연봉 인상 계산이 읽는 이름")
+    names = [ro.cell(row=r_, column=head.index("이름") + 1) for r_ in (5, 6, 7)]
+    ok(names[1].value == "=1+1" and names[1].data_type == "s", "'=' 로 시작하는 글자는 수식이 아니라 글자")
+    ok([ro.cell(row=r_, column=head.index("최종등급") + 1).value for r_ in (5, 6, 7)] == ["A", None, "C"]
+       and ro.cell(row=7, column=head.index("총점") + 1).value == "현장직", "이의 처리 중이면 등급 칸이 비고, 점수 없는 사람은 현장직")
+    rows = {sm.cell(row=r_, column=1).value: [sm.cell(row=r_, column=c).value for c in range(2, 9)] for r_ in range(9, 13)}
+    ok(rows["가상본부"] == [0, 1, 0, 0, 0, 1, 2] and rows["가상지원"] == [0, 0, 0, 1, 0, 0, 1] and rows["합계"] == [0, 1, 0, 1, 0, 1, 3],
+       "본부별 분포: 받은 순서대로 · 처리 중 칸 · 합계")
+    z = zipfile.ZipFile(io.BytesIO(r.data))
+    charts = [n for n in z.namelist() if n.startswith("xl/charts/chart")]
+    ok(len(charts) == 1 and "<f>'요약'!" in z.read(charts[0]).decode() and "Sheet" not in z.read(charts[0]).decode(), "요약에 그래프 하나 (요약 시트의 칸을 가리킴)")
+
+
 def year_day(n: int) -> str:
     """오늘 + n일을 올해(한국 날짜) 안으로 맞춘 날짜 — KPI 기간은 그해 날짜만 받으므로 1월 1일 · 12월 31일에도 검사가 그대로 돈다."""
     t = auth._today()
@@ -3415,6 +3714,8 @@ def main() -> int:
     check_kpi_sched(hr)
     check_kpi_review(hr)
     check_payslips(hr)
+    check_withholding(hr)
+    check_eval_report(hr)
 
     acts = {r[0] for r in q("SELECT action FROM audit_logs")}
     ok({"LOGIN", "HR_BOOTSTRAP"} <= acts, "감사로그 LOGIN 이 남음")
