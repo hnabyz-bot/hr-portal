@@ -15,11 +15,25 @@
 
 from __future__ import annotations
 
+import base64
 import hashlib
+import io
 import json
 import math
 import re
 from datetime import date, timedelta
+from xml.sax.saxutils import escape
+
+from reportlab.lib import colors
+from reportlab.lib.enums import TA_CENTER
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import ParagraphStyle
+from reportlab.lib.units import mm
+from reportlab.lib.utils import ImageReader
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.pdfmetrics import registerFontFamily, stringWidth
+from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.platypus import Flowable, KeepTogether, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 TPL = "2027-1"  # 양식 판 번호 — 문장·표를 고치면 올린다(문서 고유번호에도 들어간다)
 COMPANY_NAME = "㈜에이치앤아비즈"
@@ -147,6 +161,181 @@ def doc_hash(blocks: list) -> str:
     return hashlib.sha256(body.encode()).hexdigest()
 
 
+# ----- 서명본 PDF -----
+# 화면(ct-doc)과 같은 모양을 reportlab 으로 다시 그린다. 글꼴은 export_utils 가 찾아 둔 한글 글꼴(없으면 Helvetica — 한글은 안 보여도 PDF 는 만들어진다).
+_BOLD_FONTS = ["/usr/share/fonts/truetype/nanum/NanumGothicBold.ttf", "C:/Windows/Fonts/malgunbd.ttf"]
+_INK, _MUTED, _LINE, _SHADE = colors.HexColor("#1F2933"), colors.HexColor("#66707F"), colors.HexColor("#9AA6B2"), colors.HexColor("#F4F8FB")
+_W = 174 * mm  # A4 가로 210 − 좌우 여백 18
+# 글꼴에 없으면 그리는 쪽에서만 바꿀 글자(블록은 해시 대상이라 그대로). 맑은 고딕에는 U+2212(−)가 없어 빈칸으로 나온다.
+_SUBST = {"\xa0": " ", "−": "-"}
+
+
+def _fonts() -> tuple[str, str]:
+    """(보통, 굵게) 글꼴 이름. 굵은 글꼴 파일이 없으면 굵게도 보통 글꼴 — 한글 글꼴에서 Helvetica-Bold 로 새지 않게 한다."""
+    from export_utils import _register_korean_font  # 가져오는 데 무거워서 여기서(계산·본문 규칙만 쓰는 쪽은 안 부른다)
+    font = _register_korean_font()
+    if font == "Helvetica":
+        return font, "Helvetica-Bold"
+    bold = font + "Bold"
+    if bold not in pdfmetrics.getRegisteredFontNames():
+        for path in _BOLD_FONTS:
+            try:
+                pdfmetrics.registerFont(TTFont(bold, path))
+                break
+            except Exception:
+                continue
+    if bold not in pdfmetrics.getRegisteredFontNames():
+        bold = font
+    registerFontFamily(font, normal=font, bold=bold, italic=font, boldItalic=bold)
+    return font, bold
+
+
+def _has_glyph(font: str, ch: str) -> bool:
+    cmap = getattr(getattr(pdfmetrics.getFont(font), "face", None), "charToGlyph", None)
+    return cmap is None or ord(ch) in cmap
+
+
+class _Signs(Flowable):
+    """사업주 · 근로자 서명 줄 — 직인은 글 "(인)" 자리에 겹쳐 얹고, 서명은 이름 옆에 놓는다. 그림이 없으면 빈칸."""
+
+    def __init__(self, employer, worker, seal_png, sign_png, font):
+        super().__init__()
+        self.employer, self.worker, self.font = employer, worker, font
+        self.seal = ImageReader(io.BytesIO(seal_png)) if seal_png else None
+        self.sign = ImageReader(io.BytesIO(sign_png)) if sign_png else None
+
+    def wrap(self, aw, ah):
+        return _W, 22 * mm
+
+    def draw(self):
+        c, font, base, size = self.canv, self.font, 10 * mm, 10.5
+        left_w = _W * 0.58
+        label, mark = f"사업주 : {self.employer} ", "(인)"
+        need = stringWidth(label + mark, font, size)
+        if need > left_w:  # 한 줄에 안 들어가면 글자를 줄인다(잘리면 안 된다)
+            size = size * left_w / need
+        c.setFillColor(_INK)
+        c.setFont(font, size)
+        c.drawString(0, base, label)
+        x_mark = stringWidth(label, font, size)
+        c.setFillColor(_MUTED)
+        c.drawString(x_mark, base, mark)
+        if self.seal:  # 약 18mm 정사각 칸 안에 비율대로, "(인)" 가운데에
+            cx = x_mark + stringWidth(mark, font, size) / 2
+            c.drawImage(self.seal, cx - 9 * mm, base + size * 0.35 - 9 * mm, 18 * mm, 18 * mm, mask="auto", preserveAspectRatio=True, anchor="c")
+        x0 = left_w + 6 * mm
+        c.setFillColor(_INK)
+        c.setFont(font, 10.5)
+        text = f"근로자 : {self.worker}"
+        c.drawString(x0, base, text)
+        if self.sign:  # 높이 약 12mm, 이름 바로 옆
+            x1 = x0 + stringWidth(text, font, 10.5) + 3 * mm
+            c.drawImage(self.sign, x1, base - 3 * mm, min(_W - x1, 45 * mm), 12 * mm, mask="auto", preserveAspectRatio=True, anchor="w")
+
+
+def render_pdf(blocks: list, *, seal_png: bytes | None, sign_png: bytes | None, esign: dict | None) -> bytes:
+    """서명본 PDF(A4 세로) — 블록을 하나도 빼지 않고 그린다(설계 5.4). 서명하는 순간 서버가 부르고 암호화해 보관한다.
+    esign {"signedAt","name","how","hash"} 가 있으면 끝에 "전자서명 정보" 상자를 붙인다. 그림 바이트가 깨졌으면 예외(서명본을 말없이 비우지 않는다)."""
+    font, bold = _fonts()
+
+    def style(name, **kw):
+        return ParagraphStyle(name, fontName=kw.pop("fontName", font), wordWrap="CJK", textColor=kw.pop("textColor", _INK), **kw)
+
+    body = style("body", fontSize=9, leading=14, spaceAfter=1.5)
+    st = {
+        "title": style("title", fontName=bold, fontSize=18, leading=24, alignment=TA_CENTER, spaceAfter=12),
+        "h": style("h", fontName=bold, fontSize=10.5, leading=15, spaceBefore=9, spaceAfter=3, keepWithNext=1),
+        "center": style("center", fontSize=10, leading=15, alignment=TA_CENTER, spaceBefore=14),
+        "date": style("date", fontSize=8.5, leading=13, alignment=TA_CENTER, textColor=_MUTED),
+        "k": style("k", fontName=bold, fontSize=8.5, leading=12, textColor=colors.HexColor("#556070")),
+        "v": style("v", fontSize=8.5, leading=12),
+        "th": style("th", fontName=bold, fontSize=7.5, leading=10.5, alignment=TA_CENTER, textColor=colors.HexColor("#556070")),
+        "td": style("td", fontSize=7.5, leading=10.5, alignment=TA_CENTER),
+        "box": style("box", fontSize=8.5, leading=13),
+    }
+    swap = {ch: alt for ch, alt in _SUBST.items() if not _has_glyph(font, ch)}
+
+    def m(text: str) -> str:  # Paragraph 용 글: 글꼴에 없는 글자 바꾸기 → &<> 막기 → 줄바꿈
+        for ch, alt in swap.items():
+            text = text.replace(ch, alt)
+        return escape(text).replace("\n", "<br/>")
+
+    def grid(rows, widths, shade, cell_style):
+        """칸 글을 Paragraph 로, 칸 합치기(span)는 SPAN 으로. shade(r, c) 면 머리·라벨 칸 색."""
+        data, cmds = [], [("GRID", (0, 0), (-1, -1), 0.5, _LINE), ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                          ("TOPPADDING", (0, 0), (-1, -1), 4), ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+                          ("LEFTPADDING", (0, 0), (-1, -1), 4), ("RIGHTPADDING", (0, 0), (-1, -1), 4)]
+        for r, row in enumerate(rows):
+            line, col = [], 0
+            for cell in row:
+                text, span = (cell["c"], cell.get("span", 1)) if isinstance(cell, dict) else (cell, 1)
+                line += [Paragraph(m(text), cell_style(r, col))] + [""] * (span - 1)
+                if span > 1:
+                    cmds.append(("SPAN", (col, r), (col + span - 1, r)))
+                if shade(r, col):
+                    cmds.append(("BACKGROUND", (col, r), (col + span - 1, r), _SHADE))
+                col += span
+            data.append(line)
+        t = Table(data, colWidths=widths)
+        t.setStyle(TableStyle(cmds))
+        return t
+
+    story, centers = [], 0
+    for blk in blocks:
+        kind = blk["t"]
+        if kind == "title":
+            story.append(Paragraph(m(blk["text"]), st["title"]))
+        elif kind == "h":
+            story.append(Paragraph(m(blk["text"]), st["h"]))
+        elif kind == "p":
+            story.append(Paragraph("".join(f"<b>{m(t)}</b>" if b else m(t) for t, b in blk["runs"]), body))
+        elif kind == "kv":  # 칸이 4개면 라벨·값·라벨·값, 2개면 라벨 + 값(나머지 가로 전체)
+            rows = [r if len(r) == 4 else [r[0], {"c": r[1], "span": 3}] for r in blk["rows"]]
+            story += [Spacer(1, 2 * mm),
+                      grid(rows, [22 * mm, 65 * mm, 24 * mm, 63 * mm], lambda r, c: c in (0, 2), lambda r, c: st["k"] if c in (0, 2) else st["v"]),
+                      Spacer(1, 2 * mm)]
+        elif kind == "table":  # 칸 너비는 글이 안 꺾일 만큼(칸 합치기 줄은 빼고) 재서 쪽 너비에 맞춰 비례로 늘이거나 줄인다
+            head, need = blk["head"], {}
+            for row in blk["rows"]:
+                col = 0
+                for cell in row:
+                    text, span = (cell["c"], cell["span"]) if isinstance(cell, dict) else (cell, 1)
+                    if span == 1:
+                        w = max((stringWidth(seg, bold, 7.5) for seg in re.split(r"[\n/]", text)), default=0)
+                        need[col] = max(need.get(col, 0), w + 12)
+                    col += span
+            n = col
+            widths = [max(need.get(i, 0), 24) for i in range(n)]
+            widths = [_W * w / sum(widths) for w in widths]
+            story += [Spacer(1, 1 * mm),
+                      grid(blk["rows"], widths, lambda r, c: r < head, lambda r, c: st["th"] if r < head else st["td"]),
+                      Spacer(1, 2 * mm)]
+        elif kind == "center":  # 첫 줄은 맺음 문장, 그다음은 체결일(화면의 list-sub 처럼 옅고 작게)
+            story.append(Paragraph(m(blk["text"]), st["center"] if centers == 0 else st["date"]))
+            centers += 1
+        elif kind == "signs":
+            story += [Spacer(1, 4 * mm), _Signs(blk["employer"], blk["worker"], seal_png, sign_png, font)]
+        else:
+            raise ValueError(f"알 수 없는 본문 블록: {kind}")  # 모르는 블록을 건너뛰면 서명본이 본문과 달라진다
+    if esign:
+        lines = [Paragraph("전자서명 정보", style("boxh", fontName=bold, fontSize=9, leading=13)),
+                 Paragraph(m(f"서명 {esign['signedAt']} · {esign['name']} · 본인 확인: {esign['how']}"), st["box"]),
+                 Paragraph(m(f"문서 고유번호 {esign['hash'][:16]}…"), st["box"]),
+                 Paragraph("이 계약서는 전자문서로 작성·교부합니다(근로기준법 제17조).", st["box"])]
+        box = Table([[lines]], colWidths=[_W])
+        box.setStyle(TableStyle([("BOX", (0, 0), (-1, -1), 0.7, _LINE), ("BACKGROUND", (0, 0), (-1, -1), _SHADE),
+                                 ("LEFTPADDING", (0, 0), (-1, -1), 8), ("TOPPADDING", (0, 0), (-1, -1), 6), ("BOTTOMPADDING", (0, 0), (-1, -1), 6)]))
+        story += [Spacer(1, 6 * mm), box]
+    # 맺음 문장부터 끝까지(날짜 · 서명 · 전자서명 상자)는 한 쪽에 같이 둔다 — 서명만 다음 쪽에 혼자 남지 않게
+    first = next((i for i, f in enumerate(story) if isinstance(f, Paragraph) and f.style is st["center"]), None)
+    if first is not None:
+        story[first:] = [KeepTogether(story[first:])]
+    buf = io.BytesIO()
+    SimpleDocTemplate(buf, pagesize=A4, leftMargin=18 * mm, rightMargin=18 * mm, topMargin=16 * mm, bottomMargin=16 * mm,
+                      title="연봉 계약서").build(story)
+    return buf.getvalue()
+
+
 def selfcheck() -> None:
     assert calc(2418900, 1211000, 300000) == {"hourly": 19768, "ot": 296517, "monthly": 4226417, "annual": 49535908, "bonus": 2418900}
     assert calc(2418900, 1211000, 300000, 150000, 50000) == {"hourly": 20486, "ot": 307283, "monthly": 4437183, "annual": 49665095, "bonus": 2418900}
@@ -173,6 +362,11 @@ def selfcheck() -> None:
     assert [r[0] for x in b if x["t"] == "p" for r in x["runs"] if r[1]] == ["49,665,095원", "2027년 3월 1일부터 2028년 2월 29일"]
     assert b[1]["rows"][2][3] == "가상팀 · 프로"
     assert build_blocks(company=co, worker={**wk, "title": ""}, pay=pay, start="2027-03-01", end="2028-02-29", signed_on=None)[1]["rows"][2][3] == "가상팀"
+    # 서명본 PDF — 구조만 본다(글꼴이 없는 CI 에서도 만들어져야 한다). 모양은 사람이 눈으로 확인한다.
+    png = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==")  # 1x1 PNG
+    pdf = render_pdf(b, seal_png=png, sign_png=png, esign={"signedAt": "2027-02-10 14:22", "name": "가상하나", "how": "하이웍스 로그인", "hash": doc_hash(b)})
+    assert pdf.startswith(b"%PDF") and pdf.rstrip().endswith(b"%%EOF") and len(pdf) > 2000
+    assert render_pdf(b, seal_png=None, sign_png=None, esign=None).startswith(b"%PDF")
 
 
 if __name__ == "__main__":
