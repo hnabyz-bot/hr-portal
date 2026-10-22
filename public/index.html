@@ -6456,7 +6456,7 @@ function ctSelfCheck(){   // 브라우저 콘솔에서 ctSelfCheck() 실행
   ok(JSON.stringify(ctScrub([['900315-1'+'234567', 312254123456, 'abc', 5]]))==='[["900315-*","031225-*","abc",5]]', '읽은 줄을 두기 전에 주민번호 칸은 앞 6자리만 남긴다');
   const T = '1234567', shapes = ['900315-1'+'234567', '900315 '+T, '900315 - '+T, '900315－'+T, '900315–'+T, '900315'+T, '900315-1******', '900315-1'+'234'];
   ok(shapes.every(x=>{ const b = ctBirth6(x); return b.b6==='900315' && b.fromRrn; }), '주민번호 모양들(띄어쓰기 · 전각/긴 줄표 · 붙여 쓴 13자리 · 가린 것 · 짧은 뒷자리)은 모두 생년월일 900315');
-  const sc = ctScrub([shapes, [312254123456, 9003151234567]]);
+  const sc = ctScrub([shapes, [312254123456, +('900315'+'1234567')]]);
   ok(sc[0].every(x=>x==='900315-*') && sc[1][0]==='031225-*' && sc[1][1]==='900315-*' && !/234|\*\*/.test(JSON.stringify(sc)), '그 모양들 모두 읽은 줄에는 앞 6자리만 남는다 (뒷자리 · 가린 자리 · 짧은 뒷자리도 없다)');
   const same = [['abc', 5, '19900315', '1990-03-15', '900315', '900315 (음)', '']];
   ok(JSON.stringify(ctScrub(same))===JSON.stringify(same), '주민번호가 아닌 칸(날짜 · 6자리 · 글자)은 그대로');
@@ -6984,7 +6984,7 @@ function ctGrid(D){   // 표 (칩 · 검색에 맞는 줄) + 파일에 없는 �
 const ctChips = D=>CT_CHIPS.map(([k, l])=>`<button type="button" class="ms-chip${ctUi.f===k ? ' on' : ''}" aria-pressed="${ctUi.f===k}" onclick="ctSetF('${k}')">${l} ${D.n[k]}</button>`).join('');
 function ctFootHtml(D){   // 아래 단추 셋 — 발송(고른 발송 전) · 서명 안 한 사람에게 메일 · 서명본 묶음
   const sel = ctSelRows(D).length, wait = D.n.SENT, signed = new Set(ctRows().filter(r=>r.status==='SIGNED' || r.status==='REPLACED').map(r=>r.userId)).size;   // 묶음에는 바뀌기 전까지 유효했던 계약도 든다
-  return `<div class="ct-foot"><span><button type="button" class="btn coral" ${sel ? '' : 'disabled'} onclick="ctSendAsk()">선택한 ${sel}명 발송</button></span>
+  return `<div class="ct-foot"><span><button type="button" id="ctSendBtn" class="btn coral" ${sel ? '' : 'disabled'} onclick="ctSendAsk()">선택한 ${sel}명 발송</button></span>
     <span class="ct-foot-r"><button type="button" class="btn" ${wait ? '' : 'disabled'} onclick="ctMailWaiting()">${icon('mail')} 서명 안 한 ${wait}명에게 메일 쓰기</button><button type="button" class="btn" ${signed ? '' : 'disabled'} onclick="ctZipAsk()">${icon('download')} 서명본 내려받기 (${signed}명)</button></span></div>`;
 }
 function ctPaint(){   // 칩 · 표 · 아래 단추만 다시 그린다 — 검색칸의 글자와 초점은 그대로
@@ -7016,7 +7016,7 @@ function ctAdminView(){   // "직원 연봉계약 관리" 화면 (HR) — 시안
   const span = y=>ctSpan(y).map(s=>s.split('-').map(Number).join('.')).join(' ~ '), years = [...new Set([up, up-1, ctYear])].sort((a, b)=>b-a);
   const tools = `<select class="ct-sel" aria-label="회차 고르기" onchange="ctGoYear(this.value)">${years.map(y=>`<option value="${y}" ${y===ctYear ? 'selected' : ''}>${y}년 연봉계약 · ${span(y)}</option>`).join('')}</select>`
     + (live ? '' : '<button type="button" class="btn sm" onclick="ctDemo()">시연: 예시 자료로 올려 보기</button>')
-    + (ready ? `<button type="button" class="btn sm coral" onclick="rzPick('contract')">${icon('clip')} 계약 금액 올리기</button>` : '');
+    + (ready ? `<button type="button" id="ctUp" class="btn sm coral" onclick="rzPick('contract')">${icon('clip')} 계약 금액 올리기</button>` : '');
   const tile = (c, label, v, em)=>`<div class="hm-tile ${c}"><span>${label}</span><b>${v}<small>명</small></b><em>${em}</em></div>`;
   const next = D.L.filter(x=>x.r.status==='SENT' && !ctLate(x.r) && x.r.due).map(x=>x.r.due).sort()[0];   // 아직 안 지난 가장 이른 마감일
   return `${ready ? '' : kpiNote('서버에 계약서 잠금 열쇠가 없어 아직 올릴 수 없어요. 개발본부장께 서버 설정(HR_PAY_KEY)을 부탁해 주세요.', 'warning')}
@@ -7476,8 +7476,8 @@ function ctSignCard(r){   // 서명할 계약서 (시안 그림 4) — 본문 �
 function ctDoneCard(r){   // 서명한 계약서 (시안 그림 5) — 잠김 알림 + [서명본 PDF 내려받기][인쇄] + 전자서명 정보. 아이폰 홈 화면 앱은 내려받기 · 인쇄 대신 화면 안에 그린다
   const sa = ctStandalone();
   return `<div class="card ct-print" style="margin-bottom:14px;">
-    <div class="card-title"><span>${ctTitle(r)}</span><span class="ct-hd"><span class="badge success">서명 완료${r.version>1 ? ` · ${r.version}차` : ''}</span>${sa ? `<button type="button" class="btn sm coral no-print" onclick="ctPdf(${r.id})">서명본 PDF 보기</button>`
-      : `<button type="button" class="btn sm coral no-print" onclick="ctPdf(${r.id})">${icon('download')} 서명본 PDF 내려받기</button><button type="button" class="btn sm no-print" onclick="ctPdf(${r.id}, true)">인쇄</button>`}</span></div>
+    <div class="card-title"><span>${ctTitle(r)}</span><span class="ct-hd"><span class="badge success">서명 완료${r.version>1 ? ` · ${r.version}차` : ''}</span>${sa ? `<button type="button" id="ctPdfBtn" class="btn sm coral no-print" onclick="ctPdf(${r.id})">서명본 PDF 보기</button>`
+      : `<button type="button" id="ctPdfBtn" class="btn sm coral no-print" onclick="ctPdf(${r.id})">${icon('download')} 서명본 PDF 내려받기</button><button type="button" class="btn sm no-print" onclick="ctPdf(${r.id}, true)">인쇄</button>`}</span></div>
     ${kpiNote(`<b>${ctKst(r.signedAt)} 서명했어요.</b> 계약서가 잠겨 바꿀 수 없어요. ${sa ? '서명본 PDF는 PC에서 내려받을 수 있어요.' : '서명본 PDF를 받아 보관하세요.'}`, 'success')}
     <div class="ct-scroll">${ctBlocksHtml(r.blocks, { sealId:r.id, signUrl:ctSignImg(r), signed:true })}</div>
     ${ctEsig(r)}
@@ -12442,11 +12442,15 @@ const TOURS = {   // 단계: el = 가리킬 곳(여러 개면 묶어서, 배열�
     { el:'.wh-hero', title:'연말정산 결과', body:'<b>돌려받는 돈</b>(환급)인지 <b>더 낼 돈</b>(추가 납부)인지 맨 위에 크게 나옵니다. 금액은 <b>눈 모양</b>을 눌러야 보입니다.' + (AUTH.live ? ' 새로 공개된 해에는 <b>새 영수증</b> 표시가 붙고, 열어 보면 사라집니다.' : '') },
     { el:'[onclick^="whViewer"]', title:'원본 PDF 보기', body:'누르면 이 화면 안에 원본이 쪽마다 열립니다. 자세한 공제 내역은 원본에서 확인합니다. <b>내려받기</b>로 PC에 저장하거나 <b>인쇄</b>할 수 있고, 내려받은 파일 · 인쇄물에는 회사명 · 출력 일시 · 출력한 사람이 워터마크로 들어갑니다.' },
   ]},
-  ct:{ label:'연봉계약서 서명 방법', tab:'p2', steps:()=>[
-    { el:'#ctSeg', title:'화면 고르기 (HR)', body:'<b>내 연봉계약서</b>에서 내가 받은 계약서를 보고 서명합니다. <b>직원 연봉계약 관리</b>에서 직원 계약서를 조정·발송하고 서명 현황을 봅니다.' },
-    { el:'#ctScroll.gated', title:'내용 확인', body:'계약 내용을 <b>끝까지</b> 내려 읽어 주세요. 끝까지 읽어야 서명 칸이 열립니다.' },
-    { el:'#ctSignBox', title:'서명하기', body:'<b>동의에 체크</b>하고, <b>성명</b>을 적고, 서명 칸에 마우스나 손가락으로 서명한 뒤 서명 완료를 누릅니다. 서명하면 계약서가 잠겨 고칠 수 없습니다.' },
-    { el:'.ct-print .card-title [onclick^="ctPrint("]', title:'보관', body:'이 단추로 계약서를 <b>인쇄하거나 PDF로 저장</b>해 1부를 보관합니다.' },
+  ct:{ label:'연봉계약서 사용법', tab:'p2', steps:()=>[   // 실제 로그인 + 시연이 같은 단계를 쓴다 — 지금 화면에 없는 칸의 단계(HR 화면의 단계는 직원 화면에서, 서명 전후 단계는 서로)는 건너뛴다
+    { el:'#ctSeg', title:'화면 고르기 (HR)', body:'<b>내 연봉계약서</b>는 내가 받은 계약서를 보고 서명하는 화면, <b>직원 연봉계약 관리</b>는 계약 금액을 올리고 발송하고 서명 현황을 보는 화면이에요.' },
+    { el:'#ctUp', title:'계약 금액 올리기 (HR)', body:'계약 금액이 든 <b>엑셀 파일</b>을 고르면 이 PC 화면 안에서만 읽어요. 열기 암호가 걸려 있으면 암호를 물어요. 칸 이름은 <b>사원코드 · 이름 · 생년월일 · 새 기본급(또는 기본급) · 새 능력급(또는 능력급) · 직책수당 · 현장관리수당(업무수당) · 자격수당 · 계약 시작일</b>이에요(이름 · 생년월일 · 기본급 · 능력급은 꼭 있어야 해요). <b>생년월일</b> 칸은 글자나 진짜 날짜로 두세요 — 숫자로 바뀌어 앞의 0이 빠지면 엑셀 날짜로 읽혀요. 확인 창에서 직원 맞추기를 본 뒤 <b>올리기 (발송 전)</b>를 눌러요.' },
+    { el:'#ctSendBtn', title:'발송 (HR)', body:'올린 계약서는 <b>발송 전</b>이에요. 표에서 사람을 고르고 <b>발송</b>을 누르면 서명 마감일(기본 14일 뒤)을 정해 직원에게 보내요. 보내기 전에는 <b>조정</b> · <b>빼기</b>로 고치고, 보낸 뒤에는 <b>파기</b>한 다음 다시 보내요. 아래 <b>계약서 설정</b>(대표이사 이름 · 직인)을 먼저 넣어야 발송할 수 있어요. 서명이 끝난 계약서는 <b>서명본 내려받기</b>로 한꺼번에 받아요.' },
+    { el:'#ctScroll.gated', title:'끝까지 읽기', body:'계약 내용을 <b>끝까지</b> 내려 읽어 주세요. 끝까지 읽어야 서명 칸이 열려요.' },
+    { el:'#ctSignBox', title:'서명하기', body:'<b>동의에 체크</b>하고, <b>성명</b>을 이름 그대로 적고, 서명 칸에 마우스나 손가락으로 서명한 뒤 <b>서명하고 제출</b>을 눌러요. 서명하면 계약서가 잠겨 고칠 수 없어요. 마감일이 지나도 서명할 수 있어요.' },
+    { el:'#ctAskRow', title:'HR에 문의', body:'금액처럼 궁금한 점은 <b>HR에 문의</b>로 200자까지 보내요. 문의 중에도 서명할 수 있고, HR이 확인하면 "HR이 확인했어요"가 떠요. 답장은 메신저 · 메일 · 전화로 와요.' },
+    { el:'#ctPdfBtn', title:'서명본 내려받기', body:'서명하면 서버가 <b>서명본 PDF</b>를 잠가서 보관해요. <b>서명본 PDF 내려받기</b>로 받아 1부를 보관하세요(바로 옆 <b>인쇄</b>도 돼요). 아이폰 홈 화면 앱에서는 화면 안에서 보고, PC에서 내려받아요.' },
+    { el:'.ct-print .card-title [onclick^="ctPrint("]', title:'보관 (시연 화면)', body:'시연 화면에서는 이 단추로 계약서를 <b>인쇄하거나 PDF로 저장</b>해요. 실제 화면에서는 서버가 만든 서명본 PDF를 받아요.' },
   ]},
   rz:{ label:'연봉 인상 계산 방법', tab:'p4', steps:()=>[
     { el:'#rzSrc', title:'자료 넣기', body:'급여 프로그램에서 내려받은 <b>엑셀 파일</b>과, <b>이름 · 등급</b>이 든 엑셀 파일을 고릅니다. 암호가 걸린 파일은 암호를 묻습니다. 고르면 읽은 인원과 합계를 먼저 보여 줍니다. 급여 프로그램의 합계와 같은지 확인하고 <b>이대로 계산</b>을 누릅니다.' },
