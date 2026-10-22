@@ -17,7 +17,7 @@
 - 잠금 열쇠는 `payslip.pay_key()` 하나(`HR_PAY_KEY`). 새 열쇠·새 의존성 없음. 열쇠가 없으면 쓰기 503, 목록 `ready:false`.
 - 감사로그 · 서버 로그에 금액 · 이름 · 생년월일 · 사유 · 문의 글을 넣지 않는다(번호 · 수 · 해 · 날짜만).
 - `/api/contracts*` 응답은 `Cache-Control: no-store` + `Referrer-Policy: no-referrer`(withholding `_no_store`와 같게). POST는 Origin 필요(이미 `auth._guard`가 한다).
-- DB 파일은 **`014_contracts.sql`**. merge 전에 main에 014가 생기면(열린 #170) 다음 번호로 바꾸고 `check_schema`의 판 숫자도 바꾼다.
+- DB 파일은 **`016_contracts.sql`**(처음 계획은 014였는데 KPI 2단계 ② 014 · 게임 오픈시간 015가 먼저 merge되어 016으로 바꿨다). merge 전에 main에 016이 생기면 다음 번호로 바꾸고 `check_schema`의 판 숫자도 바꾼다.
 - 날짜 판정은 한국 날짜 `auth._today()`(서버 시계는 UTC).
 - 원 단위 반올림은 **0.5 올림**(JS `Math.round`와 같게 — 서버는 `math.floor(x + 0.5)`).
 - 화면 글: "~해요"체, 짧게. 상태 칸 폭 고정 · 줄 높이 같게 · 단추 왼쪽 정렬(첫 단추 [보기]) — 시안 그림 1.
@@ -115,13 +115,13 @@ assert "(서명한 날)" in json.dumps(build_blocks(company={"name": COMPANY_NAM
 
 ---
 
-### Task 3: DB 표 (`014_contracts.sql`)
+### Task 3: DB 표 (`016_contracts.sql`)
 
 설계 5.4 저장. 
 
 **Files:**
-- Create: `backend/hr_eval/sql/014_contracts.sql`
-- Modify: `backend/hr_eval/sql/check_schema.py` — `check_contract_live_tables(conn)`(번호 "26. 연봉계약서 (014)"), `main()`에서 `check_withholding_tables` 뒤에 부름
+- Create: `backend/hr_eval/sql/016_contracts.sql`
+- Modify: `backend/hr_eval/sql/check_schema.py` — `check_contract_live_tables(conn)`(번호 "28. 연봉계약서 (016)"), `main()`에서 `check_withholding_tables` 뒤에 부름
 
 **Interfaces:**
 - Produces (표 · 칸 이름 — Task 5~7이 쓴다):
@@ -131,17 +131,17 @@ assert "(서명한 날)" in json.dumps(build_blocks(company={"name": COMPANY_NAM
   - 상태 CHECK: `DRAFT` = sent_at · signed_at 비어 있음 / `SENT` = sent_at · sent_by · due_on · company · seal_id 있음, signed_at 비어 있음 / `SIGNED`·`REPLACED` = 위 + signed_at · sign · doc_hash · pdf 있음 / `REPLACED` = replaced_on 있음 / `CANCELLED` = cancelled_at · cancelled_by · cancel_reason 있음.
   - 색인: `uq_contracts_signed (year, user_id) WHERE status='SIGNED'`, `uq_contracts_open (year, user_id) WHERE status IN ('DRAFT','SENT')`, `uq_contracts_version (year, user_id, version)`, `idx_contracts_user (user_id)`.
   - 트리거: 지우기는 `OLD.status='DRAFT'`만 · 상태 바꾸기는 DRAFT→SENT, SENT→SIGNED, SENT→CANCELLED, SIGNED→REPLACED, SIGNED→CANCELLED만 · `OLD.sent_at IS NOT NULL`이면 year · user_id · version · prev_id · starts_on · body · created_* · sent_* · due_on · company · seal_id가 안 바뀜 · `OLD.signed_at IS NOT NULL`이면 sign · doc_hash · pdf · signed_at도 안 바뀜 · `OLD.status IN ('REPLACED','CANCELLED')`면 ask · ask_at도 안 바뀜.
-  - 파일 머리 주석: 무엇 · 왜 · 판 14 · 8월 `salary_contracts`(001)는 쓰지 않는다 · 번호 규칙.
+  - 파일 머리 주석: 무엇 · 왜 · 판 16 · 8월 `salary_contracts`(001)는 쓰지 않는다 · 번호 규칙.
 
 - [ ] **Step 1: 실패하는 검사 쓰기** — `check_contract_live_tables`(withholding 검사와 같은 `_rejects`/`_report` 모양): 판 ≥ 14 / 설정 한 줄 저장, id=2 거부 / 직인 지우기 거부 / DRAFT 저장 → SENT(필수 칸 채움) → SIGNED → REPLACED 흐름 저장 / 같은 회차·직원 `SIGNED` 둘 거부 · `DRAFT`와 `SENT` 동시 거부 · 같은 차수 거부 / DRAFT→SIGNED 건너뛰기 거부 · CANCELLED→SENT 거부 / SENT에 due_on 없음 거부 / SIGNED에 pdf 없음 거부 / doc_hash 63자 · 대문자 거부 / cancel_reason 201자 거부 / SENT 줄 지우기 거부 · DRAFT 줄 지우기 됨 / 서명 뒤 body 바꾸기 거부 · ask_closed_at 바꾸기 됨 / year '2027'(글자) · NULL 거부 / starts_on '2027-02-30' 거부 / 직원 지우기 RESTRICT.
 
 - [ ] **Step 2: 실패 확인** — `cd backend && python -m hr_eval.sql.check_schema` → "26." 검사들이 실패(표 없음)
 
-- [ ] **Step 3: `014_contracts.sql` 쓰기** — 위 모양. year는 withholding처럼 형을 적지 않는다(013 주석의 이유). 날짜 칸은 `x GLOB '20[0-9][0-9]-[01][0-9]-[0-3][0-9]' AND date(x) IS x`.
+- [ ] **Step 3: `016_contracts.sql` 쓰기** — 위 모양. year는 withholding처럼 형을 적지 않는다(013 주석의 이유). 날짜 칸은 `x GLOB '20[0-9][0-9]-[01][0-9]-[0-3][0-9]' AND date(x) IS x`.
 
 - [ ] **Step 4: 통과 확인** — `python -m hr_eval.sql.check_schema` → "전부 통과", `check_file_numbers`(0번)도 통과. `python -m hr_eval.sql.check_sqlite_features` 통과.
 
-- [ ] **Step 5: 커밋** — `git commit -m "연봉계약서: DB 표 014 (계약서 · 설정 · 직인, 상태 흐름 · 잠금 트리거)"`
+- [ ] **Step 5: 커밋** — `git commit -m "연봉계약서: DB 표 016 (계약서 · 설정 · 직인, 상태 흐름 · 잠금 트리거)"`
 
 ---
 
@@ -377,10 +377,10 @@ ok(rd.people[1].bad.some(x=>x.includes('기본급')) && rd.people[1].bad.some(x=
 ### Task 12: 마무리 — 사용법 · 문서 · 하이웍스 확인 · 전체 검사
 
 **Files:**
-- Modify: `public/index.html`(`TOURS.ct` — 실제 로그인 단계: 화면 고르기(HR) · 계약 금액 올리기(HR) · 발송(HR) · 끝까지 읽기 · 서명하기 · HR에 문의 · 서명본 내려받기. 가리키는 곳에 id를 붙임), `CLAUDE.md`(급여·계약 > 전자연봉계약서 항목 — 원천징수영수증 항목과 같은 모양으로: 흐름 · 서버 · DB 판 14 · 하지 않기로 한 것 · 검사 · 남는 위험), `README.md`(설계 문서 링크 한 줄, 다른 설계 링크가 있는 곳)
+- Modify: `public/index.html`(`TOURS.ct` — 실제 로그인 단계: 화면 고르기(HR) · 계약 금액 올리기(HR) · 발송(HR) · 끝까지 읽기 · 서명하기 · HR에 문의 · 서명본 내려받기. 가리키는 곳에 id를 붙임), `CLAUDE.md`(급여·계약 > 전자연봉계약서 항목 — 원천징수영수증 항목과 같은 모양으로: 흐름 · 서버 · DB 판 16 · 하지 않기로 한 것 · 검사 · 남는 위험), `README.md`(설계 문서 링크 한 줄, 다른 설계 링크가 있는 곳)
 
 - [ ] **Step 1: 하이웍스 여러 명 채우기 확인** — 사용자(인사담당자)에게 하이웍스 로그인을 부탁하고 앱 안 브라우저에서 `https://mails.office.hiworks.com/write?mode=normal&user_nos=<번호1>,<번호2>`(번호는 HR 화면에서 고른 두 사람)를 열어 받는 사람이 둘인지 본다. 안 되면 `ctMail`을 "번호 있는 첫 사람만 채우고 나머지는 주소 복사"로 바꾸고 검사를 고친다. 결과를 PR 본문에 적는다.
 - [ ] **Step 2: `TOURS.ct` · CLAUDE.md · README** 고치기 → `tourSelfCheck()` 통과.
 - [ ] **Step 3: 전체 검사** — Global Constraints의 로컬 검사 전부 + 화면 `ctSelfCheck()` · `await ctFlowCheck()` · `await ctLiveCheck()` · `rzSelfCheck()` · `psSelfCheck()` · `await whSelfCheck()` · `homeSelfCheck()` · `tourSelfCheck()`.
 - [ ] **Step 4: 사용자 확인용 화면** — 시연 모드(8771)에서 HR 현황 · 확인 창(가짜 파일) · 직원 서명 화면을 찍고, devlive로 서명본 PDF 한 장을 찍어 사용자에게 보낸다(실제 확인은 사용자가 실제 암호 엑셀로 시연 모드 확인 창까지 — 숫자만 알려 받기, 원천징수영수증 4.8과 같은 방식).
-- [ ] **Step 5: 커밋** — `git commit -m "연봉계약서: 사용법 · 문서 · 전체 검사"` → 사용자 "올려줘" 뒤 push · PR(본문: 배포 뒤 DB 판 14 확인 · `HR_PAY_KEY` 이미 있음 · HR이 계약서 설정(대표이사 · 직인)부터 넣기 · 실제 엑셀 확인 결과)
+- [ ] **Step 5: 커밋** — `git commit -m "연봉계약서: 사용법 · 문서 · 전체 검사"` → 사용자 "올려줘" 뒤 push · PR(본문: 배포 뒤 DB 판 16 확인 · `HR_PAY_KEY` 이미 있음 · HR이 계약서 설정(대표이사 · 직인)부터 넣기 · 실제 엑셀 확인 결과)
