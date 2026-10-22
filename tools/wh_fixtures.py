@@ -1,7 +1,8 @@
 """원천징수영수증 시험용 가짜 zip·PDF를 만든다 (실제 자료 없음 — 이름·번호·금액 모두 가상).
 
   python tools/wh_fixtures.py zip-samples            → base64 두 줄 (ZipCrypto zip · AES-256 zip). index.html의 WH_ZIP_ZC · WH_ZIP_AES
-  python tools/wh_fixtures.py receipt-zip <폴더>      → 가상 3명의 원천징수영수증 PDF를 zip 넷으로 (화면에서 손으로 올려 보는 시험용)
+  python tools/wh_fixtures.py receipt-zip <폴더>      → 가상 3명의 원천징수영수증 PDF를 zip 다섯으로 (화면에서 손으로 올려 보는 시험용)
+                                                       receipts-glyph-zc.zip = 위하고처럼 한 글자씩 따로 적은 PDF (pdf.js가 글자마다 조각 하나)
 
 암호는 둘 다 hr-portal-check. 필요한 것: cryptography(AES) · reportlab(PDF, receipt-zip만).
 ZipCrypto 암호화는 여기서 직접 한다(외부 도구 없이). AES는 WinZip AE-2 방식(반디집에서 AES256을 고르면 이 방식).
@@ -121,7 +122,7 @@ def people():
     return rows
 
 
-def receipt_pdf(rows):
+def receipt_pdf(rows, glyph=False):   # glyph: 위하고처럼 글자마다 따로 적는다 — 한 낱말(금액) 안 글자 사이 0.1em, 띄어쓰기 = 1em 빈칸, 칸(소득세 · 지방소득세)은 멀리
     from reportlab.lib.pagesizes import A4
     from reportlab.pdfbase import pdfmetrics
     from reportlab.pdfbase.cidfonts import UnicodeCIDFont
@@ -130,14 +131,27 @@ def receipt_pdf(rows):
     buf = io.BytesIO()
     c = canvas.Canvas(buf, pagesize=A4)
     f = lambda n: f'{n:,}'
+    adv = lambda ch: 10 if ch == ' ' else pdfmetrics.stringWidth(ch, 'HYSMyeongJo-Medium', 10) + 1   # 10pt 글자: 띄어쓰기 1em, 글자 사이 1pt(0.1em)
+    def put(x, y, text, right=False):   # right = x에서 끝나게(오른쪽 맞춤)
+        if not glyph:
+            return (c.drawRightString if right else c.drawString)(x, y, text)
+        if right:
+            x -= sum(map(adv, text)) - 1
+        at = []
+        for ch in text:
+            at.append((x, ch))
+            x += adv(ch)
+        for x, ch in reversed(at):   # 뒤 글자부터 — pdf.js는 왼쪽으로 돌아가면 조각을 끊는다 → 실제 파일처럼 글자마다 조각 하나 (실제 파일이 왜 갈라지는지는 모른다, 결과만 같게)
+            if ch != ' ':
+                c.drawString(x, y, ch)
     def page(n, lines):   # lines = [(글자, 금액들)] — 금액은 칸 자리에 오른쪽 맞춤(소득세 · 지방소득세)
         c.setFont('HYSMyeongJo-Medium', 10)
-        c.drawString(40, 810, f'■ 소득세법 시행규칙 [별지 제24호서식(1)] ({n}쪽)')
+        put(40, 810, f'■ 소득세법 시행규칙 [별지 제24호서식(1)] ({n}쪽)')
         y = 770
         for text, nums in lines:
-            c.drawString(50, y, text)
+            put(50, y, text)
             for x, v in zip((360, 460), nums):
-                c.drawRightString(x, y, f(v))
+                put(x, y, f(v), right=True)
             y -= 24
         c.showPage()
     for p in rows:
@@ -162,8 +176,9 @@ def receipt_zip(outdir):
     files = [('2025 원천징수영수증.pdf', receipt_pdf(rows), 8), ('note.txt', b'not a pdf', 0)]   # PDF가 아닌 파일 하나 — 건너뛰는지 본다
     for fname, mode in (('receipts-zc.zip', 'zc-dd'), ('receipts-aes.zip', 'aes'), ('receipts-plain.zip', 'plain')):
         (out / fname).write_bytes(make_zip(files, mode))
+    (out / 'receipts-glyph-zc.zip').write_bytes(make_zip([('2025 원천징수영수증.pdf', receipt_pdf(rows, glyph=True), 8)], 'zc-dd'))   # 실제 파일 모양: ZipCrypto · PDF 하나
     (out / 'fake.7z').write_bytes(b'7z\xbc\xaf\x27\x1c\x00\x04' + bytes(random.Random(7).randrange(256) for _ in range(64)))
-    print(f'{out}: receipts-zc.zip(ZipCrypto · 데이터 설명자) receipts-aes.zip(AES-256) receipts-plain.zip(암호 없음) fake.7z — 암호 hr-portal-check')
+    print(f'{out}: receipts-zc.zip(ZipCrypto · 데이터 설명자) receipts-aes.zip(AES-256) receipts-plain.zip(암호 없음) receipts-glyph-zc.zip(한 글자씩) fake.7z — 암호 hr-portal-check')
     start, f = 1, lambda t: f'{t[0]:,} / {t[1]:,}'
     for p in rows:
         print(f"{p['name']}: {start}~{start + p['pages'] - 1}쪽 · 총급여 {p['gross']:,} (근로소득공제 {p['deduct']:,} + 근로소득금액 {p['earned']:,}) · "
