@@ -971,6 +971,9 @@ def check_contract_live_tables(conn: sqlite3.Connection) -> None:
     for sid, why in ((seal2, "설정이 가리키는 직인"), (conn.execute(sl, (B, T, up)).lastrowid, "아무도 안 쓰는 직인")):
         ok, msg = rej("DELETE FROM contract_seals WHERE id = ?", (sid,), "직인")
         _report(ok, f"{why} 지우기 거부 (옛 계약서가 그때 직인을 가리킨다)", msg)
+    for col, val in (("png", bytes(range(70))), ("id", 9000), ("created_by", emp), ("created_at", "2027-01-11T09:00:00Z")):
+        ok, msg = rej(f"UPDATE contract_seals SET {col} = ? WHERE id = ?", (val, seal), "READ_ONLY")
+        _report(ok, f"직인 그림 {col} 바꾸기 거부 (옛 계약서가 가리키는 그림이 바뀌면 안 된다)", msg)
 
     # --- 계약서 한 줄 만들기 · 고치기 ----------------------------------------------------------------------------------
     base = dict(year=2027, user_id=emp, version=1, prev_id=None, status="DRAFT", starts_on="2027-02-01", body=B, created_at=T, created_by=up,

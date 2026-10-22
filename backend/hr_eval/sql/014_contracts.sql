@@ -15,7 +15,7 @@
 -- 한 회차 · 한 직원에 SIGNED 는 하나, DRAFT · SENT 도 하나(부분 유일 색인 둘). 새 계약(연중 변경)이 서명되는 처리 한 번 안에서는
 --   먼저 옛 SIGNED 줄을 REPLACED 로 바꾸고 그다음 새 줄을 SIGNED 로 바꾼다 — 색인은 문장마다 검사하므로 순서가 거꾸로면 거부된다.
 
--- 직인 그림 — 번호마다 한 줄, 지우지 않는다(옛 계약서가 서명 때의 직인을 가리킨다).
+-- 직인 그림 — 번호마다 한 줄, 지우지도 바꾸지도 않는다(옛 계약서가 서명 때의 직인을 가리킨다).
 CREATE TABLE contract_seals (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     png        BLOB    NOT NULL CHECK (typeof(png) = 'blob' AND length(png) > 28),   -- 잠근 직인 그림
@@ -26,6 +26,12 @@ CREATE TABLE contract_seals (
 CREATE TRIGGER trg_contract_seals_no_delete BEFORE DELETE ON contract_seals
 BEGIN
     SELECT RAISE(ABORT, '직인 그림은 지울 수 없어요. 옛 계약서가 그때 직인을 가리켜요. 새 직인은 새로 올려 주세요.');
+END;
+
+-- 바꾸는 것도 막는다 — 계약서의 seal_id 는 발송 뒤 고정이지만, 가리키는 그림이 바뀌면 고정한 보람이 없다 (001 의 trg_no_update_audit 와 같은 방식)
+CREATE TRIGGER trg_contract_seals_no_update BEFORE UPDATE ON contract_seals
+BEGIN
+    SELECT RAISE(ABORT, 'READ_ONLY: 직인 그림은 바꿀 수 없어요. 새 직인은 새로 올려 주세요.');
 END;
 
 -- 계약서 설정 — 한 줄(id = 1). data = 잠근 {ceo 대표이사 이름, addr 소재지, kind 종류}. 발송할 때 계약서 줄(company · seal_id)로 복사해 고정한다.
