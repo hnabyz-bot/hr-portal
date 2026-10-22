@@ -28,7 +28,7 @@ app.py 가 bp 를 붙인다. 세션 검사는 auth._guard 가 모든 /api/* 에 
 
   GET  /api/contracts/division        ?year= 본부장 현황 (본부장만, 아니면 403) {"year", "rows": [{name, team, status, late, signedOn, due}]} — 자기 본부 사람의 살아 있는 줄
                                       (발송 전 · 서명 대기 · 서명 완료). 금액 · 생년월일 · 차수 · 문의는 보내지 않는다 (access.Act.VIEW_CONTRACT_STATUS)
-  GET  /api/contracts/<year>/zip      그 회차 서명 완료 줄의 서명본 PDF 묶음 + 서명정보.csv (HR, 보관용 — zip 에는 암호가 없다). 풀리지 않는 줄은 건너뛰고, 하나도 없으면 404
+  GET  /api/contracts/<year>/zip      그 회차 서명 완료 · 새 계약으로 바뀐 줄의 서명본 PDF 묶음 + 서명정보.csv (HR, 보관용 — zip 에는 암호가 없다). 파기한 줄은 빼고, 풀리지 않는 줄은 건너뛰고, 하나도 없으면 404
 
 계약서 한 줄(admin 의 rows) = {id, year, userId, version, status, start, end, code, name, dept, title, birth6, base, ability, pos, site, qual, annual, reason,
 sentAt, due, late, signedAt, replacedOn, cancelledAt, cancelReason, ask: {text, at, closedAt} | null, prevId}. late = 서명 대기인데 마감일이 지남.
@@ -69,7 +69,8 @@ import contract_doc
 import kpi
 import payslip
 from hr_eval.domain import access
-from hr_eval.domain.models import AuditEntry, Role, position_of
+from hr_eval.domain.models import AuditEntry, Role
+from hr_eval.domain.org import target_of
 from withholding import _no_store, _seal, _unseal, _year
 
 bp = Blueprint("contract", __name__)
@@ -784,14 +785,14 @@ def division() -> Response:
     누가 볼 수 있는지는 줄마다 access.can (Act.VIEW_CONTRACT_STATUS) 이 정한다. 잠근 내용은 열지 않으므로 금액 · 생년월일 · 차수 · 문의는 응답에 넣을 수 없다."""
     if g.actor.position is not Role.DIVISION_HEAD:
         raise kpi._Refuse("본부장만 볼 수 있어요.", 403)
-    year, today, rows = _round(request.args.get("year")), auth._today().isoformat(), []
-    for status, due, signed_at, uid, name, team, dept, parent, roles in auth._db().execute(
-            "SELECT c.status, c.due_on, c.signed_at, u.id, u.name, d.name, d.id, d.parent_id,"
-            " (SELECT group_concat(r.role) FROM user_roles r WHERE r.user_id = u.id)"
+    year, today, rows, conn = _round(request.args.get("year")), auth._today().isoformat(), [], auth._db()
+    people, depts = kpi.load_org(conn)  # 그 사람이 어느 팀 · 본부인지는 다른 곳 (KPI 현황 등) 과 같은 규칙 org.target_of 으로 — 팀장은 이끄는 팀, 대표이사 직속 팀 · 임원은 본부 없음
+    by = {p.id: p for p in people}
+    for status, due, signed_at, uid, name, team in conn.execute(
+            "SELECT c.status, c.due_on, c.signed_at, u.id, u.name, d.name"
             " FROM contracts c JOIN users u ON u.id = c.user_id JOIN departments d ON d.id = u.department_id"
             " WHERE c.year = ? AND c.status IN ('DRAFT', 'SENT', 'SIGNED') ORDER BY d.name, u.name, c.version", (year,)):
-        who = access.Target(uid, dept if parent else None, parent or dept, position_of(Role(r) for r in roles.split(",")) if roles else None)  # 팀이면 부모가 본부, 본부 바로 아래면 팀 없음
-        if access.can(g.actor, access.Act.VIEW_CONTRACT_STATUS, who):
+        if access.can(g.actor, access.Act.VIEW_CONTRACT_STATUS, target_of(by[uid], depts)):
             rows.append({"name": name, "team": team, "status": status, "late": status == "SENT" and today > due,
                          "signedOn": _kst(signed_at).date().isoformat() if signed_at else None, "due": due})
     return jsonify(year=year, rows=rows)
@@ -800,19 +801,20 @@ def division() -> Response:
 @bp.get("/api/contracts/<year>/zip")
 @_hr_write
 def zip_get(key: bytes, year: str) -> Response:
-    """그 회차 서명 완료 줄의 서명본 PDF 를 zip 하나로 (HR, 보관용): YYYY_사원코드 (없으면 직원 번호)_이름.pdf 들과 서명정보.csv. zip 에는 암호가 없다
+    """그 회차 서명 완료 · 새 계약으로 바뀐 줄 (바뀌기 전까지 유효했던 계약) 의 서명본 PDF 를 zip 하나로 (HR, 보관용): YYYY_사원코드 (없으면 직원 번호)_이름.pdf
+    (2차부터는 이름 뒤에 _2차) 들과 서명정보.csv (PDF 한 개에 한 줄). 파기한 줄은 넣지 않는다. zip 에는 암호가 없다
     (파이썬 표준 기능으로는 암호 zip 을 만들 수 없다 — 화면이 NAS 에 둘 때 다시 암호를 걸라고 안내한다). 풀리지 않는 줄은 건너뛰고 (서버 로그에 계약서 번호만), 하나도 없으면 404."""
     y, today = _round(year), auth._today().isoformat()
     conn, buf, sheet, taken = auth._db(), io.BytesIO(), [], set()  # 메모리에 만든다 — 한 회차 수백 명(수십 MB)까지, 더 커지면 임시 파일로
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
-        for r in conn.execute(f"SELECT {COLS}, c.doc_hash, c.pdf FROM contracts c WHERE c.year = ? AND c.status = 'SIGNED' ORDER BY c.user_id", (y,)):
+        for r in conn.execute(f"SELECT {COLS}, c.doc_hash, c.pdf FROM contracts c WHERE c.year = ? AND c.status IN ('SIGNED', 'REPLACED') ORDER BY c.user_id, c.version", (y,)):
             try:
                 v = _view(key, r, today, hr=False)
                 pdf = _unseal(key, _aad(y, v["userId"], v["version"], "pdf"), r[-1])
             except (InvalidTag, ValueError):
                 logger.error(LOG_UNREADABLE, r[0])
                 continue
-            stem = BAD_FILE_CHARS.sub("_", f"{y}_{v['code'] or v['userId']}_{v['name']}")
+            stem = BAD_FILE_CHARS.sub("_", f"{y}_{v['code'] or v['userId']}_{v['name']}" + (f"_{v['version']}차" if v["version"] > 1 else ""))
             member, n = f"{stem}.pdf", 1
             while member in taken:  # 이름이 겹치면 _2, _3 …
                 n += 1
