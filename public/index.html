@@ -1014,6 +1014,8 @@
     .ct-print{ border:0; padding:0; }
     .ct-print .card-title, .ct-print .placeholder-note{ display:none; }
     .ct-scroll, .ct-scroll.gated{ max-height:none; overflow:visible; border:0; }
+    .wh-page{ display:none !important; }   /* 원천징수영수증 원본 보기 · 미리 보기 캔버스(워터마크 없음)는 인쇄하지 않는다 — [인쇄] 단추가 워터마크를 넣어 인쇄한다 */
+    #contentArea:has([onclick^="whPrint("])::before{ content:"인쇄는 [인쇄] 단추를 눌러 주세요"; display:block; padding:24px 0; font-size:14pt; }
   }
 
   /* ---------- 연봉 인상 계산 (HR) ---------- */
@@ -7287,6 +7289,11 @@ async function whSelfCheck(){   // 브라우저 콘솔에서 await whSelfCheck()
   let bErr = ''; try { await whBuild(bk(3)); } catch(e){ bErr = e.message; }
   await whBuild(bOk);
   ok(bErr==='PAGES' && (await PDFLib.PDFDocument.load(bOk.groups[0].pdfBytes)).getPageCount()===1, '사람별 PDF: pdf-lib 쪽 수가 pdf.js와 다르면 PAGES로 막는다 · 같으면 그 사람 쪽만');
+  const wt = whWmText('가상직원', new Date(2027, 2, 5, 14, 30)), wt0 = whWmText('가상', new Date(2027, 0, 9, 8, 5));   // 내려받기 · 인쇄 워터마크 (2026-10-22 시안 ③)
+  ok(wt.head===CT_COMPANY.name+' 인사포털 출력' && wt.tail==='2027-03-05 14:30 · 출력: 가상직원' && wt.line===CT_COMPANY.name+' 인사포털 출력 · 2027-03-05 14:30 · 출력: 가상직원' && wt0.tail==='2027-01-09 08:05 · 출력: 가상', '워터마크 글: 회사명 · 출력 일시(분까지, 두 자리) · 출력한 사람');
+  const wsrc = await PDFLib.PDFDocument.create(); wsrc.addPage([595.28, 841.89]); wsrc.addPage([841.89, 595.28]);
+  const wb = await wsrc.save(), wb0 = wb.slice(), wm = await whMark(wb, '가상직원', new Date(2027, 2, 5, 14, 30)), xo = p=>p.node.Resources()?.lookupMaybe(PDFLib.PDFName.of('XObject'), PDFLib.PDFDict)?.keys().length || 0;
+  ok(wm instanceof Uint8Array && wm!==wb && wb.every((b, i)=>b===wb0[i]) && (await PDFLib.PDFDocument.load(wb)).getPages().every(p=>xo(p)===0) && (await PDFLib.PDFDocument.load(wm)).getPages().map(xo).join()==='2,2', '워터마크: 새 바이트 · 원본은 그대로 · 쪽 수 그대로 · 쪽마다 그림 둘(바닥 한 줄 · 가운데 빗금)');
   const keep = [AUTH.live, payShow, WH_LIVE.mine, wh.mem, whOrig];   // 넷째 부분: 직원 화면 요약 · 새 영수증 숫자 (상태는 끝나면 되돌린다)
   try {
     AUTH.live = false; payShow = true; whOrig = null;
@@ -7316,6 +7323,7 @@ async function whSelfCheck(){   // 브라우저 콘솔에서 await whSelfCheck()
     const lv = whBody({ year:2025, sum:full, revised:false, seen:true }, null), hr = whBody({ year:2025, sum:full, revised:false, seen:true }, 12);
     ok(lv.includes('whViewer(2025, null)') && lv.includes('whDown(2025, null)') === (navigator.standalone!==true) && hr.includes('whViewer(2025, 12)') && hr.includes('payViewKey=12;'), '실제: 원본 보기 · 내려받기 (본인 null · HR이 고른 직원 번호)');
     ok(lv.includes('주민등록번호가 들어 있어요. 여럿이 쓰는 PC라면 내려받은 파일을 지워 주세요.') === lv.includes('whDown('), '내려받기 단추 옆에 주민등록번호 안내');
+    ok(lv.includes('whPrint(2025, null)')===lv.includes('whDown(2025, null)') && hr.includes('whPrint(2025, 12)')===hr.includes('whDown(2025, 12)') && !h.includes('whPrint('), '인쇄 단추는 내려받기와 같은 곳에만 (아이폰 홈 화면 앱 · 시연 예시 자료에는 없다)');
     WH_LIVE.mine = [{ year:2025, seen:false }, { year:2024, seen:true }];
     const t = homePortalTasks().find(x=>x.title==='새 원천징수영수증 확인');
     ok(TODO.p3()===1 && t && t.n===1 && t.nav==='pay' && t.tab==='p3', '새 영수증 숫자 = 공개됐는데 아직 안 연 해 · 홈 오늘의 업무에 같은 수');
@@ -7407,7 +7415,7 @@ function whBody(r, who){   // 한 해의 요약 + 원본. r = { year, sum, revis
     : !live && !r.pdf ? '<span class="list-sub" style="margin:0; align-self:center;">시연에는 원본 PDF가 없습니다.</span>'   // 시연 예시 자료로 올린 해
     : `<button type="button" class="btn sm" onclick="whViewer(${r.year}, ${lit(who)})" aria-expanded="${open}">${icon('eye')} ${open ? '원본 PDF 닫기' : '원본 PDF 보기'}</button>`
       + (navigator.standalone===true ? '<span class="list-sub" style="margin:0; align-self:center;">PC에서 내려받을 수 있어요</span>'   // 아이폰 홈 화면 앱은 내려받기가 잘 안 된다
-        : `<button type="button" class="btn sm" onclick="whDown(${r.year}, ${lit(who)})">${icon('download')} 내려받기</button>`);
+        : `<button type="button" class="btn sm" onclick="whDown(${r.year}, ${lit(who)})">${icon('download')} 내려받기</button><button type="button" class="btn sm" onclick="whPrint(${r.year}, ${lit(who)})">${icon('file')} 인쇄</button>`);
   const warn = pdf.includes('whDown(') ? '<div class="list-sub" style="margin:6px 0 0;">주민등록번호가 들어 있어요. 여럿이 쓰는 PC라면 내려받은 파일을 지워 주세요.</div>' : '';
   const viewer = !open ? '' : o.state==='loading' ? kpiNote('원본 PDF를 불러오는 중입니다…', 'info') : o.state==='err' ? kpiNote('원본 PDF를 불러오지 못했습니다. 잠시 뒤 다시 해 주세요.', 'danger')
     : `<div id="whPdf" class="wh-pages" role="group" aria-label="원본 PDF"></div><div class="wh-actions"><button type="button" class="btn sm" onclick="whOrig=null; renderContent()">닫기</button></div>`;
@@ -7466,12 +7474,51 @@ function whOrigDraw(){   // 화면을 다시 그리면 상자가 새로 생긴�
   box.dataset.on = '1';
   whDrawPdf(o.bytes, box).catch(()=>{ if(whOrig!==o) return; o.state = 'err'; if(currentTab.id==='p3') renderContent(); });
 }
-async function whDown(year, who){   // 내려받기 — 파일 이름에 실명을 넣지 않는다(PC에 남는 이름). 열어 둔 원본이 있으면 그 바이트로
-  const o = whOrig, bytes = o && o.year===year && o.who===who && o.bytes || await whPdfBytes(year, who);
-  if(!bytes) return kpiFlash('원본 PDF를 내려받지 못했습니다. 잠시 뒤 다시 해 주세요.', 'danger');
-  const url = URL.createObjectURL(new Blob([bytes], { type:'application/pdf' })), a = Object.assign(document.createElement('a'), { href:url, download:`원천징수영수증_${year}귀속.pdf` });
+function whWmText(name, d){   // 워터마크 글 (2026-10-22 인사담당자 시안 ③) — head · tail = 가운데 빗금 두 줄, line = 바닥 한 줄. d = 누른 때(이 PC 시각)
+  const p = n=>String(n).padStart(2, '0'), head = `${CT_COMPANY.name} 인사포털 출력`, tail = `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())} · 출력: ${name}`;
+  return { head, tail, line:`${head} · ${tail}` };
+}
+function whWmPng(rows, color){   // 워터마크 글 → 투명 바탕 PNG(data URL)와 크기(pt). rows = [[글, 크기 pt, 그림 가운데에서 글 바닥선까지 pt(위가 +)]]. 1pt = 6화소(인쇄에도 또렷하게), 글꼴은 포털 글꼴
+  const S = 6, c = document.createElement('canvas'), g = c.getContext('2d'), fam = getComputedStyle(document.body).fontFamily, font = n=>`500 ${n*S}px ${fam}`;
+  const w = Math.max(...rows.map(([t, n])=>{ g.font = font(n); return g.measureText(t).width/S; })) + 4, half = Math.max(...rows.map(([, n, o])=>Math.abs(o) + n*1.1));
+  c.width = Math.ceil(w*S); c.height = Math.ceil(half*2*S);
+  g.fillStyle = color; g.textAlign = 'center';
+  rows.forEach(([t, n, o])=>{ g.font = font(n); g.fillText(t, c.width/2, (half - o)*S); });
+  return { url:c.toDataURL('image/png'), w:c.width/S, h:c.height/S };
+}
+async function whMark(bytes, name, when = new Date()){   // 내려받기 · 인쇄용 워터마크: 쪽마다 바닥 가운데 작은 회색 한 줄 + 가운데 35° 빗금(아주 옅게). 원본 bytes는 건드리지 않고 새 PDF 바이트를 돌려준다(화면 안 원본 보기 · 서버 원본은 그대로). pdf-lib 기본 글꼴은 한글을 못 그려 글을 캔버스 그림으로 얹는다. 크기 · 자리는 A4 시안 그대로, 쪽 크기에 비례
+  const { PDFLib } = await whLib(['pdflib']), t = whWmText(name, when), doc = await PDFLib.PDFDocument.load(bytes.slice());
+  const lo = whWmPng([[t.line, 7.5, -2.25]], 'rgb(89,89,89)'), hi = whWmPng([[t.head, 26, 18], [t.tail, 15, -14]], 'rgb(140,140,140)');   // 바닥: 7.5pt 회색 0.35, 글 바닥선이 쪽 아래에서 14pt · 빗금: 26pt · 15pt 회색 0.55, 투명도 18%
+  const loImg = await doc.embedPng(lo.url), hiImg = await doc.embedPng(hi.url), a = 35*Math.PI/180;
+  for(const p of doc.getPages()){   // ponytail: 쪽 회전(/Rotate)은 보지 않는다 — 위하고 영수증은 세로 그대로. 돌린 쪽이 오면 여기서 돌려 놓는다
+    const { x, y, width:pw, height:ph } = p.getCropBox(), k = Math.min(pw, ph)/595.28, w = hi.w*k, h = hi.h*k;
+    p.drawImage(loImg, { x:x + (pw - lo.w*k)/2, y:y + (14 + 2.25 - lo.h/2)*k, width:lo.w*k, height:lo.h*k });
+    p.drawImage(hiImg, { x:x + pw/2 - (w*Math.cos(a) - h*Math.sin(a))/2, y:y + ph/2 - (w*Math.sin(a) + h*Math.cos(a))/2, width:w, height:h, rotate:PDFLib.degrees(35), opacity:0.18 });   // 왼쪽 아래 모서리를 축으로 돌므로 그림 가운데가 쪽 가운데에 오게 옮긴다
+  }
+  return doc.save();
+}
+async function whDown(year, who, print){   // 내려받기 · 인쇄(print) — 원본에 워터마크(whMark)를 얹은 새 PDF로. 출력한 사람 = 누른 사람(kpiOwner — HR이 직원 것을 받아도 HR 이름), 일시 = 누른 때. 파일 이름에 실명을 넣지 않는다(PC에 남는 이름). 열어 둔 원본이 있으면 그 바이트로
+  const when = new Date(), o = whOrig, bytes = o && o.year===year && o.who===who && o.bytes || await whPdfBytes(year, who);
+  const out = bytes && await whMark(bytes, kpiOwner(), when).catch(()=>null);
+  if(!out) return kpiFlash(`원본 PDF를 ${print ? '인쇄하지' : '내려받지'} 못했습니다. 잠시 뒤 다시 해 주세요.`, 'danger');
+  const url = URL.createObjectURL(new Blob([out], { type:'application/pdf' }));
+  if(print) return whPrintUrl(url);
+  const a = Object.assign(document.createElement('a'), { href:url, download:`원천징수영수증_${year}귀속.pdf` });
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(()=>URL.revokeObjectURL(url), 1000);   // 내려받기가 시작된 뒤에 버린다 (바로 버리면 막히는 브라우저가 있다)
+}
+function whPrint(year, who){ return whDown(year, who, true); }
+let whPrintFrame = null;   // 인쇄용 숨긴 틀 — 다음 인쇄 · 로그아웃 때 치운다(인쇄 창이 떠 있는 동안 치우면 인쇄가 끊기는 브라우저가 있다)
+function whPrintGone(){ const f = whPrintFrame; whPrintFrame = null; if(f){ URL.revokeObjectURL(f.src); f.remove(); } }
+function whPrintUrl(url){   // 숨긴 틀(iframe)에 워터마크 PDF를 열어 그 인쇄 창을 띄운다. PDF를 화면에 못 여는 브라우저(휴대폰 · 'PDF 내려받기' 설정)나 틀 인쇄가 막히면 새 창에 PDF를 열어 거기서 인쇄하게
+  whPrintGone();
+  const open = ()=>{ const w = window.open(url, '_blank'); setTimeout(()=>URL.revokeObjectURL(url), 60000);
+    kpiFlash(w ? '이 브라우저에서는 바로 인쇄할 수 없어 새 창에 PDF를 열었습니다. 열린 PDF에서 인쇄해 주세요.' : '이 브라우저에서는 바로 인쇄할 수 없습니다. 내려받기로 받은 파일을 열어 인쇄해 주세요.', 'warning'); };
+  if(!navigator.pdfViewerEnabled || matchMedia('(pointer:coarse)').matches) return open();
+  const f = whPrintFrame = Object.assign(document.createElement('iframe'), { src:url, title:'인쇄용 원천징수영수증', tabIndex:-1 });
+  f.setAttribute('aria-hidden', 'true'); f.style.cssText = 'position:fixed; right:0; bottom:0; width:1px; height:1px; border:0; opacity:0; pointer-events:none;';
+  f.onload = ()=>{ try { f.contentWindow.focus(); f.contentWindow.print(); } catch(e){ if(whPrintFrame===f) whPrintFrame = null; f.remove(); open(); } };
+  document.body.appendChild(f);
 }
 
 /* ----- HR: 원천징수영수증 올리기 · 확인 · 공개 (2026-10-21 인사담당자 — 원천징수영수증 실제화, 스펙 4.1 · 4.7 · 4.8 · 6) -----
@@ -9783,7 +9830,7 @@ const TOURS = {   // 단계: el = 가리킬 곳(여러 개면 묶어서, 배열�
     { el:'#whUp', title:'영수증 올리기 (HR)', body:'NAS의 <b>원천징수영수증 zip</b>을 고르고 압축 암호를 넣습니다. 파일은 이 PC 화면 안에서만 풀고, 확인 창에서 사람 · 금액 · 직원 맞추기를 본 뒤 올립니다. 올린 해는 <b>공개</b>를 눌러야 직원에게 보입니다.' },
     { el:'select[onchange^="whViewKey"]', title:'볼 직원 고르기 (HR)', body:'HR은 직원을 골라 그 사람의 영수증을 볼 수 있습니다. 직원은 본인 것만 봅니다.' },
     { el:'.wh-hero', title:'연말정산 결과', body:'<b>돌려받는 돈</b>(환급)인지 <b>더 낼 돈</b>(추가 납부)인지 맨 위에 크게 나옵니다. 금액은 <b>눈 모양</b>을 눌러야 보입니다.' + (AUTH.live ? ' 새로 공개된 해에는 <b>새 영수증</b> 표시가 붙고, 열어 보면 사라집니다.' : '') },
-    { el:'[onclick^="whViewer"]', title:'원본 PDF 보기', body:'누르면 이 화면 안에 원본이 쪽마다 열립니다. 자세한 공제 내역은 원본에서 확인합니다. <b>내려받기</b>로 PC에 저장할 수 있습니다.' },
+    { el:'[onclick^="whViewer"]', title:'원본 PDF 보기', body:'누르면 이 화면 안에 원본이 쪽마다 열립니다. 자세한 공제 내역은 원본에서 확인합니다. <b>내려받기</b>로 PC에 저장하거나 <b>인쇄</b>할 수 있고, 내려받은 파일 · 인쇄물에는 회사명 · 출력 일시 · 출력한 사람이 워터마크로 들어갑니다.' },
   ]},
   ct:{ label:'연봉계약서 서명 방법', tab:'p2', steps:()=>[
     { el:'#ctSeg', title:'화면 고르기 (HR)', body:'<b>내 연봉계약서</b>에서 내가 받은 계약서를 보고 서명합니다. <b>직원 연봉계약 관리</b>에서 직원 계약서를 조정·발송하고 서명 현황을 봅니다.' },
@@ -9960,7 +10007,7 @@ function authLock(kind){   // 로그아웃 · 세션 끝(401)에도 부른다 �
   document.getElementById('contentArea').innerHTML = '';   // #payAmt 도 사라져 payTick 이 멈춘다
   orgCloseModal(true);   // 급여대장 확인 창 · 미리 보기 등
   ps.pick = null; ps.prev = null; Object.assign(PAY_LIVE, { state:'', who:null, slips:[], mine:[] });
-  Object.assign(WH_LIVE, { state:'', who:null, years:[], mine:[] }); whOrig = null; whDrop(); wh.up = null; wh.prev = null; wh.run = null;   // 받아 둔 원천징수영수증 원본 · 확인 창의 사람별 PDF(주민등록번호가 있다) · 미리 보기 · 읽는 중인 것도 버린다 (orgCloseModal(true)는 whDrop을 건너뛴다)
+  Object.assign(WH_LIVE, { state:'', who:null, years:[], mine:[] }); whOrig = null; whPrintGone(); whDrop(); wh.up = null; wh.prev = null; wh.run = null;   // 받아 둔 원천징수영수증 원본 · 인쇄용 틀 · 확인 창의 사람별 PDF(주민등록번호가 있다) · 미리 보기 · 읽는 중인 것도 버린다 (orgCloseModal(true)는 whDrop을 건너뛴다)
   if(kind==='login' && isPhone()) kind = 'phone';
   const [title, body] = AUTH_TEXT[kind];
   let el = document.getElementById('authLock');
