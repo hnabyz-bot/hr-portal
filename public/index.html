@@ -6413,7 +6413,17 @@ function ctSelfCheck(){   // 브라우저 콘솔에서 ctSelfCheck() 실행
   const rr = ctBirth6('900315-1'+'234567'); ok(rr.b6==='900315' && rr.fromRrn && !JSON.stringify(rr).includes('234567'), '주민번호에서 앞 6자리만 남김');
   ok(ctBirth6(312254123456).b6==='031225', '앞 0이 떨어진 12자리 주민번호');
   ok(JSON.stringify(ctScrub([['900315-1'+'234567', 312254123456, 'abc', 5]]))==='[["900315-*","031225-*","abc",5]]', '읽은 줄을 두기 전에 주민번호 칸은 앞 6자리만 남긴다');
-  ok(ctBirth6(51225).b6==='', '앞 0이 떨어진 051225가 미래 날짜(엑셀 일련번호)로 읽히면 읽을 수 없음');
+  const T = '1234567', shapes = ['900315-1'+'234567', '900315 '+T, '900315 - '+T, '900315－'+T, '900315–'+T, '900315'+T, '900315-1******', '900315-1'+'234'];
+  ok(shapes.every(x=>{ const b = ctBirth6(x); return b.b6==='900315' && b.fromRrn; }), '주민번호 모양들(띄어쓰기 · 전각/긴 줄표 · 붙여 쓴 13자리 · 가린 것 · 짧은 뒷자리)은 모두 생년월일 900315');
+  const sc = ctScrub([shapes, [312254123456, 9003151234567]]);
+  ok(sc[0].every(x=>x==='900315-*') && sc[1][0]==='031225-*' && sc[1][1]==='900315-*' && !/234|\*\*/.test(JSON.stringify(sc)), '그 모양들 모두 읽은 줄에는 앞 6자리만 남는다 (뒷자리 · 가린 자리 · 짧은 뒷자리도 없다)');
+  const same = [['abc', 5, '19900315', '1990-03-15', '900315', '900315 (음)', '']];
+  ok(JSON.stringify(ctScrub(same))===JSON.stringify(same), '주민번호가 아닌 칸(날짜 · 6자리 · 글자)은 그대로');
+  const cs = ctScrub([['사번','이름','생년월일'], ['230101-5','가상','900315-1'+'234567']]);
+  ok(cs[1][0]==='230101-5' && cs[1][2]==='900315-*', '사원코드 칸은 건드리지 않는다 (6자리-숫자 모양의 사번이 깨지지 않게)');
+  const ser = (y, m, d)=>Math.round((Date.UTC(y, m-1, d) - Date.UTC(1899, 11, 30)) / 864e5), yr = new Date().getFullYear();
+  ok(ctBirth6(1).b6==='' && ctBirth6(10315).b6==='' && ctBirth6(32947).b6==='900315' && ctBirth6(ser(1929, 12, 31)).b6==='' && ctBirth6(ser(1930, 1, 1)).b6==='300101', '엑셀 일련번호 생년월일은 1930-01-01 이후만 (1 · 10315 같은 엉뚱한 숫자는 읽을 수 없음)');
+  ok(ctBirth6(ser(yr-10, 5, 1)).b6==='' && ctBirth6(ser(yr-16, 5, 1)).b6!=='' && ctBirth6(51225).b6==='', '… 그리고 15년 전보다 나중이면 읽을 수 없음 (앞 0이 떨어진 051225 같은 숫자)');
   ok(ctBirth6('900230').b6==='' && ctBirth6('').b6==='' && ctBirth6('abc').b6==='', '없는 날 · 빈칸');
   ok(ctXlDate(46447)==='2027-03-01' && ctXlDate('2027-03-15')==='2027-03-15' && ctXlDate('x')==='', '계약 시작일: 일련번호 · 글자');
   ok(ctXlDate('46447')==='2027-03-01' && ctBirth6('32947').b6==='900315' && ctBirth6('312254123456').b6==='031225' && ctBirth6('51225').b6==='', '실제 엑셀 읽기(rzXlsx)는 칸을 모두 글자로 준다 — 숫자 모양 글자도 숫자처럼');
@@ -6696,19 +6706,24 @@ function ctXlDate(v){   // 계약 시작일 칸: 엑셀 날짜(일련번호 1~60
   return n>=1 && n<=60000 ? new Date(Date.UTC(1899, 11, 30) + Math.floor(n) * 864e5).toISOString().slice(0, 10) : msDate(t);
 }
 function ctB6Ok(s){ const y = +s.slice(0, 2), m = +s.slice(2, 4), d = +s.slice(4); return [1900, 2000].some(c=>{ const t = new Date(Date.UTC(c+y, m-1, d)); return t.getUTCMonth()===m-1 && t.getUTCDate()===d; }); }   // 19YY · 20YY 중 하나로 있는 날 (서버 birth6_ok)
-function ctBirth6(v){   // 생년월일 칸 → { b6:'YYMMDD' | '', fromRrn }. 주민번호면 앞 6자리만 꺼낸다 — 뒷자리는 변수에 두지 않는다. 숫자 모양 글자도 숫자로 본다(rzXlsx는 칸을 모두 글자로 준다)
-  const t = String(v ?? '').trim(), n = /^\d+(\.\d+)?$/.test(t) ? +t : NaN, ymd = d=>d.slice(2, 4)+d.slice(5, 7)+d.slice(8);
-  let b6 = '', fromRrn = false;
-  if(/^\d{6}(?:-[\d*]{1,7}|[\d*]{7})$|^\d{12}$/.test(t)){ b6 = (t.length===12 ? '0'+t : t).slice(0, 6); fromRrn = true; }   // 900315-1****** · 13자리 · 앞 0이 떨어진 12자리 숫자
-  else if(/^\d{6}$/.test(t)) b6 = t;   // YYMMDD (msDate는 900315를 9003년으로 읽으니 먼저 본다)
-  else if(n>=1 && n<=60000){ const d = ctXlDate(t); b6 = d<=ctYmd(new Date()) ? ymd(d) : ''; }   // 엑셀 날짜 칸 (앞 0이 떨어진 051225 같은 숫자가 미래 날짜로 읽히면 읽을 수 없음으로 막는다)
-  else { const d = msDate(t), x = !d && t.match(/^(\d{2})\s*[-./]\s*(\d{1,2})\s*[-./]\s*(\d{1,2})$/); b6 = d ? ymd(d) : x ? x[1]+x[2].padStart(2, '0')+x[3].padStart(2, '0') : ''; }   // 1990-03-15 · 19900315 · 90.03.15
-  return { b6:b6 && ctB6Ok(b6) ? b6 : '', fromRrn };
+function ctRrn6(v){   // 주민번호로 보이는 칸이면 앞 6자리(YYMMDD), 아니면 ''. ctBirth6과 ctScrub이 같은 모양을 본다 — 뒷자리는 돌려주지도 두지도 않는다
+  const t = String(v ?? '').normalize('NFKC').trim();   // NFKC: 전각 줄표(－) · 전각 숫자를 보통 글자로
+  return /^\d{6}(?:\s*[-–—−]\s*|\s+)[\d*]{1,7}$|^\d{6}[\d*]{7}$/.test(t) ? t.slice(0, 6) : /^\d{12}$/.test(t) ? ('0'+t).slice(0, 6) : '';   // 앞 6자리 + (줄표 · 줄표 둘레 띄어쓰기 · 띄어쓰기 · 붙여 쓰기) + 뒷자리(가린 것 · 짧은 것도) · 앞 0이 떨어진 12자리 숫자
 }
-function ctScrub(rows){   // 주민번호로 보이는 칸(13자리 · 앞 0이 떨어진 12자리 숫자)은 앞 6자리만 남긴다 — 읽은 줄을 화면 자료에 두기 전에 (칸을 다시 고를 때 쓰려고 줄은 남긴다)
-  const cut = c=>{ const t = typeof c==='number' ? String(c) : typeof c==='string' ? c.trim() : '';
-    return /^\d{6}-?\d{7}$|^\d{12}$/.test(t) ? (t.length===12 ? '0'+t : t).slice(0, 6)+'-*' : c; };
-  return rows.map(r=>r.map(cut));
+function ctBirth6(v){   // 생년월일 칸 → { b6:'YYMMDD' | '', fromRrn }. 주민번호면 앞 6자리만 꺼낸다. 숫자 모양 글자도 숫자로 본다(rzXlsx는 칸을 모두 글자로 준다)
+  const t = String(v ?? '').normalize('NFKC').trim(), n = /^\d+(\.\d+)?$/.test(t) ? +t : NaN, ymd = d=>d.slice(2, 4)+d.slice(5, 7)+d.slice(8), rrn = ctRrn6(t);
+  let b6 = '';
+  if(rrn) b6 = rrn;
+  else if(/^\d{6}$/.test(t)) b6 = t;   // YYMMDD (msDate는 900315를 9003년으로 읽으니 먼저 본다)
+  else if(n>=1 && n<=60000){   // 엑셀 날짜 칸: 1930-01-01 ~ 15년 전만 (1 · 10315 같은 엉뚱한 숫자, 앞 0이 떨어진 051225가 일련번호로 읽힌 것은 읽을 수 없음으로 막는다)
+    const d = ctXlDate(t), old = new Date(); old.setFullYear(old.getFullYear() - 15); b6 = d>='1930-01-01' && d<=ctYmd(old) ? ymd(d) : '';
+  }
+  else { const d = msDate(t), x = !d && t.match(/^(\d{2})\s*[-./]\s*(\d{1,2})\s*[-./]\s*(\d{1,2})$/); b6 = d ? ymd(d) : x ? x[1]+x[2].padStart(2, '0')+x[3].padStart(2, '0') : ''; }   // 1990-03-15 · 19900315 · 90.03.15
+  return { b6:b6 && ctB6Ok(b6) ? b6 : '', fromRrn:!!rrn };
+}
+function ctScrub(rows){   // 주민번호로 보이는 칸은 앞 6자리만 남긴다(YYMMDD-*) — 읽은 줄을 화면 자료에 두기 전에 (칸을 다시 고를 때 쓰려고 줄은 남긴다). 사원코드 칸은 건드리지 않는다(6자리-숫자 모양의 사번이 깨지지 않게)
+  const keep = ctGuess(rzHead(rows, CT_FIELDS).head, CT_FIELDS).code;
+  return rows.map(r=>r.map((c, i)=>{ const b6 = i===keep ? '' : ctRrn6(c); return b6 ? b6+'-*' : c; }));
 }
 function ctRead(rows, map0){   // 제목 줄 아래를 사람 한 줄씩. 합계 줄·빈 줄은 건너뛰고(skip) 부서가 "임원"인 줄은 뺀다(exec). map0 = HR이 칸을 고른 뒤의 칸 번호 (없으면 이름으로 찾는다)
   const h = rzHead(rows, CT_FIELDS), map = map0 || ctGuess(h.head, CT_FIELDS), missing = CT_NEED.filter(k=>map[k]<0), people = [];
@@ -6750,13 +6765,14 @@ function ctPlan(){   // 읽은 줄마다 어떻게 되나: up 올림 · skip HR�
 }
 function ctReread(k, map){ k.r = ctRead(k.rows, map); k.auto = psMatch(k.r.people, k.members); k.to = k.auto.map(x=>x.id); }
 async function ctStage(fileName, rows, locked){   // 계약 금액 줄 → 확인 창. 파일 고르기(rzLoad 'contract')·검사가 부른다. locked = 암호를 풀어 읽었나(암호 자체는 받지 않는다)
+  rows = ctScrub(rows);   // 맨 먼저 — 아래에서 명단 · 현황을 기다리는 동안에도 주민번호 뒷자리가 남지 않게
   const year = ctPeriod(new Date()).year;   // 처음은 다가오는 회차
   if(AUTH.live){   // 맞출 명단 · 그 회차에 이미 발송한 사람
     if(MS_LIVE.state!=='ok') await msLoad();
     await ctAdminLoad(year);
     if(MS_LIVE.state!=='ok' || CT_LIVE.state!=='ok'){ ctUi.pick = null; orgCloseModal(); return kpiFlash('직원 명단이나 계약서 현황을 불러오지 못했어요. 잠시 뒤 다시 해 주세요.', 'danger'); }
   }
-  const k = ctUi.pick = { file:fileName, locked:!!locked, year, rows:ctScrub(rows), members:ctMembers() };
+  const k = ctUi.pick = { file:fileName, locked:!!locked, year, rows, members:ctMembers() };
   ctReread(k); ctConfirm();
 }
 function ctBlock(){   // 올릴 수 없는 이유 하나 (빈 글자 = 올릴 수 있다). 확인 창의 단추와 안내가 이것만 본다. 서버(contract.py)가 거절할 모양도 미리 막는다. 대상 아님 · 이미 발송 · 뺀 줄은 올리지 않으니 보지 않는다
@@ -6903,6 +6919,9 @@ async function ctFlowCheck(){   // 브라우저 콘솔에서 await ctFlowCheck()
     const N = cp(R1); N[1][9] = '900315-1'+'234567';
     await ctStage('가상.xlsx', N, false);
     ok(ctUi.pick.r.people[0].b6==='900315' && txt().includes('주민번호 칸에서 앞 6자리만 읽었어요') && !JSON.stringify(ctUi.pick).includes('234567'), '주민번호는 앞 6자리만 남기고 뒷자리는 화면 자료에 없다');
+    const N2 = cp(R1); N2[1][9] = '900315 - '+'1234567';
+    await ctStage('가상.xlsx', N2, false);
+    ok(ctUi.pick.r.people[0].b6==='900315' && ctUi.pick.r.people[0].fromRrn && ctBlock()==='' && !JSON.stringify(ctUi.pick).includes('234567'), '줄표 둘레에 띄어 쓴 주민번호도 읽고, 뒷자리는 화면 자료에 없다');
     const M = cp(R1).map(r=>r.slice()); M[0][9] = '생일';   // 칸 이름이 달라 못 찾는 필수 칸은 창에서 고른다
     await ctStage('가상.xlsx', M, false);
     ok(ctUi.pick.r.missing.join()==='birth' && ctBlock().includes('생년월일') && document.getElementById('ctCol_birth'), '못 찾은 필수 칸은 고르기 칸');
