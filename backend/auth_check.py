@@ -2134,6 +2134,64 @@ def check_eval_report(hr) -> None:
     ok(len(charts) == 1 and "<f>'요약'!" in z.read(charts[0]).decode() and "Sheet" not in z.read(charts[0]).decode(), "요약에 그래프 하나 (요약 시트의 칸을 가리킴)")
 
 
+def check_push_targets(hr) -> None:
+    """휴대폰 알림 보낼 대상 (2026-10-22): 살아 있는 휴대폰 세션의 구독만 — 해제 · 30일 넘게 안 씀 · 만료 · PC 세션 · 비활성 직원 · 포털 사용 끔 · 남의 구독은 안 받는다.
+    세션 · 구독은 가상3(직원)에게 직접 넣고, 끝나면 지우고 직원 칸도 되돌린다. 주소 · 키는 가상(example.invalid)."""
+    import push
+    print("휴대폰 알림 보낼 대상")
+    now, tail, seq = auth._now(), "9" * 63, [0]
+    before = q("SELECT is_active, deactivated_at, portal_enabled FROM users WHERE id = 3")[0]
+    c = connect(os.environ["HR_DB_PATH"])
+
+    def put(kind: str = "phone", seen: timedelta = timedelta(0), left: timedelta = timedelta(days=30), revoked: bool = False, sub_user: int = 3) -> str:
+        seq[0] += 1
+        h = f"{seq[0]}{tail}"  # 가상 세션 번호 (64자)
+        c.execute("INSERT INTO sessions (token_hash, user_id, created_at, last_seen_at, expires_at, revoked_at, kind) VALUES (?, 3, ?, ?, ?, ?, ?)",
+                  (h, auth._iso(now - timedelta(days=40)), auth._iso(now - seen), auth._iso(now + left), auth._iso(now) if revoked else None, kind))
+        c.execute("INSERT INTO push_subscriptions (token_hash, user_id, endpoint, p256dh, auth, created_at) VALUES (?, ?, ?, 'k', 'a', ?)",
+                  (h, sub_user, f"https://push.example.invalid/{seq[0]}", auth._iso(now)))
+        return h
+
+    def got(uids=(3,), at=now) -> list[str]:
+        return [t[1] for t in push.targets(c, uids, at)]
+
+    def refused(why: str, **kw) -> None:  # 살아 있는 세션(위)과 한 가지만 다른 세션의 구독은 받지 않는다
+        h = put(**kw)
+        ok(got(uids=(2, 3)) == [], f"{why} → 0줄")
+        c.execute("DELETE FROM sessions WHERE token_hash = ?", (h,))
+
+    try:
+        live = put()
+        ok(push.targets(c, [3], now) == [(3, live, {"endpoint": "https://push.example.invalid/1", "keys": {"p256dh": "k", "auth": "a"}})],
+           "살아 있는 휴대폰 세션의 구독 → 1줄 (보낼 때 쓰는 모양)")
+        ok(got(at=now.astimezone(auth.KST)) == [live], "시각을 한국 시간으로 넘겨도 같은 결과")
+        ok(got(uids=(2,)) == [] and got(uids=()) == [] and got(uids=iter([3])) == [live], "받을 사람(uids) 안의 사람 것만 — 비어 있으면 0줄, 반복자도 됨")
+        ok(got(at=now + timedelta(days=30, seconds=1)) == [] and got(at=now + timedelta(days=29)) == [live], "마지막 사용 30일이 지나면 빠지고 그 전엔 받음")
+        c.execute("DELETE FROM sessions WHERE token_hash = ?", (live,))
+
+        refused("해제한 세션(revoked_at)", revoked=True)
+        refused("마지막 사용 31일 전", seen=timedelta(days=31))
+        refused("만료 시각이 지난 세션", left=timedelta(seconds=-1))
+        refused("PC 세션", kind="pc")
+        refused("구독의 직원이 세션 주인과 다름(남의 구독)", sub_user=2)
+        edge = put(seen=timedelta(days=29, hours=23))
+        ok(got() == [edge], "마지막 사용 29일 23시간 전은 아직 받음")
+
+        c.execute("UPDATE users SET is_active = 0, deactivated_at = ? WHERE id = 3", (auth._iso(now),))
+        ok(got() == [], "비활성 직원 → 0줄")
+        c.execute("UPDATE users SET is_active = 1, deactivated_at = NULL, portal_enabled = 0 WHERE id = 3")
+        ok(got() == [], "포털 사용을 끈 직원 → 0줄")
+        c.execute("UPDATE users SET portal_enabled = 1 WHERE id = 3")
+        second = put()
+        ok(got() == sorted([edge, second]), "되돌리면 다시 받음 (한 사람이 구독 둘이면 둘 다)")
+    finally:
+        c.execute("DELETE FROM sessions WHERE token_hash LIKE ?", (f"_{tail}",))
+        c.execute("UPDATE users SET is_active = ?, deactivated_at = ?, portal_enabled = ? WHERE id = 3", before)
+        c.close()
+    ok(q("SELECT COUNT(*) FROM push_subscriptions WHERE token_hash LIKE ?", f"_{tail}") == [(0,)]
+       and q("SELECT is_active, deactivated_at, portal_enabled FROM users WHERE id = 3") == [before], "끝나면 세션 · 구독을 지우고(구독도 함께) 직원 칸을 되돌림")
+
+
 def year_day(n: int) -> str:
     """오늘 + n일을 올해(한국 날짜) 안으로 맞춘 날짜 — KPI 기간은 그해 날짜만 받으므로 1월 1일 · 12월 31일에도 검사가 그대로 돈다."""
     t = auth._today()
@@ -4636,6 +4694,7 @@ def main() -> int:
     check_withholding(hr)
     check_eval_report(hr)
     check_contracts(hr)
+    check_push_targets(hr)
 
     acts = {r[0] for r in q("SELECT action FROM audit_logs")}
     ok({"LOGIN", "HR_BOOTSTRAP"} <= acts, "감사로그 LOGIN 이 남음")
