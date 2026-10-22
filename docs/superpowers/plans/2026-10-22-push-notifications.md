@@ -133,7 +133,7 @@ os.environ["HR_PUSH_PRIVATE"] = "short"; assert keys() is None
     - `inbox` · `memos` · `check` · `replies` = `kpi.inbox()`의 JSON(`items` 길이, `review`). `check` · `replies`는 직책이 팀장 · 본부장 · 대표이사이거나 HR일 때만(화면 `kvCanUse`). **대표이사이고 `ceo_delegation`에 본인 줄이 있으면 `inbox` = 0.**
     - `back` = `kpi.plan_json(conn, uid, kpi.plan_year())`의 `noteKind == "RETURNED"`면 1
     - `prev` = `kpi.progress_json(conn, uid, year)["todo"]["prev"]` (None이면 0)
-  - `morning(flask_app, now: datetime) -> int` — 평일(KST)이 아니면 0. `push_morning`에 오늘(KST 날짜) 줄이 있으면 0. 키가 없으면 0(줄도 쓰지 않음). 아니면 휴대폰 구독이 있는 활성 직원마다 `pending()` → 1건 이상이면 `morning_text` + `"badge": 합계` + `"tag": "morning"`을 `SEND`(ttl `TTL_MORNING`) → 404/410이면 구독 삭제. 끝나면 `push_morning`에 (오늘, 보낸 사람 수, 시각). 보낸 사람 수를 돌려준다.
+  - `morning(flask_app, now: datetime) -> int` — 평일(KST)이 아니면 0. 키가 없으면 0(줄도 쓰지 않음). 아니면 휴대폰 구독이 있는 활성 직원마다 `pending()` → 1건 이상이면 `morning_text` + `"badge": 합계` + `"tag": "morning"`을 `SEND`(ttl `TTL_MORNING`) → 404/410이면 구독 삭제. (최종 검토 반영) 보내기 전에 `INSERT OR IGNORE`로 오늘 줄을 먼저 잡고(이미 있으면 0 — 겹쳐 도는 실행이 두 번 보내지 않게), 끝나면 `UPDATE`로 보낸 사람 수를 고친다. 보낸 사람 수를 돌려준다.
   - CLI `python -m push morning` — `from app import app` 후 `morning(app, auth._now())`, 보낸 사람 수만 출력.
 
 - [ ] **Step 1: 실패하는 검사** `check_push_pending(hr)` — `push.SEND`를 호출을 적어 두는 가짜(상태 201)로 바꾸고, 가상 사람들로:

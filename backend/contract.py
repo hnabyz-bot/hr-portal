@@ -779,7 +779,7 @@ def ask(key: bytes, cid: int) -> Response:
         conn.execute("UPDATE contracts SET ask = ?, ask_at = ?, ask_closed_at = NULL, ask_closed_by = NULL WHERE id = ?",
                      (_lock(key, _aad(year, me, ver, "ask"), text), auth._iso(auth._now()), cid))
         _log(conn, "CONTRACT_ASK", "contract", cid, contract=cid)
-    push.notify(lambda: push.hr_admins(conn), "contract_ask")  # 알림만 — 처리할 일 개수에는 넣지 않는다 (계약서 화면 안의 숫자)
+    push.notify(lambda: [u for u in push.hr_admins(conn) if u != me], "contract_ask")  # 알림만 — 처리할 일 개수에는 넣지 않는다 (계약서 화면 안의 숫자). HR 이 자기 계약서에 문의하면 본인 휴대폰은 울리지 않는다 (approvers 가 주인을 빼는 것과 같다)
     return jsonify(ok=True)
 
 

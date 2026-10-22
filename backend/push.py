@@ -49,17 +49,17 @@ TTL_MORNING = 32400  # 9시 묶음: 18시까지 (9시간)
 SEND_TIMEOUT = 10  # 푸시 서버 응답 기다리는 초 — 정하지 않으면 끝없이 기다린다
 SYNC = False  # 검사가 True 로 두면 notify 가 스레드 없이 바로 보낸다
 
-# 종류 → (제목 틀, 내용, 눌렀을 때 열 화면 go). 금액 · 이름 · 등급 자리를 만들지 않는다.
+# 종류 → (제목 틀, 내용, 눌렀을 때 열 화면 go). 금액 · 이름 · 등급 자리를 만들지 않는다. KPI 알림의 내용은 "PC에서 …" — 평가·성과는 휴대폰에서 열리지 않아(PC_ONLY_NAV) 눌러도 "PC에서 이용해 주세요" 안내가 뜬다.
 MESSAGES: dict[str, tuple[str, str, str]] = {
     "payslip": ("{month}월 급여명세서가 올라왔어요", "눌러서 확인해 주세요", "pay.p1"),
     "withholding": ("{year}년 원천징수영수증이 올라왔어요", "눌러서 확인해 주세요", "pay.p3"),
     "contract_sign": ("서명할 연봉계약서가 있어요", "눌러서 내용을 확인하고 서명해 주세요", "pay.p2"),
     "contract_ask": ("답변할 연봉계약서 문의가 있어요", "눌러서 확인해 주세요", "pay.p2"),
-    "kpi_inbox": ("팀원 KPI 승인 요청이 왔어요", "눌러서 확인해 주세요", "perf.e1"),
-    "kpi_back": ("KPI 계획서가 돌아왔어요", "사유를 확인하고 다시 작성해 주세요", "perf.e1"),
-    "kpi_memo": ("KPI 확인 메모가 왔어요", "눌러서 확인해 주세요", "perf.e1"),
-    "kpi_reply_to_author": ("확인 메모에 새 답글이 달렸어요", "눌러서 확인해 주세요", "perf.e4"),
-    "kpi_reply_to_owner": ("확인 메모에 새 답글이 달렸어요", "눌러서 확인해 주세요", "perf.e1"),
+    "kpi_inbox": ("팀원 KPI 승인 요청이 왔어요", "PC에서 확인해 주세요", "perf.e1"),
+    "kpi_back": ("KPI 계획서가 돌아왔어요", "PC에서 사유를 확인하고 다시 작성해 주세요", "perf.e1"),
+    "kpi_memo": ("KPI 확인 메모가 왔어요", "PC에서 확인해 주세요", "perf.e1"),
+    "kpi_reply_to_author": ("확인 메모에 새 답글이 달렸어요", "PC에서 확인해 주세요", "perf.e4"),
+    "kpi_reply_to_owner": ("확인 메모에 새 답글이 달렸어요", "PC에서 확인해 주세요", "perf.e1"),
 }
 
 # 처리할 일 종류 → 9시 묶음에 쓰는 이름 (화면 homePortalTasks 제목과 같은 말, 순서도 같게)
@@ -254,7 +254,10 @@ def _deliver_one(conn: Connection, found: list[tuple[str, dict]], payload: dict,
             logger.warning("%s push failed: %s", who, type(exc).__name__)
             continue
         if status in (404, 410):
-            forget(conn, [th])
+            try:
+                forget(conn, [th])
+            except Exception as exc:  # 지우다 DB 가 실패해도 나머지 기기 · 사람에게는 간다 (다음 보내기에서 또 404 · 410 이면 그때 지운다) — 로그에는 예외 종류만
+                logger.warning("%s push forget failed: %s", who, type(exc).__name__)
         elif not 200 <= status < 300:
             logger.warning("%s push rejected: status %s", who, status)
         reached = reached or 200 <= status < 300
@@ -327,7 +330,7 @@ def deliver(flask_app: Flask, uids: list[int], msg: dict, ttl: int) -> int:
             devices: dict[int, list[tuple[str, dict]]] = {}
             for uid, th, info in targets(conn, uids, auth._now()):
                 devices.setdefault(uid, []).append((th, info))
-            for uid, found in devices.items():
+            for uid, found in devices.items():  # ponytail: pending() 은 사람마다 한 번 — 호출마다 BEGIN IMMEDIATE(kpi.inbox · progress_json)라 100명 안팎이면 문제없다. 큰 명세서 공개가 쓰기를 눈에 띄게 줄 세우면 개수를 한꺼번에 세는 쪽으로
                 try:
                     payload = {**msg, "badge": sum(n for _, n in pending(flask_app, uid))}
                 except Exception as exc:  # 숫자를 못 세도 알림 자체는 간다
@@ -361,7 +364,9 @@ def notify(uids: Iterable[int] | Callable[[], Iterable[int]], kind: str, **fmt: 
 
 def morning(flask_app: Flask, now: datetime) -> int:
     """평일(한국 시간) 아침 묶음 — 휴대폰 구독이 있는 활성 직원 중 처리할 일이 1건 이상인 사람에게 한 통씩(제목 = 개수 합, 내용 = 종류 이름, 앱 아이콘 숫자 = 합).
-    보낸 사람 수(푸시 서버가 받아 준 사람)를 돌려준다. 근무시간(평일 9~18시) 밖 · 알림 키 없음 · 오늘 이미 돌렸음이면 0 (기록도 쓰지 않는다 — 새벽 · 밤에 손으로 돌리거나 늦게 돌려도 울리지 않는다).
+    보낸 사람 수(푸시 서버가 받아 준 사람)를 돌려준다. 근무시간(평일 9~18시) 밖 · 알림 키 없음이면 0 (기록도 쓰지 않는다 — 새벽 · 밤에 손으로 돌리거나 늦게 돌려도 울리지 않는다).
+    오늘을 **보내기 전에 먼저 잡는다**(push_morning 에 INSERT OR IGNORE — 이미 줄이 있으면 0): 겹쳐 도는 두 번째 실행이 같은 사람에게 또 보내 휴대폰이 두 번 울리지 않게. 값은 끝에 보낸 사람 수로 고친다.
+    그 대가로 보내는 도중에 멈추면(서버 재시작 등) 그날 묶음은 일부만 가고 다시 돌지 않는다 — 두 번 울리는 것보다 낫다고 본 선택.
     푸시 서버가 구독이 없어졌다(404 · 410)고 하면 그 줄을 지운다. 세션이 끝났거나 직원이 비활성인 구독 줄은 같은 일에서 함께 정리한다.
     한 사람의 개수 세기나 보내기가 실패해도 다음 사람으로 넘어간다. 앱 안에 예약 작업을 두지 않는다 — 서버 예약 작업이 python -m push morning 으로 부른다."""
     if not in_work_hours(now) or (ks := keys()) is None:
@@ -369,8 +374,9 @@ def morning(flask_app: Flask, now: datetime) -> int:
     today, sent = now.astimezone(auth.KST).date().isoformat(), 0
     with flask_app.app_context():
         conn = auth._db()
-        if conn.execute("SELECT 1 FROM push_morning WHERE day = ?", (today,)).fetchone():
-            return 0
+        at = auth._iso(now.astimezone(timezone.utc))
+        if not conn.execute("INSERT OR IGNORE INTO push_morning (day, people, ran_at) VALUES (?, 0, ?)", (today, at)).rowcount:  # 연결이 자동 저장이라 바로 보인다
+            return 0  # 오늘은 이미 돌았거나 지금 다른 실행이 돌고 있다
         conn.execute(f"DELETE FROM push_subscriptions WHERE token_hash NOT IN (SELECT p.token_hash FROM {_FROM} WHERE {_LIVE})", _live_args(now))  # targets() 가 절대 고르지 않을 줄
         devices: dict[int, list[tuple[str, dict]]] = {}
         for uid, th, info in targets(conn, [r[0] for r in conn.execute("SELECT DISTINCT user_id FROM push_subscriptions")], now):
@@ -384,7 +390,7 @@ def morning(flask_app: Flask, now: datetime) -> int:
             if not (total := sum(n for _, n in items)):
                 continue
             sent += _deliver_one(conn, found, {**morning_text(items), "badge": total, "tag": "morning"}, ks, TTL_MORNING, "morning")
-        conn.execute("INSERT OR IGNORE INTO push_morning (day, people, ran_at) VALUES (?, ?, ?)", (today, sent, auth._iso(now.astimezone(timezone.utc))))
+        conn.execute("UPDATE push_morning SET people = ?, ran_at = ? WHERE day = ?", (sent, at, today))
     return sent
 
 
@@ -468,6 +474,10 @@ def check() -> None:
     assert list(MESSAGES) == ["payslip", "withholding", "contract_sign", "contract_ask", "kpi_inbox", "kpi_back", "kpi_memo",
                               "kpi_reply_to_author", "kpi_reply_to_owner"]
     assert list(LABELS) == ["p1", "p2", "p3", "inbox", "back", "prev", "memos", "check", "replies"]
+    assert {k: MESSAGES[k][1] for k in MESSAGES if k.startswith("kpi_")} == {  # KPI 알림은 PC 에서 열라는 안내 — 평가·성과는 휴대폰에서 안 열린다
+        "kpi_inbox": "PC에서 확인해 주세요", "kpi_back": "PC에서 사유를 확인하고 다시 작성해 주세요", "kpi_memo": "PC에서 확인해 주세요",
+        "kpi_reply_to_author": "PC에서 확인해 주세요", "kpi_reply_to_owner": "PC에서 확인해 주세요"}
+    assert message("kpi_back")["body"] == "PC에서 사유를 확인하고 다시 작성해 주세요" and message("kpi_inbox")["url"] == "/?go=perf.e1"  # 제목 · 열 화면은 그대로
     for t, b, _ in MESSAGES.values():  # 금액 · 이름 자리 없음
         assert not re.search(r"\d[\d,]*\s*원|\{name\}|\{amount\}|등급", t + b)
 

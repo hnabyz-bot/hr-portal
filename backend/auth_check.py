@@ -2423,8 +2423,8 @@ def check_push_pending(hr) -> None:
     kyear = q("SELECT edit_from, edit_to, eval_start FROM kpi_years WHERE year = ?", year)
     other_ceos = [r[0] for r in q("SELECT u.id FROM users u JOIN user_roles r ON r.user_id = u.id WHERE r.role = 'CEO' AND u.is_active = 1")]
     FRI_A = datetime(2026, 10, 23, 9, 0, tzinfo=KST)
-    FRI_B, FRI_C, SAT = FRI_A + timedelta(days=7), FRI_A + timedelta(days=14), FRI_A + timedelta(days=1)
-    days = [d.date().isoformat() for d in (FRI_A, FRI_B, FRI_C, SAT)]
+    FRI_B, FRI_C, SAT, FRI_D = FRI_A + timedelta(days=7), FRI_A + timedelta(days=14), FRI_A + timedelta(days=1), FRI_A + timedelta(days=21)
+    days = [d.date().isoformat() for d in (FRI_A, FRI_B, FRI_C, SAT, FRI_D)]
     now_iso = auth._iso(auth._now())
     calls: list[tuple[str, dict, int]] = []
     codes: dict[str, int] = {}
@@ -2645,13 +2645,35 @@ def check_push_pending(hr) -> None:
            "410 · 500 은 보낸 것으로 세지 않음 (그날은 기록) · 500 은 상태 코드만 경고로 남김")
         ok(subs() == sorted(set(live.values()) - {live[EMP]}), "410 을 돌려준 구독만 삭제 — 500 을 돌려준 구독은 그대로")
         ok(ran() == [("2026-10-23", 2), ("2026-10-30", 1), ("2026-11-06", 0)], "기록은 돌린 세 날만 — 보낸 사람 수와 함께 (실패한 날도 그날은 돌린 것)")
+
+        # 날을 보내기 전에 먼저 잡는다 — 겹쳐 도는 두 번째 실행 · 앞 실행이 중간에 멈춘 뒤 다시 돎에도 한 사람에게 두 통이 가지 않는다
+        d_day, calls[:] = FRI_D.date().isoformat(), []
+        codes.clear()
+        put(EMP)  # 앞에서 410 으로 지워진 직원의 기기를 다시 등록 (팀장 기기는 그대로)
+        x("INSERT INTO push_morning (day, people, ran_at) VALUES (?, 0, ?)", d_day, now_iso)  # 다른 실행이 방금 오늘을 잡았다
+        ok(push.morning(app, FRI_D) == 0 and not calls and ran()[-1] == (d_day, 0), "오늘 줄이 이미 있으면(다른 실행이 잡음) 0 — 보내지 않고 그 줄도 그대로")
+        x("DELETE FROM push_morning WHERE day = ?", d_day)
+        during = []
+
+        def overlap_send(info, payload, ks, ttl):  # 보내는 도중에 같은 날 두 번째 실행이 들어온다 (예약 작업이 겹침)
+            during.append((push.morning(app, FRI_D), ran()[-1]))
+            return fake_send(info, payload, ks, ttl)
+
+        push.SEND = overlap_send
+        try:
+            n_d = push.morning(app, FRI_D)
+        finally:
+            push.SEND = fake_send
+        ok(n_d == 2 and len(calls) == 2 and during == [(0, (d_day, 0))] * 2 and ran()[-1] == (d_day, 2),
+           "보내는 도중에는 오늘 줄이 이미 있어(보낸 사람 0) 두 번째 실행은 0 · 보낸 것은 늘지 않고, 첫 실행은 끝에 보낸 사람 수(2)로 고침")
+        ok(push.morning(app, FRI_D) == 0 and len(calls) == 2 and ran()[-1] == (d_day, 2), "끝난 뒤 다시 돌려도 0")
     finally:
         push.SEND, push.pending, kpi._review, kpi.progress_json = real_send, real_pending, real_review, real_prog
         for k, v in env.items():
             os.environ.pop(k, None)
             if v is not None:
                 os.environ[k] = v
-        x("DELETE FROM push_morning WHERE day IN (?, ?, ?, ?)", *days)
+        x(f"DELETE FROM push_morning WHERE day IN ({','.join('?' * len(days))})", *days)
         x(f"DELETE FROM sessions WHERE user_id IN ({mine})")  # 이 검사의 로그인 · 가상 세션 (구독 줄도 함께)
         x(f"DELETE FROM kpi_memos WHERE user_id IN ({mine})")  # 답글도 함께
         x(f"DELETE FROM kpi_plans WHERE user_id IN ({mine})")
@@ -2701,7 +2723,7 @@ def check_push_events(hr) -> None:
     ym, wy, cy = "2094-03", 2094, 2092  # 가상 명세서 달 · 영수증 해 · 계약서 회차 (다른 검사가 쓰지 않는 값)
     env = {k: os.environ.get(k) for k in ("HR_PAY_KEY", "HR_PUSH_PUBLIC", "HR_PUSH_PRIVATE")}
     raw_key = bytes(range(32))  # 앞 검사들이 쓴 열쇠와 같게 — 앞 검사가 남긴 계약서 설정도 풀린다
-    real_now, real_send, real_sync, real_pending = auth._now, push.SEND, push.SYNC, push.pending
+    real_now, real_send, real_sync, real_pending, real_forget = auth._now, push.SEND, push.SYNC, push.pending, push.forget
     kyear = q("SELECT edit_from, edit_to, eval_start FROM kpi_years WHERE year = ?", year)
     other_ceos = [r[0] for r in q("SELECT u.id FROM users u JOIN user_roles r ON r.user_id = u.id WHERE r.role = 'CEO' AND u.is_active = 1")]
     had = {r[0] for r in q("SELECT token_hash FROM sessions")}  # 시작 때 있던 세션 — 끝나면 이 검사가 만든 세션(로그인 · 가상)만 지운다
@@ -2898,6 +2920,17 @@ def check_push_events(hr) -> None:
         ok(r.status_code == 200 and got("contract_sign", "서명할 연봉계약서가 있어요", "/?go=pay.p2", CT2), "파기 뒤 같은 내용으로 다시 보내면(resend) 그 직원에게 1통")
         ok(post(c_hr, f"/api/contracts/{r.json['id']}/cancel", {"reason": "가상 사유", "then": "none"}).status_code == 200 and not take(), "파기하고 끝내면(none) 0통")
 
+        # HR 이 자기 연봉계약서에 문의하면 본인 휴대폰은 울리지 않고 다른 HR 에게만 간다
+        x("UPDATE users SET has_contract = 1 WHERE id = ?", HR2)
+        x("INSERT INTO contracts (year, user_id, version, status, starts_on, body, created_at, created_by) VALUES (?, ?, 1, 'DRAFT', ?, ?, ?, 1)",
+          cy, HR2, contract_doc.round_period(cy)[0], contract._lock(raw_key, contract._aad(cy, HR2, 1, "body"),
+          {"code": f"R-{HR2}", "name": "가상R", "dept": "가상R본부", "title": "", "birth6": "900315", "base": 2418900, "ability": 1211000, "pos": 300000, "site": 0, "qual": 0, "reason": ""}), now_iso)
+        hr2_cid = q("SELECT id FROM contracts WHERE year = ? AND user_id = ?", cy, HR2)[0][0]
+        ok(post(c_hr, "/api/contracts/send", {"ids": [hr2_cid], "due": "2026-11-06"}).json["sent"] == 1
+           and got("contract_sign", "서명할 연봉계약서가 있어요", "/?go=pay.p2", HR2), "(검사용) HR 본인의 계약서를 서명 대기로 — 그 HR 에게 서명 요청 1통")
+        ok(post(client(HR2), f"/api/contracts/{hr2_cid}/ask", {"text": "가상 문의"}).status_code == 200
+           and got("contract_ask", "답변할 연봉계약서 문의가 있어요", "/?go=pay.p2", 1), "HR 이 자기 계약서에 문의 → 다른 HR(1)에게만 1통, 문의한 HR 본인(HR2)은 0통")
+
         # ---- 푸시 서버가 실패해도 원래 일은 그대로: 500 · 410 · 예외 · 숫자를 못 셈 ----
         extra = put(EMP2)
         codes.update({dev[EMP]: 500, dev[EMP2]: 410})
@@ -2913,6 +2946,23 @@ def check_push_events(hr) -> None:
         dev[EMP2] = extra
         codes.clear()
         boom.clear()
+
+        # 푸시 서버가 구독이 없어졌다(410)고 했는데 그 줄을 지우다 DB 가 실패해도(forget 이 던짐) 나머지 사람에게는 가고 원래 일은 200 — 로그에는 예외 종류만
+        def broken_forget(conn, hashes):
+            raise RuntimeError("검사용 고장")
+
+        push.forget, codes[dev[EMP]] = broken_forget, 410  # EMP 가 먼저 보내지므로 그 뒤의 EMP2 가 가는지 본다
+        try:
+            ok(post(c_hr, f"/api/payslips/{ym}/close").status_code == 200 and not take(), "(검사용) 내림")
+            with unittest.TestCase().assertLogs("push", "WARNING") as cm:
+                r = post(c_hr, f"/api/payslips/{ym}/open")
+            rows = take()
+            ok(r.status_code == 200 and r.json == {"status": "OPEN"} and state() == [("OPEN",)] and [u for u, _, _ in rows] == [EMP, EMP2]
+               and cm.output == ["WARNING:push:event push forget failed: RuntimeError"] and subs(EMP) == [dev[EMP]] and "example.invalid" not in "".join(cm.output),
+               "410 이어도 구독 줄 지우기가 실패하면 그 사람 것은 그대로 두고 다음 사람에게는 감 · 공개는 200 · 로그에는 예외 종류만")
+        finally:
+            push.forget = real_forget
+            codes.clear()
         push.pending = lambda flask_app, uid: (_ for _ in ()).throw(RuntimeError("검사용 고장"))
         try:
             ok(post(c_hr, f"/api/payslips/{ym}/close").status_code == 200 and not take(), "(검사용) 내림")
@@ -2954,7 +3004,7 @@ def check_push_events(hr) -> None:
         ok(len(seen_all) > 20 and threads.count("push-deliver") == 2 and all("가상" not in json.dumps(p, ensure_ascii=False) for p in seen_all),
            "보낸 알림(스무 통 넘게) 제목 · 내용 어디에도 사람 이름(가상…)이 없음 — 스레드로 보낸 것은 스레드 검사의 두 통뿐")
     finally:
-        push.SYNC, push.SEND, push.pending = real_sync, real_send, real_pending
+        push.SYNC, push.SEND, push.pending, push.forget = real_sync, real_send, real_pending, real_forget
         auth._now = real_now
         for k, v in env.items():
             os.environ.pop(k, None)
@@ -2984,7 +3034,7 @@ def check_push_events(hr) -> None:
        and not q(f"SELECT 1 FROM contracts WHERE status IN ('DRAFT', 'SENT') AND user_id IN ({mine})")
        and q("SELECT edit_from, edit_to, eval_start FROM kpi_years WHERE year = ?", year) == kyear
        and all(q("SELECT is_active FROM users WHERE id = ?", uid) == [(1,)] for uid in other_ceos)
-       and all(os.environ.get(k) == v for k, v in env.items()) and push.SEND is real_send and push.SYNC is real_sync and push.pending is real_pending and auth._now is real_now,
+       and all(os.environ.get(k) == v for k, v in env.items()) and push.SEND is real_send and push.SYNC is real_sync and push.pending is real_pending and push.forget is real_forget and auth._now is real_now,
        "끝나면 구독 · 세션 · 메모 · 위임 · 명세서 · 영수증 · 계약서(파기)를 정리하고 기간 · 대표이사 · 환경 값 · 보내기 함수 · 시각을 되돌림")
 
 
