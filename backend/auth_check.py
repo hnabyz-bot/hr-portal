@@ -1171,6 +1171,50 @@ def check_withholding(hr) -> None:
             os.environ["HR_PAY_KEY"] = had
 
 
+def check_eval_report(hr) -> None:
+    """평가 결과 보고용 엑셀 (2026-10-22): HR 만 · 받은 값 검사 · 시트 둘(요약 · 명단) · 연봉 인상 계산이 읽는 칸 제목 · '=' 글자는 수식이 아님."""
+    import io
+    import zipfile
+    from urllib.parse import quote
+
+    from openpyxl import load_workbook
+    print("평가 결과 보고서")
+    lead = app.test_client()
+    login(lead, new_token("lead"))
+    post = lambda c, body, headers=ORIGIN: c.post("/api/eval/report", base_url=BASE, headers=headers, json=body)  # noqa: E731
+    man = lambda name, div, grade, total=85.5, appeal="": {"div": div, "team": "가상팀", "no": "", "name": name, "title": "사원",  # noqa: E731
+                                                           "pool": "가상본부 팀원", "total": total, "grade": grade, "stage": "확정", "appeal": appeal}
+    body = {"year": 2026, "date": "2026-10-22", "released": None, "appeals": 1, "open": 1,
+            "people": [man("가상일", "가상본부", "A"), man("=1+1", "가상본부", "", appeal="처리 중 (지금 C)"), man("가상삼", "가상지원", "C", None)],
+            "pools": [{"name": "가상본부 팀원", "quota": "A·B 합계 1명", "ok": True}]}
+
+    ok(app.test_client().post("/api/eval/report", base_url=BASE, headers=ORIGIN, json=body).status_code == 401, "로그인 없이는 401")
+    ok(post(lead, body).status_code == 403, "HR 이 아니면 403 (팀장)")
+    bad = [{**body, "year": "2026"}, {**body, "people": []}, {**body, "people": [man("가상", "가상본부", "X")]},
+           {**body, "people": [man("가\n상", "가상본부", "A")]}, {**body, "people": [man("가상", "가상본부", "A", 900)]},
+           {**body, "pools": [{"name": "묶음", "quota": "", "ok": "yes"}]}, [1, 2]]
+    ok(all(post(hr, b).status_code == 400 for b in bad), "형식 · 등급 · 줄바꿈 글자 · 총점 범위 · 묶음 값이 틀리면 400")
+    ok(post(hr, {**body, "people": [man("가상", "가상본부", "A")] * 3001}).status_code in (400, 413), "인원이 너무 많으면 거절")
+
+    r = post(hr, body)
+    ok(r.status_code == 200 and r.mimetype.endswith("spreadsheetml.sheet")
+       and r.headers["Content-Disposition"].endswith("filename*=UTF-8''" + quote("2026년 인사평가 결과.xlsx")), "HR → 엑셀 (파일 이름 한글)")
+    wb = load_workbook(io.BytesIO(r.data))
+    sm, ro = wb["요약"], wb["명단"]
+    head = [c.value for c in ro[4]]
+    ok(wb.sheetnames == ["요약", "명단"] and {"사번", "이름", "최종등급"} <= set(head), "시트 요약 · 명단, 명단 칸 제목은 연봉 인상 계산이 읽는 이름")
+    names = [ro.cell(row=r_, column=head.index("이름") + 1) for r_ in (5, 6, 7)]
+    ok(names[1].value == "=1+1" and names[1].data_type == "s", "'=' 로 시작하는 글자는 수식이 아니라 글자")
+    ok([ro.cell(row=r_, column=head.index("최종등급") + 1).value for r_ in (5, 6, 7)] == ["A", None, "C"]
+       and ro.cell(row=7, column=head.index("총점") + 1).value == "현장직", "이의 처리 중이면 등급 칸이 비고, 점수 없는 사람은 현장직")
+    rows = {sm.cell(row=r_, column=1).value: [sm.cell(row=r_, column=c).value for c in range(2, 9)] for r_ in range(9, 13)}
+    ok(rows["가상본부"] == [0, 1, 0, 0, 0, 1, 2] and rows["가상지원"] == [0, 0, 0, 1, 0, 0, 1] and rows["합계"] == [0, 1, 0, 1, 0, 1, 3],
+       "본부별 분포: 받은 순서대로 · 처리 중 칸 · 합계")
+    z = zipfile.ZipFile(io.BytesIO(r.data))
+    charts = [n for n in z.namelist() if n.startswith("xl/charts/chart")]
+    ok(len(charts) == 1 and "<f>'요약'!" in z.read(charts[0]).decode() and "Sheet" not in z.read(charts[0]).decode(), "요약에 그래프 하나 (요약 시트의 칸을 가리킴)")
+
+
 def year_day(n: int) -> str:
     """오늘 + n일을 올해(한국 날짜) 안으로 맞춘 날짜 — KPI 기간은 그해 날짜만 받으므로 1월 1일 · 12월 31일에도 검사가 그대로 돈다."""
     t = auth._today()
@@ -2786,6 +2830,7 @@ def main() -> int:
     check_kpi_sched(hr)
     check_payslips(hr)
     check_withholding(hr)
+    check_eval_report(hr)
 
     acts = {r[0] for r in q("SELECT action FROM audit_logs")}
     ok({"LOGIN", "HR_BOOTSTRAP"} <= acts, "감사로그 LOGIN 이 남음")
