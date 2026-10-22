@@ -14,7 +14,8 @@ scan() {
   local pattern="$2"
   local hits
 
-  hits=$(grep -rInoE "$pattern" $TARGETS 2>/dev/null || true)
+  # public/vendor = 남이 만든 라이브러리(pdf.js 등). 긴 숫자 사이에서 전화번호 모양이 우연히 나와서 뺀다
+  hits=$(grep -rInoE --exclude-dir=vendor "$pattern" $TARGETS 2>/dev/null || true)
   [ -z "$hits" ] && return
 
   local remaining=""
