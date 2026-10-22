@@ -1282,7 +1282,7 @@
   .ct-sel{ height:32px; padding:0 8px; border:1px solid var(--border); border-radius:var(--radius-sm); background:var(--surface); font:inherit; font-size:var(--fs-xs); font-weight:600; color:var(--text-primary); }
   .ct-bar{ display:flex; justify-content:space-between; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:10px; }
   .ct-chips{ display:flex; gap:6px; flex-wrap:wrap; }
-  .ct-search{ height:32px; width:200px; padding:0 10px; border:1px solid var(--border); border-radius:var(--radius-sm); font:inherit; font-size:var(--fs-xs); }
+  .ct-search{ height:32px; width:170px; padding:0 10px; border:1px solid var(--border); border-radius:var(--radius-sm); font:inherit; font-size:var(--fs-xs); }
   .ct-grid{ width:100%; border-collapse:collapse; font-size:var(--fs-xs); }
   .ct-grid th{ text-align:left; font-weight:600; color:var(--text-muted); padding:0 6px 8px; white-space:nowrap; border-bottom:1px solid var(--border); }
   .ct-grid td{ padding:9px 6px; border-bottom:1px solid var(--border); white-space:nowrap; vertical-align:middle; }
@@ -1292,7 +1292,7 @@
   .ct-nm{ max-width:230px; } .ct-nm > div{ overflow:hidden; text-overflow:ellipsis; }
   .ct-acts .btn{ margin:1px 3px 1px 0; vertical-align:middle; } .ct-acts .btn svg{ width:13px; height:13px; }
   .ct-sm{ display:none; }
-  @media (max-width:1420px){ .ct-nm{ max-width:150px; } .ct-lg{ display:none; } .ct-sm{ display:inline; } .ct-ic{ display:none; } .ct-acts .btn{ padding:5px 8px; } }   /* 1280px에서도 서명 완료 줄의 단추 넷이 한 줄에 들어가게 (줄 높이 같게) */
+  @media (max-width:1420px){ .ct-nm{ max-width:200px; } .ct-lg{ display:none; } .ct-sm{ display:inline; } .ct-ic{ display:none; } .ct-acts .btn{ padding:5px 8px; } .ct-grid th{ padding-left:4px; padding-right:4px; } .ct-grid td{ padding-left:4px; padding-right:4px; } }   /* 1280px에서도 서명 완료 줄의 단추 넷이 한 줄에 들어가게 (줄 높이 같게) */
   .ct-pill{ display:inline-block; width:118px; padding:4px 0; border-radius:999px; text-align:center; font-size:var(--fs-xs); font-weight:700; white-space:nowrap; }
   .ct-pill.draft{ background:#FFF4DE; color:#8A5A00; }
   .ct-pill.wait{ background:var(--accent-soft); color:var(--accent); }
@@ -6626,7 +6626,7 @@ function ctContent(){
       }
     }
   }
-  return `${roleSwitcher()}${ctSwitch()}${kpiMsg ? kpiNote(kpiMsg.msg, kpiMsg.type) : ''}${body}`;
+  return `${AUTH.live && ctAdmin() ? '' : roleSwitcher()}${ctSwitch()}${kpiMsg ? kpiNote(kpiMsg.msg, kpiMsg.type) : ''}${body}`;   // 실제 로그인의 관리 화면은 실제 자료라 "시연용 가상 자료" 줄이 없다 (내 연봉계약서 화면은 직원 화면까지 시연)
 }
 
 /* ---------------- HR: 계약 금액 올리기 · 확인 (2026-10-22 인사담당자 — 연봉계약서 실제화, 설계 4.2 · 5.2 · 5.3) ----------------
@@ -6883,11 +6883,13 @@ const ctSelRows = D=>D.L.map(x=>x.r).filter(r=>r.status==='DRAFT' && ctUi.sel.ha
 const ctAllOn = D=>{ const v = ctVisible(D).filter(x=>x.r.status==='DRAFT'); return !!v.length && v.every(x=>ctUi.sel.has(x.r.id)); };
 function ctRow({ r, valid }, D){   // 표 한 줄. 이름 아래 줄에 팀 · 배지 글자를 모아 줄 높이를 같게 한다
   const e = escapeHtml, won = n=>n.toLocaleString('ko-KR'), m = D.by.get(r.userId) || {}, k = ctKey(r), [label, cls] = CT_PILL[k];
-  const sub = [e(r.dept), r.start!==ctSpan(r.year)[0] && `<span class="ct-tag">${ctMd(r.start)}부터${valid ? ' 새 계약' : ' (신규)'}</span>`, m.me && '<span class="ct-tag">HR 본인</span>', m.use===false && '<span class="ct-tag warn">포털 사용 꺼짐</span>',
-    ctHasAsk(r) && '<span class="ct-tag warn">문의 있음</span>', valid && `지금 계약 유효 · ${ctMd(valid.start)}~`].filter(Boolean).join(' · ');
+  const tag = (t, w = '')=>({ h:`<span class="ct-tag${w}">${t}</span>`, t });   // 아래 줄의 조각: 화면 글(h)과 title에 넣을 전체 글(t)
+  const parts = [{ h:e(r.dept), t:r.dept }, r.start!==ctSpan(r.year)[0] && tag(`${ctMd(r.start)}부터${valid ? ' 새 계약' : ' (신규)'}`), m.me && tag('HR 본인'), m.use===false && tag('포털 사용 꺼짐', ' warn'), ctHasAsk(r) && tag('문의 있음', ' warn'),
+    valid && { h:`${ctMd(valid.start)}~ 유효`, t:`지금 계약 유효 · ${ctMd(valid.start)}~` }].filter(Boolean);   // 연중 변경 중: 좁은 칸에 들어가게 "3/1~ 유효"로 줄이고 전체 글은 title에
+  const sub = parts.map(x=>x.h).join(' · '), subTitle = e(parts.map(x=>x.t).join(' · '));
   const more = { DRAFT:[['조정', 'ctAdjust'], ['빼기', 'ctRemove']], SENT:[['파기', 'ctCancelAsk']], SIGNED:[['PDF', 'ctPdf'], ['새 계약으로 바꾸기', 'ctReplaceAsk'], ['파기', 'ctCancelAsk']] }[r.status] || [];
   return `<tr><td>${r.status==='DRAFT' ? `<input type="checkbox" aria-label="${e(r.name)} 선택" ${ctUi.sel.has(r.id) ? 'checked' : ''} onchange="ctTick(${r.id}, this.checked)">` : ''}</td>
-    <td><div class="ct-nm"><div><b>${e(r.name)}</b> ${e(r.title)}</div><div class="list-sub">${sub}</div></div></td>
+    <td><div class="ct-nm"><div><b>${e(r.name)}</b> ${e(r.title)}</div><div class="list-sub" title="${subTitle}">${sub}</div></div></td>
     <td class="num">${won(r.base)}</td><td class="num">${won(r.ability)}</td><td class="num">${won(r.pos)}</td><td class="num">${won(r.site)}</td><td class="num">${won(r.qual)}</td><td class="num"><b>${won(r.annual)}</b></td>
     <td><span class="ct-pill ${cls}"${(k==='SENT' || k==='LATE') && r.due ? ` title="서명 마감 ${ctMd(r.due)}"` : ''}>${label}${k==='SIGNED' && r.signedAt ? ` · ${ctOd(r.signedAt)}` : ''}</span></td>
     <td class="ct-acts">${[['보기', 'ctOpen'], ...more].map(([l, fn])=>fn==='ctReplaceAsk' ? `<button type="button" class="btn sm" aria-label="${l}" title="${l}" onclick="${fn}(${r.id})"><span class="ct-lg">${l}</span><span class="ct-sm" aria-hidden="true">새 계약</span></button>`   // 좁으면 짧게 "새 계약"
@@ -7097,7 +7099,7 @@ function ctMail(ids){   // 하이웍스 메일 쓰기 창을 새 창으로 열�
 async function ctFlowCheck(){   // 브라우저 콘솔에서 await ctFlowCheck() 실행 — 시연 모드로 계약 금액 읽기 · 확인 창 · 올리기를 끝까지 (끝나면 시연 기억을 되돌린다)
   const ok = (c, msg)=>{ if(!c) throw new Error('ctFlowCheck 실패: '+msg); };
   const keep = [AUTH.live, ctUi.pick, kpiMsg, structuredClone(CT_MEM), CT_PEOPLE[0].birthday], cp = a=>a.map(r=>r.slice());
-  const keep2 = { y:ctYear, ui:{ ...ctUi }, open:window.open, use:CT_PEOPLE[3].use, org:{ ...ORG_LIVE }, mail:orgMembers.map(m=>m.mailNo) };   // 화면 ② 검사가 바꾸는 것들
+  const keep2 = { y:ctYear, ui:{ ...ctUi }, open:window.open, use:CT_PEOPLE[3].use, org:{ ...ORG_LIVE }, mail:orgMembers.map(m=>m.mailNo), role:kpiRole, view:ctView, cl:{ ...CT_LIVE }, ms:{ state:MS_LIVE.state, list:MS_LIVE.list } };   // 화면 ② 검사가 바꾸는 것들
   const Y = ctPeriod(new Date()).year, txt = ()=>document.querySelector('#orgModal .ct-cf')?.textContent || '';
   const H = ['사번','이름','부서','직급','새 기본급','새 능력급','직책수당','현장관리수당','자격수당','생년월일','계약 시작일'];   // 가상 금액 · 이름은 시연 명단(홍길동)과 맞는 한 줄 + 못 읽는 줄(가상둘)
   const line = (code, name, base, birth, start = '')=>[code, name, '국내영업팀', '대리', base, 1211000, '', '', 0, birth, start];
@@ -7149,7 +7151,7 @@ async function ctFlowCheck(){   // 브라우저 콘솔에서 await ctFlowCheck()
 
     // ----- 현황 · 조정 · 빼기 · 발송 · 메일 (화면 ②) — [보기] · [PDF] · [파기] · [새 계약으로 바꾸기]는 다음 단계라 누르지 않는다 -----
     const mem = n=>orgMembers.find(m=>m.name===n), opened = [], copied = [], tick = ()=>new Promise(r=>setTimeout(r, 0));
-    const view = f=>{ const d = document.createElement('div'); d.style.cssText = 'position:absolute; left:-9999px; top:0; width:1100px;'; d.innerHTML = ctAdminView(); document.body.append(d); try { return f(d); } finally { d.remove(); } };   // 화면에 붙여야 폭을 잴 수 있다
+    const view = (f, w = 1100)=>{ const d = document.createElement('div'); d.style.cssText = `position:absolute; left:-9999px; top:0; width:${w}px;`; d.innerHTML = ctAdminView(); document.body.append(d); try { return f(d); } finally { d.remove(); } };   // 화면에 붙여야 폭을 잴 수 있다
     const chip = (d, label)=>+([...d.querySelectorAll('#ctChips .ms-chip')].find(b=>b.textContent.trim().startsWith(label))?.textContent.match(/(\d+)$/)?.[1] ?? -1);
     window.open = u=>(opened.push(u), {});   // 하이웍스 창은 열지 않고 주소만 받는다
     Object.defineProperty(navigator, 'clipboard', { configurable:true, value:{ writeText:t=>(copied.push(t), Promise.resolve()) } });
@@ -7224,16 +7226,34 @@ async function ctFlowCheck(){   // 브라우저 콘솔에서 await ctFlowCheck()
     view(d=>{
       const tr = n=>[...d.querySelectorAll('.ct-grid tbody tr')].find(t=>t.textContent.includes(n)), bt = t=>[...t.querySelectorAll('button')].map(b=>b.getAttribute('aria-label') || b.textContent.trim()).join('|');   // [새 계약으로 바꾸기]는 좁은 화면용 짧은 글자가 같이 있어 aria-label로
       ok(d.querySelectorAll('.ct-grid tbody tr').length===6 && chip(d, '파일에 없음')===0 && !d.querySelector('.ct-absent'), '한 사람 한 줄 (최현장은 두 줄이 아니라 한 줄)');
-      ok(tr('최현장').textContent.includes('지금 계약 유효 · 3/1~') && tr('최현장').textContent.includes('7/1부터') && tr('최현장').querySelector('.ct-pill').textContent.trim()==='발송 전' && bt(tr('최현장'))==='보기|조정|빼기', '연중 변경 중: 새 계약(발송 전)이 보이고 아래 줄에 지금 계약 유효');
+      ok(tr('최현장').textContent.includes('3/1~ 유효') && tr('최현장').textContent.includes('7/1부터') && tr('최현장').querySelector('.ct-pill').textContent.trim()==='발송 전' && bt(tr('최현장'))==='보기|조정|빼기', '연중 변경 중: 새 계약(발송 전)이 보이고 아래 줄에 지금 계약 유효 (짧게)');
+      d.querySelectorAll('.ct-nm').forEach(n=>{ n.style.maxWidth = '200px'; });   // ≤1420px 화면의 이름 칸 폭 (CSS와 같게) — 가장 좁은 경우
+      const nm = tr('최현장').querySelector('.ct-nm > div'), sub = tr('최현장').querySelector('.ct-nm .list-sub');
+      ok(sub.scrollWidth<=sub.clientWidth && nm.scrollWidth<=nm.clientWidth && nm.getBoundingClientRect().height<24 && sub.getBoundingClientRect().height<24, '좁은 이름 칸에서도 이름 줄과 아래 줄(팀 · 7/1부터 새 계약 · 3/1~ 유효)이 잘리거나 두 줄로 꺾이지 않는다');
+      ok(sub.title.includes('국내영업팀') && sub.title.includes('7/1부터 새 계약') && sub.title.includes('지금 계약 유효 · 3/1~'), '아래 줄 전체 글은 title에도 있다');
       ok(tr('최지원').querySelector('.ct-pill').textContent.includes('서명 완료 ·') && bt(tr('최지원'))==='보기|PDF|새 계약으로 바꾸기|파기', '서명 완료는 [보기][PDF][새 계약으로 바꾸기][파기]');
       ok(tr('박인사').querySelector('.ct-pill').textContent.trim()==='파기' && bt(tr('박인사'))==='보기', '파기는 [보기]만');
     });
+    for(const w of [911, 1071]) view(d=>{   // 칩 + 검색은 한 줄 — 실제 같은 숫자(82/5/18/2/59/1/3/4)로, 카드 안 폭 911px(1280px 화면) · 1071px(1440px 화면)
+      const bar = d.querySelector('.ct-bar'), chips = d.querySelector('#ctChips'), search = d.querySelector('.ct-search');
+      d.style.width = (w + d.querySelector('.ct-adm').offsetWidth - bar.offsetWidth) + 'px';
+      chips.innerHTML = ctChips({ n:{ all:82, DRAFT:5, SENT:18, LATE:2, SIGNED:59, absent:1, nouse:3, ask:4 } });
+      ok(Math.abs(bar.clientWidth - w)<1 && bar.getBoundingClientRect().height<40 && search.getBoundingClientRect().top<chips.getBoundingClientRect().bottom && chips.getBoundingClientRect().right<=search.getBoundingClientRect().left, `칩 여덟 개와 검색칸이 한 줄 (카드 안 ${w}px)`);
+    });
+    {   // 실제 로그인의 관리 화면에는 "시연용 가상 자료" 줄(roleSwitcher)이 없다 — 숫자 · 표는 서버 자료다 (내 연봉계약서 화면은 직원 화면(11단계)까지 시연이라 그대로)
+      kpiRole = 'hr'; ctView = 'admin'; ctYear = Y;
+      const demoHtml = ctContent();
+      AUTH.live = true; Object.assign(CT_LIVE, { state:'ok', year:Y, rows:[], ready:true, settings:true }); MS_LIVE.state = 'ok'; MS_LIVE.list = []; ORG_LIVE.state = 'ok';
+      const liveHtml = ctContent(); AUTH.live = false;
+      ok(demoHtml.includes('시연용 역할 전환') && liveHtml.includes('연봉계약 현황') && !liveHtml.includes('시연용'), '실제 로그인의 관리 화면 위에는 "시연용 가상 자료" 줄이 없다 (시연은 역할 전환 줄이 그대로)');
+    }
     ctUi.sel = new Set(); CT_MEM.rows = []; ctYear = Y;   // 시연: 예시 자료로 올려 보기
     await ctDemo(); ok(ctUi.pick && ctUi.pick.r.people.length===CT_PEOPLE.length && ctBlock()==='' && ctPlan().filter(x=>x.st==='off').length===1, '예시 자료: 시연 인물이 모두 맞는다 (본부장은 대상 아님)');
     await ctUpload(); ok(CT_MEM.rows.length===CT_PEOPLE.length-1 && CT_MEM.rows.every(r=>r.status==='DRAFT'), '예시 자료를 올리면 대상자 모두 발송 전');
   } finally {
     orgCloseModal(); [AUTH.live, ctUi.pick, kpiMsg] = keep; Object.assign(CT_MEM, keep[3]);
     if(keep[4]===undefined) delete CT_PEOPLE[0].birthday; else CT_PEOPLE[0].birthday = keep[4];
+    kpiRole = keep2.role; ctView = keep2.view; Object.assign(CT_LIVE, keep2.cl); MS_LIVE.state = keep2.ms.state; MS_LIVE.list = keep2.ms.list;
     ctYear = keep2.y; Object.assign(ctUi, keep2.ui); window.open = keep2.open; CT_PEOPLE[3].use = keep2.use; Object.assign(ORG_LIVE, keep2.org); delete navigator.clipboard;
     orgMembers.forEach((m, i)=>{ if(keep2.mail[i]===undefined) delete m.mailNo; else m.mailNo = keep2.mail[i]; });
     renderContent();
