@@ -1071,6 +1071,227 @@ def check_game_hours_table(conn: sqlite3.Connection) -> None:
         _report(ok, f"오픈시간 {why} 거부")
 
 
+def check_contract_live_tables(conn: sqlite3.Connection) -> None:
+    """연봉계약서 표 (016 — 판 16 · KPI 현황 014 · 게임 오픈시간 015 가 먼저 써서 번호 016). 이름·금액은 전부 가상 — 잠근 칸은 잠근 글(nonce 12 + 내용 + 태그 16바이트)을 흉내 낸 아무 바이트.
+    막혀야 할 것은 "막혔는가"만 보지 않고 어느 규칙이 막았는지(메시지의 CHECK 이름 · UNIQUE · READ_ONLY …)까지 본다 — 표가 없어서 막힌 것이 통과로 세어지지 않게."""
+    print("28. 연봉계약서 (016)")
+    up = conn.execute("SELECT id FROM users WHERE employee_no='T001'").fetchone()[0]
+    emp = conn.execute(
+        "INSERT INTO users (employee_no, name, email, department_id)"
+        " VALUES ('T033', '가상계약직원', 't033@example.invalid', (SELECT id FROM departments WHERE code='DIV1')) RETURNING id"
+    ).fetchone()[0]
+    ver = conn.execute("PRAGMA user_version").fetchone()[0]
+    _report(ver >= 16, f"판 번호가 16 이상 — {ver}", f"실제 {ver}")
+    B, T, H = bytes(29), "2027-01-10T09:00:00Z", "a" * 64
+    ORDER = "정해진 순서"   # 상태 흐름 트리거 메시지에 들어 있는 말
+
+    def rej(sql: str, params, word: str) -> tuple[bool, str]:
+        ok, msg = _rejects(conn, sql, params)
+        return ok and word in msg, msg
+
+    # --- 직인 · 설정 -------------------------------------------------------------------------------------------------
+    sl = "INSERT INTO contract_seals (png, created_at, created_by) VALUES (?, ?, ?)"
+    seal = conn.execute(sl, (B, T, up)).lastrowid
+    seal2 = conn.execute(sl, (bytes(range(60)), T, up)).lastrowid
+    _report(True, "직인 그림 두 건 저장 (29바이트 이상 BLOB)")
+    for args, why, word in (((bytes(28), T, up), "28바이트(내용 없음)", "CHECK"), (("x" * 40, T, up), "BLOB 이 아닌 글자(길이는 충분)", "CHECK"),
+                            ((None, T, up), "빈 값", "NOT NULL"), ((B, T, 9999), "없는 올린 사람", "FOREIGN KEY")):
+        ok, msg = rej(sl, args, word)
+        _report(ok, f"직인 그림 {why} 거부", msg)
+    st = "INSERT INTO contract_settings (id, data, seal_id, updated_at, updated_by) VALUES (?, ?, ?, ?, ?)"
+    conn.execute(st, (1, B, seal, T, up))
+    _report(True, "계약서 설정 한 줄 저장 (id = 1)")
+    for args, why, word in (((2, B, seal, T, up), "id = 2", "CHECK"), ((1, B, seal, T, up), "id = 1 두 줄", "UNIQUE"),
+                            ((1, B, None, T, up), "직인 없음", "NOT NULL"),
+                            ((1, bytes(28), seal, T, up), "내용 28바이트", "CHECK"), ((1, "x" * 40, seal, T, up), "내용이 글자(길이는 충분)", "CHECK")):
+        ok, msg = rej(st, args, word)
+        _report(ok, f"계약서 설정 {why} 거부", msg)
+    ok, msg = rej("UPDATE contract_settings SET seal_id = 9999 WHERE id = 1", (), "FOREIGN KEY")
+    _report(ok, "계약서 설정 없는 직인 거부", msg)
+    conn.execute("UPDATE contract_settings SET data = ?, seal_id = ?, updated_at = ? WHERE id = 1", (bytes(range(60)), seal2, T))
+    _report(True, "계약서 설정은 바꿀 수 있음 (새 직인을 가리킴)")
+    for sid, why in ((seal2, "설정이 가리키는 직인"), (conn.execute(sl, (B, T, up)).lastrowid, "아무도 안 쓰는 직인")):
+        ok, msg = rej("DELETE FROM contract_seals WHERE id = ?", (sid,), "직인")
+        _report(ok, f"{why} 지우기 거부 (옛 계약서가 그때 직인을 가리킨다)", msg)
+    for col, val in (("png", bytes(range(70))), ("id", 9000), ("created_by", emp), ("created_at", "2027-01-11T09:00:00Z")):
+        ok, msg = rej(f"UPDATE contract_seals SET {col} = ? WHERE id = ?", (val, seal), "READ_ONLY")
+        _report(ok, f"직인 그림 {col} 바꾸기 거부 (옛 계약서가 가리키는 그림이 바뀌면 안 된다)", msg)
+
+    # --- 계약서 한 줄 만들기 · 고치기 ----------------------------------------------------------------------------------
+    base = dict(year=2027, user_id=emp, version=1, prev_id=None, status="DRAFT", starts_on="2027-02-01", body=B, created_at=T, created_by=up,
+                sent_at=None, sent_by=None, due_on=None, company=None, seal_id=None, signed_at=None, sign=None, doc_hash=None, pdf=None,
+                replaced_on=None, cancelled_at=None, cancelled_by=None, cancel_reason=None, ask=None, ask_at=None, ask_closed_at=None, ask_closed_by=None)
+    sent = dict(status="SENT", sent_at=T, sent_by=up, due_on="2027-02-28", company=B, seal_id=seal)
+    signed = dict(sent, status="SIGNED", signed_at=T, sign=B, doc_hash=H, pdf=B)
+    cancelled = dict(sent, status="CANCELLED", cancelled_at=T, cancelled_by=up, cancel_reason="가상 사유")
+
+    def row(parts, over):
+        r = dict(base)
+        for p in parts:
+            r.update(p)
+        r.update(over)
+        return "INSERT INTO contracts (" + ", ".join(r) + ") VALUES (" + ", ".join(":" + k for k in r) + ")", r
+
+    def add(*parts, **over) -> int:
+        sql, r = row(parts, over)
+        return conn.execute(sql, r).lastrowid
+
+    def bad(word: str, *parts, **over) -> tuple[bool, str]:   # 이렇게 넣으면 `word` 규칙이 막아야 한다
+        sql, r = row(parts, over)
+        return rej(sql, r, word)
+
+    def upd(cid: int, **sets) -> None:
+        conn.execute("UPDATE contracts SET " + ", ".join(f"{k} = :{k}" for k in sets) + " WHERE id = :_id", dict(sets, _id=cid))
+
+    def bad_upd(cid: int, word: str, **sets) -> tuple[bool, str]:
+        return rej("UPDATE contracts SET " + ", ".join(f"{k} = :{k}" for k in sets) + " WHERE id = :_id", dict(sets, _id=cid), word)
+
+    def blocked(cid: int, word: str, changes: dict) -> list[str]:   # 칸마다 바꿔 보아 막히지 않은 칸 이름들
+        return [k for k, v in changes.items() if not bad_upd(cid, word, **{k: v})[0]]
+
+    c1 = add(year=2027)
+    _report(True, "발송 전(DRAFT) 한 건 저장")
+    upd(c1, body=bytes(range(40)), starts_on="2027-03-01", due_on=None)
+    _report(True, "발송 전 줄은 내용을 고칠 수 있음 (본문 · 계약 시작일)")
+    upd(c1, **sent)
+    _report(True, "발송 전 → 서명 대기(SENT) — 발송 칸을 채움")
+    upd(c1, ask=B, ask_at=T)
+    upd(c1, ask_closed_at=T, ask_closed_by=up)
+    _report(True, "서명 대기 줄에도 문의 칸 · 문의 닫기 칸은 바뀜")
+    sent_frozen = dict(year=2028, user_id=up, version=2, prev_id=c1, starts_on="2027-04-01", body=bytes(30), created_at="2027-01-11T09:00:00Z",
+                       created_by=emp, sent_at="2027-01-12T09:00:00Z", sent_by=emp, due_on="2027-03-31", company=bytes(30), seal_id=seal2)
+    miss = blocked(c1, "READ_ONLY", sent_frozen)
+    _report(not miss, f"발송한 뒤에는 {len(sent_frozen)}칸(회차 · 직원 · 차수 · 앞 차수 · 시작일 · 본문 · 만든 · 발송 · 마감일 · 회사 · 직인)이 안 바뀜", f"막히지 않은 칸 {miss}")
+    upd(c1, status="SIGNED", signed_at=T, sign=B, doc_hash=H, pdf=B)
+    _report(True, "서명 대기 → 서명 완료(SIGNED) — 서명 칸을 채움")
+    signed_frozen = dict(signed_at="2027-01-13T09:00:00Z", sign=bytes(30), doc_hash="b" * 64, pdf=bytes(30), body=bytes(30), due_on="2027-03-31")
+    miss = blocked(c1, "READ_ONLY", signed_frozen)
+    _report(not miss, "서명한 뒤에는 서명 · 문서 고유번호 · 서명본 · 본문이 안 바뀜", f"막히지 않은 칸 {miss}")
+    upd(c1, ask=bytes(30), ask_at="2027-01-14T09:00:00Z")
+    upd(c1, ask_closed_at="2027-01-15T09:00:00Z")
+    _report(True, "서명한 뒤에도 문의 칸 · 문의 닫기 칸(ask_closed_at)은 바뀜")
+
+    # 연중 변경 — 새 차수(DRAFT)는 서명된 줄과 함께 있을 수 있고, 둘 다 SIGNED 인 순간은 없다
+    c2 = add(year=2027, version=2, prev_id=c1)
+    _report(True, "서명 완료 줄이 있는 회차에 새 차수(DRAFT) 저장 (prev_id = 앞 차수)")
+    for over, why in ((dict(version=3), "DRAFT 둘"), (dict(version=3, **sent), "DRAFT 가 있는데 SENT")):
+        ok, msg = bad("UNIQUE", **over)
+        _report(ok and "version" not in msg, f"같은 회차 · 직원에 {why} 거부", msg)
+    upd(c2, **sent)
+    ok, msg = bad("UNIQUE", version=3)
+    _report(ok and "version" not in msg, "같은 회차 · 직원에 SENT 가 있는데 DRAFT 거부", msg)
+    ok, msg = bad_upd(c2, "UNIQUE", status="SIGNED", signed_at=T, sign=B, doc_hash=H, pdf=B)
+    _report(ok and "version" not in msg, "같은 회차 · 직원에 SIGNED 둘 거부 (옛 줄을 REPLACED 로 바꾸기 전)", msg)
+    ok, msg = bad("UNIQUE", signed, version=3)
+    _report(ok and "version" not in msg, "SIGNED 를 하나 더 넣는 것도 거부", msg)
+    ok, msg = bad_upd(c1, "contracts_replaced_chk", status="REPLACED")
+    _report(ok, "새 계약으로 바뀜(REPLACED)인데 바뀐 날이 없으면 거부", msg)
+    upd(c1, status="REPLACED", replaced_on="2027-06-01")
+    upd(c2, status="SIGNED", signed_at=T, sign=B, doc_hash=H, pdf=B)
+    _report(True, "서명 완료 → 새 계약으로 바뀜(REPLACED) 다음 새 줄 서명 완료 — 흐름 끝까지 저장")
+    miss = blocked(c1, "READ_ONLY", dict(ask=bytes(31), ask_at="2027-01-16T09:00:00Z"))
+    _report(not miss, "새 계약으로 바뀐 줄은 문의 칸(ask · ask_at)이 안 바뀜", f"막히지 않은 칸 {miss}")
+    upd(c1, ask_closed_at="2027-06-02T09:00:00Z", ask_closed_by=up)
+    _report(True, "새 계약으로 바뀐 줄도 문의 닫기 칸은 바뀜")
+
+    # 파기 — SENT 에서도 SIGNED 에서도 가고, 파기한 회차에 다시 보낼 수 있다
+    c3 = add(year=2028, **sent)
+    for k in ("cancelled_at", "cancelled_by", "cancel_reason"):
+        ok, msg = bad_upd(c3, "contracts_cancelled_chk", status="CANCELLED", **{x: v for x, v in cancelled.items() if x in ("cancelled_at", "cancelled_by", "cancel_reason") and x != k})
+        _report(ok, f"파기(CANCELLED)인데 {k} 가 없으면 거부", msg)
+    upd(c3, status="CANCELLED", cancelled_at=T, cancelled_by=up, cancel_reason="가상 사유")
+    _report(True, "서명 대기 → 파기(CANCELLED)")
+    ok, msg = bad_upd(c3, ORDER, status="SENT")
+    _report(ok, "파기한 줄을 SENT 로 되돌리기 거부", msg)
+    miss = blocked(c3, "READ_ONLY", dict(ask=B, ask_at=T))
+    _report(not miss, "파기한 줄은 문의 칸이 안 바뀜", f"막히지 않은 칸 {miss}")
+    upd(c3, ask_closed_at=T)
+    c4 = add(signed, year=2029)
+    upd(c4, status="CANCELLED", cancelled_at=T, cancelled_by=up, cancel_reason="가상 사유")
+    _report(True, "서명 완료 → 파기 (서명 칸은 그대로 남음)")
+    c5 = add(year=2029, version=2, prev_id=c4)
+    _report(True, "파기한 회차에 새 차수(DRAFT) 다시 저장 (재발송)")
+    ok, msg = bad("UNIQUE", year=2029, version=2, status="CANCELLED", **{k: v for k, v in cancelled.items() if k != "status"})
+    _report(ok and "version" in msg, "같은 회차 · 직원 · 차수 두 줄 거부", msg)
+
+    # --- 상태 흐름 : 5 x 5 모든 짝 ---------------------------------------------------------------------------------------
+    ids = {"DRAFT": add(year=2041), "SENT": add(sent, year=2042), "SIGNED": add(signed, year=2043),
+           "REPLACED": add(signed, year=2044, status="REPLACED", replaced_on="2027-06-01"), "CANCELLED": add(cancelled, year=2045)}
+    legal = {("DRAFT", "SENT"), ("SENT", "SIGNED"), ("SENT", "CANCELLED"), ("SIGNED", "REPLACED"), ("SIGNED", "CANCELLED")}
+    wrong = []
+    for a in ids:
+        for b in ids:
+            if a == b:
+                continue
+            ok, msg = _rejects(conn, "UPDATE contracts SET status = ? WHERE id = ?", (b, ids[a]))   # 상태만 바꿔 본다 — 칸 규칙(CHECK)에는 걸려도 흐름 규칙은 안 걸려야 하는 짝
+            if (a, b) in legal:
+                if not (ok and "CHECK" in msg and ORDER not in msg):
+                    wrong.append(f"{a}→{b}")
+            elif not (ok and ORDER in msg):
+                wrong.append(f"{a}→{b}")
+    _report(not wrong, "상태는 DRAFT→SENT · SENT→SIGNED · SENT→CANCELLED · SIGNED→REPLACED · SIGNED→CANCELLED 만 (나머지 15짝 거부)", f"어긋난 짝 {wrong}")
+    d = add(year=2030)
+    ok, msg = bad_upd(d, ORDER, **signed)
+    _report(ok, "DRAFT→SIGNED 건너뛰기 거부 (서명 칸을 다 채워도)", msg)
+    ok, msg = bad_upd(ids["CANCELLED"], ORDER, status="SENT")
+    _report(ok, "CANCELLED→SENT 거부", msg)
+
+    # --- 지우기 : DRAFT 만 --------------------------------------------------------------------------------------------
+    for name in ("SENT", "SIGNED", "REPLACED", "CANCELLED"):
+        ok, msg = rej("DELETE FROM contracts WHERE id = ?", (ids[name],), "지울 수 없어요")
+        _report(ok, f"{name} 줄 지우기 거부", msg)
+    conn.execute("DELETE FROM contracts WHERE id IN (?, ?)", (ids["DRAFT"], d))
+    left = conn.execute("SELECT count(*) FROM contracts WHERE id IN (?, ?)", (ids["DRAFT"], d)).fetchone()[0]
+    _report(left == 0, "DRAFT 줄은 지워짐", f"남은 {left}")
+
+    # --- 칸 모양 (넣는 것) — 회차 2050 은 비어 있다 ------------------------------------------------------------------------
+    Y = dict(year=2050)
+    rows = (
+        (dict(year="2027"), "회차가 글자('2027')", "CHECK"), (dict(year=None), "회차 비어 있음(NULL)", "NOT NULL"), (dict(year=1999), "회차 1999", "CHECK"),
+        (dict(year=2100), "회차 2100", "CHECK"), (dict(year=2050.5), "회차 2050.5(정수 아님)", "CHECK"),
+        (dict(user_id=9999), "없는 직원", "FOREIGN KEY"), (dict(user_id=None), "직원 비어 있음", "NOT NULL"),
+        (dict(version=0), "차수 0", "CHECK"), (dict(version=1.5), "차수 1.5(정수 아님)", "CHECK"), (dict(version=None), "차수 비어 있음", "NOT NULL"),
+        (dict(prev_id=9999), "없는 앞 차수", "FOREIGN KEY"), (dict(status="X"), "상태 X", "CHECK"),
+        (dict(starts_on="2027-02-30"), "없는 날(2월 30일)이 시작일", "CHECK"), (dict(starts_on="2027-2-3"), "시작일 모양(한 자리)", "CHECK"),
+        (dict(starts_on="2027/02/03"), "시작일 모양(/)", "CHECK"), (dict(starts_on=None), "시작일 비어 있음", "NOT NULL"),
+        (dict(body=bytes(28)), "본문 28바이트(내용 없음)", "CHECK"), (dict(body="x" * 40), "본문이 글자(길이는 충분)", "CHECK"), (dict(body=None), "본문 비어 있음", "NOT NULL"),
+        (dict(created_by=9999), "없는 만든 사람", "FOREIGN KEY"), (dict(created_at=None), "만든 때 비어 있음", "NOT NULL"),
+        (dict(ask=bytes(28)), "문의 28바이트(내용 없음)", "CHECK"), (dict(ask="x" * 40), "문의가 글자(길이는 충분)", "CHECK"),
+        (dict(sent_at=T), "DRAFT 인데 발송한 때가 있음", "contracts_draft_chk"), (dict(signed_at=T), "DRAFT 인데 서명한 때가 있음", "contracts_draft_chk"),
+        (dict(sent, signed_at=T), "SENT 인데 서명한 때가 있음", "contracts_sent_chk"),
+        (dict(sent, due_on="2027-02-30"), "SENT 의 마감일이 없는 날", "CHECK"), (dict(sent, due_on="2027-2-28"), "SENT 의 마감일 모양", "CHECK"),
+        (dict(sent, company=bytes(28)), "SENT 의 회사 칸 28바이트", "CHECK"), (dict(sent, seal_id=9999), "SENT 의 없는 직인", "FOREIGN KEY"),
+        (dict(signed, sign=bytes(28)), "SIGNED 의 서명 28바이트", "CHECK"), (dict(signed, pdf=bytes(28)), "SIGNED 의 PDF 28바이트", "CHECK"),
+        (dict(signed, status="REPLACED"), "REPLACED 인데 바뀐 날이 없음", "contracts_replaced_chk"),
+        (dict(signed, status="REPLACED", replaced_on="2027-02-30"), "REPLACED 의 바뀐 날이 없는 날", "CHECK"),
+        (dict(cancelled, cancel_reason="가" * 201), "파기 사유 201자", "CHECK"), (dict(cancelled, cancel_reason=""), "파기 사유 빈 글자", "CHECK"),
+        (dict(signed, doc_hash="a" * 63), "문서 고유번호 63자", "CHECK"), (dict(signed, doc_hash="a" * 65), "문서 고유번호 65자", "CHECK"),
+        (dict(signed, doc_hash="A" * 64), "문서 고유번호 대문자", "CHECK"), (dict(signed, doc_hash="g" * 64), "문서 고유번호 16진수가 아닌 글자", "CHECK"),
+        (dict(signed, doc_hash=""), "문서 고유번호 빈 글자", "CHECK"),
+    )
+    for part, why, word in rows:
+        ok, msg = bad(word, Y, part)
+        _report(ok, f"{why} 거부", msg)
+    for name, part in (("SENT", sent), ("SIGNED", signed), ("CANCELLED", cancelled)):
+        need = {"SENT": ("sent_at", "sent_by", "due_on", "company", "seal_id"),
+                "SIGNED": ("sent_at", "sent_by", "due_on", "company", "seal_id", "signed_at", "sign", "doc_hash", "pdf"),
+                "CANCELLED": ("cancelled_at", "cancelled_by", "cancel_reason")}[name]
+        chk = {"SENT": "contracts_sent_chk", "SIGNED": "contracts_signed_chk", "CANCELLED": "contracts_cancelled_chk"}[name]
+        miss = [k for k in need if not bad(chk, Y, dict(part, **{k: None}))[0]]
+        _report(not miss, f"{name} 에 필요한 칸이 하나라도 비면 거부 ({len(need)}칸)", f"막히지 않은 칸 {miss}")
+    add(Y, cancelled, cancel_reason="가" * 200)
+    _report(True, "파기 사유는 200자(글자 수)까지 저장")
+
+    # --- 직원 · 색인 --------------------------------------------------------------------------------------------------
+    ok, msg = rej("DELETE FROM users WHERE id = ?", (emp,), "FOREIGN KEY")
+    _report(ok, "계약서가 있는 직원은 지울 수 없음 (RESTRICT)", msg)
+    names = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'contracts'")}
+    miss = {"uq_contracts_signed", "uq_contracts_open", "uq_contracts_version", "idx_contracts_live_user"} - names
+    _report(not miss, "색인 (uq_contracts_signed · uq_contracts_open · uq_contracts_version · idx_contracts_live_user)", f"없는 색인 {sorted(miss)}")
+    idx = conn.execute("SELECT 1 FROM pragma_index_info('idx_contracts_live_user') WHERE name = 'user_id'").fetchone()
+    _report(idx is not None, "직원별 찾기 색인이 user_id 칸을 걸고 있음")
+
+
 def main() -> int:
     print("=" * 62)
     print("SQLite 스키마 적용 + 제약조건 동작 검사")
@@ -1096,6 +1317,7 @@ def main() -> int:
             check_withholding_tables(conn)
             check_kpi_review_tables(conn)
             check_game_hours_table(conn)
+            check_contract_live_tables(conn)
         finally:
             conn.close()
 
