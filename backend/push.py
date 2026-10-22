@@ -1,11 +1,16 @@
 """휴대폰 알림 바탕 (2026-10-22 인사담당자 — 휴대폰 알림 · 앱 아이콘 숫자, 설계 docs/superpowers/specs/2026-10-22-push-notifications-design.md).
-표(017_push.sql) · 알림 문구 · 근무시간 · 키 · 보낼 대상 · 보내기 함수만 둔다. 주소(API) · 처리할 일 개수 · 아침 묶음 · 일이 생길 때 보내기는 뒤 작업에서 이 파일에 더한다.
+표(017_push.sql) · 알림 문구 · 근무시간 · 키 · 보낼 대상 · 보내기 함수 · 구독 주소(API)만 둔다. 처리할 일 개수 · 아침 묶음 · 일이 생길 때 보내기는 뒤 작업에서 이 파일에 더한다.
 
   python -m push check    자체 검증 (CI) — 문구 · 근무시간 · 키 모양 · 진짜 pywebpush 로 가짜 푸시 서버에 보내 보기
   python -m push keygen   서버에서 한 번 — HR_PUSH_PUBLIC · HR_PUSH_PRIVATE 두 줄을 출력만 한다 (.env 에는 사람이 붙인다)
 
+  GET  /api/push/key          공개키 {"key"} — 키가 없으면 404 (화면이 알림 켜기 칸을 숨긴다)
+  POST /api/push/subscribe    휴대폰 세션만. {"endpoint": https 푸시 서버 주소, "keys": {"p256dh", "auth"}} → 이 세션의 구독 1줄(덮어씀)
+  POST /api/push/unsubscribe  이 세션의 구독 줄 삭제
+  세션 검사 · 같은 출처 검사는 auth._guard 가 모든 /api/* 에 한다. app.py 가 bp 를 붙인다.
+
 알림 문구에는 금액 · 다른 사람 이름 · 평가 등급이 없다 — 잠금 화면에 그대로 보이므로. 문구는 MESSAGES 한 곳에만 둔다.
-받는 기기는 휴대폰 세션(sessions.kind='phone')뿐이다 — 로그아웃 · 휴대폰 해제 · 퇴사 경로마다 구독을 지우지 않아도 targets() 가 살아 있는 세션만 거른다.
+받는 기기는 휴대폰 세션(sessions.kind='phone')뿐이다 — 로그아웃 · 휴대폰 해제 · 새 휴대폰 등록 때 forget() 으로 구독을 지우고(auth.py), 놓쳐도 targets() 가 살아 있는 세션만 거른다.
 보내기 함수 SEND 는 검사가 갈아 끼울 수 있게 모듈 이름으로 둔다 (push.SEND = 가짜). 로그에는 상태 코드만 — 이름 · 주소 · 문구는 남기지 않는다.
 """
 
@@ -20,14 +25,16 @@ import sys
 from collections.abc import Callable, Iterable
 from datetime import datetime, timedelta, timezone
 from sqlite3 import Connection
+from urllib.parse import urlsplit
 
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec
-from pywebpush import WebPushException, webpush
+from flask import Blueprint, Response, g, jsonify, request
 
 import auth
 
 logger = logging.getLogger(__name__)
+bp = Blueprint("push", __name__)
 
 SUBJECT = "https://hr.abyz-lab.work"  # VAPID subject — 사이트 주소 (개인 메일 주소를 넣지 않는다)
 TTL_EVENT = 43200  # 일이 생겼을 때 보낸 알림: 휴대폰이 꺼져 있어도 12시간 안에 켜지면 전달
@@ -128,8 +135,76 @@ def targets(conn: Connection, uids: Iterable[int], now: datetime) -> list[tuple[
     return [(uid, th, {"endpoint": ep, "keys": {"p256dh": k, "auth": a}}) for uid, th, ep, k, a in rows]
 
 
+def forget(conn: Connection, token_hashes: Iterable[str]) -> None:
+    """세션이 끝난 구독 줄을 지운다 — 로그아웃 · 휴대폰 해제 · 새 휴대폰 등록 때 auth.py 가 부른다. 구독이 없는 세션 번호는 그냥 지나간다."""
+    conn.executemany("DELETE FROM push_subscriptions WHERE token_hash = ?", [(h,) for h in token_hashes])
+
+
+# 점으로 이어진 DNS 이름이고 끝 칸은 글자로 시작한다 — IP(v4 · 127.1 · 정수 표기 · v6)와 점 없는 이름(localhost · 사내 서버 이름)은 안 맞는다.
+_HOST = re.compile(r"(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z][a-z0-9-]*")
+_INNER = (".local", ".internal", ".lan", ".home")  # 사내망에서 쓰는 이름 끝
+
+
+def _endpoint_ok(url: object) -> bool:
+    """푸시 서버 주소 모양 — https, 1000자 안, 공개 DNS 이름. 서버가 나중에 이 주소로 보내므로 안쪽 망을 가리키는 모양을 거른다.
+    ponytail: 이름이 안쪽 IP 로 풀리는 경우(DNS 재바인딩)는 모양만으로 못 막는다 — 보낼 때 풀린 IP 를 확인하려면 보내기 쪽에서."""
+    if not isinstance(url, str) or len(url) > 1000 or not re.fullmatch(r"[\x21-\x7e]+", url):  # 공백 · 줄바꿈 · 한글 없음
+        return False
+    try:
+        u = urlsplit(url)
+    except ValueError:
+        return False
+    host = u.hostname or ""
+    return u.scheme == "https" and "@" not in u.netloc and _HOST.fullmatch(host) is not None and not host.endswith(_INNER)
+
+
+def _key_ok(v: object, limit: int) -> bool:
+    """휴대폰이 보낸 암호화 키 글자 — base64url (뒤 = 는 있어도 됨), limit 자 이하."""
+    return isinstance(v, str) and len(v) <= limit and _b64u(v.rstrip("=")) is not None
+
+
+@bp.get("/api/push/key")
+def push_key() -> Response:
+    """공개키 — 휴대폰이 알림을 켤 때 푸시 서버에 알려 주는 값. 개인키는 내보내지 않는다."""
+    k = keys()
+    return (jsonify(key=k[0]), 200) if k else (jsonify(error="알림 키가 아직 없습니다."), 404)
+
+
+@bp.post("/api/push/subscribe")
+def subscribe() -> Response:
+    """휴대폰 세션 하나에 구독 하나(다시 켜면 덮어씀). 같은 푸시 주소를 쓰던 다른 세션의 줄은 지운다 —
+    쿠키만 지우고 같은 휴대폰에 다른 사람이 등록한 경우에도 앞 사람 알림이 그 휴대폰으로 가지 않게."""
+    if g.session_kind != "phone":
+        return jsonify(error="알림은 휴대폰에서만 받을 수 있습니다."), 403
+    b = request.get_json(silent=True)
+    b = b if isinstance(b, dict) else {}
+    ks = b.get("keys")
+    ks = ks if isinstance(ks, dict) else {}
+    ep = b.get("endpoint")
+    if not (_endpoint_ok(ep) and _key_ok(ks.get("p256dh"), 200) and _key_ok(ks.get("auth"), 100)):
+        return jsonify(error="알림 정보의 모양이 올바르지 않습니다."), 400
+    conn, h = auth._db(), g.session_hash
+    conn.execute(
+        "INSERT OR REPLACE INTO push_subscriptions (token_hash, user_id, endpoint, p256dh, auth, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+        (h, g.actor.user_id, ep, ks["p256dh"], ks["auth"], auth._iso(auth._now())),
+    )
+    conn.execute("DELETE FROM push_subscriptions WHERE endpoint = ? AND token_hash <> ?", (ep, h))
+    return jsonify(ok=True)
+
+
+@bp.post("/api/push/unsubscribe")
+def unsubscribe() -> Response:
+    forget(auth._db(), [g.session_hash])
+    return jsonify(ok=True)
+
+
 def _webpush(info: dict, payload: dict, keys: tuple[str, str], ttl: int) -> int:
     """한 기기에 보내고 HTTP 상태 코드를 돌려준다 (성공 201). 푸시 서버 거절이면 그 코드, 연결 실패 · 깨진 구독이면 0 — 던지지 않는다."""
+    try:
+        from pywebpush import WebPushException, webpush  # 쓰는 자리에서 — 설치가 깨져도 앱이 뜨는 데는 영향 없게
+    except Exception as exc:
+        logger.warning("push send failed: %s", type(exc).__name__)
+        return 0
     try:
         return webpush(
             info, json.dumps(payload, ensure_ascii=False),
@@ -187,11 +262,18 @@ def _check_send() -> None:
             dead = s.getsockname()[1]
         assert SEND({"endpoint": f"http://127.0.0.1:{dead}/x", "keys": sub["keys"]}, message("kpi_back"), (pub, priv), TTL_EVENT) == 0  # 연결 실패
         assert SEND({"endpoint": "http://127.0.0.1:1/x", "keys": {"p256dh": "x", "auth": "x"}}, message("kpi_back"), (pub, priv), TTL_EVENT) == 0  # 깨진 구독
+        real = sys.modules["pywebpush"]
+        sys.modules["pywebpush"] = None  # 설치가 깨진 흉내 — import 가 ImportError
+        try:
+            assert SEND(sub, message("kpi_back"), (pub, priv), TTL_EVENT) == 0  # 던지지 않고 0
+        finally:
+            sys.modules["pywebpush"] = real
     finally:
         logger.disabled = False
 
 
 def check() -> None:
+    assert "pywebpush" not in sys.modules  # 앱이 뜰 때는 불러오지 않는다 — 보낼 때 처음 불러옴
     KST = timezone(timedelta(hours=9))
     assert in_work_hours(datetime(2026, 10, 23, 17, 59, tzinfo=KST))  # 금 17:59
     assert not in_work_hours(datetime(2026, 10, 23, 18, 0, tzinfo=KST))  # 금 18:00

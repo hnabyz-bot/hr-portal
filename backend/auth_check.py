@@ -2192,6 +2192,146 @@ def check_push_targets(hr) -> None:
        and q("SELECT is_active, deactivated_at, portal_enabled FROM users WHERE id = 3") == [before], "끝나면 세션 · 구독을 지우고(구독도 함께) 직원 칸을 되돌림")
 
 
+def check_push_api(hr) -> None:
+    """휴대폰 알림 구독 주소 (2026-10-22): 공개키 · 휴대폰 세션만 등록 · 주소·키 모양 검사 · 로그아웃·해제·새 등록 때 구독을 지움.
+    키는 검사가 만든 가짜 — 끝나면 환경 값·표를 되돌린다. 주소는 가상(example.invalid) 또는 공개된 푸시 서버 모양."""
+    import push
+    print("휴대폰 알림 구독 주소")
+    env = {k: os.environ.get(k) for k in ("HR_PUSH_PUBLIC", "HR_PUSH_PRIVATE")}
+    seen: list[str] = []
+    real_qr = auth._qr_rows
+    auth._qr_rows = lambda text: (seen.append(text), real_qr(text))[1]  # QR 에 담긴 1회용 값을 엿본다 (check_phone 과 같음)
+    ep = "https://fcm.googleapis.com/fcm/send/fake-device-1"
+    device, secret = push.keygen()[0], push._b64u_enc(os.urandom(16))  # 휴대폰 키 모양의 가짜
+
+    def rows() -> list:
+        return q("SELECT user_id, endpoint FROM push_subscriptions ORDER BY endpoint")
+
+    def phone_of(who: str):
+        """who 의 PC 세션 → QR 값 → 휴대폰 세션. (PC, 휴대폰) 클라이언트를 돌려준다."""
+        pc, phone = app.test_client(), app.test_client()
+        login(pc, new_token(who))
+        pc.post("/api/phone/code", base_url=BASE, headers=ORIGIN)
+        _seq[0] += 1
+        phone.post("/api/phone/register", base_url=BASE, json={"code": seen[-1].split("#d=")[-1]},
+                   headers={**ORIGIN, "User-Agent": IPHONE, "CF-Connecting-IP": f"192.0.2.{_seq[0] % 250}"})
+        return pc, phone
+
+    def sub(client, endpoint=ep, p256dh=device, secret_=secret, headers=ORIGIN, body=None):
+        return client.post("/api/push/subscribe", base_url=BASE, headers=headers,
+                           json=body if body is not None else {"endpoint": endpoint, "keys": {"p256dh": p256dh, "auth": secret_}})
+
+    try:
+        for k in env:
+            os.environ.pop(k, None)
+        ok(hr.get("/api/push/key", base_url=BASE).status_code == 404, "알림 키가 없으면 /api/push/key 는 404 (나머지 기능은 그대로)")
+        pub, priv = push.keygen()
+        os.environ.update(HR_PUSH_PUBLIC=pub, HR_PUSH_PRIVATE=priv)
+        r = hr.get("/api/push/key", base_url=BASE)
+        ok(r.status_code == 200 and r.json == {"key": pub} and priv not in r.get_data(as_text=True), "키가 있으면 공개키만 돌려줌 (개인키는 나가지 않음)")
+        anon = app.test_client()
+        ok(anon.get("/api/push/key", base_url=BASE).status_code == 401 and sub(anon).status_code == 401
+           and anon.post("/api/push/unsubscribe", base_url=BASE, headers=ORIGIN).status_code == 401, "로그인하지 않으면 세 주소 모두 401")
+
+        ok(sub(hr).status_code == 403 and rows() == [], "PC 세션은 구독할 수 없음 → 403, 표는 비어 있음")
+        pc, phone = phone_of("emp")
+        ok(phone.get("/api/me", base_url=BASE).json.get("kind") == "phone", "(검사용) 가상3 휴대폰 세션")
+        h = hashlib.sha256(cookie(phone).encode()).hexdigest()
+        r = sub(phone)
+        ok(r.status_code == 200 and r.json == {"ok": True} and rows() == [(3, ep)]
+           and q("SELECT token_hash, p256dh, auth FROM push_subscriptions") == [(h, device, secret)], "휴대폰 세션 구독 → 200, 이 세션 · 이 사람으로 1줄")
+        ep2 = "https://updates.push.services.mozilla.com/wpush/v2/fake-device-2"
+        ok(sub(phone, endpoint=ep2).status_code == 200 and rows() == [(3, ep2)], "같은 세션이 다시 구독하면 덮어씀 → 여전히 1줄")
+        ok(sub(phone, endpoint="https://push.example.invalid/unknown-service").status_code == 200, "처음 보는 푸시 서버 주소도 받음 (서버 이름 목록을 두지 않음)")
+
+        def refused(why: str, **kw) -> None:
+            before = rows()
+            ok(sub(phone, **kw).status_code == 400 and rows() == before, f"{why} → 400, 표 그대로")
+
+        refused("http:// 주소", endpoint="http://fcm.googleapis.com/fcm/send/x")
+        refused("주소가 문자열이 아님", endpoint=123)
+        refused("주소 없음", body={"keys": {"p256dh": device, "auth": secret}})
+        refused("keys 없음", body={"endpoint": ep})
+        refused("keys 가 객체가 아님", body={"endpoint": ep, "keys": "x"})
+        refused("본문이 객체가 아님", body=["x"])
+        refused("p256dh 없음", body={"endpoint": ep, "keys": {"auth": secret}})
+        refused("auth 없음", body={"endpoint": ep, "keys": {"p256dh": device}})
+        refused("p256dh 가 비어 있음", p256dh="")
+        refused("p256dh 에 base64url 이 아닌 글자", p256dh="not base64!")
+        refused("p256dh 가 문자열이 아님", p256dh=5)
+        refused("공백이 든 주소", endpoint="https://fcm.googleapis.com/fcm/send/a b")
+        refused("줄바꿈이 든 주소", endpoint="https://fcm.googleapis.com/fcm/send/a\r\nHost: x")
+        refused("로그인 정보가 든 주소", endpoint="https://user:pw@fcm.googleapis.com/fcm/send/x")
+        refused("IPv4 주소 그대로", endpoint="https://203.0.113.5/fcm/send/x")
+        refused("IPv4 줄임 표기(127.1)", endpoint="https://127.1/x")
+        refused("IPv4 정수 표기", endpoint="https://2130706433/x")
+        refused("IPv6 주소 그대로", endpoint="https://[2001:db8::1]/x")
+        refused("localhost", endpoint="https://localhost/x")
+        refused("점 없는 이름", endpoint="https://intranet/x")
+        refused("끝에 점이 붙은 localhost", endpoint="https://localhost./x")
+        for suffix in ("local", "internal", "lan", "home"):
+            refused(f".{suffix} 이름", endpoint=f"https://printer.{suffix}/x")
+        long_ep = "https://fcm.googleapis.com/" + "a" * 973  # 정확히 1000자
+        ok(len(long_ep) == 1000 and sub(phone, endpoint=long_ep).status_code == 200 and rows() == [(3, long_ep)], "주소 1000자는 받음")
+        refused("주소 1001자", endpoint=long_ep + "a")
+        ok(sub(phone, p256dh="A" * 200, secret_="B" * 100).status_code == 200 and rows() == [(3, ep)], "p256dh 200자 · auth 100자는 받음")
+        ok(sub(phone, p256dh="A" * 201).status_code == 400 and sub(phone, secret_="B" * 101).status_code == 400, "p256dh 201자 · auth 101자는 거부")
+        ok(rows() == [(3, ep)], "거부된 요청은 표를 바꾸지 않음")
+        ok(sub(phone, headers={}).status_code == 403 and phone.post("/api/push/unsubscribe", base_url=BASE).status_code == 403
+           and rows() == [(3, ep)], "Origin 없는 POST 는 구독도 해제도 403")
+
+        # 같은 푸시 주소를 다른 세션이 쓰고 있었다면(쿠키만 지우고 같은 휴대폰에 다른 사람이 등록) 앞 사람 줄은 지운다
+        x("INSERT INTO sessions (token_hash, user_id, created_at, last_seen_at, expires_at, kind) VALUES (?, 2, ?, ?, ?, 'phone')",
+          "8" * 64, auth._iso(auth._now()), auth._iso(auth._now()), auth._iso(auth._now() + timedelta(days=30)))
+        x("INSERT INTO push_subscriptions (token_hash, user_id, endpoint, p256dh, auth, created_at) VALUES (?, 2, ?, 'k', 'a', ?)",
+          "8" * 64, ep, auth._iso(auth._now()))
+        ok(len(rows()) == 2, "(검사용) 같은 주소를 쓰는 다른 사람의 앞 구독")
+        ok(sub(phone).status_code == 200 and rows() == [(3, ep)], "같은 푸시 주소로 구독하면 다른 세션의 앞 줄은 지움 (알림이 앞 사람에게 가지 않게)")
+        x("DELETE FROM sessions WHERE token_hash = ?", "8" * 64)
+
+        ok(phone.post("/api/push/unsubscribe", base_url=BASE, headers=ORIGIN).json == {"ok": True} and rows() == [], "구독 해제 → 이 세션 줄 삭제")
+        ok(phone.post("/api/push/unsubscribe", base_url=BASE, headers=ORIGIN).status_code == 200, "구독이 없어도 해제는 200")
+        ok(phone.get("/api/me", base_url=BASE).status_code == 200, "해제해도 휴대폰 로그인은 그대로")
+
+        sub(phone)
+        ok(pc.post("/api/phone/revoke", base_url=BASE, headers=ORIGIN).status_code == 200 and rows() == [], "본인이 휴대폰 해제 → 구독도 지워짐")
+        pc, phone = phone_of("emp")
+        sub(phone)
+        ok(rows() == [(3, ep)] and hr.post("/api/members/3/phone/revoke", base_url=BASE, headers=ORIGIN).status_code == 200 and rows() == [],
+           "HR 이 그 사람 휴대폰 해제 → 구독도 지워짐")
+        pc, phone = phone_of("emp")
+        sub(phone)
+        ok(rows() == [(3, ep)] and phone.post("/api/auth/logout", base_url=BASE, headers=ORIGIN).status_code == 200 and rows() == [],
+           "휴대폰에서 로그아웃 → 구독도 지워짐")
+
+        pc, phone = phone_of("emp")
+        sub(phone)
+        _, phone_b = phone_of("emp")
+        ok(phone.get("/api/me", base_url=BASE).status_code == 401 and rows() == [], "같은 사람이 새 휴대폰을 등록하면 앞 휴대폰의 구독이 지워짐")
+        sub(phone_b)
+        pc2 = app.test_client()
+        login(pc2, new_token("lead"))
+        pc2.post("/api/phone/code", base_url=BASE, headers=ORIGIN)
+        _seq[0] += 1
+        r = phone_b.post("/api/phone/register", base_url=BASE, json={"code": seen[-1].split("#d=")[-1]},
+                         headers={**ORIGIN, "User-Agent": IPHONE, "CF-Connecting-IP": f"192.0.2.{_seq[0] % 250}"})
+        ok(r.status_code == 200 and rows() == [], "휴대폰에 남은 앞 사람의 세션으로 다른 사람이 등록 → 앞 세션의 구독도 지워짐")
+
+        pc3, phone_c = phone_of("emp")
+        sub(phone_c)
+        ok(pc3.post("/api/auth/logout", base_url=BASE, headers=ORIGIN).status_code == 200 and rows() == [(3, ep)],
+           "PC 에서 로그아웃해도 휴대폰 구독은 남음 (그 세션의 줄만 지움)")
+    finally:
+        auth._qr_rows = real_qr
+        for k, v in env.items():
+            os.environ.pop(k, None)
+            if v is not None:
+                os.environ[k] = v
+        x("DELETE FROM push_subscriptions")
+        x("DELETE FROM sessions WHERE token_hash = ?", "8" * 64)
+    ok(rows() == [] and all(os.environ.get(k) == v for k, v in env.items()), "끝나면 구독 표 · 키 환경 값을 되돌림")
+
+
 def year_day(n: int) -> str:
     """오늘 + n일을 올해(한국 날짜) 안으로 맞춘 날짜 — KPI 기간은 그해 날짜만 받으므로 1월 1일 · 12월 31일에도 검사가 그대로 돈다."""
     t = auth._today()
@@ -4695,6 +4835,7 @@ def main() -> int:
     check_eval_report(hr)
     check_contracts(hr)
     check_push_targets(hr)
+    check_push_api(hr)
 
     acts = {r[0] for r in q("SELECT action FROM audit_logs")}
     ok({"LOGIN", "HR_BOOTSTRAP"} <= acts, "감사로그 LOGIN 이 남음")

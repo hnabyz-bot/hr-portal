@@ -315,8 +315,10 @@ def login_message() -> Response:
 @bp.post("/api/auth/logout")
 def logout() -> Response:
     g.pop("phone_cookie", None)  # 끊는 응답에서 쿠키를 다시 늘리지 않는다
-    _db().execute("UPDATE sessions SET revoked_at = ? WHERE token_hash = ? AND revoked_at IS NULL",
-                  (_iso(_now()), g.session_hash))
+    conn = _db()
+    conn.execute("UPDATE sessions SET revoked_at = ? WHERE token_hash = ? AND revoked_at IS NULL",
+                 (_iso(_now()), g.session_hash))
+    _forget_push(conn, [g.session_hash])
     resp = jsonify(ok=True, message="포털에서 로그아웃했습니다. 공용 PC라면 하이웍스도 로그아웃해 주세요.")
     resp.delete_cookie(COOKIE, path="/", secure=True, httponly=True, samesite="Lax")
     return resp
@@ -368,7 +370,15 @@ def _phone_of(conn: sqlite3.Connection, user_id: int, now: datetime) -> dict | N
     return {"device": row[0], "created_at": row[1], "last_seen_at": row[2]} if row else None
 
 
+def _forget_push(conn: sqlite3.Connection, token_hashes: list[str]) -> None:
+    """끊은 세션의 알림 구독 줄을 지운다. push 가 auth 를 불러오므로 함수 안에서 불러온다 (순환 import)."""
+    import push
+    push.forget(conn, token_hashes)
+
+
 def _revoke_phone(conn: sqlite3.Connection, user_id: int, now: datetime) -> int:
+    _forget_push(conn, [r[0] for r in conn.execute(
+        "SELECT token_hash FROM sessions WHERE user_id = ? AND kind = 'phone' AND revoked_at IS NULL", (user_id,))])
     return conn.execute("UPDATE sessions SET revoked_at = ? WHERE user_id = ? AND kind = 'phone' AND revoked_at IS NULL",
                         (_iso(now), user_id)).rowcount
 
@@ -414,6 +424,7 @@ def phone_register() -> Response:
         old = request.cookies.get(COOKIE)  # 이 휴대폰에 남아 있던 세션도 이어 쓰지 않는다 (§5 세션 고정)
         if old:
             conn.execute("UPDATE sessions SET revoked_at = ? WHERE token_hash = ? AND revoked_at IS NULL", (_iso(now), _sha(old)))
+            _forget_push(conn, [_sha(old)])
         sess = secrets.token_urlsafe(32)
         conn.execute(
             "INSERT INTO sessions (token_hash, user_id, created_at, last_seen_at, expires_at, ip, user_agent, kind, device)"
