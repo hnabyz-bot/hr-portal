@@ -1875,7 +1875,7 @@ function homeRate(){   // 이번 주 달성률 [종합, 업무, 루틴] %. 업�
   const today = kpiDay(0), a = rtPct(wsWeekStat(wsAll(), today)), b = rtPct(rtSum(rtList(), ...wsWeek(today), today));
   return [a==null ? b : b==null ? a : Math.round((a+b)/2), a, b];
 }
-function homeKpiTo(){ if(!AUTH.live) return kpiPeriod.editTo; const w = KPI_LIVE.me?.window; return w && w.open ? w.to : ''; }   // 홈의 KPI 마감일 — 실제 로그인은 서버 작성 기간이 열려 있을 때 그 마지막 날만 (닫혀 있으면 '')
+function homeKpiTo(){ if(!AUTH.live) return kpiPeriod.editTo; const w = KPI_LIVE.me?.window; return w && w.open && kpiRole!=='line' ? w.to : ''; }   // 홈의 KPI 마감일 — 실제 로그인은 서버 작성 기간이 열려 있을 때 그 마지막 날만 (닫혀 있으면 ''). KPI를 쓰지도 확정하지도 않는 분(현장직 등 — 구성원 설정 KPI 작성 끔)에게는 없다. 대표이사 · 본부장 · 팀장 · HR은 확정 · 관리 마감이라 보인다
 function homeDates(y, m){   // 그 달의 급여일 + KPI·평가 기간 날짜 (달력 점, 주요 일정)
   const ev = d=>AUTH.live ? '' : d;   // 실제 로그인: 평가는 포털 밖이라 시연 평가 날짜를 달력 · 마감 임박에 두지 않는다 (설계 §7.1)
   return [ { ymd:ctYmd(payDayOf(y, m)), label:'급여일', color:'var(--accent)' },
@@ -4671,7 +4671,9 @@ async function kpiLiveSelfCheck(){   // 브라우저 콘솔에서 await kpiLiveS
     const card = dom(homeKpi());
     ok(card.querySelector('.badge').textContent==='제출함' && card.textContent.includes('2026년') && card.textContent.includes('작성 기간 10/13 ~ 10/27') && card.textContent.includes('상세 보기')
       && !card.textContent.includes('%') && !card.querySelector('.hm-kpi'), '홈 KPI 카드(실제 로그인): 해 · 상태 · 작성 기간 · 상세 보기만, 진행률 숫자 없음');
-    ok(homeDates(2026, 9).some(e=>e.ymd==='2026-10-27' && e.label.startsWith('KPI')), '달력 KPI 마감 = 서버 작성 기간의 마지막 날 (열려 있을 때)');
+    const rk = kpiRole, sees = r=>{ kpiRole = r; return homeDates(2026, 9).some(e=>e.ymd==='2026-10-27' && e.label.startsWith('KPI')); }, emp = sees('emp'), line = sees('line'), ceo = sees('ceo'); kpiRole = rk;
+    ok(emp, '달력 KPI 마감 = 서버 작성 기간의 마지막 날 (열려 있을 때)');
+    ok(!line && ceo, '달력 KPI 마감: KPI를 쓰지도 확정하지도 않는 분(현장직 등)에게는 없음 · 대표이사처럼 확정하는 분에게는 있음');
     KPI_LIVE.me = me(false, 'CONFIRMED');
     ok(dom(homeKpi()).querySelector('.badge').textContent==='확정' && dom(homeKpi()).textContent.includes('작성 기간이 아니에요') && !homeDates(2026, 9).some(e=>e.label.startsWith('KPI')), '기간이 닫혀 있으면 "작성 기간이 아니에요" · 달력에 KPI 마감 없음');
     const st = (status, x)=>dom(homeKpiLive({ ...me(true, status), ...x })).querySelector('.badge').textContent;
