@@ -1219,7 +1219,6 @@
   .yc-row .amt{ text-align:right; line-height:1.25; white-space:nowrap; }
   .yc-row .amt b{ display:block; font-size:var(--fs-sm); color:var(--text-primary); }
   .yc-row .amt small{ font-size:11px; color:var(--text-muted); }
-  .yc-diff{ display:inline-block; margin-left:5px; padding:0 5px; border-radius:999px; background:#FDF2F0; color:var(--coral-text); font-size:10px; font-weight:800; vertical-align:1px; }
   .yc-rest{ padding:10px 0 2px; font-size:var(--fs-xs); color:var(--text-muted); }
   .yc-ded{ margin-top:12px; border-top:1px solid var(--border); padding-top:10px; }
   .yc-ded summary{ cursor:pointer; font-size:var(--fs-sm); font-weight:700; color:#7A3E1D; padding:6px 0; min-height:32px; }
@@ -8730,12 +8729,12 @@ function paySelfCheck(){   // 브라우저 콘솔에서 paySelfCheck() 실행
       const g = payYearChart(yl, 2026);
       ok((g.match(/class="yc-row( on)?"/g) || []).length===3 && g.includes('9,200,000원') && g.includes('3,100,000원'), '그래프: 한 줄 = 한 달 · 위에 올해 실수령 누적');
       ok(g.includes(`payPick('${yl[0].label}', true)`) && /yc-row on"[^>]*aria-expanded="true"/.test(g), '줄을 누르면 그 달 명세서 (열린 달은 표시)');
-      ok((g.match(/yc-diff/g) || []).length===1 && g.includes('+10만'), '앞 달보다 바뀐 달에만 차이 표시 (같으면 없음)');
+      ok(!g.includes('yc-diff') && !g.includes('+10만'), '앞 달과의 차이는 붙이지 않는다');
       ok(g.includes('4월 ~ 12월은 아직 명세서가 없어요') && payYearChart([mk(11, 1, 1)], 2026).includes('12월은 아직') && !payYearChart([...Array(12)].map((_, i)=>mk(i+1, 1, 1)), 2026).includes('아직 명세서'), '남은 달 안내 (12월까지 있으면 없음)');
       ok(g.includes('공제 내역 (올해 합계 1,800,000원)') && g.includes('1,500,000원') && g.includes('300,000원') && !g.includes('고용보험') && !g.includes('<b>가상') && g.includes('&lt;b&gt;가상') && !g.includes(' open'), '공제 내역: 항목별 올해 합계 · 0원 항목은 뺀다 · 처음엔 접힘');
       payDedOpen = true; ok(payYearChart(yl, 2026).includes('class="yc-ded" open'), '펼친 공제 내역은 다시 그려도 펼친 그대로');
       payShow = false; const m0 = payYearChart(yl, 2026);
-      ok(!/\d,\d{3},\d{3}원/.test(m0) && !m0.includes('yc-diff') && m0.includes(PAY_MASK), '금액을 가리면 누적 · 달별 · 차이 · 공제 금액이 모두 가려진다');
+      ok(!/\d,\d{3},\d{3}원/.test(m0) && m0.includes(PAY_MASK), '금액을 가리면 누적 · 달별 · 공제 금액이 모두 가려진다');
       payShow = true; payChartView = 'table'; const t = payYearChart(yl, 2026);
       ok(t.includes('<table>') && (t.match(/<tr><td>/g) || []).length===3 && t.includes('3/20') && !t.includes('yc-row') && t.includes('aria-pressed="true">표'), '표: 월 · 지급일 · 세전 · 공제 · 실수령');
     } finally { [payShow, payOpen, payChartView, payDedOpen] = kv; } }
@@ -9054,11 +9053,10 @@ function payYearChart(slips, year){   // 급여 수령 현황 (시안 A + 공제
   const last = list.length ? list[list.length-1].m : -1, rest = last<11 && list.length ? `<div class="yc-rest">${last===10 ? '12월은' : `${last+2}월 ~ 12월은`} 아직 명세서가 없어요</div>` : '';
   if(payChartView==='table') return `${head}<div class="ct-tbl yc-tbl"><table><thead><tr><th>월</th><th class="pd">지급일</th><th class="num">세전</th><th class="num">공제</th><th class="num">실수령</th></tr></thead>
     <tbody>${list.map(s=>`<tr><td>${s.m+1}월</td><td class="pd">${md(s.payday)}</td><td class="num">${won(s.gross)}</td><td class="num">${won(s.deduct)}</td><td class="num">${won(s.net)}</td></tr>`).join('')}</tbody></table></div>${rest}`;
-  const rows = list.map((s, i)=>{ const d = i && payShow ? Math.round((s.net - list[i-1].net)/1e4) : 0;   // 앞 달보다 바뀐 실수령(만원) — 가렸을 때는 금액이 드러나지 않게 안 보인다
-    return `<button type="button" class="yc-row${s.label===payOpen ? ' on' : ''}" onclick="payPick('${s.label}', true)" aria-expanded="${s.label===payOpen}" aria-label="${s.m+1}월 실수령 ${won(s.net)}, 세전 ${won(s.gross)}, 공제 ${won(s.deduct)}">
-      <span class="mo"><b>${s.m+1}월${d ? `<span class="yc-diff">${d>0 ? '+' : ''}${d.toLocaleString('ko-KR')}만</span>` : ''}</b><small>${md(s.payday)} 지급</small></span>
+  const rows = list.map(s=>`<button type="button" class="yc-row${s.label===payOpen ? ' on' : ''}" onclick="payPick('${s.label}', true)" aria-expanded="${s.label===payOpen}" aria-label="${s.m+1}월 실수령 ${won(s.net)}, 세전 ${won(s.gross)}, 공제 ${won(s.deduct)}">
+      <span class="mo"><b>${s.m+1}월</b><small>${md(s.payday)} 지급</small></span>
       <span class="yc-bar" aria-hidden="true"><i class="net" style="width:${s.net/top*100}%"></i><i class="ded" style="width:${s.deduct/top*100}%"></i></span>
-      <span class="amt"><b>${won(s.net)}</b><small>세전 ${won(s.gross)}</small></span></button>`; }).join('');
+      <span class="amt"><b>${won(s.net)}</b><small>세전 ${won(s.gross)}</small></span></button>`).join('');   // 앞 달과의 차이는 붙이지 않는다(인사담당자 — 명절상여 다음 달의 − 표시 등 복잡해짐)
   const sums = {}; list.forEach(s=>psShow(s.ded || []).forEach(([l, v])=>{ sums[l] = (sums[l] || 0) + v; }));
   const items = Object.entries(sums).filter(([, v])=>v>0).sort((a,b)=>b[1]-a[1]), dmax = items.length ? items[0][1] : 1, dsum = list.reduce((a,s)=>a+s.deduct, 0);
   const ded = items.length ? `<details class="yc-ded"${payDedOpen ? ' open' : ''} ontoggle="payDedOpen=this.open"><summary>공제 내역 (올해 합계 ${won(dsum)})</summary><div class="yc-ded-list">
