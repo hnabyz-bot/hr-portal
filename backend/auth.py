@@ -27,7 +27,7 @@ app.py 가 register(app) 로 붙인다.
   POST /api/phone/register        휴대폰이 QR 주소(/#d=값)를 열면 화면이 보낸다 → 휴대폰 세션(30일)
   GET  /api/phone                 내 등록된 휴대폰 (PC 창이 "등록됐는지"를 볼 때도 쓴다)
   POST /api/phone/revoke          내 휴대폰 등록 해제
-  그 밖의 /api/* 전부             세션 검사. 세션 없이 열린 곳은 /api/health · 로그인 받는 곳 · 안내 · 휴대폰 등록뿐 (§3)
+  그 밖의 /api/* 전부             세션 검사. 세션 없이 열린 곳은 /api/health · 로그인 받는 곳 · 안내 · 휴대폰 등록뿐 (§3). 급여·계약 세 앞머리는 비밀번호도(paypin.py)
 
 서버 설정 (.env → docker-compose.yml):
   HR_ENV=production                    운영 모드 — docker-compose.yml 에 고정 (§7)
@@ -983,11 +983,12 @@ def _guard() -> Response | None:
     if actor is None:
         return jsonify(error=MSG_LOGIN), 401
     g.actor = actor
-    return None
+    import paypin  # paypin 이 auth 를 불러오므로 함수 안에서 불러온다 (순환 import — _forget_push 와 같은 이유)
+    return paypin.gate()  # 급여·계약 세 앞머리는 비밀번호로 풀린 창만
 
 
 def _no_store(resp: Response) -> Response:
-    if request.path.startswith(("/api/auth/", "/api/phone", "/api/payslips")) or request.path == "/api/me":
+    if request.path.startswith(("/api/auth/", "/api/phone", "/api/pay")) or request.path == "/api/me":  # /api/pay = 명세서 · 비밀번호 둘 다
         resp.headers["Referrer-Policy"] = "no-referrer"
         resp.headers["Cache-Control"] = "no-store"
     if g.get("phone_cookie") and resp.status_code < 400:
