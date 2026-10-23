@@ -5,7 +5,7 @@
   python -m push keygen   서버에서 한 번 — HR_PUSH_PUBLIC · HR_PUSH_PRIVATE 두 줄을 출력만 한다 (.env 에는 사람이 붙인다)
   python -m push morning  평일 9시(KST) 묶음 — 서버 예약 작업이 부른다. 보낸 사람 수만 출력. 같은 날 두 번 돌지 않고, 근무시간(평일 9~18시) 밖에는 아무것도 안 한다
 
-  GET  /api/push/key          공개키 {"key"} — 키가 없으면 404 (화면이 알림 켜기 칸을 숨긴다)
+  GET  /api/push/key          공개키 {"key"} — 키가 없으면 404 (화면이 알림 켜기 안내를 하지 않는다)
   POST /api/push/subscribe    휴대폰 세션만. {"endpoint": https 푸시 서버 주소, "keys": {"p256dh", "auth"}} → 이 세션의 구독 1줄(덮어씀)
   POST /api/push/unsubscribe  이 세션의 구독 줄 삭제
   세션 검사 · 같은 출처 검사는 auth._guard 가 모든 /api/* 에 한다. app.py 가 bp 를 붙인다.
