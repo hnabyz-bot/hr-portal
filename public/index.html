@@ -101,6 +101,12 @@
   .auth-card p{ margin:0 0 22px; color:var(--text-secondary); font-size:var(--fs-md); line-height:1.7; }
   .auth-card .btn{ width:100%; justify-content:center; }
   .auth-card .note{ margin:14px 0 0; color:var(--text-muted); font-size:var(--fs-xs); }
+  .center-note{ min-height:100%; display:flex; align-items:center; justify-content:center; }   /* 화면 가운데 안내 카드 (centerNote) — 로그인 안내 카드에 사이트 둘러보기 첫 장의 리본 · 글자 크기 */
+  .center-note.flow{ min-height:0; }   /* 위에 다른 카드가 있으면 그 아래에 */
+  .center-note .auth-card{ max-width:540px; padding:36px 36px 32px; }
+  .center-note .tr-logo{ width:56px; height:56px; }
+  .center-note h3{ margin:16px 0 10px; font-size:25px; }   /* 둘러보기 첫 장보다 5px 크게 (2026-10-23 인사담당자) */
+  .center-note p{ margin:0; font-size:18px; color:var(--text-secondary); line-height:1.7; }
   .auth-out{ border:0; background:none; padding:0 0 0 6px; color:var(--accent); font:inherit; font-weight:600; cursor:pointer; }
   .auth-out:hover{ text-decoration:underline; }
   .sidebar-foot{
@@ -3865,6 +3871,9 @@ function kpiStatus(key){
   if(s.confirmed) return ['확정', 'success'];
   return ['작성중', 'neutral'];
 }
+function centerNote(title, body, fill=true){   // 화면 가운데 하얀 안내 카드: 리본 로고 · 제목 · 설명. fill=false 는 위에 다른 카드가 있을 때 (남은 높이를 채우지 않는다)
+  return `<div class="center-note${fill ? '' : ' flow'}"><div class="auth-card"><img class="tr-logo" src="img/logo-mark-clear.png" alt=""><h3>${title}</h3><p>${body}</p></div></div>`;
+}
 function kpiNote(html, type){
   const c = type ? `background:var(--bg-${type}); color:var(--${type});` : '';
   return `<div class="placeholder-note" style="margin:0 0 12px 0; ${c}">${html}</div>`;
@@ -4121,7 +4130,7 @@ function kpiLiveContent(){
   const mine = inbox.filter(i=>!i.proxy), leads = Object.values(team).some(n=>n>0);   // 처리할 KPI · 우리 팀은 맡은 사람이 있거나 처리할 것이 있을 때만 (시안 2: 내 계획서 위)
   const boss = (mine.length || leads ? kpiLiveInbox(mine) : '') + (leads ? kpiLiveTeam(team) : '') + (KPI_LIVE.deleg==null ? '' : kpiLiveDeleg());
   const b = KPI_LIVE.biz, pos = AUTH.me.position, plan = b && (pos==='CEO' || pos==='DIVISION_HEAD') ? kpiPlanList(b.goals.map(g=>[g.goal, g.detail]), pos==='CEO', b.year) : '';   // 경영계획 목표 — 대표이사는 HR에 맡기기 아래, 본부장은 내 KPI 위 (시연과 같은 자리)
-  return hrSwitch() + msg + boss + plan + (me.writesKpi ? kpiLiveMine() : pos==='CEO' ? '' : kpiNote('KPI를 작성하지 않는 분이에요. 바뀌어야 하면 HR에 알려 주세요.'));   // KPI 작성을 끈 팀장 · 본부장도 팀원 KPI 아래에 이 한 줄 (없으면 처리함의 "작성 기간이 아니에요"만 보여 내 KPI 기간으로 읽힌다). 대표이사는 원래 쓰지 않는다
+  return hrSwitch() + msg + boss + plan + (me.writesKpi ? kpiLiveMine() : pos==='CEO' ? '' : centerNote('KPI 작성 대상자가 아닙니다', '변경이 필요하면 HR에 문의해 주세요.', !boss));   // KPI 작성을 끈 분은 가운데 안내 카드 — 팀장 · 본부장은 팀원 KPI 카드 아래에 (없으면 처리함의 "작성 기간이 아니에요"만 보여 내 KPI 기간으로 읽힌다). 대표이사는 원래 쓰지 않는다
 }
 function kpiLiveFresh(){ if(AUTH.live && currentTab.id==='e1' && KPI_LIVE.state!=='loading') KPI_LIVE.state = ''; }   // 목표설정 탭에 들어올 때마다 서버에서 새로 (처리함은 늘 새것이어야 한다 · 못 불렀으면 다시)
 function kpiBoss(me=KPI_LIVE.me){   // 바로 위 관리자 "김○○ 팀장" — 직책은 조직도 명단에서, 못 찾으면 "님"
@@ -5053,8 +5062,8 @@ async function kpiLiveSelfCheck(){   // 브라우저 콘솔에서 await kpiLiveS
         ok(C9.querySelector('#kpiDeleg + #kpiPlanView') && [...C9.querySelectorAll('#kpiPlanView .kv-plan li b')].map(b=>b.textContent).join()==='가상 <b>목표1</b>,가상 목표2' && C9.querySelector('#kpiPlanView .badge').textContent==='대표이사는 KPI를 쓰지 않아요', '대표이사 목표설정: HR에 맡기기 아래에 경영계획 목표 (서버 목록)');
         ok(H9.querySelector('#kpiPlanView + #kpiMine') && H9.querySelectorAll('#kpiPlanView li').length===2, '본부장: 내 KPI 위에 경영계획 목표');
         ok(!page('TEAM_LEADER', me(true, 'DRAFT')).querySelector('#kpiPlanView') && !page(null, me(true, 'DRAFT')).querySelector('#kpiPlanView'), '팀장 · 직원에게는 경영계획 목표가 없다');
-        const off = '작성하지 않는 분이에요', L9 = (page('TEAM_LEADER', { ...me(true, 'DRAFT'), writesKpi:false, plan:null }), KPI_LIVE.team = { NONE:1 }, dom(kpiLiveContent()));
-        ok(L9.querySelector('#kpiTeam') && L9.textContent.includes(off) && !C9.textContent.includes(off), 'KPI 작성을 끈 팀장: 우리 팀 KPI 아래에 "작성하지 않는 분" 한 줄 · 대표이사에게는 없음');
+        const off = 'KPI 작성 대상자가 아닙니다', L9 = (page('TEAM_LEADER', { ...me(true, 'DRAFT'), writesKpi:false, plan:null }), KPI_LIVE.team = { NONE:1 }, dom(kpiLiveContent()));
+        ok(L9.querySelector('#kpiTeam') && L9.textContent.includes(off) && L9.querySelector('.center-note.flow') && !C9.textContent.includes(off), 'KPI 작성을 끈 팀장: 우리 팀 KPI 아래에 "KPI 작성 대상자가 아닙니다" 카드 · 대표이사에게는 없음');
         KPI_LIVE.biz = null; const C0 = page('CEO', ceoMe(), false);
         ok(!C0.querySelector('#kpiPlanView') && C0.querySelector('#kpiDeleg'), '경영계획을 못 읽었으면 카드 없이 나머지는 그린다');
         // HR 관리 화면: 알람 기준 · 경영계획 목표 두 카드
@@ -11055,7 +11064,7 @@ function evProxyToggle(){   // 대표이사만 켜고 끈다
 }
 function evDemoToCeo(){ evDemoFillData('CEO'); evPoolLog.div.head = { at:kpiDay(0), seen:{} }; kpiFlash('시연용으로 대표이사 확인 직전까지 채웠습니다. 대표이사로 바꿔 "대표이사 확인" 목록에서 체크해 넘겨 보세요.'); }
 function evContent(){
-  if(AUTH.live) return kpiNote('2026년 평가는 포털 밖에서 진행합니다.');   // 실제 로그인: 시연 자료를 모두 숨기고 안내만 (설계 §7.1 — 평가 3단계에서 실제 화면으로 바꾼다). 평가 결과 탭(evResultContent)은 그대로. 해를 KPI_YEAR 로 두지 않는다 — 2027년 평가는 포털에서 하기로 해서, 새해(1월 1일)에 "2027년 평가는 포털 밖에서"로 바뀌면 안 된다. 평가 3단계를 붙일 때 이 줄을 없앤다
+  if(AUTH.live) return centerNote('올해도 고생 많으셨습니다', '2026년도 평가는 기존 방식으로 진행됩니다.<br>감사합니다.');   // 실제 로그인: 시연 자료를 모두 숨기고 안내만 (설계 §7.1 — 평가 3단계에서 실제 화면으로 바꾼다). 평가 결과 탭(evResultContent)은 그대로. 해를 KPI_YEAR 로 두지 않는다 — 2027년 평가는 포털에서 하기로 해서, 새해(1월 1일)에 "2027년 평가는 포털 밖에서"로 바뀌면 안 된다. 평가 3단계를 붙일 때 이 줄을 없앤다
   const me = evMe(), role = kpiRole, hr = kpiIsHr(role);
   const mine = me && me.out ? `<div class="card" style="margin-bottom:14px;"><div class="card-title">나의 ${KPI_YEAR}년 평가</div><div class="list-sub" style="margin:0;">이번 평가 대상이 아닙니다. (${escapeHtml(me.out.why)} · HR 처리 ${me.out.at})</div></div>` : me && evIsLine(me) ? evLineMyCard(me) : me ? (me.stage==='SELF' || evCanUpload(me, role, kpiDay(0)) ? evSelfCard(me) : `<div class="card" style="margin-bottom:14px;"><div class="card-title"><span>나의 ${KPI_YEAR}년 평가</span>${evStageBadge(me)}</div>${evSteps(me)}<div class="list-sub">${me.noSelf ? '자기평가 마감일이 지나 HR이 자기평가 없이 진행했습니다.' : '자기평가를 제출했습니다.'} 결과는 확정 후 평가 결과 탭에서 공개됩니다.</div></div>`)
     : role==='head' ? `<div class="card" style="margin-bottom:14px;"><div class="card-title">나의 ${KPI_YEAR}년 평가</div><div class="list-sub" style="margin:0;">본부장은 연말 평가 대상이 아닙니다. 본부 KPI는 목표설정 탭에서 그대로 관리하고, 여기서는 팀장을 평가하고 본부 팀원의 등급을 배정합니다.</div></div>` : '';
@@ -11097,10 +11106,10 @@ function evLiveSelfCheck(){   // 브라우저 콘솔에서 evLiveSelfCheck() 실
     ok(TODO.e2()===0 && TODO.e3()===0 && evTodo()===0 && evTodo('me')===0 && evTodo('admin')===0, '실제 로그인: 평가 진행 · 평가 결과 숫자 0 (오늘이 평가 시작일 뒤여도)');
     ok(!homePortalTasks().some(p=>/^(평가 진행|이의 신청)/.test(p.title)) && !homeDates(2026, 11).some(e=>e.label.startsWith('평가') || e.label.startsWith('자기평가')), '실제 로그인: 홈 오늘의 업무 · 달력에 평가 일 · 날짜 없음');
     ok(hrTodo()[0]+hrTodo()[1]===TODO.e1(), '실제 로그인: HR 전환 단추 숫자에도 평가 몫 없음');
-    const ev = evContent(), el = dom(ev);
-    ok(el.textContent.trim()==='2026년 평가는 포털 밖에서 진행합니다.' && !ev.includes('시연용') && evPeople.every(p=>!ev.includes(p.name)) && !el.querySelector('table, button'), '실제 로그인: 평가 진행 탭 = 안내 한 줄만 (시연 표 · 가상 이름 없음)');
-    kpiRole = 'emp'; ok(dom(evContent()).textContent.trim()==='2026년 평가는 포털 밖에서 진행합니다.', '직원이 봐도 같은 안내');
-    ok(/kpiNote\('2026년 평가는 포털 밖에서 진행합니다\.'\)/.test(String(evContent)) && !/kpiNote\(`\$\{KPI_YEAR\}년 평가는/.test(String(evContent)), '안내의 해는 2026 으로 고정 — 새해(KPI_YEAR 가 바뀐 뒤)에도 "2027년 평가는 포털 밖에서"로 바뀌지 않는다');
+    const ev = evContent(), el = dom(ev), said = e=>[...e.querySelectorAll('.center-note h3, .center-note p')].map(x=>x.innerHTML.replace('<br>', ' ')).join(' ');
+    ok(said(el)==='올해도 고생 많으셨습니다 2026년도 평가는 기존 방식으로 진행됩니다. 감사합니다.' && el.querySelector('.center-note:not(.flow) .tr-logo') && !ev.includes('시연용') && evPeople.every(p=>!ev.includes(p.name)) && !el.querySelector('table, button'), '실제 로그인: 평가 진행 탭 = 안내 한 줄만 (시연 표 · 가상 이름 없음)');
+    kpiRole = 'emp'; ok(said(dom(evContent()))==='올해도 고생 많으셨습니다 2026년도 평가는 기존 방식으로 진행됩니다. 감사합니다.', '직원이 봐도 같은 안내');
+    ok(String(evContent).includes("'2026년도 평가는 기존 방식으로") && !/\$\{KPI_YEAR\}년도? 평가는/.test(String(evContent)), '안내의 해는 2026 으로 고정 — 새해(KPI_YEAR 가 바뀐 뒤)에도 "2027년도 평가는"으로 바뀌지 않는다');
     kpiRole = 'hr';
     const liveRes = res(true);
     ok(liveRes===demoRes && liveRes.includes('보고서 엑셀 내려받기') && liveRes.includes('답변 보내기') && evResultContent().includes('시연용 가상 자료'), '실제 로그인: 평가 결과 탭은 그대로 (보고서 엑셀 단추 · 이의 신청 답변 칸 · 맨 위 "시연용 가상 자료")');
