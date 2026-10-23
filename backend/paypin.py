@@ -10,10 +10,15 @@ app.py 가 bp 를 붙인다. 세션 검사 · 같은 출처 검사는 auth._guar
   POST /api/pay/pin     {"pin", "again"} 처음 정하기 → 이 창이 풀림 (감사로그 PAY_PIN_SET). 이미 있으면 409
   POST /api/pay/unlock  {"pin"} 확인 → 이 창이 풀림. 연달아 5번(FAILS_MAX) 틀리면 잠김 — 이 사람의 모든 창, HR 초기화로만 푼다 (PAY_PIN_LOCKED)
   POST /api/pay/alive   화면이 쓰는 중이면 부른다 — 풀려 있을 때만 6분을 다시 센다 {"open": bool}
+  GET  /api/pay/counts  {"p1", "p2", "p3", "due"} 왼쪽 메뉴 숫자 — 비밀번호를 풀지 않고 본다(잠긴 창도 200). 개수와 가장 이른 서명 마감일뿐, 금액 · 달 · 본문은 없다
+  POST /api/members/<id>/pay-pin/reset  HR 가 그 사람의 번호를 지운다 (PAY_PIN_RESET) — 풀려 있던 그 사람의 모든 창도 다시 잠긴다. HR 본인 것은 다른 HR 이 한다
+  counts()              p1(안 본 명세서) · p2(서명할 계약서) · p3(안 본 영수증) — push.pending 도 같은 셈을 쓴다
+  reset_by_email()      서버 명령용: 메일 주소로 한 사람을 초기화 (HR 이 한 명뿐일 때 그 HR 본인용)
   PREFIXES              잠그는 길의 앞머리 — 이 목록은 이 한 곳에만 둔다
   problem()             쓸 수 없는 번호를 가린다 (6자리 숫자 · 두 번 같게 · 같은 숫자 6개 · 이어지는 숫자 · 생일)
   derive() · pin_hash() · pin_ok()    HR_PAY_KEY 에서 번호 전용 열쇠를 뽑고, 소금과 함께 해시한다
   python -m paypin check            위 규칙 · 해시 자체 검증 (CI)
+  python -m paypin reset <메일 주소>  서버(HR_DB_PATH 의 DB)에서 그 사람의 번호를 초기화 — 감사로그 PAY_PIN_RESET 에 부른 사람은 없다
 
 HR_PAY_KEY 가 없으면 잠금도 없다(gate 통과 · 정하기 · 확인 503) — 그때는 명세서 등도 빈 목록이다.
 감사로그에는 정함 · 잠김만 남긴다. 번호 · 틀린 숫자 · 한 번 한 번의 맞힘 · 틀림은 적지 않는다.
@@ -26,6 +31,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import os
 import re
 import secrets
 import sqlite3
@@ -37,6 +43,7 @@ from flask import Blueprint, Response, g, jsonify, request
 import auth
 import payslip
 from hr_eval.domain.models import AuditEntry
+from hr_eval.sql.db import connect
 
 bp = Blueprint("paypin", __name__)
 
@@ -111,7 +118,7 @@ def _locked(st: str) -> tuple[Response, int]:
 
 def gate() -> tuple[Response, int] | None:
     """auth._guard 가 로그인 확인 뒤 모든 /api/* 에 부른다. 열쇠가 없으면(잠금 꺼짐) · PREFIXES 밖이면 None, 풀린 창이면 6분을 늘리고 None."""
-    if payslip.pay_key() is None or not request.path.startswith(PREFIXES):
+    if not request.path.startswith(PREFIXES) or payslip.pay_key() is None:
         return None
     st = _use(auth._db(), auth._now())
     return None if st == "open" else _locked(st)
@@ -208,6 +215,66 @@ def alive() -> Response:
     return jsonify(open=_use(auth._db(), auth._now()) == "open")
 
 
+_COUNTS = (  # 메뉴 숫자 세 가지의 셈 — push.pending(휴대폰 알림)도 이것을 쓴다 (화면의 homePortalTasks 와 같은 기준을 한 곳에)
+    ("p1", "SELECT COUNT(*) FROM payslips p JOIN payslip_months m ON m.ym = p.ym WHERE p.user_id = ? AND m.status = 'OPEN' AND p.seen_at IS NULL"),
+    ("p2", "SELECT COUNT(*) FROM contracts WHERE user_id = ? AND status = 'SENT'"),
+    ("p3", "SELECT COUNT(*) FROM withholding w JOIN withholding_years y ON y.year = w.year WHERE w.user_id = ? AND y.status = 'OPEN' AND w.seen_at IS NULL"),
+)
+
+
+def counts(conn: sqlite3.Connection, uid: int) -> dict[str, int]:
+    """그 사람의 {"p1": 안 본 명세서, "p2": 서명할 계약서, "p3": 안 본 영수증} 개수. 열쇠(HR_PAY_KEY)가 없으면 셋 다 0 — 그때는 화면의 목록도 비어 있다."""
+    live = payslip.pay_key() is not None
+    return {kind: conn.execute(sql, (uid,)).fetchone()[0] if live else 0 for kind, sql in _COUNTS}
+
+
+@bp.get("/api/pay/counts")
+def counts_get() -> Response:
+    """왼쪽 메뉴 · 홈 배너의 숫자 — 비밀번호가 잠겨 있어도 본다(PREFIXES 밖). 서명할 계약서가 있으면 가장 이른 마감일(due)도 준다."""
+    conn, uid = auth._db(), g.actor.user_id
+    n = counts(conn, uid)
+    due = conn.execute("SELECT MIN(due_on) FROM contracts WHERE user_id = ? AND status = 'SENT'", (uid,)).fetchone()[0] if n["p2"] else None
+    return jsonify(**n, due=due)
+
+
+def _reset(conn: sqlite3.Connection, uid: int, entry: AuditEntry) -> None:
+    """번호 줄을 지우고 그 사람의 모든 창을 잠근다(풀려 있던 창이 새 번호를 정한 뒤에 되살아나지 않게). 한 트랜잭션 — 번호가 없던 사람도 같다."""
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        conn.execute("DELETE FROM pay_pins WHERE user_id = ?", (uid,))
+        conn.execute("UPDATE sessions SET pay_used_at = NULL WHERE user_id = ?", (uid,))
+        auth._audit(conn, entry)
+        conn.execute("COMMIT")
+    except BaseException:
+        conn.execute("ROLLBACK")
+        raise
+
+
+@bp.post("/api/members/<int:user_id>/pay-pin/reset")
+def pin_reset(user_id: int) -> Response:
+    """HR 가 그 사람의 비밀번호를 지운다 (잊었거나 5번 틀려 잠겼을 때) — 그 사람은 다음에 열 때 새로 정한다. HR 본인 것은 못 한다: 다른 HR 이, 한 명뿐이면 서버 명령(python -m paypin reset)."""
+    if (denied := auth._hr_only()) is not None:
+        return denied
+    if user_id == g.actor.user_id:
+        return jsonify(error="본인 비밀번호는 다른 HR이 초기화해요."), 403
+    conn = auth._db()
+    if conn.execute("SELECT 1 FROM users WHERE id = ?", (user_id,)).fetchone() is None:
+        return jsonify(error="명단에 없는 사람입니다."), 404
+    _reset(conn, user_id, AuditEntry.by(g.actor, action="PAY_PIN_RESET", entity_type="user", entity_id=user_id))
+    return jsonify(ok=True)
+
+
+def reset_by_email(conn: sqlite3.Connection, email: str) -> int | None:
+    """서버 명령용: 메일 주소(대소문자 무시)가 같은 한 사람의 비밀번호를 초기화하고 그 직원 번호를 돌려준다. 없으면 None. 감사로그에 부른 사람(actor)은 없다.
+    대소문자만 다른 주소가 둘이면 누구인지 정할 수 없어 아무도 건드리지 않는다."""
+    rows = conn.execute("SELECT id FROM users WHERE email = ? COLLATE NOCASE", (email,)).fetchall()
+    if len(rows) != 1:
+        return None
+    uid = rows[0][0]
+    _reset(conn, uid, AuditEntry(action="PAY_PIN_RESET", entity_type="user", entity_id=uid, actor_user_id=None))
+    return uid
+
+
 def check() -> None:
     assert problem("111111", "111111", None) == "같은 숫자 6개는 쓸 수 없어요."
     for p in ("123456", "654321", "012345", "456789", "987654", "543210"):
@@ -228,9 +295,19 @@ def check() -> None:
 
 
 if __name__ == "__main__":
-    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    for out in (sys.stdout, sys.stderr):
+        out.reconfigure(encoding="utf-8", errors="replace")
     if sys.argv[1:] == ["check"]:
         check()
         print("paypin 검사 통과")
+    elif sys.argv[1:2] == ["reset"] and len(sys.argv) == 3:
+        db = connect(os.environ.get("HR_DB_PATH") or sys.exit("HR_DB_PATH 가 없습니다 — 서버 컨테이너 안에서 불러 주세요"))  # 거기서는 서버와 같은 DB
+        try:
+            uid = reset_by_email(db, sys.argv[2])
+        finally:
+            db.close()
+        if uid is None:
+            sys.exit("그 메일 주소의 직원이 없습니다")
+        print(f"초기화했습니다 (직원 번호 {uid})")
     else:
-        sys.exit("사용법: python -m paypin check")
+        sys.exit("사용법: python -m paypin check | reset <메일 주소>")

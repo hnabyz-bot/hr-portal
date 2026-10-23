@@ -3051,17 +3051,25 @@ def pay_gate_off():
 
 
 def check_pay_pin(hr) -> None:
-    """급여·계약 비밀번호 (2026-10-23): 세 앞머리는 풀린 창만 · 정하기 규칙 · 확인 · 5번 틀리면 잠김(이미 풀린 다른 창도) · 6분 · 잠그기 · 아직 있어요 · 열쇠 없음.
-    열쇠는 검사가 만든 가짜 32바이트, 번호는 가상. 끝나면 가상3의 비밀번호 줄 · 생일 · 이 검사가 만든 세션 · 시계 · 환경 값을 되돌린다."""
+    """급여·계약 비밀번호 (2026-10-23): 세 앞머리는 풀린 창만 · 정하기 규칙 · 확인 · 5번 틀리면 잠김(이미 풀린 다른 창도) · 6분 · 잠그기 · 아직 있어요 · 열쇠 없음 ·
+    잠긴 채로 보는 메뉴 숫자(/api/pay/counts) · HR 초기화(본인 · 비HR · 없는 사람 거절) · 구성원 설정의 상태 · 서버 명령(메일 주소로 초기화).
+    앞부분의 열쇠는 검사가 만든 가짜 32바이트, 뒷부분은 앞 검사들과 같은 열쇠(계약서 설정이 풀려야 발송할 수 있다). 번호는 가상.
+    끝나면 가상3의 비밀번호 줄 · 생일 · 연봉계약서 대상 칸 · 이 검사가 만든 세션 · 시계 · 환경 값을 되돌린다 (뒷부분이 올린 명세서 · 영수증 · 계약서는 마지막 검사라 남겨 둔다)."""
     import base64
+    import subprocess
 
+    import contract
+    import contract_doc
+    import kpi
     import paypin
+    import push
+    import withholding
 
     print("급여·계약 비밀번호")
     PIN, WRONG = "258036", "147036"
     had_key, real_now = os.environ.get("HR_PAY_KEY"), auth._now
     had_sessions = {r[0] for r in q("SELECT token_hash FROM sessions WHERE user_id = 3")}
-    had_bday = q("SELECT birthday FROM users WHERE id = 3")[0][0]
+    had_bday, had_ct = q("SELECT birthday, has_contract FROM users WHERE id = 3")[0]
     get = lambda c, p="/api/payslips": c.get(p, base_url=BASE)  # noqa: E731
     post = lambda c, p, body=None, headers=ORIGIN: c.post(p, base_url=BASE, headers=headers, json=body)  # noqa: E731
     lock = lambda c: get(c, "/api/pay/lock").json  # noqa: E731
@@ -3159,13 +3167,18 @@ def check_pay_pin(hr) -> None:
         auth._now = lambda: t0
         ok(put_pin(a, PIN).status_code == 200 and post(a, "/api/pay/lock").json == {"ok": True} and locked(get(a), "ask"),
            "(검사용) 다시 정하고 A 잠그기 → 423 ask")
-        ok(unlock(b, WRONG).json["left"] == 4 and unlock(a).json == {"ok": True} and fails() == [(0, 0)] and get(a).status_code == 200,
+        r = unlock(b, "111111")
+        ok(r.status_code == 400 and r.json == {"error": paypin.MSG_WRONG, "left": 4} and fails() == [(1, 0)],
+           "확인은 정하기 규칙을 보지 않음: 같은 숫자 6개도 그냥 틀린 번호 → 400 MSG_WRONG · 남은 4번 (규칙 문구 아님)")
+        ok(unlock(b, WRONG).json["left"] == 3 and unlock(a).json == {"ok": True} and fails() == [(0, 0)] and get(a).status_code == 200,
            "맞는 번호 → 200 · 틀린 횟수 0 으로 · A 풀림")
         auth._now = lambda: t0 + timedelta(seconds=359)
         ok(get(a).status_code == 200, "359초 뒤 → 200 (쓸 때마다 6분을 다시 셈)")
-        auth._now = lambda: t0 + timedelta(seconds=359 + 361)
+        auth._now = lambda: t0 + timedelta(seconds=359 + 359)
+        ok(get(a).status_code == 200, "처음 푼 지 718초에도 200 (359초에 쓴 것이 6분을 늘렸을 때만 참)")
+        auth._now = lambda: t0 + timedelta(seconds=359 + 359 + 361)
         ok(locked(get(a), "ask"), "마지막으로 쓴 뒤 361초 → 423 ask")
-        t1 = t0 + timedelta(seconds=359 + 361)
+        t1 = t0 + timedelta(seconds=359 + 359 + 361)
         ok(unlock(a).status_code == 200, "(검사용) 다시 풀림")
         auth._now = lambda: t1 + timedelta(seconds=300)
         ok(post(a, "/api/pay/alive").json == {"open": True}, "300초 뒤 alive → open true")
@@ -3188,19 +3201,146 @@ def check_pay_pin(hr) -> None:
            "열쇠가 없으면 off · 확인 · 정하기 503")
         r = get(b)
         ok(r.status_code == 200 and r.json == {"slips": []}, "열쇠가 없으면 잠금도 없음 → 명세서 200 빈 목록")
+
+        print("  - 메뉴 숫자 길 · HR 초기화 · 구성원 설정 · 서버 명령")
+        raw_key = bytes(range(32))  # 앞 검사들이 쓴 열쇠와 같게 — 그 검사들이 남긴 계약서 설정 · 직인이 풀린다
+        os.environ["HR_PAY_KEY"] = base64.b64encode(raw_key).decode()
+        x("DELETE FROM pay_pins WHERE user_id = 3")  # 앞 번호는 앞 열쇠로 해시했다
+        x("UPDATE users SET has_contract = 1 WHERE id = 3")
+        cy, ym, wy = 2096, "2096-02", 2096  # 가상 회차 · 달 · 해 (다른 검사가 쓰지 않는 값)
+        due = (auth._today() + timedelta(days=30)).isoformat()
+        PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="  # 1x1 그림 (가짜 직인)
+
+        def tally() -> dict:
+            c = connect(os.environ["HR_DB_PATH"])
+            try:
+                return paypin.counts(c, 3)
+            finally:
+                c.close()
+
+        before, before_due = tally(), q("SELECT MIN(due_on) FROM contracts WHERE user_id = 3 AND status = 'SENT'")[0][0]
+        with pay_gate_off():  # 자료는 HR 길로 — 비밀번호 검문 없이 (HR 은 번호가 없다)
+            slip = {"userId": 3, "code": "PP003", "head": {"code": "PP003", "name": "가상3", "dept": "가상팀", "title": "프로", "job": "연구"},
+                    "pay": [["기본급", 2500000]], "ded": [["소득세", 30000]], "gross": 2500000, "deduct": 30000, "net": 2470000}
+            ok(post(hr, f"/api/payslips/{ym}", {"payDate": f"{ym}-25", "slips": [slip]}).status_code == 200 and post(hr, f"/api/payslips/{ym}/open").status_code == 200,
+               "(검사용) HR 이 가상3 의 명세서 한 달을 올리고 공개")
+            person = {"userId": 3, "sum": dict.fromkeys(withholding.SUM_KEYS, 0), "pdf": base64.b64encode(b"%PDF-1.4\n%fake").decode()}
+            ok(post(hr, f"/api/withholding/{wy}", {"mode": "all", "reset": True, "total": 1, "people": [person]}).status_code == 200
+               and post(hr, f"/api/withholding/{wy}/open").status_code == 200, "(검사용) HR 이 가상3 의 영수증 한 해를 올리고 공개")
+            if get(hr, "/api/contracts/settings").json["settings"] is None:  # 앞 검사가 계약서 설정을 안 남겼을 때만
+                ok(post(hr, "/api/contracts/settings", {"ceo": "○○○", "addr": "가상시 가상구 가상로 1", "kind": "가상 서비스업", "seal": PNG}).status_code == 200,
+                   "(검사용) 계약서 설정을 만듦")
+            body = {"code": "PP-CT", "name": "가상3", "dept": "가상팀", "title": "", "birth6": "900315", "base": 2418900, "ability": 1211000,
+                    "pos": 300000, "site": 0, "qual": 0, "reason": ""}
+            x("INSERT INTO contracts (year, user_id, version, status, starts_on, body, created_at, created_by) VALUES (?, 3, 1, 'DRAFT', ?, ?, ?, 1)",
+              cy, contract_doc.round_period(cy)[0], contract._lock(raw_key, contract._aad(cy, 3, 1, "body"), body), auth._iso(auth._now()))
+            r = post(hr, "/api/contracts/send", {"ids": [q("SELECT id FROM contracts WHERE year = ? AND user_id = 3", cy)[0][0]], "due": due})
+            ok(r.status_code == 200 and r.json["sent"] == 1, "(검사용) HR 이 가상3 에게 계약서 한 장을 발송 (마감일을 하나 정해 둠)")
+        mine3 = ("p1", "p2", "p3")
+        want = {**{k: before[k] + 1 for k in mine3}, "due": min(d for d in (before_due, due) if d)}  # 더 이른 서명 대기가 앞 검사에서 남아 있으면 그 날
+        ok(tally() == {k: want[k] for k in mine3}, "만든 자료만큼 paypin.counts 가 각각 +1")
+        tell = lambda c: get(c, "/api/pay/counts")  # noqa: E731
+
+        def pend() -> dict:
+            """가상3 의 push.pending — 앞 검사가 규칙 번호 없는 확정본을 남겨 진행 기록이 500 이라 그 한 줄만 비우고 부른다 (여기서는 p1 · p2 · p3 만 본다)."""
+            real_prog, kpi.progress_json = kpi.progress_json, lambda *a, **k: None
+            try:
+                return dict(push.pending(app, 3))
+            finally:
+                kpi.progress_json = real_prog
+
+        reset = lambda c, uid: post(c, f"/api/members/{uid}/pay-pin/reset")  # noqa: E731
+        member = lambda uid: next(m for m in get(hr, "/api/members").json["members"] if m["id"] == uid)  # noqa: E731
+        lead = app.test_client()
+        login(lead, new_token("lead"))
+        d, e = window(), window()
+
+        r = tell(d)
+        ok(r.status_code == 200 and r.json == want and r.headers.get("Cache-Control") == "no-store" and app.test_client().get("/api/pay/counts", base_url=BASE).status_code == 401,
+           "비밀번호를 정하기 전(set)에도 GET /api/pay/counts → 200 {p1 · p2 · p3 · due} 칸이 정확히 넷 (각각 +1 · 가장 이른 마감일) · no-store · 로그인 없이 401")
+        ok(put_pin(d, PIN).status_code == 200 and unlock(e).status_code == 200 and tell(d).json == tell(e).json == want and get(d).status_code == get(e).status_code == 200,
+           "(검사용) 가상3 이 번호를 정하고 두 창 D · E 를 모두 풀어 둠 — 풀린 창도 같은 숫자")
+        ok(post(e, "/api/pay/lock").status_code == 200 and locked(get(e), "ask") and tell(e).status_code == 200 and tell(e).json == want,
+           "잠긴 창(ask)으로도 /api/pay/counts 200 — 같은 숫자 (명세서 길은 423)")
+        got = pend()
+        ok({k: got.get(k) for k in mine3} == {k: want[k] for k in mine3}, "push.pending 의 p1 · p2 · p3 이 같은 수 (한 곳에서 셈)")
+
+        print("  - HR 초기화 (거절 · 풀려 있던 창 · 잠긴 사람)")
+        n_reset = lambda: len(audit("PAY_PIN_RESET"))  # noqa: E731
+        was = (member(3)["payPin"], member(3)["payPinLockedAt"], member(2)["payPin"], member(1)["payPin"])
+        ok(was == ("set", None, "none", "none"), "구성원 설정(HR 이 봄): 가상3 은 payPin set · 아직 잠긴 때 없음 / 번호가 없는 사람은 none")
+        r = reset(hr, 1)
+        ok(r.status_code == 403 and r.json == {"error": "본인 비밀번호는 다른 HR이 초기화해요."} and n_reset() == 0, "HR 본인(1) 초기화 → 403 (다른 HR 이 해 주는 일)")
+        r = reset(lead, 3)
+        ok(r.status_code == 403 and r.json == {"error": "HR만 할 수 있습니다."} and q("SELECT 1 FROM pay_pins WHERE user_id = 3") and n_reset() == 0,
+           "HR 이 아닌 가상2(팀장)가 초기화 → 403 (번호는 그대로)")
+        ok(reset(d, 3).status_code == 403 and post(hr, "/api/members/3/pay-pin/reset", headers={}).status_code == 403
+           and app.test_client().post("/api/members/3/pay-pin/reset", base_url=BASE, headers=ORIGIN).status_code == 401
+           and q("SELECT 1 FROM pay_pins WHERE user_id = 3") and n_reset() == 0, "본인(가상3)도 못 함 403 · Origin 없으면 403 · 로그인 없이 401 (번호는 그대로)")
+        r = reset(hr, 999)
+        ok(r.status_code == 404 and n_reset() == 0, "없는 사람(999) → 404 (감사로그 없음)")
+        r = reset(hr, 3)
+        ok(r.status_code == 200 and r.json == {"ok": True} and audit("PAY_PIN_RESET") == [(1, "user", 3, None, None)] and not q("SELECT 1 FROM pay_pins WHERE user_id = 3"),
+           "HR 가 가상3 을 초기화 → 200 · 번호 줄이 사라짐 · 감사로그 PAY_PIN_RESET 1줄 (대상 가상3 · 번호 없음)")
+        ok(lock(d)["state"] == lock(e)["state"] == "set" and not q("SELECT 1 FROM sessions WHERE user_id = 3 AND pay_used_at IS NOT NULL")
+           and member(3)["payPin"] == "none", "가상3 의 모든 창이 set (풀려 있던 D 도) · 풀림 기록이 모두 비워짐 · 구성원 설정에는 none")
+        ok(put_pin(e, PIN).status_code == 200 and get(e).status_code == 200 and locked(get(d), "ask"),
+           "다시 정하면 정한 창 E 만 풀림 — 초기화 때 풀려 있던 D 는 되살아나지 않고 ask")
+        ok(reset(hr, 3).status_code == 200 and not q("SELECT 1 FROM pay_pins WHERE user_id = 3") and reset(hr, 3).status_code == 200 and n_reset() == 3,
+           "번호가 없는 사람을 또 초기화해도 200 (한 번 더 부르는 일 — 감사로그에는 부른 만큼 남음)")
+
+        print("  - 잠긴 사람 · 구성원 설정 · 서버 명령")
+        ok(put_pin(d, PIN).status_code == 200 and member(3)["payPin"] == "set" and member(3)["payPinLockedAt"] is None, "(검사용) 다시 정함 → 구성원 설정 payPin set")
+        for _ in range(4):
+            unlock(e, WRONG)
+        ok(locked(unlock(e, WRONG), "locked") and member(3)["payPin"] == "locked", "5번 틀린 뒤 → 구성원 설정 payPin locked")
+        at = q("SELECT locked_at FROM pay_pins WHERE user_id = 3")[0][0]
+        ok(at and member(3)["payPinLockedAt"] == at and member(2)["payPinLockedAt"] is None, "payPinLockedAt = 잠긴 때(ISO) / 번호가 없는 사람은 None")
+        ok(tell(e).status_code == 200 and tell(e).json == want and locked(get(d), "locked"), "잠긴(locked) 사람의 창으로도 메뉴 숫자는 200 — 명세서 길은 423 locked")
+        r = reset(hr, 3)
+        ok(r.status_code == 200 and member(3)["payPin"] == "none" and member(3)["payPinLockedAt"] is None and lock(d)["state"] == "set" and lock(d)["left"] == 5
+           and n_reset() == 4, "HR 초기화 → 잠겼던 사람도 none · 다시 set (남은 5번)")
+        ok(put_pin(d, PIN).status_code == 200 and get(d).status_code == 200, "(검사용) 초기화한 사람이 새 번호를 정함")
+
+        conn = connect(os.environ["HR_DB_PATH"])
+        try:
+            ok(paypin.reset_by_email(conn, "U3@EXAMPLE.INVALID") == 3 and not q("SELECT 1 FROM pay_pins WHERE user_id = 3")
+               and not q("SELECT 1 FROM sessions WHERE user_id = 3 AND pay_used_at IS NOT NULL") and lock(d)["state"] == "set",
+               "reset_by_email(대문자 메일 주소) → 직원 번호 3 · 번호 줄과 풀림 기록이 사라짐")
+            ok(audit("PAY_PIN_RESET")[-1] == (None, "user", 3, None, None) and n_reset() == 5
+               and q("SELECT actor_position, actor_is_hr FROM audit_logs WHERE action = 'PAY_PIN_RESET' ORDER BY id DESC LIMIT 1") == [(None, 0)],
+               "서버 명령의 감사로그 PAY_PIN_RESET 은 부른 사람(actor)이 없음")
+            ok(paypin.reset_by_email(conn, "nobody@example.invalid") is None and paypin.reset_by_email(conn, "") is None and n_reset() == 5,
+               "없는 메일 주소 → None (감사로그 없음)")
+        finally:
+            conn.close()
+
+        cli = lambda *a: subprocess.run([sys.executable, "-m", "paypin", *a], cwd=HERE, capture_output=True, text=True, encoding="utf-8",  # noqa: E731
+                                         env={**os.environ, "PYTHONIOENCODING": "utf-8"})
+        ok(put_pin(d, PIN).status_code == 200, "(검사용) 다시 정함")
+        r = cli("reset", "U3@example.invalid")
+        ok(r.returncode == 0 and r.stdout.strip() == "초기화했습니다 (직원 번호 3)" and not q("SELECT 1 FROM pay_pins WHERE user_id = 3") and n_reset() == 6
+           and audit("PAY_PIN_RESET")[-1] == (None, "user", 3, None, None), f"python -m paypin reset <메일 주소> → 초기화했습니다 (직원 번호 3) · 종료 코드 0 ({r.stdout.strip()!r} {r.stderr[-200:]!r})")
+        r = cli("reset", "nobody@example.invalid")
+        ok(r.returncode == 1 and "그 메일 주소의 직원이 없습니다" in r.stdout + r.stderr and n_reset() == 6, "없는 메일 주소 → 그 메일 주소의 직원이 없습니다 · 종료 코드 1")
+        ok(cli("reset").returncode != 0 and cli().returncode != 0 and n_reset() == 6, "메일 주소가 없거나 명령이 없으면 사용법 · 종료 코드 0 아님")
+
+        os.environ.pop("HR_PAY_KEY")
+        got = pend()
+        ok(tell(d).json == {"p1": 0, "p2": 0, "p3": 0, "due": None} and not any(k in got for k in mine3), "열쇠를 빼면 메뉴 숫자 셋 모두 0 · due None (push.pending 에도 없음)")
     finally:
         auth._now = real_now
         os.environ.pop("HR_PAY_KEY", None)
         if had_key is not None:
             os.environ["HR_PAY_KEY"] = had_key
         x("DELETE FROM pay_pins WHERE user_id = 3")
-        x("UPDATE users SET birthday = ? WHERE id = 3", had_bday)
+        x("UPDATE users SET birthday = ?, has_contract = ? WHERE id = 3", had_bday, had_ct)
         made = [h for (h,) in q("SELECT token_hash FROM sessions WHERE user_id = 3") if h not in had_sessions]
         x(f"DELETE FROM sessions WHERE token_hash IN ({','.join('?' * len(made))})", *made)
-    ok(not q("SELECT 1 FROM pay_pins WHERE user_id = 3") and q("SELECT birthday FROM users WHERE id = 3") == [(had_bday,)]
+    ok(not q("SELECT 1 FROM pay_pins WHERE user_id = 3") and q("SELECT birthday, has_contract FROM users WHERE id = 3") == [(had_bday, had_ct)]
        and {r[0] for r in q("SELECT token_hash FROM sessions WHERE user_id = 3")} == had_sessions
        and os.environ.get("HR_PAY_KEY") == had_key and auth._now is real_now,
-       "끝나면 가상3 의 비밀번호 줄 · 생일 · 이 검사의 세션 · 열쇠 · 시계를 되돌림")
+       "끝나면 가상3 의 비밀번호 줄 · 생일 · 연봉계약서 대상 칸 · 이 검사의 세션 · 열쇠 · 시계를 되돌림")
 
 
 def year_day(n: int) -> str:

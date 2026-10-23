@@ -533,7 +533,8 @@ def members_list() -> Response:
         "         AND a.action IN ('MEMBER_UPDATED', 'MEMBER_ACTIVE')),"
         " (SELECT s.device || ' · 마지막 사용 ' || substr(s.last_seen_at, 6, 5) FROM sessions s WHERE s.user_id = u.id"
         "  AND s.kind = 'phone' AND s.revoked_at IS NULL AND s.last_seen_at > ? ORDER BY s.created_at DESC LIMIT 1),"
-        " u.title, u.org_hidden, u.hire_date, u.birthday, u.birthday_public, u.led_department_id, u.department_id, u.employee_no"
+        " u.title, u.org_hidden, u.hire_date, u.birthday, u.birthday_public, u.led_department_id, u.department_id, u.employee_no,"
+        " EXISTS (SELECT 1 FROM pay_pins k WHERE k.user_id = u.id), (SELECT k.locked_at FROM pay_pins k WHERE k.user_id = u.id)"
         " FROM users u JOIN departments d ON d.id = u.department_id LEFT JOIN departments p ON p.id = d.parent_id"
         " ORDER BY u.name",
         (_iso(_now() - PHONE_IDLE),),
@@ -551,6 +552,7 @@ def members_list() -> Response:
             "phone": r[12] or "",  # 등록된 휴대폰 (§13.1) — "갤럭시 · 마지막 사용 10-19"
             "title": r[13] or "", "orgHidden": bool(r[14]), "hireDate": r[15] or "",
             "birthday": r[16] or "", "birthdayPublic": bool(r[17]), "ledDept": r[18], "dept": r[19], "no": r[20] or "",  # no = 사원코드 (급여명세서를 올릴 때 기억됨)
+            "payPin": "locked" if r[22] else "set" if r[21] else "none", "payPinLockedAt": r[22],  # 급여·계약 비밀번호 상태 (초기화 단추용) — 번호 자체는 어디에도 없다
         })
     depts = _depts(conn)
     open_ids = {r[0] for r in conn.execute("SELECT id FROM departments WHERE is_active = 1")}  # 닫힌 부서는 고르는 목록에 없다
