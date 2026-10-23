@@ -1229,7 +1229,7 @@
   .yc-dl b{ text-align:right; color:var(--text-primary); white-space:nowrap; }
   .yc-dl.tot{ border-top:1px solid #F4EBE3; margin-top:4px; padding-top:8px; font-weight:700; }
   @media (min-width:1000px){ .yc-rows{ columns:2; column-gap:48px; } .yc-ded-list{ max-width:560px; } }
-  @media (max-width:768px){ .yc-tbl .pd{ display:none; } .yc-tbl th, .yc-tbl td{ padding-left:4px; padding-right:4px; white-space:nowrap; } }   /* 휴대폰 표: 지급일을 빼서 실수령까지 한 화면에 */
+  @media (max-width:768px){ .yc-tbl .pd{ display:none; } .yc-tbl th, .yc-tbl td{ padding-left:3px; padding-right:3px; font-size:var(--fs-xs); white-space:nowrap; } .yc-seg button{ min-height:40px; } }   /* 휴대폰 표: 지급일을 빼서 실수령까지 한 화면에 */
   @media (max-width:768px){
     .pay-mgrid{ grid-template-columns:repeat(4,minmax(0,1fr)); }
   }
@@ -8764,7 +8764,10 @@ function paySelfCheck(){   // 브라우저 콘솔에서 paySelfCheck() 실행
       ok(hd.includes('4월분보다 실수령 <b>▲ 66원</b> · 달라진 항목 3개') && !/class="dc no-print" open/.test(hd) && hd.includes('명절&lt;b&gt;상여') && !hd.includes('명절<b>상여') && hd.includes('4월분 없음 → 5월분 50'), '명세서 위 한 줄(처음엔 접힘) · 항목 이름은 HTML이 아니다 · 새 항목은 "없음 →"');
       payDiffOpen = true; ok(/class="dc no-print" open/.test(payDetail(c0, p0)), '펼친 것은 다시 그려도 펼친 그대로');
       ok(!payDetail(c0).includes('class="dc'), '앞 달이 없으면 비교하지 않는다 (첫 달 · HR 미리 보기)');
-      ok(payDetail({ ...p0 }, p0).includes('4월분과 금액이 같아요'), '금액이 같으면 같다고만');
+      ok(payDetail({ ...p0 }, p0).includes('4월분과 금액이 같아요') && /class="dc dc-same no-print"/.test(payDetail({ ...p0 }, p0)), '금액이 같으면 같다고만 (인쇄에는 없다)');
+      const dp = { ...p0, pay:[['기본급', 1000], ['상여', 100], ['상여', 50]], gross:1150, deduct:0, net:1150 }, dc = { ...p0, pay:[['기본급', 1000], ['상여', 200], ['상여', 50]], gross:1250, deduct:0, net:1250 };
+      const rd = payDiff(dp, dc);
+      ok(rd.pay.length===1 && rd.pay[0].l==='상여' && rd.pay[0].p===150 && rd.pay[0].c===250 && rd.net===100 && !payDetail(dc, dp).includes('같아요'), '같은 이름 칸이 둘이면 더해서 비교 (같다고 하지 않는다)');
       ok(/class="dc[^"]*no-print/.test(hd), '비교는 인쇄 · PDF에 나오지 않는다');
       ok(hd.indexOf('pst-net') < hd.indexOf('지급 내역</div>') && hd.indexOf('지급 내역</div>') < hd.indexOf('공제 내역</div>') && hd.indexOf('사원코드') < hd.indexOf('pst-net') && hd.includes('ct-tbl pay-wide') && hd.includes('<b>151</b>'), '휴대폰 순서: 사원 정보 → 실수령 → 지급 내역 → 공제 내역 (PC · 인쇄는 가로 표)');
     } finally { payDiffOpen = kd; } }
@@ -8780,8 +8783,12 @@ function paySelfCheck(){   // 브라우저 콘솔에서 paySelfCheck() 실행
       ok(g.includes('4월 ~ 12월은 아직 명세서가 없어요') && payYearChart([mk(11, 1, 1)], 2026).includes('12월은 아직') && !payYearChart([...Array(12)].map((_, i)=>mk(i+1, 1, 1)), 2026).includes('아직 명세서'), '남은 달 안내 (12월까지 있으면 없음)');
       ok(g.includes('공제 내역 (올해 합계 1,800,000원)') && g.includes('1,500,000원') && g.includes('300,000원') && !g.includes('고용보험') && !g.includes('<b>가상') && g.includes('&lt;b&gt;가상') && !g.includes(' open'), '공제 내역: 항목별 올해 합계 · 0원 항목은 뺀다 · 처음엔 접힘');
       payDedOpen = true; ok(payYearChart(yl, 2026).includes('class="yc-ded" open'), '펼친 공제 내역은 다시 그려도 펼친 그대로');
-      payShow = false; const m0 = payYearChart(yl, 2026);
-      ok(!/\d,\d{3},\d{3}원/.test(m0) && m0.includes(PAY_MASK), '금액을 가리면 누적 · 달별 · 공제 금액이 모두 가려진다');
+      payShow = false; payDedOpen = true; const m0 = payYearChart(yl, 2026);
+      ok(!/\d[\d,]*원/.test(m0) && m0.includes(PAY_MASK), '금액을 가리면 누적 · 달별 · 공제 금액(펼친 공제 내역 · 읽어 주는 글 포함)이 모두 가려진다');
+      payChartView = 'table'; const mt = payYearChart(yl, 2026); payChartView = 'graph';
+      ok(!/\d[\d,]*원/.test(mt) && !/\d,\d{3}/.test(mt) && mt.includes('●●●●'), '표도 가리면 금액이 없다');
+      payShow = true; const ng1 = payYearChart([mk(1, 3000000, 600000, [['연말정산 환급', -50000]])], 2026);
+      ok(ng1.includes('연말정산 환급') && ng1.includes('-50,000원') && !/연말정산 환급<\/span><span class="bar" aria-hidden="true"><i style="width:-/.test(ng1), '음수 공제 항목(환급)도 목록에 — 막대는 0에서 멈춘다');
       payShow = true; payChartView = 'table'; const t = payYearChart(yl, 2026);
       ok(t.includes('<table>') && (t.match(/<tr><td>/g) || []).length===3 && t.includes('3/20') && !t.includes('yc-row') && t.includes('aria-pressed="true">표'), '표: 월 · 지급일 · 세전 · 공제 · 실수령');
     } finally { [payShow, payOpen, payChartView, payDedOpen] = kv; } }
@@ -9070,14 +9077,16 @@ function payBadges(s){   // 명세서 달의 작은 배지: 다시 올려 고친
   return (s.revised ? '<span class="badge warning">수정됨</span>' : '') + (s.status==='DRAFT' ? '<span class="badge neutral">공개 전</span>' : '');
 }
 function payDiff(p, c){   // 지난달과 달라진 항목 — 이름으로 맞춰 금액이 다른 것만(0원은 없는 것으로). tag: new 새로 생김 · gone 이번 달 없음. 지급 차이 − 공제 차이 = 실수령 차이
-  const one = (pa, ca)=>{ const P = new Map((pa || []).filter(x=>x[1]).map(x=>[x[0], x[1]])), C = new Map((ca || []).filter(x=>x[1]).map(x=>[x[0], x[1]]));
+  const sum = a=>(a || []).reduce((m, [l, v])=>v ? m.set(l, (m.get(l) || 0) + v) : m, new Map());   // 급여대장에 같은 이름 칸이 둘이면 더한다
+  const one = (pa, ca)=>{ const P = sum(pa), C = sum(ca);
     return [...new Set([...C.keys(), ...P.keys()])].map(l=>({ l, p:P.get(l) || 0, c:C.get(l) || 0 })).filter(x=>x.p!==x.c).map(x=>({ ...x, d:x.c - x.p, tag:!x.p ? 'new' : !x.c ? 'gone' : '' })); };
   return { pay:one(p.pay, c.pay), ded:one(p.ded, c.ded), net:c.net - p.net };
 }
 function payPrevOf(slips, s){ return slips.find(x=>x.y*12 + x.m===s.y*12 + s.m - 1) || null; }   // 같은 사람의 바로 앞 달 명세서 (없으면 비교하지 않는다)
 function payDiffBox(s, prev){   // 명세서 위 한 줄: "N월분보다 실수령 ▲… · 달라진 항목 n개", 누르면 항목별 (작은 차이도 모두). 금액이 같으면 같다고만
   const n = v=>v.toLocaleString('ko-KR'), sg = d=>(d>0 ? '▲ ' : '▼ ') + n(Math.abs(d)) + '원', mo = x=>`${x.m+1}월분`, r = payDiff(prev, s), cnt = r.pay.length + r.ded.length;
-  if(!cnt) return `<div class="dc dc-same no-print">${mo(prev)}과 금액이 같아요</div>`;
+  if(!cnt && !r.net) return `<div class="dc dc-same no-print">${mo(prev)}과 금액이 같아요</div>`;
+  if(!cnt) return `<div class="dc dc-same no-print">${mo(prev)}보다 실수령 <b>${sg(r.net)}</b></div>`;   // 항목은 같은데 합계가 다른 급여대장 (드묾)
   const tag = t=>t==='new' ? '<span class="dc-tag">새로</span>' : t==='gone' ? '<span class="dc-tag gone">이번 달 없음</span>' : '';
   const row = x=>`<div class="dc-row"><span>${escapeHtml(x.l)}${tag(x.tag)}</span><span class="df">${sg(x.d)}</span><span class="fr">${mo(prev)} ${x.p ? n(x.p) : '없음'} → ${mo(s)} ${x.c ? n(x.c) : '없음'}</span></div>`;
   return `<details class="dc no-print"${payDiffOpen ? ' open' : ''} ontoggle="payDiffOpen=this.open"><summary><span>${mo(prev)}보다 실수령 <b>${r.net ? sg(r.net) : '같음'}</b> · 달라진 항목 ${cnt}개</span><span class="more"></span></summary>
@@ -9111,23 +9120,32 @@ function payDetail(s, prev){   // 명세서 하나 — 사람 정보는 s.head. 
 function payYearChart(slips, year){   // 급여 수령 현황 (시안 A + 공제 내역): 위에 올해 실수령 누적, [그래프 | 표], 한 줄 = 한 달(실수령 · 공제 막대 + 금액), 아래에 공제 내역(올해 합계, 펼치기)
   const list = slips.filter(s=>s.y===year).sort((a,b)=>a.m-b.m), won = n=>payShow ? payWon(n) : PAY_MASK;
   const net = list.reduce((a,s)=>a+s.net, 0), top = Math.max(...list.map(s=>s.gross), 1), md = d=>`${+d.slice(5,7)}/${+d.slice(8)}`;
-  const seg = (v, t)=>`<button type="button" class="${payChartView===v ? 'on' : ''}" onclick="payChartView='${v}'; renderContent()" aria-pressed="${payChartView===v}">${t}</button>`;
+  const seg = (v, t)=>`<button type="button" class="${payChartView===v ? 'on' : ''}" onclick="paySeg('${v}')" aria-pressed="${payChartView===v}">${t}</button>`;
   const head = `<div class="yc-head"><div class="yc-big">${year}년 받은 돈 (실수령 누적)<b>${won(net)}</b><div class="yc-sub">${list.length}개월 · 월평균 ${won(list.length ? net/list.length : 0)}</div></div>
     <span class="yc-seg" role="group" aria-label="보기 고르기">${seg('graph', '그래프')}${seg('table', '표')}</span></div>`;
   const last = list.length ? list[list.length-1].m : -1, rest = last<11 && list.length ? `<div class="yc-rest">${last===10 ? '12월은' : `${last+2}월 ~ 12월은`} 아직 명세서가 없어요</div>` : '';
+  const wn = n=>payShow ? Math.round(n).toLocaleString('ko-KR') : '●●●●';   // 표 칸: 단위는 머리에 (원)
   if(payChartView==='table') return `${head}<div class="ct-tbl yc-tbl"><table><thead><tr><th>월</th><th class="pd">지급일</th><th class="num">세전</th><th class="num">공제</th><th class="num">실수령</th></tr></thead>
-    <tbody>${list.map(s=>`<tr><td>${s.m+1}월</td><td class="pd">${md(s.payday)}</td><td class="num">${won(s.gross)}</td><td class="num">${won(s.deduct)}</td><td class="num">${won(s.net)}</td></tr>`).join('')}</tbody></table></div>${rest}`;
+    <tbody>${list.map(s=>`<tr><td>${s.m+1}월</td><td class="pd">${md(s.payday)}</td><td class="num">${wn(s.gross)}</td><td class="num">${wn(s.deduct)}</td><td class="num">${wn(s.net)}</td></tr>`).join('')}</tbody></table></div><div class="list-sub" style="text-align:right; margin:4px 0 0;">(단위, 원)</div>${rest}`;
   const rows = list.map(s=>`<button type="button" class="yc-row${s.label===payOpen ? ' on' : ''}" onclick="payPick('${s.label}', true)" aria-expanded="${s.label===payOpen}" aria-label="${s.m+1}월 실수령 ${won(s.net)}, 세전 ${won(s.gross)}, 공제 ${won(s.deduct)}">
       <span class="mo"><b>${s.m+1}월</b><small>${md(s.payday)} 지급</small></span>
       <span class="yc-bar" aria-hidden="true"><i class="net" style="width:${s.net/top*100}%"></i><i class="ded" style="width:${s.deduct/top*100}%"></i></span>
       <span class="amt"><b>${won(s.net)}</b><small>세전 ${won(s.gross)}</small></span></button>`).join('');   // 앞 달과의 차이는 붙이지 않는다(인사담당자 — 명절상여 다음 달의 − 표시 등 복잡해짐)
   const sums = {}; list.forEach(s=>psShow(s.ded || []).forEach(([l, v])=>{ sums[l] = (sums[l] || 0) + v; }));
-  const items = Object.entries(sums).filter(([, v])=>v>0).sort((a,b)=>b[1]-a[1]), dmax = items.length ? items[0][1] : 1, dsum = list.reduce((a,s)=>a+s.deduct, 0);
+  const items = Object.entries(sums).filter(([, v])=>v!==0).sort((a,b)=>b[1]-a[1]), dmax = Math.max(1, ...items.map(([, v])=>v)), dsum = list.reduce((a,s)=>a+s.deduct, 0);   // 음수(환급 등)도 넣어 목록 합 = 합계
   const ded = items.length ? `<details class="yc-ded"${payDedOpen ? ' open' : ''} ontoggle="payDedOpen=this.open"><summary>공제 내역 (올해 합계 ${won(dsum)})</summary><div class="yc-ded-list">
-    ${items.map(([l, v])=>`<div class="yc-dl"><span>${escapeHtml(l)}</span><span class="bar" aria-hidden="true"><i style="width:${v/dmax*100}%"></i></span><b>${won(v)}</b></div>`).join('')}
+    ${items.map(([l, v])=>`<div class="yc-dl"><span>${escapeHtml(l)}</span><span class="bar" aria-hidden="true"><i style="width:${Math.max(0, v)/dmax*100}%"></i></span><b>${won(v)}</b></div>`).join('')}
     <div class="yc-dl tot"><span>합계</span><span></span><b>${won(dsum)}</b></div></div></details>` : '';
   return `${head}<div class="yc-legend"><span><i class="sw net"></i>실수령</span><span><i class="sw ded"></i>공제 (세금·4대보험)</span><span class="list-sub" style="margin:0;">막대 전체 = 세전 · 줄을 누르면 그 달 명세서</span></div>
     <div class="yc-rows">${rows}</div>${rest}${ded}`;
+}
+function paySeg(v){   // 그래프 · 표 바꾸기 — 다시 그린 뒤 단추가 화면의 같은 자리에 오게 맞추고 초점을 돌려준다
+  const was = document.querySelector('.yc-seg')?.getBoundingClientRect().top;
+  payChartView = v; renderContent();
+  const seg = document.querySelector('.yc-seg'); if(!seg || was==null) return;
+  const d = seg.getBoundingClientRect().top - was, sc = document.querySelector('.content'), before = sc.scrollTop;
+  sc.scrollTop += d; if(sc.scrollTop===before) window.scrollBy(0, d);   // 휴대폰은 창이 스크롤한다
+  seg.querySelector('.on')?.focus();
 }
 function payPick(label, toggle){   // 달을 연다. toggle이면 열려 있는 달을 다시 눌러 접는다. 내 명세서를 처음 열면 '봤음'을 서버에 알린다
   payOpen = toggle && label===payOpen ? null : label;
@@ -9277,7 +9295,7 @@ function pinMail(){   // [HR에 초기화 요청 (하이웍스 메일)] — ctMa
   if(no) wsNotice(T);
 }
 function pinForget(){   // 받아 둔 급여·계약 자료 · 상태 · 가림막을 버린다 — 잠길 때(5분 · 지금 잠그기 · 잠김 응답: 다시 보이지 않게) · 풀릴 때(처음부터 다시 받게) · 로그아웃(authLock)
-  ps.pick = null; ps.prev = null; ps.state = ''; Object.assign(PAY_LIVE, { state:'', who:null, slips:[], mine:[] }); payOpen = null; payShow = false;
+  ps.pick = null; ps.prev = null; ps.state = ''; Object.assign(PAY_LIVE, { state:'', who:null, slips:[], mine:[] }); payOpen = null; payShow = false; payDedOpen = false; payDiffOpen = false;
   Object.assign(WH_LIVE, { state:'', who:null, years:[], mine:[] }); wh.state = ''; wh.up = null; wh.prev = null; wh.run = null; whOrig = null; whPrintGone(); whDrop();   // 받아 둔 원천징수영수증 원본 · 인쇄용 틀 · 확인 창의 사람별 PDF(주민등록번호가 있다) · 미리 보기 · 읽는 중인 것도 버린다 (orgCloseModal(true)는 whDrop을 건너뛴다)
   ctDrop();
   Object.assign(rz, { pay:null, grade:null, adj:{}, edited:false, pick:null });   // HR PC에서 읽은 연봉 엑셀 (연봉 인상 계산 · 파일 고르기)
