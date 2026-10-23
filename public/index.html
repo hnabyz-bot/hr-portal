@@ -7441,8 +7441,9 @@ const ctYmd3 = ymd=>ymd.slice(0, 10).split('-').map(Number);
 const ctDueText = ymd=>{ const [y, m, d] = ctYmd3(ymd); return `${m}월 ${d}일(${'일월화수목금토'[new Date(y, m-1, d).getDay()]})`; };   // "2월 14일(토)"
 const ctLeft = ymd=>{ const [y, m, d] = ctYmd3(ymd), [ty, tm, td] = ctYmd3(kpiDay(0)); return Math.round((new Date(y, m-1, d) - new Date(ty, tm-1, td)) / 864e5); };   // 오늘부터 며칠 남았나 (이 PC 날짜)
 const ctStandalone = ()=>navigator.standalone===true;   // 아이폰 홈 화면 앱 — 내려받기 · 인쇄가 안 돼서 PDF를 화면 안에 그린다 (원천징수영수증과 같다)
+const ctFirstDue = ()=>CT_LIVE.mine.filter(c=>c.canSign && c.due).map(c=>c.due).sort()[0] || null;   // 서명할 내 계약서 중 가장 이른 마감일
 function ctTaskTitle(){   // 홈 "오늘의 업무" 글 — 서명할 계약서 중 가장 이른 마감일
-  const due = pinGated() ? PAY_COUNTS.due : CT_LIVE.mine.filter(c=>c.canSign && c.due).map(c=>c.due).sort()[0];   // 급여 비밀번호로 잠겨 있으면 서버가 준 마감일
+  const due = pinGated() ? PAY_COUNTS.due : ctFirstDue();   // 급여 비밀번호로 잠겨 있으면 서버가 준 마감일
   return due ? `연봉계약서 서명 · ${ctMd(due)}까지` : '연봉계약서 서명';
 }
 
@@ -9138,6 +9139,9 @@ async function pinLoad(){   // 이 창의 잠금 상태. 서버에 열쇠가 없
 async function payCountsLoad(){   // 메뉴 숫자 (잠겨 있어도 받는 길). 못 받으면 그대로 둔다
   try { const r = await fetch('/api/pay/counts'); if(r.ok){ const j = await r.json(); Object.assign(PAY_COUNTS, { p1:j.p1, p2:j.p2, p3:j.p3, due:j.due }); } } catch(e){}
 }
+function payCountsShow(){   // 잠긴 동안의 숫자를 서버에서 받아 왼쪽 메뉴 · 탭 줄 · (보고 있으면) 홈 "오늘의 업무"에 — 잠김 응답(pinRefused) · 지금 잠그기가 같이 쓴다
+  return payCountsLoad().then(()=>{ renderSidebar(); renderSubtabs(); if(currentNav.id==='home') renderContent(); });
+}
 async function pinBoot(){ await pinLoad(); await (pinGated() ? payCountsLoad() : Promise.all([payLoadMine(), whFetchMine(), ctLoadMine()])); }   // 로그인 직후 · [다시 불러오기]: 잠겨 있으면 숫자만, 아니면 내 명세서 · 영수증 · 계약서 (메뉴 숫자용)
 function pinRule(p){   // 쓸 수 없는 번호 — 서버(paypin.problem)와 같은 문구. 생일은 서버만 안다
   if(/^(\d)\1{5}$/.test(p)) return '같은 숫자 6개는 쓸 수 없어요.';
@@ -9147,7 +9151,7 @@ function pinRule(p){   // 쓸 수 없는 번호 — 서버(paypin.problem)와 �
 function pinSetWhy(){ return PIN.err || (PIN.first.length===6 && pinRule(PIN.first)) || (PIN.typed.length===6 && PIN.typed!==PIN.first ? '두 번 입력한 비밀번호가 달라요.' : ''); }   // 정하기를 막는 이유 (서버가 거절한 이유 먼저)
 const pinDigits = v=>String(v).replace(/\D/g, '').slice(0, 6);
 const pinDots = (v, pp, cur, bad)=>`<div class="pl-pins${bad ? ' bad' : ''}" data-pp="${pp}" aria-hidden="true">${[0, 1, 2, 3, 4, 5].map(i=>`<i class="${i<v.length ? 'on' : ''}${cur && !bad && i===v.length ? ' cur' : ''}"></i>`).join('')}</div>`;
-const pinInput = (id, label, more)=>`<input id="${id}" class="pl-in" type="password" inputmode="numeric" autocomplete="off" aria-label="${label}" ${more}>`;   // 칸 위에 투명하게 덮는다 — 누르면 초점 · 붙여넣기도 된다
+const pinInput = (id, label, more)=>`<input id="${id}" class="pl-in" type="text" inputmode="numeric" autocomplete="off" spellcheck="false" aria-label="${label}" ${more}>`;   // 칸 위에 투명하게 덮는다 — 누르면 초점 · 붙여넣기도 된다. 비밀번호 칸(password)으로 두지 않는다: 보이지 않아 가릴 것이 없고, 브라우저가 "비밀번호 저장"을 물어 한 번에 풀리게 되면 자리를 비운 사이를 지키지 못한다
 function pinView(){   // 급여·계약 메뉴의 탭 내용 자리 (renderContent가 pinGated()일 때). 문구는 설계 4장 그대로
   const st = PIN.state, head = (t, sub, bad)=>`<div class="pl-ico${bad ? ' bad' : ''}">${icon('lock')}</div><h2>${t}</h2><p class="pl-sub">${sub}</p>`;
   const msg = m=>`<div data-pp="m">${m ? `<div class="pl-msg" role="alert">${escapeHtml(m)}</div>` : ''}</div>`;
@@ -9243,11 +9247,12 @@ async function pinOpened(){   // 풀렸다 (맞는 비밀번호 · 처음 정함
   renderContent();
 }
 function pinRefused(lock){   // 쓰던 중 잠김 응답(423 — 서버 재시작 · 6분 쉼 · 다른 창에서 5번 틀림 · HR 초기화) — 받아 둔 것을 버리고 잠금 창으로. 다시 보내지 않는다(잠긴 동안 그 길을 부르지 않는다)
+  if(!pinGated()) Object.assign(PAY_COUNTS, { p1:TODO.p1(), p2:TODO.p2(), p3:TODO.p3(), due:ctFirstDue() });   // 풀린 동안의 숫자(받아 둔 목록)로 먼저 — 로그인 때 받은 옛 숫자가 잠금 창에 보이지 않게. 지우기 전에 센다
   pinForget();
   const st = lock || 'ask';
   if(PIN.state!==st) Object.assign(PIN, { typed:'', first:'', err:'', row:0, forgot:false });   // 다른 창으로 바뀌면 치던 숫자 · 글을 비운다 (잠금 창 숫자가 정하기 줄로 넘어가지 않게)
   PIN.on = true; PIN.state = st;   // on: 처음에 열쇠가 없던 서버가 잠그기 시작해도 다시 보내는 고리가 생기지 않게
-  payCountsLoad().then(renderSidebar);
+  payCountsShow();
   renderContent();
 }
 async function pinSeen(r, u){   // fetch 감싸개가 모든 답에: 실제 로그인에서 세 앞머리의 423이면 잠금 창으로 (부른 쪽이 답을 보기 전에 — 늦게 "불러오지 못했습니다"를 그려도 잠금 창이 덮는다). 다른 길의 423은 그대로 돌려준다
@@ -9262,13 +9267,15 @@ async function pinSelfCheck(){   // 브라우저 콘솔에서 await pinSelfCheck
   const box = ()=>document.getElementById('pinBox'), txt = ()=>(box()?.textContent || '').replace(/\s+/g, ' '), toast = ()=>document.getElementById('wsToast')?.textContent || '';
   const sent = p=>calls.filter(c=>c.u.split('?')[0]===p), barred = ()=>calls.map(c=>c.u).filter(u=>/^\/api\/(payslips|withholding|contracts)/.test(u));
   const put = (id, v)=>{ const e = document.getElementById(id); e.value = v; e.dispatchEvent(new Event('input')); }, setBtn = ()=>box().querySelector('[data-pp="b"]');
+  const plain = ()=>{ const a = [...document.querySelectorAll('#contentArea input')]; return a.length>0 && a.every(i=>i.type==='text' && i.inputMode==='numeric' && i.autocomplete==='off'); };   // 비밀번호 칸(type=password)이 아니다 — 브라우저가 "비밀번호 저장"을 묻지 않게
+  const tabBadge = id=>document.querySelector(`#subtabsRow .subtab[onclick="selectTab('${id}')"] .nav-badge`)?.textContent || '', area = ()=>document.getElementById('contentArea').textContent;
   try {
     // ----- 쓸 수 없는 번호 (생일은 서버만) -----
     ok(pinRule('111111')==='같은 숫자 6개는 쓸 수 없어요.', '같은 숫자 6개');
     ok(['123456', '654321', '012345', '987654'].every(p=>pinRule(p)==='이어지는 숫자는 쓸 수 없어요.'), '이어지는 숫자 (올라감 · 내려감)');
     ok(['258036', '890123', '112233'].every(p=>pinRule(p)===''), '괜찮은 번호 (9 → 0으로 넘어가는 것은 이어지는 숫자가 아니다)');
 
-    window.fetch = async (u, o = {})=>{ u = String(u); calls.push({ u, m:o.method || 'GET', b:o.body || '' }); const f = reply[u.split('?')[0]], r = f ? f(o) : json({ error:'없는 길' }, 404); await pinSeen(r, u); return r; };   // 진짜 감싸개처럼 pinSeen을 지난다
+    window.fetch = async (u, o = {})=>{ u = String(u); calls.push({ u, m:o.method || 'GET', b:o.body || '' }); const f = reply[u.split('?')[0]], r = f ? await f(o) : json({ error:'없는 길' }, 404); await pinSeen(r, u); return r; };   // 진짜 감싸개처럼 pinSeen을 지난다 · 답은 약속이어도 된다(늦게 오는 답)
     window.open = u=>(opened.push(u), order.push('open'), {});
     Object.defineProperty(navigator, 'clipboard', { configurable:true, value:{ writeText:t=>(copied.push(t), order.push('copy'), Promise.resolve()) } });
     reply['/api/pay/counts'] = ()=>json({ p1:2, p2:1, p3:0, due:'2027-02-14' });
@@ -9287,6 +9294,7 @@ async function pinSelfCheck(){   // 브라우저 콘솔에서 await pinSelfCheck
     // ----- 처음 정하기 (설계 4.2) -----
     Object.assign(PIN, { state:'set', typed:'', first:'', row:0, err:'' }); renderContent();
     ok(txt().includes('급여 비밀번호를 정해 주세요') && txt().includes('HR도 이 비밀번호를 볼 수 없어요') && setBtn().disabled && document.activeElement?.id==='pinNew', '정하기 창 · "정하기"는 처음에 꺼져 있다 · PC는 첫 줄에 바로 친다');
+    ok(plain() && document.querySelectorAll('#contentArea input').length===2, '정하기 두 칸은 비밀번호 칸이 아니다 (글자 칸 · 숫자 자판 · 자동 완성 끔 — 브라우저가 저장하지 않게)');
     put('pinNew', '258036'); ok(setBtn().disabled && box().querySelectorAll('[data-pp="d0"] i.on').length===6 && document.activeElement?.id==='pinAgain' && box().querySelector('[data-pp="d1"] i.cur'), '한 줄만 채우면 꺼져 있고 둘째 줄로 넘어간다');
     put('pinAgain', '258036'); ok(!setBtn().disabled && !box().querySelector('.pl-msg'), '두 줄이 같고 쓸 수 있는 번호면 켜진다');
     put('pinAgain', '258037'); ok(setBtn().disabled && txt().includes('두 번 입력한 비밀번호가 달라요.'), '두 줄이 다르면 꺼지고 이유를 보인다');
@@ -9310,7 +9318,7 @@ async function pinSelfCheck(){   // 브라우저 콘솔에서 await pinSelfCheck
 
     // ----- 치기 · 틀림 · 5번 틀림 (그림 2 · 3 · 4) -----
     currentTab = currentNav.tabs[0]; renderContent(); calls.length = 0;
-    ok(document.activeElement?.id==='pinIn', 'PC: 그린 뒤 숨은 입력 칸에 초점 (바로 키보드로 친다)');
+    ok(document.activeElement?.id==='pinIn' && plain(), 'PC: 그린 뒤 숨은 입력 칸에 초점 (바로 키보드로 친다) · 비밀번호 칸이 아니다');
     pinType('2580'); ok(box().querySelectorAll('.pl-pins i.on').length===4 && !calls.length && document.getElementById('pinIn').value==='2580' && document.activeElement?.id==='pinIn', '4자리: 칸 4개 · 아직 보내지 않는다 · 입력 칸은 그대로');
     reply['/api/pay/unlock'] = ()=>json({ error:'비밀번호가 맞지 않아요.', left:3 }, 400);
     await pinType('258036');
@@ -9348,6 +9356,21 @@ async function pinSelfCheck(){   // 브라우저 콘솔에서 await pinSelfCheck
     const hp = homePortalTasks().find(p=>p.tab==='p2');
     ok(TODO.p1()===2 && TODO.p2()===1 && TODO.p3()===0 && hp && hp.title.includes(ctMd('2027-02-14')), '잠겨 있어도 메뉴 숫자 · 홈 "오늘의 업무"는 /api/pay/counts로 (서명 줄 마감일)');
     ok(document.querySelector('#sidebarNav .nav-item.active .nav-badge')?.textContent==='3', '왼쪽 메뉴 숫자도 그대로 보인다');
+
+    // ----- 잠김 응답 바로 뒤의 숫자: 옛 숫자(로그인 때)가 아니라 풀린 동안의 숫자로 바로, 서버 숫자가 오면 탭 줄 · 홈까지 고친다 -----
+    let release; reply['/api/pay/counts'] = ()=>new Promise(res=>{ release = ()=>res(json({ p1:2, p2:1, p3:0, due:'2027-03-02' })); });
+    Object.assign(PIN, { state:'open', typed:'', err:'' }); Object.assign(PAY_COUNTS, { p1:1, p2:0, p3:0, due:null });   // 로그인 때 받은 숫자 — 그 뒤 풀고 새 명세서를 열어 봤다
+    Object.assign(PAY_LIVE, { state:'ok', who:null, slips:[], mine:[{ ym:'2026-09', seen:true }] }); WH_LIVE.mine = []; Object.assign(CT_LIVE, { mine:[{ id:7, canSign:true, due:'2027-03-02' }], mineState:'ok' });
+    currentTab = currentNav.tabs[0]; renderContent(); ok(!box() && tabBadge('p1')==='' && tabBadge('p2')==='1', '풀린 동안: 본 명세서는 숫자 없음 · 서명할 계약서 1');
+    pinRefused('ask');
+    ok(box() && tabBadge('p1')==='' && tabBadge('p2')==='1' && homePortalTasks().find(p=>p.tab==='p2')?.title.includes(ctMd('2027-03-02')), '잠김 응답 바로: 잠금 창의 탭 숫자 · 홈 서명 줄이 옛 숫자가 아니라 풀린 동안의 숫자');
+    release(); await wait();
+    ok(tabBadge('p1')==='2' && tabBadge('p2')==='1' && document.querySelector('#sidebarNav .nav-item.active .nav-badge')?.textContent==='3', '서버 숫자가 오면 왼쪽 메뉴와 탭 줄을 함께 고친다');
+    currentNav = NAV.find(n=>n.id==='home'); currentTab = currentNav.tabs[0]; Object.assign(PIN, { state:'open' }); PAY_LIVE.mine = []; CT_LIVE.mine = []; renderContent();
+    reply['/api/pay/counts'] = ()=>new Promise(res=>{ release = ()=>res(json({ p1:1, p2:0, p3:0, due:null })); });
+    pinRefused('ask'); ok(!area().includes('새 급여명세서 확인'), '홈을 보는 중 잠김 응답: 아직 새 명세서 없음');
+    release(); await wait(); ok(area().includes('새 급여명세서 확인'), '서버 숫자가 오면 보고 있는 홈 "오늘의 업무"도 고친다');
+    reply['/api/pay/counts'] = ()=>json({ p1:2, p2:1, p3:0, due:'2027-02-14' }); currentNav = NAV.find(n=>n.id==='pay'); currentTab = currentNav.tabs[0];
 
     // ----- 쓰던 중 잠김 응답 (서버 재시작 · 다른 창에서 5번 틀림) -----
     Object.assign(PIN, { state:'open', typed:'', err:'' }); Object.assign(PAY_LIVE, { state:'', who:null, slips:[], mine:[{ ym:'2026-09', seen:false }] }); payShow = true;
