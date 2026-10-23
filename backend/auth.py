@@ -27,7 +27,7 @@ app.py 가 register(app) 로 붙인다.
   POST /api/phone/register        휴대폰이 QR 주소(/#d=값)를 열면 화면이 보낸다 → 휴대폰 세션(30일)
   GET  /api/phone                 내 등록된 휴대폰 (PC 창이 "등록됐는지"를 볼 때도 쓴다)
   POST /api/phone/revoke          내 휴대폰 등록 해제
-  그 밖의 /api/* 전부             세션 검사. 세션 없이 열린 곳은 /api/health · 로그인 받는 곳 · 안내 · 휴대폰 등록뿐 (§3)
+  그 밖의 /api/* 전부             세션 검사. 세션 없이 열린 곳은 /api/health · 로그인 받는 곳 · 안내 · 휴대폰 등록뿐 (§3). 급여·계약 세 앞머리는 비밀번호도(paypin.py)
 
 서버 설정 (.env → docker-compose.yml):
   HR_ENV=production                    운영 모드 — docker-compose.yml 에 고정 (§7)
@@ -533,7 +533,8 @@ def members_list() -> Response:
         "         AND a.action IN ('MEMBER_UPDATED', 'MEMBER_ACTIVE')),"
         " (SELECT s.device || ' · 마지막 사용 ' || substr(s.last_seen_at, 6, 5) FROM sessions s WHERE s.user_id = u.id"
         "  AND s.kind = 'phone' AND s.revoked_at IS NULL AND s.last_seen_at > ? ORDER BY s.created_at DESC LIMIT 1),"
-        " u.title, u.org_hidden, u.hire_date, u.birthday, u.birthday_public, u.led_department_id, u.department_id, u.employee_no"
+        " u.title, u.org_hidden, u.hire_date, u.birthday, u.birthday_public, u.led_department_id, u.department_id, u.employee_no,"
+        " EXISTS (SELECT 1 FROM pay_pins k WHERE k.user_id = u.id), (SELECT k.locked_at FROM pay_pins k WHERE k.user_id = u.id)"
         " FROM users u JOIN departments d ON d.id = u.department_id LEFT JOIN departments p ON p.id = d.parent_id"
         " ORDER BY u.name",
         (_iso(_now() - PHONE_IDLE),),
@@ -551,6 +552,7 @@ def members_list() -> Response:
             "phone": r[12] or "",  # 등록된 휴대폰 (§13.1) — "갤럭시 · 마지막 사용 10-19"
             "title": r[13] or "", "orgHidden": bool(r[14]), "hireDate": r[15] or "",
             "birthday": r[16] or "", "birthdayPublic": bool(r[17]), "ledDept": r[18], "dept": r[19], "no": r[20] or "",  # no = 사원코드 (급여명세서를 올릴 때 기억됨)
+            "payPin": "locked" if r[22] else "set" if r[21] else "none", "payPinLockedAt": r[22],  # 급여·계약 비밀번호 상태 (초기화 단추용) — 번호 자체는 어디에도 없다
         })
     depts = _depts(conn)
     open_ids = {r[0] for r in conn.execute("SELECT id FROM departments WHERE is_active = 1")}  # 닫힌 부서는 고르는 목록에 없다
@@ -983,11 +985,12 @@ def _guard() -> Response | None:
     if actor is None:
         return jsonify(error=MSG_LOGIN), 401
     g.actor = actor
-    return None
+    import paypin  # paypin 이 auth 를 불러오므로 함수 안에서 불러온다 (순환 import — _forget_push 와 같은 이유)
+    return paypin.gate()  # 급여·계약 세 앞머리는 비밀번호로 풀린 창만
 
 
 def _no_store(resp: Response) -> Response:
-    if request.path.startswith(("/api/auth/", "/api/phone", "/api/payslips")) or request.path == "/api/me":
+    if request.path.startswith(("/api/auth/", "/api/phone", "/api/pay")) or request.path == "/api/me":  # /api/pay = 명세서 · 비밀번호 둘 다
         resp.headers["Referrer-Policy"] = "no-referrer"
         resp.headers["Cache-Control"] = "no-store"
     if g.get("phone_cookie") and resp.status_code < 400:

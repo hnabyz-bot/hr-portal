@@ -270,20 +270,14 @@ def pending(flask_app: Flask, uid: int) -> list[tuple[str, int]]:
     연봉계약서 문의는 알림만 보내고 세지 않는다 (설계 7장). 열쇠(HR_PAY_KEY)가 없으면 급여명세서 · 영수증 · 계약서는 0 — 화면의 목록도 비어 있다.
     새 앱 컨텍스트를 먼저 연다: 요청 안에서 불러도(inline 보내기) 그 요청의 g.actor · g.db 를 덮어쓰지 않고, 여기서 연 DB 연결은 컨텍스트가 닫힐 때 닫힌다."""
     import kpi  # 쓰는 자리에서 — kpi 가 이 파일을 불러와도 순환하지 않게
-    import payslip
+    import paypin
 
     n: dict[str, int] = {}
     with flask_app.app_context(), flask_app.test_request_context():
         conn = auth._db()
         g.actor = actor = auth.actor_of(conn, uid)
         year = kpi.plan_year()
-        if payslip.pay_key() is not None:
-            for kind, sql in (
-                ("p1", "SELECT COUNT(*) FROM payslips p JOIN payslip_months m ON m.ym = p.ym WHERE p.user_id = ? AND m.status = 'OPEN' AND p.seen_at IS NULL"),
-                ("p2", "SELECT COUNT(*) FROM contracts WHERE user_id = ? AND status = 'SENT'"),
-                ("p3", "SELECT COUNT(*) FROM withholding w JOIN withholding_years y ON y.year = w.year WHERE w.user_id = ? AND y.status = 'OPEN' AND w.seen_at IS NULL"),
-            ):
-                n[kind] = conn.execute(sql, (uid,)).fetchone()[0]
+        n.update(paypin.counts(conn, uid))  # 메뉴 숫자와 같은 셈 한 곳 (열쇠가 없으면 셋 다 0)
         box = kpi.inbox().get_json()
         items = box["items"]
         if actor.position is Role.CEO and conn.execute("SELECT 1 FROM ceo_delegation WHERE ceo_user_id = ?", (uid,)).fetchone():

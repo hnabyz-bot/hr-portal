@@ -1238,9 +1238,44 @@
   .pay-doc th, .pay-doc td{ border:1px solid var(--border); padding:6px 8px; }
   .pay-doc th{ background:var(--bg-page); color:var(--text-secondary); font-weight:600; }
   .pay-net{ color:var(--accent); font-size:var(--fs-sm); }
+  /* 급여·계약 비밀번호 잠금 (pl*) — 시안(급여 비밀번호 잠금 시안) 그대로: 급여 화면의 따뜻한 색 · 강조는 --coral-text. pl-row · pl-in은 숫자 칸 위에 투명하게 덮는 입력 칸(PC 키보드 · 붙여넣기 · 정하기) */
+  .pl-card{ max-width:460px; margin:36px auto 0; background:var(--surface); border:1px solid #F3DCC8; border-radius:var(--radius-lg); padding:30px 30px 24px; text-align:center; }
+  .pl-ico{ width:56px; height:56px; margin:0 auto 14px; border-radius:50%; background:#FBEADB; color:#7A3E1D; display:flex; align-items:center; justify-content:center; }
+  .pl-ico svg{ width:26px; height:26px; }
+  .pl-ico.bad{ background:var(--bg-danger); color:var(--danger); }
+  .pl-card h2{ margin:0 0 8px; font-size:var(--fs-xl); color:var(--text-primary); }
+  .pl-card .pl-sub{ margin:0 0 20px; color:var(--text-secondary); font-size:var(--fs-md); line-height:1.6; }
+  .pl-lab{ display:block; text-align:center; font-size:var(--fs-xs); font-weight:700; color:var(--text-secondary); margin:0 0 6px; }
+  .pl-pins{ display:flex; gap:8px; justify-content:center; margin:0 0 16px; }
+  .pl-pins i{ width:46px; height:54px; border:1.5px solid var(--border); border-radius:var(--radius-sm); background:var(--bg-page); display:flex; align-items:center; justify-content:center; font-style:normal; }
+  .pl-pins i.on::after{ content:""; width:12px; height:12px; border-radius:50%; background:#7A3E1D; }
+  .pl-pins i.cur{ border-color:var(--coral-text); background:var(--surface); box-shadow:0 0 0 3px #FCE0D4; }
+  .pl-pins.bad i{ border-color:var(--danger); background:var(--bg-danger); }
+  .pl-msg{ margin:-4px 0 14px; font-size:var(--fs-sm); font-weight:700; color:var(--danger); }
+  .pl-rules{ text-align:left; margin:0 0 18px; padding:10px 14px; border-radius:var(--radius-sm); background:var(--bg-page); font-size:var(--fs-xs); color:var(--text-secondary); line-height:1.8; }
+  .pl-rules b{ color:var(--text-primary); }
+  .pl-card .btn{ width:100%; justify-content:center; }
+  .pl-link{ border:0; background:none; padding:4px; color:var(--text-secondary); font:inherit; font-size:var(--fs-sm); text-decoration:underline; text-underline-offset:3px; cursor:pointer; }
+  .pl-foot{ margin:16px 0 0; padding-top:14px; border-top:1px solid var(--border); font-size:var(--fs-xs); color:var(--text-muted); line-height:1.7; }
+  .pl-bar{ display:flex; align-items:center; justify-content:space-between; gap:10px; margin:0 0 14px; padding:9px 14px; border:1px solid #F3DCC8; border-radius:var(--radius); background:#FFF9F2; font-size:var(--fs-sm); color:#7A3E1D; }
+  .pl-bar > span{ display:flex; align-items:center; gap:8px; }
+  .pl-bar svg{ width:16px; height:16px; flex:none; }
+  .pl-bar.warn{ background:var(--bg-warning); border-color:#F6C9B5; color:var(--warning); }
+  .pl-veil{ position:fixed; inset:0; z-index:65; display:flex; align-items:center; justify-content:center; padding:16px; border:0; background:rgba(255,249,242,.92); -webkit-backdrop-filter:blur(10px); backdrop-filter:blur(10px); font:inherit; color:#7A3E1D; cursor:pointer; }   /* 1분 가림막 — 확인 창(60) 위, 알림(70) 아래 */
+  .pl-veil > span{ display:flex; align-items:center; gap:8px; padding:12px 18px; border:1px solid #F3DCC8; border-radius:var(--radius); background:#FFF9F2; font-size:var(--fs-sm); font-weight:700; text-align:left; box-shadow:0 8px 24px rgba(122,62,29,.12); }
+  .pl-veil svg{ width:18px; height:18px; flex:none; }
+  .pl-keys{ display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin:4px 0 14px; }
+  .pl-keys button{ height:58px; border:1px solid var(--border); border-radius:var(--radius); background:var(--surface); font:inherit; font-size:22px; font-weight:700; color:var(--text-primary); }
+  .pl-keys button.fn{ font-size:var(--fs-sm); color:var(--text-secondary); background:var(--bg-page); }
+  .pl-keys button.blank{ visibility:hidden; }
+  .pl-row{ position:relative; }
+  .pl-in{ position:absolute; inset:0; width:100%; height:100%; margin:0; padding:0; border:0; opacity:0; font-size:16px; cursor:text; }
   @media (max-width:768px){
     .pay-hero{ padding:16px 14px 12px; }
     .pay-kv{ grid-template-columns:72px minmax(0,1fr); }
+    .pl-card{ margin:8px auto 0; padding:22px 16px 18px; }
+    .pl-pins{ gap:6px; } .pl-pins i{ width:42px; height:50px; }
+    .pl-bar{ flex-wrap:wrap; }
   }
   /* 급여명세서 — HR 올리기 · 확인 · 공개 (ps*). 상태 칸은 폭을 고정해 줄마다 같은 자리에서 시작한다 */
   .ps-tools{ display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end; }
@@ -1762,6 +1797,7 @@ const ICONS = {
   bellOff:'<path d="M8.7 3A6 6 0 0 1 18 8a21.3 21.3 0 0 0 .6 5"/><path d="M17 17H3s3-2 3-9a4.67 4.67 0 0 1 .3-1.7"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/><path d="m2 2 20 20"/>',
   check:'<polyline points="20 6 9 17 4 12"/>',
   lock:'<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
+  unlock:'<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 7.6-1.7"/>',
   clock:'<circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/>',
   chevD:'<polyline points="6 9 12 15 18 9"/>',
   home:'<path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/>',
@@ -2520,7 +2556,13 @@ function wsNotice(msg){   // 아래쪽 알림(되돌리기 알림과 같은 자�
   d.innerHTML = `<span>${escapeHtml(msg)}</span><button type="button" onclick="this.parentNode.remove()">닫기</button>`;
   document.body.appendChild(d); setTimeout(()=>d.remove(), 8000);
 }
-document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='visible' && AUTH.live){ wsPull(false); payWake(); whWake(); ctWake(); pushInit(); } });   // 다른 기기에서 고친 업무 · 그사이 공개된 급여명세서 · 원천징수영수증 · 새로 온 연봉계약서 · 휴대폰 알림 설정(설정에서 켜고 돌아왔나, 떠 있는 알림 닫기)
+document.addEventListener('visibilitychange', ()=>{
+  if(document.visibilityState!=='visible'){ if(pinUnlocked()) pinVeil(); return; }   // 다른 창 · 탭 · 앱으로 가면 바로 1분 가림과 같게 (설계 4.3)
+  if(!AUTH.live) return;
+  wsPull(false); pinTick();   // 돌아오면 쉰 시간으로 먼저 — 5분이 지났으면 잠근다
+  if(pinGated()) payCountsShow(); else { payWake(); whWake(); ctWake(); }   // 잠겨 있으면 숫자만 (급여·계약 길을 부르지 않는다)
+  pushInit();
+});   // 다른 기기에서 고친 업무 · 그사이 공개된 급여명세서 · 원천징수영수증 · 새로 온 연봉계약서 · 휴대폰 알림 설정(설정에서 켜고 돌아왔나, 떠 있는 알림 닫기)
 function wsSyncSelfCheck(){   // 브라우저 콘솔에서 wsSyncSelfCheck() 실행
   const ok = (c, msg)=>{ if(!c) throw new Error('wsSyncSelfCheck 실패: '+msg); };
   const srv = [{ id:1, title:'보고', due:'2026-10-20' }, { id:2, title:'회의', due:'' }];
@@ -6684,6 +6726,7 @@ function ctDrop(){   // 로그아웃 · 세션 끝(authLock): 서버에서 받�
   ctMineN++; ctDivN++; ctOpenDrop(); CT_SEALS.forEach(p=>p.then(u=>u && URL.revokeObjectURL(u))); CT_SEALS.clear(); ctSignId = 0;   // 내 계약서 · 본부장 현황의 늦은 답 · 큰 창과 화면의 직인 그림 주소
 }
 async function ctAdminLoad(year){   // 실제 로그인 HR: 그 회차의 계약서 전부 (확인 창의 "이미 발송"과 현황 목록이 쓴다). 늦게 온 옛 답은 버린다
+  if(pinGated()) return;   // 잠긴 동안 부르지 않는다 (psLoad와 같다)
   const n = ++ctAdminN; CT_LIVE.state = 'loading';
   try {
     const r = await fetch('/api/contracts/admin?year='+year);
@@ -7353,8 +7396,9 @@ const ctYmd3 = ymd=>ymd.slice(0, 10).split('-').map(Number);
 const ctDueText = ymd=>{ const [y, m, d] = ctYmd3(ymd); return `${m}월 ${d}일(${'일월화수목금토'[new Date(y, m-1, d).getDay()]})`; };   // "2월 14일(토)"
 const ctLeft = ymd=>{ const [y, m, d] = ctYmd3(ymd), [ty, tm, td] = ctYmd3(kpiDay(0)); return Math.round((new Date(y, m-1, d) - new Date(ty, tm-1, td)) / 864e5); };   // 오늘부터 며칠 남았나 (이 PC 날짜)
 const ctStandalone = ()=>navigator.standalone===true;   // 아이폰 홈 화면 앱 — 내려받기 · 인쇄가 안 돼서 PDF를 화면 안에 그린다 (원천징수영수증과 같다)
+const ctFirstDue = ()=>CT_LIVE.mine.filter(c=>c.canSign && c.due).map(c=>c.due).sort()[0] || null;   // 서명할 내 계약서 중 가장 이른 마감일
 function ctTaskTitle(){   // 홈 "오늘의 업무" 글 — 서명할 계약서 중 가장 이른 마감일
-  const due = CT_LIVE.mine.filter(c=>c.canSign && c.due).map(c=>c.due).sort()[0];
+  const due = pinGated() ? PAY_COUNTS.due : ctFirstDue();   // 급여 비밀번호로 잠겨 있으면 서버가 준 마감일
   return due ? `연봉계약서 서명 · ${ctMd(due)}까지` : '연봉계약서 서명';
 }
 
@@ -7595,13 +7639,14 @@ async function ctOpen(id){   // 계약서 한 장: 본문(서버 블록) + 직�
 async function ctFlowCheck(){   // 브라우저 콘솔에서 await ctFlowCheck() 실행 — 시연 모드로 계약 금액 읽기 · 확인 창 · 올리기를 끝까지 (끝나면 시연 기억을 되돌린다)
   const ok = (c, msg)=>{ if(!c) throw new Error('ctFlowCheck 실패: '+msg); };
   const keep = [AUTH.live, ctUi.pick, kpiMsg, structuredClone(CT_MEM), CT_PEOPLE[0].birthday], cp = a=>a.map(r=>r.slice());
-  const keep2 = { y:ctYear, ui:{ ...ctUi }, open:window.open, use:CT_PEOPLE[3].use, org:{ ...ORG_LIVE }, mail:orgMembers.map(m=>m.mailNo), role:kpiRole, view:ctView, cl:{ ...CT_LIVE }, ms:{ state:MS_LIVE.state, list:MS_LIVE.list }, fetch:window.fetch, render:renderContent, revoke:URL.revokeObjectURL, save:window.showSaveFilePicker, cfg:{ ...ctCfg } };   // 화면 ② · ③ 검사가 바꾸는 것들
+  const keep2 = { y:ctYear, ui:{ ...ctUi }, open:window.open, use:CT_PEOPLE[3].use, org:{ ...ORG_LIVE }, mail:orgMembers.map(m=>m.mailNo), role:kpiRole, view:ctView, cl:{ ...CT_LIVE }, ms:{ state:MS_LIVE.state, list:MS_LIVE.list }, fetch:window.fetch, render:renderContent, revoke:URL.revokeObjectURL, save:window.showSaveFilePicker, cfg:{ ...ctCfg }, pin:PIN.on };   // 화면 ② · ③ 검사가 바꾸는 것들
   const Y = ctPeriod(new Date()).year, txt = ()=>document.querySelector('#orgModal .ct-cf')?.textContent || '';
   const H = ['사번','이름','부서','직급','새 기본급','새 능력급','직책수당','현장관리수당','자격수당','생년월일','계약 시작일'];   // 가상 금액 · 이름은 시연 명단(홍길동)과 맞는 한 줄 + 못 읽는 줄(가상둘)
   const line = (code, name, base, birth, start = '')=>[code, name, '국내영업팀', '대리', base, 1211000, '', '', 0, birth, start];
   const R = [H, line('A1', '홍길동', 2418900, '900315'), line('A2', '가상둘', '2,000,000.5', ''), ['합계', ...Array(10).fill('')]], R1 = [H, line('A1', '홍길동', 2418900, '900315')];
   const serial = ymd=>Math.round((Date.UTC(+ymd.slice(0, 4), +ymd.slice(5, 7)-1, +ymd.slice(8)) - Date.UTC(1899, 11, 30)) / 864e5);
   try {
+    PIN.on = false;   // 실제 로그인만 흉내 — 비밀번호 잠금은 끈다 (서버 열쇠가 있는 세션에서도 그대로, pinSelfCheck가 따로 본다)
     AUTH.live = false; CT_MEM.rows = []; CT_MEM.seq = 0;
     await ctStage('가상.xlsx', R, false);
     ok(ctUi.pick && document.querySelector('#orgModal .ct-cf') && ctUi.pick.year===Y && txt().includes('이 PC 화면 안에서만'), '확인 창 · 다가오는 회차가 기본');
@@ -7931,7 +7976,7 @@ async function ctFlowCheck(){   // 브라우저 콘솔에서 await ctFlowCheck()
       AUTH.live = false; window.renderContent = keep2.render;
     }
   } finally {
-    orgCloseModal(); [AUTH.live, ctUi.pick, kpiMsg] = keep; Object.assign(CT_MEM, keep[3]);
+    orgCloseModal(); [AUTH.live, ctUi.pick, kpiMsg] = keep; Object.assign(CT_MEM, keep[3]); PIN.on = keep2.pin;
     window.fetch = keep2.fetch; window.renderContent = keep2.render; URL.revokeObjectURL = keep2.revoke; if(keep2.save) window.showSaveFilePicker = keep2.save; else delete window.showSaveFilePicker; ctCfgN++; ctSetDrop(); if(ctCfg.url) keep2.revoke.call(URL, ctCfg.url); Object.assign(ctCfg, keep2.cfg);
     if(keep[4]===undefined) delete CT_PEOPLE[0].birthday; else CT_PEOPLE[0].birthday = keep[4];
     kpiRole = keep2.role; ctView = keep2.view; Object.assign(CT_LIVE, keep2.cl); MS_LIVE.state = keep2.ms.state; MS_LIVE.list = keep2.ms.list;
@@ -7944,7 +7989,7 @@ async function ctFlowCheck(){   // 브라우저 콘솔에서 await ctFlowCheck()
 
 async function ctLiveCheck(){   // 브라우저 콘솔에서 await ctLiveCheck() — 실제 로그인을 흉내(fetch를 잠깐 바꿔): 내 계약서 받기 · 메뉴 숫자 · 홈 · 서명 · 문의 · 서명본 PDF · 큰 창 · 본부장 현황 · 로그아웃 (끝나면 모두 되돌린다)
   const ok = (c, m)=>{ if(!c) throw new Error('ctLiveCheck 실패: '+m); };
-  const keep = { fetch:window.fetch, render:renderContent, side:renderSidebar, live:AUTH.live, me:AUTH.me, locked:AUTH.locked, role:kpiRole, view:ctView, cl:{ ...CT_LIVE }, msg:kpiMsg, tab:currentTab, pad:ctPadDirty, mem:CT_MEM.rows.slice(), yr:ctYear,
+  const keep = { fetch:window.fetch, render:renderContent, side:renderSidebar, live:AUTH.live, me:AUTH.me, locked:AUTH.locked, role:kpiRole, view:ctView, cl:{ ...CT_LIVE }, msg:kpiMsg, tab:currentTab, pad:ctPadDirty, mem:CT_MEM.rows.slice(), yr:ctYear, pin:{ ...PIN },
     create:URL.createObjectURL, revoke:URL.revokeObjectURL, click:HTMLAnchorElement.prototype.click, mark:whMark, print:whPrintUrl, draw:whDrawPdf, std:Object.getOwnPropertyDescriptor(navigator, 'standalone') };
   const Y = ctPeriod(new Date()).year, tick = ()=>new Promise(r=>setTimeout(r, 0)), wait = ms=>new Promise(r=>setTimeout(r, ms)), host = document.createElement('div');
   const calls = [], reply = {}, made = [], revoked = [], saved = [], printed = [], drawn = [], marked = [];
@@ -7984,6 +8029,7 @@ async function ctLiveCheck(){   // 브라우저 콘솔에서 await ctLiveCheck()
     return pad;
   };
   try {
+    PIN.on = false;   // 실제 로그인만 흉내 — 비밀번호 잠금은 끈다 (pinSelfCheck가 따로 본다)
     AUTH.live = true; AUTH.locked = false; AUTH.me = { user_id:3, name:'가상직원', department:'국내영업팀', position:null, is_hr:false, writes_kpi:true };
     kpiRole = 'emp'; ctView = 'me'; kpiMsg = null; currentTab = { id:'p2' }; Object.assign(CT_LIVE, { mine:[], mineState:'', division:null });
 
@@ -8181,11 +8227,12 @@ async function ctLiveCheck(){   // 브라우저 콘솔에서 await ctLiveCheck()
     await ctOpen(9); const keepUrl = ctDoc.url; ok(keepUrl.startsWith('blob:') && CT_SEALS.has(7), '로그아웃 전: 큰 창 · 화면의 직인 주소가 있다');
     const late = ctLoadMine(); authLock('out'); await late; await tick(); await tick();
     ok(AUTH.locked && CT_LIVE.mine.length===0 && CT_LIVE.mineState==='' && CT_LIVE.division===null && CT_SEALS.size===0 && ctDoc.url==='' && live()===0 && !modal(), '로그아웃(authLock): 내 계약서 · 서명 그림 · 직인 Blob 주소 · 큰 창을 모두 버린다 (늦게 온 옛 답도 무시)');
-    ok(revoked.includes(keepUrl) && String(authLock).includes('ctDrop()') && [...document.scripts].some(s=>s.textContent.includes('payWake(); whWake(); ctWake();')), 'authLock은 ctDrop을 부르고 화면을 다시 볼 때 ctWake를 부른다');
+    ok(revoked.includes(keepUrl) && String(authLock).includes('pinForget()') && String(pinForget).includes('ctDrop()') && [...document.scripts].some(s=>s.textContent.includes('payWake(); whWake(); ctWake();')), 'authLock은 ctDrop을 부르고 화면을 다시 볼 때 ctWake를 부른다');
   } finally {
     window.fetch = keep.fetch; window.renderContent = keep.render; window.renderSidebar = keep.side; URL.createObjectURL = keep.create; URL.revokeObjectURL = keep.revoke; HTMLAnchorElement.prototype.click = keep.click;
     whMark = keep.mark; whPrintUrl = keep.print; whDrawPdf = keep.draw; if(keep.std) Object.defineProperty(navigator, 'standalone', keep.std); else delete navigator.standalone;
     ctDrop(); orgCloseModal(); host.remove(); document.getElementById('authLock')?.remove();
+    Object.assign(PIN, keep.pin);   // 로그아웃 검사(authLock)가 비운 비밀번호 상태도
     AUTH.live = keep.live; AUTH.me = keep.me; AUTH.locked = keep.locked; kpiRole = keep.role; ctView = keep.view; Object.assign(CT_LIVE, keep.cl); kpiMsg = keep.msg; currentTab = keep.tab; ctPadDirty = keep.pad; CT_MEM.rows = keep.mem; ctYear = keep.yr;
     renderContent();
   }
@@ -8672,8 +8719,9 @@ function paySelfCheck(){   // 브라우저 콘솔에서 paySelfCheck() 실행
   ok(['식대','기숙사비','연장근로시간','생년월일'].every(t=>!h.includes(t)), 'payDetail: 0원 항목은 감춘다 · 근로시간 표·생년월일은 없다');
   ok(!h.includes('수정됨') && payDetail({ ...base, revised:true }).includes('수정됨'), '다시 올린 명세서는 제목에 수정됨');
   ok(!payDetail({ ...base, head:{ ...base.head, name:'<b>가상</b>' }, pay:[['<i>수당', 5]] }).match(/<b>가상|<i>수당/), '엑셀에서 온 글자는 그대로 HTML이 되지 않는다');
-  const keep = [AUTH.live, PAY_LIVE.mine, PAY_CHAR_MEM, (()=>{ try{ return localStorage.getItem('payChar'); }catch(e){ return null; } })()];
+  const keep = [AUTH.live, PAY_LIVE.mine, PAY_CHAR_MEM, (()=>{ try{ return localStorage.getItem('payChar'); }catch(e){ return null; } })(), PIN.on];
   try {   // 새 명세서 숫자 · 캐릭터 고르기 (실제 로그인)
+    PIN.on = false;   // 실제 로그인만 흉내 — 비밀번호 잠금은 끈다 (서버 열쇠가 있는 세션에서도 그대로, pinSelfCheck가 따로 본다)
     AUTH.live = true; PAY_LIVE.mine = [{ seen:false }, { seen:true }];
     ok(TODO.p1()===1, '새 명세서 숫자 = 공개됐는데 아직 안 연 것');
     const t = homePortalTasks().find(x=>x.title==='새 급여명세서 확인');
@@ -8695,7 +8743,7 @@ function paySelfCheck(){   // 브라우저 콘솔에서 paySelfCheck() 실행
     const hd = payHero([d]);
     ok(hd.includes('pay-fill') && hd.includes('캐릭터 바꾸기') && hd.includes('시연: 급여일'), '시연: 고르지 않아도 가상 인물로 히어로 · 캐릭터 바꾸기 + 시연 단추');
   } finally {
-    [AUTH.live, PAY_LIVE.mine, PAY_CHAR_MEM] = keep; payPicking = false;
+    [AUTH.live, PAY_LIVE.mine, PAY_CHAR_MEM] = keep; PIN.on = keep[4]; payPicking = false;
     try{ if(keep[3]===null) localStorage.removeItem('payChar'); else localStorage.setItem('payChar', keep[3]); }catch(e){}
   }
   return 'paySelfCheck 통과';
@@ -8942,7 +8990,7 @@ function payHero(slips){
     <div class="pay-top"><div>
       <div class="pay-lead">${lead}</div>
       <div class="pay-amt-row"><span class="pay-amt" id="payAmt" aria-live="off">${payShow ? '' : PAY_MASK}</span>
-        <button type="button" class="pay-eye" onclick="payShow=!payShow; renderContent()" aria-pressed="${payShow}" aria-label="${payShow?'금액 가리기':'금액 보기'}">${icon(payShow?'eyeOff':'eye')}</button></div>
+        <button type="button" class="pay-eye" onclick="payEye()" aria-pressed="${payShow}" aria-label="${payShow?'금액 가리기':'금액 보기'}">${icon(payShow?'eyeOff':'eye')}</button></div>
       <div class="pay-sub">${t.slip ? `${escapeHtml(t.slip.label)} 기준 ` : ''}세전 ${payShow ? payWon(t.amount) : PAY_MASK}${t.estimate ? ' <span class="badge neutral">예상</span>' : ''}</div>
     </div></div>
     <div class="pay-stage"><div class="pay-road">
@@ -9033,6 +9081,504 @@ function payPickerLive(key, v = 'payViewKey', then = 'payOpen=null; payYear=null
   const list = MS_LIVE.state==='ok' ? MS_LIVE.list.filter(m=>!m.me) : [];
   return `<div class="card" style="margin-bottom:14px;"><div class="field" style="max-width:320px;"><label>볼 직원 (HR)</label><select onchange="${v}=this.value===''?null:+this.value; ${then}; renderContent()"><option value="" ${key===null?'selected':''}>나</option>${list.map(m=>`<option value="${m.id}" ${m.id===key?'selected':''}>${escapeHtml(m.name)} ${escapeHtml(m.team || m.division)}${m.active===false ? ' (비활성)' : ''}</option>`).join('')}</select></div></div>`;
 }
+/* ----- 급여·계약 비밀번호 잠금 (설계 2026-10-22 4장, 시안 그림 1~4 · 7) -----
+   서버는 잠긴 창의 세 앞머리(/api/payslips · /api/withholding · /api/contracts)를 423으로 막는다. 화면은 급여·계약 메뉴의 탭 내용 자리에 잠금 창을 그리고(탭 줄 · 숫자는 그대로)
+   잠긴 동안 그 세 길을 부르지 않는다 — 메뉴 숫자 · 홈은 잠그지 않는 /api/pay/counts로. 실제 로그인이고 서버에 열쇠가 있을 때만(PIN.on) — 시연 · 시연 사이트 · 기존 화면 검사는 그대로 눈 단추 */
+const PIN = { on:false, state:'', left:5, hr:[], err:'', typed:'', first:'', row:0, forgot:false, veiled:false, last:0, sent:0 };   // state: '' 아직 · set 정하기 · ask 입력 · locked 5번 틀림 · open 풀림 · err 상태를 못 받음(잠긴 것으로 친다) / typed: 잠금 창에 친 숫자 · 정하기의 "한 번 더" 줄 / first: 정하기의 "새 비밀번호" 줄 / row: 정하기에서 치는 줄 / forgot: "잊었어요"를 눌렀다 / hr: 초기화를 부탁할 HR {mailNo, email} / veiled · last · sent: 1분 가림 · 마지막 움직임 · 마지막 alive
+const PAY_COUNTS = { p1:0, p2:0, p3:0, due:null };   // 잠긴 동안의 메뉴 숫자 · 서명할 계약서의 가장 이른 마감일 (금액 없음)
+function pinGated(){ return AUTH.live && PIN.on && PIN.state!=='open'; }
+async function pinLoad(){   // 이 창의 잠금 상태. 서버에 열쇠가 없으면(off) 잠그지 않는다 — 그때는 잠근 자료도 없다. 못 받으면 잠긴 것으로 친다
+  try {
+    const r = await fetch('/api/pay/lock'), j = await r.json();
+    if(!r.ok) throw new Error(r.status);
+    if(j.state==='off'){ PIN.on = false; return; }
+    Object.assign(PIN, { on:true, state:j.state, left:j.left ?? 5, hr:j.hr || [], last:Date.now() });   // last: 이미 풀린 창을 새로 열었으면(새로 고침) 쉰 시간은 지금부터
+  } catch(e){ PIN.on = true; PIN.state = 'err'; }
+}
+async function payCountsLoad(){   // 메뉴 숫자 (잠겨 있어도 받는 길). 못 받으면 그대로 둔다
+  try { const r = await fetch('/api/pay/counts'); if(r.ok){ const j = await r.json(); Object.assign(PAY_COUNTS, { p1:j.p1, p2:j.p2, p3:j.p3, due:j.due }); } } catch(e){}
+}
+function payCountsShow(){   // 잠긴 동안의 숫자를 서버에서 받아 왼쪽 메뉴 · 탭 줄 · (보고 있으면) 홈 "오늘의 업무"에 — 잠김 응답(pinRefused) · 지금 잠그기가 같이 쓴다
+  return payCountsLoad().then(()=>{ renderSidebar(); renderSubtabs(); if(currentNav.id==='home') renderContent(); });
+}
+async function pinBoot(){ await pinLoad(); await (pinGated() ? payCountsLoad() : Promise.all([payLoadMine(), whFetchMine(), ctLoadMine()])); }   // 로그인 직후 · [다시 불러오기]: 잠겨 있으면 숫자만, 아니면 내 명세서 · 영수증 · 계약서 (메뉴 숫자용)
+function pinRule(p){   // 쓸 수 없는 번호 — 서버(paypin.problem)와 같은 문구. 생일은 서버만 안다
+  if(/^(\d)\1{5}$/.test(p)) return '같은 숫자 6개는 쓸 수 없어요.';
+  if(p.length===6 && ('0123456789'.includes(p) || '9876543210'.includes(p))) return '이어지는 숫자는 쓸 수 없어요.';
+  return '';
+}
+function pinSetWhy(){ return PIN.err || (PIN.first.length===6 && pinRule(PIN.first)) || (PIN.typed.length===6 && PIN.typed!==PIN.first ? '두 번 입력한 비밀번호가 달라요.' : ''); }   // 정하기를 막는 이유 (서버가 거절한 이유 먼저)
+const pinDigits = v=>String(v).replace(/\D/g, '').slice(0, 6);
+const pinDots = (v, pp, cur, bad)=>`<div class="pl-pins${bad ? ' bad' : ''}" data-pp="${pp}" aria-hidden="true">${[0, 1, 2, 3, 4, 5].map(i=>`<i class="${i<v.length ? 'on' : ''}${cur && !bad && i===v.length ? ' cur' : ''}"></i>`).join('')}</div>`;
+const pinInput = (id, label, more)=>`<input id="${id}" class="pl-in" type="text" inputmode="numeric" autocomplete="off" spellcheck="false" aria-label="${label}" ${more}>`;   // 칸 위에 투명하게 덮는다 — 누르면 초점 · 붙여넣기도 된다. 비밀번호 칸(password)으로 두지 않는다: 보이지 않아 가릴 것이 없고, 브라우저가 "비밀번호 저장"을 물어 한 번에 풀리게 되면 자리를 비운 사이를 지키지 못한다
+function pinView(){   // 급여·계약 메뉴의 탭 내용 자리 (renderContent가 pinGated()일 때). 문구는 설계 4장 그대로
+  const st = PIN.state, head = (t, sub, bad)=>`<div class="pl-ico${bad ? ' bad' : ''}">${icon('lock')}</div><h2>${t}</h2><p class="pl-sub">${sub}</p>`;
+  const msg = m=>`<div data-pp="m">${m ? `<div class="pl-msg" role="alert">${escapeHtml(m)}</div>` : ''}</div>`;
+  const hrBtn = `<button type="button" class="btn coral" onclick="pinMail()">${icon('mail')} HR에 초기화 요청 (하이웍스 메일)</button>`;
+  if(st==='set'){
+    const why = pinSetWhy(), can = !why && PIN.first.length===6 && PIN.typed===PIN.first;
+    return `<div class="pl-card" id="pinBox">${head('급여 비밀번호를 정해 주세요', '처음 한 번만 정해요.<br>급여·계약 메뉴에서 금액을 볼 때 써요.')}
+      <label class="pl-lab" for="pinNew">새 비밀번호 (숫자 6자리)</label>
+      <div class="pl-row">${pinDots(PIN.first, 'd0', PIN.row===0)}${pinInput('pinNew', '새 비밀번호 숫자 6자리', `value="${PIN.first}" onfocus="PIN.row=0; pinPaint()" oninput="pinSetIn()"`)}</div>
+      <label class="pl-lab" for="pinAgain">한 번 더 입력</label>
+      <div class="pl-row">${pinDots(PIN.typed, 'd1', PIN.row===1)}${pinInput('pinAgain', '한 번 더 입력', `value="${PIN.typed}" onfocus="PIN.row=1; pinPaint()" oninput="pinSetIn()"`)}</div>
+      ${msg(why)}
+      <div class="pl-rules"><b>쓸 수 없는 번호</b><br>· 생일이 들어간 번호 · 같은 숫자(111111) · 이어지는 숫자(123456)</div>
+      <button type="button" class="btn coral" data-pp="b" onclick="this.disabled=true; pinSetSubmit()"${can ? '' : ' disabled'}>정하기</button>
+      <div class="pl-foot">HR도 이 비밀번호를 볼 수 없어요. 잊으면 HR이 <b>초기화</b>해 주고, 다시 정하면 돼요.</div></div>`;
+  }
+  if(st==='ask'){
+    const phone = isPhone(), keys = `<div class="pl-keys">${[1, 2, 3, 4, 5, 6, 7, 8, 9].map(n=>`<button type="button" onclick="pinKey('${n}')">${n}</button>`).join('')}<button type="button" class="blank" tabindex="-1" aria-hidden="true"></button><button type="button" onclick="pinKey('0')">0</button><button type="button" class="fn" onclick="pinKey('del')">지우기</button></div>`;
+    return `<div class="pl-card" id="pinBox">${head('비밀번호를 입력해 주세요', '급여명세서 · 전자연봉계약서 · 원천징수영수증의<br>금액은 비밀번호를 넣어야 보여요.')}
+      <div class="pl-row">${pinDots(PIN.typed, 'd0', true, !!PIN.err && !PIN.typed)}${phone ? '' : pinInput('pinIn', '비밀번호 숫자 6자리', `value="${PIN.typed}" oninput="pinType(this.value)"`)}</div>
+      ${msg(PIN.err)}${phone ? keys : ''}
+      ${PIN.forgot ? `<p class="pl-sub">HR에 초기화를 요청해 주세요.<br>초기화되면 비밀번호를 새로 정할 수 있어요.</p>${hrBtn}` : '<button type="button" class="pl-link" onclick="pinForgot()">비밀번호를 잊었어요</button>'}
+      <div class="pl-foot">5번 틀리면 잠겨요 · 5분 동안 쓰지 않으면 다시 잠겨요</div></div>`;
+  }
+  if(st==='locked') return `<div class="pl-card" id="pinBox">${head('비밀번호를 5번 틀려서 잠겼어요', 'HR에 초기화를 요청해 주세요.<br>초기화되면 비밀번호를 새로 정할 수 있어요.', true)}
+      ${hrBtn}<div class="pl-foot">다른 메뉴는 그대로 쓸 수 있어요.<br>본인이 틀린 게 아니라면 HR에 꼭 알려 주세요.</div></div>`;
+  return `<div id="pinBox">${st==='err' ? kpiNote('급여 비밀번호 상태를 불러오지 못했어요. 잠시 뒤 다시 해 주세요. <button type="button" class="btn sm" onclick="pinBoot().then(renderContent)">다시 불러오기</button>', 'danger') : kpiNote('급여·계약 메뉴를 여는 중이에요…', 'info')}</div>`;
+}
+function pinPaint(){   // 칠 때마다 — 입력 칸(초점 · 휴대폰 자판)은 그대로 두고 칸 · 글 · 단추([data-pp])만 pinView()의 같은 조각으로 바꾼다
+  const box = document.getElementById('pinBox'); if(!box) return;
+  const t = document.createElement('div'); t.innerHTML = pinView();
+  box.querySelectorAll('[data-pp]').forEach(e=>{ const n = t.querySelector(`[data-pp="${e.dataset.pp}"]`); if(n) e.replaceWith(n); });
+}
+function pinFocus(){ if(!isPhone()) document.getElementById(PIN.state==='set' ? (PIN.row ? 'pinAgain' : 'pinNew') : 'pinIn')?.focus(); }   // PC: 그린 뒤 바로 칠 수 있게 (휴대폰은 화면 안 자판 · 누르면 칸)
+function pinType(v){   // 잠금 창에 칠 때 (PC 숨은 칸 · 붙여넣기 · 휴대폰 자판) — 숫자만 6자리까지, 6자리가 되면 바로 확인한다. 확인하는 동안(6자리)은 받지 않는다
+  if(PIN.typed.length===6) return;
+  PIN.typed = pinDigits(v);
+  if(PIN.typed) PIN.err = '';
+  const el = document.getElementById('pinIn'); if(el) el.value = PIN.typed;
+  pinPaint();
+  if(PIN.typed.length===6) return pinSubmit();
+}
+function pinKey(k){ return pinType(k==='del' ? PIN.typed.slice(0, -1) : PIN.typed + k); }   // 휴대폰 숫자 자판
+async function pinPost(url, body){   // → { r, j } (끊기면 r 없음)
+  try { const r = await fetch(url, { method:'POST', headers:{ 'Content-Type':'application/json' }, body:JSON.stringify(body) }); return { r, j:await r.json().catch(()=>({})) }; } catch(e){ return { j:{} }; }
+}
+const PIN_NET = '연결이 끊겼어요. 잠시 뒤 다시 해 주세요.';
+async function pinSubmit(){
+  const { r, j } = await pinPost('/api/pay/unlock', { pin:PIN.typed });
+  if(r && r.ok) return pinOpened();
+  PIN.typed = '';
+  if(r && r.status===423) return pinRefused(j.lock);   // 5번째 틀림 · 그사이 잠김 · 초기화됨(set)
+  if(typeof j.left==='number') PIN.left = j.left;
+  PIN.err = typeof j.left==='number' ? `비밀번호가 맞지 않아요. 남은 기회 ${j.left}번` : r && j.error || PIN_NET;
+  const el = document.getElementById('pinIn'); if(el) el.value = '';
+  pinPaint();
+}
+function pinSetIn(){   // 정하기 두 줄을 칠 때 — 숫자만 6자리까지, 첫 줄을 다 치면 둘째 줄로. 칸을 다시 만들지 않는다
+  const a = document.getElementById('pinNew'), b = document.getElementById('pinAgain');
+  PIN.first = a.value = pinDigits(a.value); PIN.typed = b.value = pinDigits(b.value); PIN.err = '';
+  if(document.activeElement===a && PIN.first.length===6 && PIN.typed.length<6){ PIN.row = 1; b.focus(); }
+  pinPaint();
+}
+async function pinSetSubmit(){
+  if(pinSetWhy() || PIN.first.length<6 || PIN.typed!==PIN.first) return pinPaint();
+  const { r, j } = await pinPost('/api/pay/pin', { pin:PIN.first, again:PIN.typed });
+  if(r && r.ok) return pinOpened();   // 정하면 이 창은 바로 풀린다
+  if(r && r.status===409){ PIN.first = PIN.typed = ''; await pinLoad(); return renderContent(); }   // 다른 창에서 먼저 정했다 → 그 비밀번호로 넣는 창
+  PIN.err = r && j.error || PIN_NET;
+  pinPaint();
+}
+function pinForgot(){ PIN.forgot = true; renderContent(); }
+function pinMail(){   // [HR에 초기화 요청 (하이웍스 메일)] — ctMail과 같은 방식: HR이 한 명이고 번호가 있으면 번호로 받는 사람을 채우고, 아니면 메일 주소를 창보다 먼저 복사한다.
+  // 제목을 주소로 채우는 길은 확인된 것이 없어 안내로 한다. 본문에 비밀번호 · 금액은 없다
+  const T = '제목은 "급여 비밀번호 초기화 요청"으로 적어 주세요.', no = PIN.hr.length===1 && PIN.hr[0].mailNo, mails = PIN.hr.map(h=>h.email).filter(Boolean);
+  if(!no && !mails.length) return wsNotice('HR 메일 주소가 없어요. HR에 직접 알려 주세요.');
+  const copying = no ? null : hwMailCopy(mails.join(';'), ' '+T, mails.length);   // 새 창이 포커스를 가져가면 브라우저가 복사를 거절할 수 있다
+  const w = window.open(no ? HW_MAIL + '&user_nos=' + encodeURIComponent(no) : HW_MAIL, '_blank');
+  if(!w) return void Promise.resolve(copying).then(()=>wsNotice('새 창이 막혔어요. 이 사이트의 팝업을 허용한 뒤 다시 눌러 주세요.'));
+  try { w.opener = null; } catch(e){}
+  if(no) wsNotice(T);
+}
+function pinForget(){   // 받아 둔 급여·계약 자료 · 상태 · 가림막을 버린다 — 잠길 때(5분 · 지금 잠그기 · 잠김 응답: 다시 보이지 않게) · 풀릴 때(처음부터 다시 받게) · 로그아웃(authLock)
+  ps.pick = null; ps.prev = null; ps.state = ''; Object.assign(PAY_LIVE, { state:'', who:null, slips:[], mine:[] }); payOpen = null; payShow = false;
+  Object.assign(WH_LIVE, { state:'', who:null, years:[], mine:[] }); wh.state = ''; wh.up = null; wh.prev = null; wh.run = null; whOrig = null; whPrintGone(); whDrop();   // 받아 둔 원천징수영수증 원본 · 인쇄용 틀 · 확인 창의 사람별 PDF(주민등록번호가 있다) · 미리 보기 · 읽는 중인 것도 버린다 (orgCloseModal(true)는 whDrop을 건너뛴다)
+  ctDrop();
+  Object.assign(rz, { pay:null, grade:null, adj:{}, edited:false, pick:null });   // HR PC에서 읽은 연봉 엑셀 (연봉 인상 계산 · 파일 고르기)
+  if(rz.lock?.kind!=='contact') rz.lock = null;   // 암호 묻는 중인 파일 — 구성원 설정의 비상연락망(급여·계약 밖)은 두어 그 창의 "열기"가 그대로 되게. 로그아웃(authLock)은 그것도 지운다
+  kpiMsg = null;   // 잠김 응답 뒤 HR 화면이 띄운 실패 글이 풀린 뒤에 남지 않게
+  if(currentNav.id==='pay') orgCloseModal(true);   // 급여대장 · 계약 · 영수증 확인 창 · 미리 보기 · 암호 창 (다른 메뉴의 창은 둔다)
+  pinVeilOff();
+}
+const PIN_VEIL_MS = 60e3, PIN_LOCK_MS = 300e3, PIN_ALIVE_MS = 60e3;   // 화면 가림 1분 · 화면 잠금 5분(서버는 6분 — 화면이 늘 먼저 잠근다) · "아직 있어요"는 1분에 한 번까지
+function pinUnlocked(){ return AUTH.live && PIN.on && PIN.state==='open'; }   // 풀린 상태 — 띠 · 1분 가림 · 5분 잠금 · 아직 있어요는 이때만 (시연 · 열쇠 없는 서버는 눈 단추 그대로)
+function pinBand(){   // 풀린 뒤 탭 내용 맨 위 한 줄 (설계 4.3, 그림 5 · 6). 문구는 설계 그대로 · 글은 한 덩어리로 감싼다(휴대폰에서 굵은 "잠금 풀림"만 따로 접히지 않게)
+  return `<div class="pl-bar${PIN.veiled ? ' warn' : ''}" id="pinBand"><span>${icon('unlock')}<span>${PIN.veiled ? '1분 동안 움직임이 없어 금액을 가리고 열린 명세서를 닫았어요. 눈 모양을 누르면 다시 보여요.' : '<b>잠금 풀림</b> · 1분 동안 움직임이 없으면 금액을 가리고, 5분이면 다시 잠겨요'}</span></span><button type="button" class="btn sm" onclick="pinLockNow()">${icon('lock')} 지금 잠그기</button></div>`;
+}
+function pinBandPaint(){ const b = document.getElementById('pinBand'); if(b) b.outerHTML = pinBand(); }   // 띠만 바꿔 그린다 (탭 내용은 그대로)
+function pinTouch(){   // 움직임(포털 어디서든) — 5분을 다시 센다. 풀려 있으면 서버에도 1분에 한 번까지 "아직 있어요" (기다리지 않는다)
+  PIN.last = Date.now();
+  if(pinUnlocked() && PIN.last - PIN.sent>=PIN_ALIVE_MS){ PIN.sent = PIN.last;   // 답이 open:false면 서버가 이 세션을 다른 곳에서 잠갔다(다른 창의 지금 잠그기 · 다른 기기에서 5번 틀림 · HR 초기화) — 이 창도 잠금 창으로. 실제로 5번 틀림 · 초기화면 다음 확인의 423이 그 창으로 고친다
+    fetch('/api/pay/alive', { method:'POST' }).then(r=>r.json()).then(j=>{ if(j.open===false && pinUnlocked()) pinRefused('ask'); }).catch(()=>{}); }
+}
+['pointermove', 'pointerdown', 'keydown', 'wheel', 'touchstart'].forEach(e=>document.addEventListener(e, pinTouch, { passive:true }));
+document.addEventListener('scroll', ()=>{ if(!PIN.veiled) pinTouch(); }, { capture:true, passive:true });   // 안쪽 칸의 스크롤은 문서로 올라오지 않는다 — capture로 받는다. 가린 동안은 뺀다: 가림이 다시 그려 짧아진 화면을 브라우저가 스크롤해도(사람 없음) 움직임이 아니다 — 사람의 스크롤은 휠 · 터치 · 키 · 누르기로 온다
+function pinTick(){   // 5초마다(authBoot) · 화면이 다시 보일 때: 쉰 시간이 5분이면 잠그고, 1분이면 가린다
+  if(!pinUnlocked()) return;
+  const idle = Date.now() - PIN.last;
+  if(idle>=PIN_LOCK_MS) pinLockNow();
+  else if(idle>=PIN_VEIL_MS && !PIN.veiled) pinVeil();
+}
+function pinVeil(){   // 1분 가림 (그림 6): 금액을 가리고 열린 명세서 · 원본 PDF를 닫는다. 급여명세서 · 원천징수영수증의 내 화면은 다시 그린다 — 떠 있는 확인 창은 body에 있어
+  // 다시 그려도 창 · 친 글 · 초점이 남으니, 그때는 그 위에 가림막도 덮는다. 그 밖(계약서 서명 · HR 올리기 · 연봉 인상 계산)은 다시 그리지 않고 가림막만 — 그린 서명 · 치던 칸이
+  // 그대로 남게(설계 2장). 다른 메뉴면 값만 바꾼다
+  PIN.veiled = true; payShow = false; payOpen = null; whOrig = null;
+  if(currentNav.id!=='pay') return;
+  const t = currentTab.id;
+  if(t==='p1' && ps.view!=='admin' || t==='p3' && wh.view!=='admin'){ renderContent(); if(!document.getElementById('orgModal')) return; }
+  if(!document.getElementById('pinVeil')) document.body.insertAdjacentHTML('beforeend', `<button type="button" class="pl-veil" id="pinVeil" onclick="pinVeilOff()"><span>${icon('eyeOff')}1분 동안 움직임이 없어 가렸어요. 누르면 다시 보여요.</span></button>`);
+  pinBandPaint();
+}
+function pinVeilOff(){ document.getElementById('pinVeil')?.remove(); PIN.veiled = false; pinBandPaint(); }   // 가림막을 누르면 · 잠글 때 · 로그아웃(pinForget)
+function payEye(){ payShow = !payShow; if(payShow) PIN.veiled = false; renderContent(); }   // 눈 단추 둘(급여명세서 · 원천징수영수증) — 다시 보이면 띠도 돌아온다
+function pinLockNow(){ fetch('/api/pay/lock', { method:'POST' }).catch(()=>{}); pinRefused('ask'); }   // 5분 쉼 · "지금 잠그기": 서버도 잠그고(기다리지 않는다) 잠김 응답과 같이 — 받아 둔 것 · 확인 창 · 가림막을 지우고 잠금 창, 숫자는 잠그지 않는 길로(payCountsShow)
+async function pinOpened(){   // 풀렸다 (맞는 비밀번호 · 처음 정함) — 처음부터 다시 받아 금액을 바로 보인다
+  pinForget();
+  Object.assign(PIN, { state:'open', err:'', typed:'', first:'', row:0, forgot:false, veiled:false, last:Date.now() });
+  payShow = true;
+  await Promise.all([payLoadMine(), whFetchMine(), ctLoadMine()]);
+  renderContent();
+}
+function pinRefused(lock){   // 쓰던 중 잠김 응답(423 — 서버 재시작 · 6분 쉼 · 다른 창에서 5번 틀림 · HR 초기화) · 5분 잠금 · 지금 잠그기 — 받아 둔 것을 버리고 잠금 창으로. 다시 보내지 않는다(잠긴 동안 그 길을 부르지 않는다)
+  if(!pinGated()) Object.assign(PAY_COUNTS, { p1:TODO.p1(), p2:TODO.p2(), p3:TODO.p3(), due:ctFirstDue() });   // 풀린 동안의 숫자(받아 둔 목록)로 먼저 — 로그인 때 받은 옛 숫자가 잠금 창에 보이지 않게. 지우기 전에 센다
+  pinForget();
+  const st = ['set', 'ask', 'locked'].includes(lock) ? lock : 'err';   // 모르는 값 · 값 없음은 상태를 못 받은 것으로 (다시 불러오기)
+  if(PIN.state!==st) Object.assign(PIN, { typed:'', first:'', err:'', row:0, forgot:false });   // 다른 창으로 바뀌면 치던 숫자 · 글을 비운다 (잠금 창 숫자가 정하기 줄로 넘어가지 않게)
+  PIN.on = true; PIN.state = st;   // on: 처음에 열쇠가 없던 서버가 잠그기 시작해도 다시 보내는 고리가 생기지 않게
+  payCountsShow();
+  if(currentNav.id==='pay' || currentNav.id==='home') renderContent(); else { renderSidebar(); renderSubtabs(); }   // 다른 메뉴는 다시 그리지 않는다 — 치던 글이 지워지지 않게 (금액이 없는 화면)
+}
+async function pinSeen(r, u){   // fetch 감싸개가 모든 답에: 실제 로그인에서 세 앞머리의 423이면 잠금 창으로 (부른 쪽이 답을 보기 전에 — 늦게 "불러오지 못했습니다"를 그려도 잠금 창이 덮는다). 다른 길의 423은 그대로 돌려준다
+  if(r.status===423 && AUTH.live && /^\/api\/(payslips|withholding|contracts)/.test(String(u))) pinRefused((await r.clone().json().catch(()=>({}))).lock);
+}
+async function pinSelfCheck(){   // 브라우저 콘솔에서 await pinSelfCheck() — 실제 로그인 · 서버 열쇠를 흉내(fetch를 잠깐 바꿔): 규칙 · 상태 받기 · 정하기 · 잠금 창 · 틀림 · 5번 틀림 · HR 메일 · 휴대폰 자판 · 메뉴 숫자 · 쓰던 중 잠김 (끝나면 모두 되돌린다). 사람 · 번호는 가상
+  const ok = (c, m)=>{ if(!c) throw new Error('pinSelfCheck 실패: '+m); };
+  const keep = { fetch:window.fetch, open:window.open, clip:Object.getOwnPropertyDescriptor(navigator, 'clipboard'), phone:isPhone, live:AUTH.live, me:AUTH.me, locked:AUTH.locked, role:kpiRole, nav:currentNav, tab:currentTab,
+    pin:{ ...PIN }, cnt:{ ...PAY_COUNTS }, pay:{ ...PAY_LIVE }, wh:{ ...WH_LIVE }, ct:{ ...CT_LIVE }, show:payShow, po:payOpen, ps:[ps.state, ps.view], whs:[wh.state, wh.view],
+    rz:{ ...rz }, msg:kpiMsg, pad:ctPadDirty, wo:whOrig, wsPull, pushInit, progAt:kpiProgAt, chr:PAY_CHAR_MEM, wy:whYear };
+  const calls = [], order = [], opened = [], copied = [], reply = {}, wait = async (n = 5)=>{ for(let i = 0; i<n; i++) await new Promise(r=>setTimeout(r, 0)); };
+  const json = (b, status = 200)=>new Response(JSON.stringify(b), { status, headers:{ 'Content-Type':'application/json' } });
+  const box = ()=>document.getElementById('pinBox'), txt = ()=>(box()?.textContent || '').replace(/\s+/g, ' '), toast = ()=>document.getElementById('wsToast')?.textContent || '';
+  const sent = p=>calls.filter(c=>c.u.split('?')[0]===p), barred = ()=>calls.map(c=>c.u).filter(u=>/^\/api\/(payslips|withholding|contracts)/.test(u));
+  const put = (id, v)=>{ const e = document.getElementById(id); e.value = v; e.dispatchEvent(new Event('input')); }, setBtn = ()=>box().querySelector('[data-pp="b"]');
+  const plain = ()=>{ const a = [...document.querySelectorAll('#contentArea input')]; return a.length>0 && a.every(i=>i.type==='text' && i.inputMode==='numeric' && i.autocomplete==='off'); };   // 비밀번호 칸(type=password)이 아니다 — 브라우저가 "비밀번호 저장"을 묻지 않게
+  const tabBadge = id=>document.querySelector(`#subtabsRow .subtab[onclick="selectTab('${id}')"] .nav-badge`)?.textContent || '', area = ()=>document.getElementById('contentArea').textContent;
+  try {
+    // ----- 쓸 수 없는 번호 (생일은 서버만) -----
+    ok(pinRule('111111')==='같은 숫자 6개는 쓸 수 없어요.', '같은 숫자 6개');
+    ok(['123456', '654321', '012345', '987654'].every(p=>pinRule(p)==='이어지는 숫자는 쓸 수 없어요.'), '이어지는 숫자 (올라감 · 내려감)');
+    ok(['258036', '890123', '112233'].every(p=>pinRule(p)===''), '괜찮은 번호 (9 → 0으로 넘어가는 것은 이어지는 숫자가 아니다)');
+
+    window.fetch = async (u, o = {})=>{ u = String(u); calls.push({ u, m:o.method || 'GET', b:o.body || '' }); const f = reply[u.split('?')[0]], r = f ? await f(o) : json({ error:'없는 길' }, 404); await pinSeen(r, u); return r; };   // 진짜 감싸개처럼 pinSeen을 지난다 · 답은 약속이어도 된다(늦게 오는 답)
+    window.open = u=>(opened.push(u), order.push('open'), {});
+    Object.defineProperty(navigator, 'clipboard', { configurable:true, value:{ writeText:t=>(copied.push(t), order.push('copy'), Promise.resolve()) } });
+    reply['/api/pay/counts'] = ()=>json({ p1:2, p2:1, p3:0, due:'2027-02-14' });
+    reply['/api/payslips'] = ()=>json({ slips:[] }); reply['/api/withholding'] = ()=>json({ years:[] }); reply['/api/contracts/mine'] = ()=>json({ rows:[] });
+    AUTH.live = true; AUTH.locked = false; AUTH.me = { user_id:3, name:'가상직원', department:'가상팀', position:null, is_hr:false, writes_kpi:true };
+    kpiRole = 'emp'; isPhone = ()=>false; currentNav = NAV.find(n=>n.id==='pay'); currentTab = currentNav.tabs[0]; PIN.last = Date.now();   // last: 검사 동안 5초 타이머(pinTick)가 가리거나 잠그지 않게
+
+    // ----- 상태 받기 -----
+    reply['/api/pay/lock'] = ()=>json({ state:'off' }); PIN.on = true; await pinLoad(); ok(!PIN.on && !pinGated(), '서버에 열쇠가 없으면(off) 잠그지 않는다');
+    reply['/api/pay/lock'] = ()=>json({ state:'ask', left:4, hr:[{ mailNo:'1001', email:'hr1@example.invalid' }] }); await pinLoad();
+    ok(PIN.on && PIN.state==='ask' && PIN.left===4 && PIN.hr.length===1 && pinGated(), '상태 · 남은 기회 · HR 받기');
+    reply['/api/pay/lock'] = ()=>json({ error:'x' }, 500); await pinLoad(); renderContent();
+    ok(PIN.on && PIN.state==='err' && pinGated() && txt().includes('불러오지 못했어요') && !barred().length, '상태를 못 받으면 잠긴 것으로 친다 (안내 · 다시 불러오기)');
+    PIN.on = false; ok(!pinGated(), 'AUTH.live만 켜고 PIN.on이 꺼져 있으면 잠그지 않는다 (기존 화면 검사 그대로)'); PIN.on = true;
+
+    // ----- 처음 정하기 (설계 4.2) -----
+    Object.assign(PIN, { state:'set', typed:'', first:'', row:0, err:'' }); renderContent();
+    ok(txt().includes('급여 비밀번호를 정해 주세요') && txt().includes('HR도 이 비밀번호를 볼 수 없어요') && setBtn().disabled && document.activeElement?.id==='pinNew', '정하기 창 · "정하기"는 처음에 꺼져 있다 · PC는 첫 줄에 바로 친다');
+    ok(plain() && document.querySelectorAll('#contentArea input').length===2, '정하기 두 칸은 비밀번호 칸이 아니다 (글자 칸 · 숫자 자판 · 자동 완성 끔 — 브라우저가 저장하지 않게)');
+    put('pinNew', '258036'); ok(setBtn().disabled && box().querySelectorAll('[data-pp="d0"] i.on').length===6 && document.activeElement?.id==='pinAgain' && box().querySelector('[data-pp="d1"] i.cur'), '한 줄만 채우면 꺼져 있고 둘째 줄로 넘어간다');
+    put('pinAgain', '258036'); ok(!setBtn().disabled && !box().querySelector('.pl-msg'), '두 줄이 같고 쓸 수 있는 번호면 켜진다');
+    put('pinAgain', '258037'); ok(setBtn().disabled && txt().includes('두 번 입력한 비밀번호가 달라요.'), '두 줄이 다르면 꺼지고 이유를 보인다');
+    put('pinNew', '111111'); put('pinAgain', '111111'); ok(setBtn().disabled && txt().includes('같은 숫자 6개는 쓸 수 없어요.'), '쓸 수 없는 번호면 꺼지고 이유를 그 자리에');
+    put('pinNew', '25a8-036'); ok(PIN.first==='258036' && document.getElementById('pinNew').value==='258036', '숫자 아닌 것은 버린다');
+    reply['/api/pay/pin'] = ()=>json({ error:'생일(월일)이 들어간 번호는 쓸 수 없어요.' }, 400); put('pinAgain', '258036'); calls.length = 0; await pinSetSubmit();
+    ok(sent('/api/pay/pin').length===1 && sent('/api/pay/pin')[0].b===JSON.stringify({ pin:'258036', again:'258036' }) && txt().includes('생일(월일)이 들어간') && setBtn().disabled && PIN.state==='set', '서버가 거절하면(생일) 그 이유를 보이고 정하기 창 그대로');
+    reply['/api/pay/pin'] = ()=>json({ ok:true }); put('pinNew', '258036'); calls.length = 0; await pinSetSubmit(); await wait();
+    ok(PIN.state==='open' && !pinGated() && !box() && payShow===true && sent('/api/payslips').length>0 && PIN.first==='' && PIN.typed==='', '정하면 바로 풀려 금액이 보이고 다시 받는다');
+
+    // ----- 잠금 창 (설계 4.1) — 그리는 동안 잠긴 길을 부르지 않는다 -----
+    kpiRole = 'hr'; Object.assign(PIN, { state:'ask', typed:'', err:'', forgot:false }); Object.assign(PAY_LIVE, { state:'', who:null, slips:[], mine:[] }); calls.length = 0;
+    for(const t of currentNav.tabs){
+      currentTab = t; renderContent(); await wait();
+      ok(currentTab===t && txt().includes('비밀번호를 입력해 주세요') && txt().includes('5번 틀리면 잠겨요') && box().querySelectorAll('.pl-pins i').length===6 && document.getElementById('pinIn') && !document.querySelector('#contentArea .pay-hero'), t.label+': 잠금 창 (금액 화면 없음)');
+    }
+    ps.view = 'admin'; currentTab = currentNav.tabs[0]; renderContent(); await wait(); ok(box() && !document.querySelector('#contentArea .ps-row'), 'HR 올리기 화면을 골라 두어도 같은 잠금 창'); ps.view = keep.ps[1];
+    ok(!barred().length, '그리는 동안 /api/payslips · /api/withholding · /api/contracts를 부르지 않는다: '+barred().join());
+    ok(document.querySelector('#subtabsRow .subtab.active')?.textContent.includes('급여명세서'), '탭 줄은 그대로');
+    kpiRole = 'emp';
+
+    // ----- 치기 · 틀림 · 5번 틀림 (그림 2 · 3 · 4) -----
+    currentTab = currentNav.tabs[0]; renderContent(); calls.length = 0;
+    ok(document.activeElement?.id==='pinIn' && plain(), 'PC: 그린 뒤 숨은 입력 칸에 초점 (바로 키보드로 친다) · 비밀번호 칸이 아니다');
+    pinType('2580'); ok(box().querySelectorAll('.pl-pins i.on').length===4 && !calls.length && document.getElementById('pinIn').value==='2580' && document.activeElement?.id==='pinIn', '4자리: 칸 4개 · 아직 보내지 않는다 · 입력 칸은 그대로');
+    reply['/api/pay/unlock'] = ()=>json({ error:'비밀번호가 맞지 않아요.', left:3 }, 400);
+    await pinType('258036');
+    ok(sent('/api/pay/unlock').length===1 && sent('/api/pay/unlock')[0].m==='POST' && sent('/api/pay/unlock')[0].b==='{"pin":"258036"}', '6자리가 되면 바로 한 번 확인한다 (확인 단추 없음)');
+    ok(box().querySelector('.pl-msg')?.textContent==='비밀번호가 맞지 않아요. 남은 기회 3번' && box().querySelector('.pl-pins.bad') && PIN.typed==='' && document.getElementById('pinIn').value==='', '틀리면 칸이 붉고 남은 기회 · 칸은 비운다');
+    pinType('1'); ok(!box().querySelector('.pl-pins.bad') && !box().querySelector('.pl-msg'), '다시 치면 붉은 표시가 걷힌다'); pinType('');
+    pinType('2 5-8x'); ok(PIN.typed==='258', '붙여넣기: 숫자 아닌 것은 버린다');
+    PIN.err = '가상 글'; pinRefused('set'); ok(PIN.state==='set' && !PIN.typed && !PIN.err && txt().includes('급여 비밀번호를 정해 주세요') && !box().querySelector('.pl-msg'), 'HR이 초기화하면(423 set) 정하기 창 — 치던 숫자 · 글은 넘어가지 않는다');
+    PIN.state = 'ask'; renderContent();
+    reply['/api/pay/unlock'] = ()=>json({ error:'급여·계약 메뉴는 비밀번호를 넣어야 볼 수 있어요.', lock:'locked' }, 423); calls.length = 0;
+    await pinType('258036'); await wait();
+    ok(PIN.state==='locked' && txt().includes('비밀번호를 5번 틀려서 잠겼어요') && txt().includes('HR에 초기화 요청 (하이웍스 메일)') && txt().includes('다른 메뉴는 그대로 쓸 수 있어요') && sent('/api/pay/counts').length===1 && !barred().length, '5번째 틀림(423 locked): 잠김 창 · HR 요청 단추 · 메뉴 숫자는 잠그지 않는 길로');
+
+    // ----- HR에 초기화 요청 (하이웍스 메일) -----
+    PIN.hr = [{ mailNo:'1001', email:'hr1@example.invalid' }]; pinMail(); await wait();
+    ok(opened.length===1 && opened[0]===HW_MAIL+'&user_nos=1001' && !copied.length && toast().includes('급여 비밀번호 초기화 요청'), 'HR 한 명 · 번호 있음: 번호로 받는 사람을 채우고 제목을 안내');
+    opened.length = 0; order.length = 0; PIN.hr = [{ mailNo:'1001', email:'hr1@example.invalid' }, { mailNo:'', email:'hr2@example.invalid' }]; pinMail(); await wait();
+    ok(order.join()==='copy,open' && opened[0]===HW_MAIL && copied[0]==='hr1@example.invalid;hr2@example.invalid' && toast().includes('받는 사람 2명') && toast().includes('급여 비밀번호 초기화 요청'), 'HR 두 명: 메일 주소를 창보다 먼저 복사하고 창만 연다');
+    opened.length = 0; PIN.hr = []; pinMail(); ok(!opened.length && toast().includes('HR 메일 주소가 없어요'), 'HR이 없으면 직접 알리라고 안내');
+    Object.assign(PIN, { state:'ask', typed:'', err:'', forgot:false }); renderContent(); pinForgot();
+    ok(txt().includes('HR에 초기화를 요청해 주세요') && box().querySelector('[onclick="pinMail()"]') && txt().includes('비밀번호를 입력해 주세요'), '"비밀번호를 잊었어요": 같은 창 안에 HR 요청 안내 · 단추');
+
+    // ----- 휴대폰 숫자 자판 (그림 7) -----
+    isPhone = ()=>true; Object.assign(PIN, { state:'ask', typed:'', err:'', forgot:false }); renderContent();
+    const keys = [...box().querySelectorAll('.pl-keys button')].map(b=>b.textContent.trim());
+    ok('0123456789'.split('').every(n=>keys.includes(n)) && keys.includes('지우기') && !document.getElementById('pinIn') && !box().querySelector('input'), '휴대폰: 화면 안 숫자 자판 · 입력 칸 없음 (휴대폰 자판을 띄우지 않는다)');
+    pinKey('1'); pinKey('2'); pinKey('del'); ok(PIN.typed==='1', '지우기'); pinKey('del');
+    reply['/api/pay/unlock'] = ()=>json({ error:'비밀번호가 맞지 않아요.', left:2 }, 400); calls.length = 0;
+    for(let i = 0; i<6; i++) await pinKey('2');
+    ok(sent('/api/pay/unlock').length===1 && sent('/api/pay/unlock')[0].b==='{"pin":"222222"}' && txt().includes('남은 기회 2번'), '자판으로 6번 누르면 한 번 확인한다');
+    isPhone = ()=>false;
+
+    // ----- 잠긴 동안의 메뉴 숫자 · 홈 -----
+    Object.assign(PAY_COUNTS, { p1:2, p2:1, p3:0, due:'2027-02-14' }); PAY_LIVE.mine = []; renderContent();
+    const hp = homePortalTasks().find(p=>p.tab==='p2');
+    ok(TODO.p1()===2 && TODO.p2()===1 && TODO.p3()===0 && hp && hp.title.includes(ctMd('2027-02-14')), '잠겨 있어도 메뉴 숫자 · 홈 "오늘의 업무"는 /api/pay/counts로 (서명 줄 마감일)');
+    ok(document.querySelector('#sidebarNav .nav-item.active .nav-badge')?.textContent==='3', '왼쪽 메뉴 숫자도 그대로 보인다');
+
+    // ----- 잠김 응답 바로 뒤의 숫자: 옛 숫자(로그인 때)가 아니라 풀린 동안의 숫자로 바로, 서버 숫자가 오면 탭 줄 · 홈까지 고친다 -----
+    let release; reply['/api/pay/counts'] = ()=>new Promise(res=>{ release = ()=>res(json({ p1:2, p2:1, p3:0, due:'2027-03-02' })); });
+    Object.assign(PIN, { state:'open', typed:'', err:'' }); Object.assign(PAY_COUNTS, { p1:1, p2:0, p3:0, due:null });   // 로그인 때 받은 숫자 — 그 뒤 풀고 새 명세서를 열어 봤다
+    Object.assign(PAY_LIVE, { state:'ok', who:null, slips:[], mine:[{ ym:'2026-09', seen:true }] }); WH_LIVE.mine = []; Object.assign(CT_LIVE, { mine:[{ id:7, canSign:true, due:'2027-03-02' }], mineState:'ok' });
+    currentTab = currentNav.tabs[0]; renderContent(); ok(!box() && tabBadge('p1')==='' && tabBadge('p2')==='1', '풀린 동안: 본 명세서는 숫자 없음 · 서명할 계약서 1');
+    pinRefused('ask');
+    ok(box() && tabBadge('p1')==='' && tabBadge('p2')==='1' && homePortalTasks().find(p=>p.tab==='p2')?.title.includes(ctMd('2027-03-02')), '잠김 응답 바로: 잠금 창의 탭 숫자 · 홈 서명 줄이 옛 숫자가 아니라 풀린 동안의 숫자');
+    release(); await wait();
+    ok(tabBadge('p1')==='2' && tabBadge('p2')==='1' && document.querySelector('#sidebarNav .nav-item.active .nav-badge')?.textContent==='3', '서버 숫자가 오면 왼쪽 메뉴와 탭 줄을 함께 고친다');
+    currentNav = NAV.find(n=>n.id==='home'); currentTab = currentNav.tabs[0]; Object.assign(PIN, { state:'open' }); PAY_LIVE.mine = []; CT_LIVE.mine = []; renderContent();
+    reply['/api/pay/counts'] = ()=>new Promise(res=>{ release = ()=>res(json({ p1:1, p2:0, p3:0, due:null })); });
+    pinRefused('ask'); ok(!area().includes('새 급여명세서 확인'), '홈을 보는 중 잠김 응답: 아직 새 명세서 없음');
+    release(); await wait(); ok(area().includes('새 급여명세서 확인'), '서버 숫자가 오면 보고 있는 홈 "오늘의 업무"도 고친다');
+    reply['/api/pay/counts'] = ()=>json({ p1:2, p2:1, p3:0, due:'2027-02-14' }); currentNav = NAV.find(n=>n.id==='pay'); currentTab = currentNav.tabs[0];
+
+    // ----- 쓰던 중 잠김 응답 (서버 재시작 · 다른 창에서 5번 틀림) -----
+    Object.assign(PIN, { state:'open', typed:'', err:'' }); Object.assign(PAY_LIVE, { state:'', who:null, slips:[], mine:[{ ym:'2026-09', seen:false }] }); payShow = true;
+    reply['/api/payslips'] = ()=>json({ error:'급여·계약 메뉴는 비밀번호를 넣어야 볼 수 있어요.', lock:'ask' }, 423); calls.length = 0;
+    renderContent(); await wait(10);
+    ok(PIN.state==='ask' && PAY_LIVE.mine.length===0 && payShow===false && txt().includes('비밀번호를 입력해 주세요') && !document.querySelector('#contentArea .pay-hero'), '423 → 받아 둔 것을 지우고 잠금 창으로');
+    ok(sent('/api/payslips').length===1 && sent('/api/pay/counts').length===1, '다시 보내지 않는다 (메뉴 숫자만 잠그지 않는 길로)');
+    reply['/api/payslips'] = ()=>json({ slips:[] }); reply['/api/pay/unlock'] = ()=>json({ ok:true }); calls.length = 0;
+    await pinType('258036'); await wait(10);
+    ok(PIN.state==='open' && !box() && PAY_LIVE.state==='ok' && sent('/api/payslips').length>=1 && !document.getElementById('contentArea').textContent.includes('불러오지 못했'), '풀리면 "불러오지 못했습니다" 없이 다시 받는다');
+    reply['/api/kpi/inbox'] = ()=>json({ error:'잠김', lock:'ask' }, 423);
+    ok((await window.fetch('/api/kpi/inbox')).status===423 && PIN.state==='open', '다른 앞머리(/api/kpi/…)의 423에는 반응하지 않는다');
+    reply['/api/payslips'] = ()=>json({ error:'잠김', lock:'ask' }, 423); AUTH.live = false; await window.fetch('/api/payslips'); ok(PIN.state==='open', '시연(실제 로그인 아님)에서는 반응하지 않는다'); AUTH.live = true;
+    ok(String(keep.fetch).includes('pinSeen(') && String(authBoot).includes('pinBoot()') && String(pinBoot).includes('pinGated() ? payCountsLoad()'), 'fetch 감싸개가 pinSeen을 지나고, 로그인 직후 잠겨 있으면 숫자만 받는다');
+
+    // ----- 잠김 응답의 값 · 다른 메뉴에서 받은 잠김 응답 -----
+    Object.assign(PIN, { state:'open', last:Date.now() }); pinRefused('open'); ok(PIN.state==='err', '모르는 잠김 값(open)은 상태를 못 받은 것으로 친다 (다시 불러오기)');
+    PIN.state = 'open'; pinRefused(); ok(PIN.state==='err', '잠김 값이 없어도 상태를 못 받은 것으로 친다');
+    Object.assign(PIN, { state:'open', last:Date.now() }); Object.assign(PAY_LIVE, { mine:[] }); currentNav = NAV.find(n=>n.id==='trip'); currentTab = currentNav.tabs[0];
+    const mark = document.getElementById('contentArea').appendChild(document.createElement('i')); calls.length = 0; pinRefused('ask'); await wait();
+    ok(mark.isConnected && PIN.state==='ask' && sent('/api/pay/counts').length===1 && document.querySelector(`#sidebarNav .nav-item[onclick="selectNav('pay')"] .nav-badge`)?.textContent==='3', '다른 메뉴에서 받은 잠김 응답: 보고 있는 화면은 다시 그리지 않고(치던 글 그대로) 왼쪽 메뉴 숫자만');
+    mark.remove(); currentNav = NAV.find(n=>n.id==='pay'); currentTab = currentNav.tabs[0];
+
+    // ----- 잠긴 동안 HR 화면의 실패 뒤 다시 받기도 잠긴 길을 부르지 않는다 -----
+    PIN.state = 'ask'; calls.length = 0;
+    await psLoad(); await whYearsLoad(); await ctAdminLoad(2026); whLiveDone(); await psLiveDone(); await wait();
+    ok(!barred().length, '잠긴 동안: 명세서 현황 · 영수증 현황 · 계약 현황 · 내 명세서 · 영수증 숫자를 다시 받지 않는다 (올리기 · 공개 뒤 새로 받기): '+barred().join());
+
+    // ----- 풀린 뒤 띠 (설계 4.3, 그림 5) -----
+    reply['/api/pay/lock'] = ()=>json({ state:'open', left:5, hr:[] }); PIN.last = 0; await pinLoad(); pinTick();
+    ok(PIN.state==='open' && !PIN.veiled && Date.now() - PIN.last < 1e3, '이미 풀린 창을 새로 열어도(새로 고침) 쉰 시간은 지금부터 — 바로 잠그지 않는다');
+    const bar = ()=>document.getElementById('pinBand'), bartxt = ()=>(bar()?.textContent || '').replace(/\s+/g, ' ').trim(), veil = ()=>document.getElementById('pinVeil'), modal = ()=>document.getElementById('orgModal');
+    const posts = p=>sent(p).filter(c=>c.m==='POST').length, idle = s=>{ PIN.last = Date.now() - s*1e3; pinTick(); };
+    const slip = { ...paySlip(PAY_PEOPLE.emp, 2026, 8), seen:true }, amt = slip.gross.toLocaleString('ko-KR');
+    reply['/api/payslips'] = ()=>json({ slips:[slip] }); reply['/api/pay/unlock'] = ()=>json({ ok:true }); reply['/api/pay/alive'] = ()=>json({ open:true });
+    kpiRole = 'emp'; ps.view = 'me'; wh.view = 'me'; Object.assign(PIN, { state:'ask', typed:'', err:'', veiled:false }); renderContent();
+    await pinType('258036'); await wait(10);
+    ok(bar() && !bar().classList.contains('warn') && bartxt().includes('잠금 풀림 · 1분 동안 움직임이 없으면 금액을 가리고, 5분이면 다시 잠겨요') && bar().querySelector('button[onclick="pinLockNow()"]')?.textContent.includes('지금 잠그기') && document.getElementById('contentArea').firstElementChild===bar(), '풀리면 탭 내용 맨 위에 띠: 잠금 풀림 · 지금 잠그기');
+    payOpen = slip.label; renderContent(); ok(payShow===true && area().includes(amt), '풀리면 금액이 바로 보인다 (열린 명세서)');
+    kpiRole = 'hr'; for(const t of navTabs(currentNav)){ currentTab = t; renderContent(); ok(bar(), t.label+': 띠'); }
+    await wait(10); kpiRole = 'emp'; currentTab = currentNav.tabs[0];
+    PIN.on = false; renderContent(); ok(!bar(), '서버에 열쇠가 없으면(시연 · 열쇠 없음) 띠가 없다 — 눈 단추 그대로'); PIN.on = true;
+
+    // ----- 1분 가림 (그림 6) — 급여명세서 · 원천징수영수증: 가리고 열린 것을 닫아 다시 그린다 -----
+    payShow = true; payOpen = slip.label; renderContent();
+    idle(59); ok(!PIN.veiled && payShow && payOpen===slip.label, '59초는 그대로');
+    idle(61);
+    ok(payShow===false && payOpen===null && PIN.veiled && bar()?.classList.contains('warn') && bartxt().includes('1분 동안 움직임이 없어 금액을 가리고 열린 명세서를 닫았어요. 눈 모양을 누르면 다시 보여요.') && !veil() && !area().includes(amt), '1분: 금액을 가리고 열린 명세서를 닫는다 · 띠가 바뀐다 (가림막 없이 다시 그림)');
+    ok(bar().querySelector('button[onclick="pinLockNow()"]'), '가린 띠에도 지금 잠그기');
+    payEye(); ok(PIN.veiled===false && payShow===true && !bar().classList.contains('warn'), '눈 모양(payEye)을 누르면 다시 보이고 띠도 돌아온다');
+    ok([payHero, whBody].every(f=>String(f).includes('onclick="payEye()"')), '두 눈 단추(급여명세서 · 원천징수영수증)가 payEye를 부른다');
+    const sc = document.getElementById('contentArea'), frames = ()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
+    PIN.last = Date.now(); payShow = true; payOpen = slip.label; renderContent(); await wait(); sc.scrollTop = sc.scrollHeight; await frames(); const top = sc.scrollTop;
+    calls.length = 0; PIN.sent = Date.now() - 61e3; idle(61); const was = PIN.last; await frames(); await frames();
+    ok(top>0 && sc.scrollTop<top && PIN.veiled, '(열린 명세서까지 내려 둔 채 가림 — 다시 그려 짧아진 화면을 브라우저가 스크롤한다)');
+    ok(PIN.last===was && !posts('/api/pay/alive'), '가림이 다시 그려 생긴 스크롤은 움직임이 아니다 (쉰 시간 그대로 · 서버에 아직 있어요를 보내지 않는다)');
+    payEye(); PIN.last = Date.now();
+    PIN.last = Date.now(); currentTab = currentNav.tabs[2]; renderContent(); await wait(); whOrig = { year:2025, who:null, bytes:null, state:'loading' };
+    idle(61); ok(whOrig===null && PIN.veiled && !veil() && bar()?.classList.contains('warn'), '원천징수영수증: 원본 PDF 보기를 닫고 다시 그린다');
+    pinVeilOff(); PIN.last = Date.now();
+
+    // ----- 1분 가림 — 계약서 · HR 올리기 · 연봉 인상 계산 · 확인 창: 다시 그리지 않고 가림막만 (하던 입력이 남는다) -----
+    currentTab = currentNav.tabs[1]; renderContent(); await wait();
+    const pad = document.getElementById('contentArea').appendChild(Object.assign(document.createElement('canvas'), { id:'ctPad' })); ctPadDirty = true;
+    idle(61);
+    ok(veil() && pad.isConnected && document.getElementById('ctPad')===pad && ctPadDirty===true && bar()?.classList.contains('warn'), '계약서: 그린 서명(같은 요소) 그대로 · 가림막 · 띠는 가림 글');
+    ok(veil().textContent.includes('1분 동안 움직임이 없어 가렸어요. 누르면 다시 보여요.') && getComputedStyle(veil()).position==='fixed', '가림막: 화면 전체 · 안내 글');
+    veil().click(); ok(!veil() && !PIN.veiled && pad.isConnected && !bar().classList.contains('warn'), '가림막을 누르면 걷히고 하던 화면 그대로');
+    pad.remove(); ctPadDirty = false; PIN.last = Date.now();
+    kpiRole = 'hr'; currentTab = currentNav.tabs.find(t=>t.id==='p4'); renderContent();
+    const rin = document.querySelector('#rzRates input'); rin.value = '7.5'; idle(61);
+    ok(veil() && rin.isConnected && rin.value==='7.5', '연봉 인상 계산: 치던 칸(같은 요소 · 값) 그대로 · 가림막'); pinVeilOff(); PIN.last = Date.now();
+    ps.view = 'admin'; currentTab = currentNav.tabs[0]; renderContent(); await wait(); const adm = document.getElementById('paySeg');
+    idle(61); ok(veil() && adm && adm.isConnected, 'HR 명세서 올리기 화면: 다시 그리지 않고 가림막'); pinVeilOff(); PIN.last = Date.now();
+    kpiRole = 'emp'; ps.view = 'me'; PAY_CHAR_MEM = 'm';
+    const eyeLab = ()=>document.querySelector('#contentArea .pay-eye')?.getAttribute('aria-label'), typed = ()=>document.getElementById('pinTestIn');
+    const wr = { ...whRows('emp')[0], seen:true }; currentTab = currentNav.tabs[2]; Object.assign(WH_LIVE, { state:'ok', who:null, years:[wr], mine:[wr] }); whYear = wr.year;
+    whOrig = { year:wr.year, who:null, bytes:null, state:'loading' }; payShow = true; renderContent();
+    ok(area().includes('원본 PDF를 불러오는 중') && eyeLab()==='금액 가리기', '(원천징수영수증: 원본 보기를 열고 금액이 보이는 채로)');
+    orgModal('<div><input id="pinTestIn" value="가상"></div>'); let mo = modal(); typed().value = '가상2'; idle(61);
+    ok(whOrig===null && !area().includes('원본 PDF를 불러오는 중') && eyeLab()==='금액 보기' && modal()===mo && typed()?.value==='가상2' && document.activeElement===typed() && veil(), '원천징수영수증 + 확인 창: 원본 보기를 닫아 다시 그려 가리고, 창 · 친 글 · 초점은 그대로 · 가림막');
+    veil().click(); ok(eyeLab()==='금액 보기' && !area().includes('원본 PDF를 불러오는 중'), '가림막을 걷어도 금액 · 원본은 가린 그대로 (눈 단추로 다시 보인다)');
+    orgCloseModal(); PIN.last = Date.now(); currentTab = currentNav.tabs[0];
+    payShow = true; payOpen = slip.label; renderContent(); await wait();
+    ok(document.getElementById('paySlip') && eyeLab()==='금액 가리기' && area().includes(amt), '(급여명세서: 명세서를 열고 금액이 보이는 채로)');
+    orgModal('<div class="ps-cf"><input id="pinTestIn" value="가상"></div>'); mo = modal(); typed().value = '가상2';
+    idle(61);
+    ok(!document.getElementById('paySlip') && eyeLab()==='금액 보기' && !area().includes(amt), '급여명세서 + 확인 창: 다시 그려 열린 명세서를 닫고 금액을 가린다 (눈 단추는 "금액 보기")');
+    ok(modal()===mo && typed()?.value==='가상2' && document.activeElement===typed() && veil() && +getComputedStyle(veil()).zIndex > +getComputedStyle(mo).zIndex, '확인 창이 떠 있으면: 창 · 친 글 · 초점 그대로 · 가림막이 그 위');
+
+    // ----- 아직 있어요 (움직임 → /api/pay/alive, 1분에 한 번까지) -----
+    calls.length = 0; PIN.sent = Date.now() - 61e3; pinTouch(); pinTouch(); await wait();
+    ok(posts('/api/pay/alive')===1 && Date.now() - PIN.last < 1e3, '움직이면 마지막 움직임을 적고, 1분 넘었으면 한 번 알린다 (곧바로 또 움직여도 한 번)');
+    const lastWas = PIN.last; PIN.last = 0; document.dispatchEvent(new Event('wheel')); ok(Date.now() - PIN.last < 1e3, '휠도 움직임');
+    PIN.veiled = false; PIN.last = 0; sc.dispatchEvent(new Event('scroll')); ok(Date.now() - PIN.last < 1e3, '안쪽 스크롤도 움직임 (capture)');
+    PIN.veiled = true; PIN.last = 0; sc.dispatchEvent(new Event('scroll')); ok(PIN.last===0, '가린 동안의 스크롤은 움직임이 아니다 (휠 · 터치 · 키 · 누르기만)'); PIN.last = lastWas;
+
+    // ----- 5분 잠금 — 로그아웃처럼 하던 것을 지우고 잠금 창 -----
+    rz.pay = { file:'가상.xlsx', people:[] }; rz.edited = true; kpiMsg = { msg:'가상 글', type:'danger' }; PAY_LIVE.mine = [slip]; calls.length = 0;
+    idle(301); await wait();
+    ok(posts('/api/pay/lock')===1 && PIN.state==='ask' && PAY_LIVE.mine.length===0 && rz.pay===null && rz.edited===false && kpiMsg===null && !modal() && !veil() && !PIN.veiled && box() && txt().includes('비밀번호를 입력해 주세요'), '5분: 서버에 잠그기 · 받아 둔 것 · 읽은 엑셀 · 확인 창 · 가림막을 지우고 잠금 창');
+    ok(sent('/api/pay/counts').length===1 && !barred().length, '잠근 뒤 메뉴 숫자는 잠그지 않는 길로');
+    PIN.sent = 0; calls.length = 0; pinTouch(); await wait(); ok(!sent('/api/pay/alive').length, '잠긴 동안의 움직임은 알리지 않는다');
+    Object.assign(PIN, { state:'open', last:Date.now() }); renderContent(); calls.length = 0;
+    bar().querySelector('button').click(); await wait();
+    ok(posts('/api/pay/lock')===1 && PIN.state==='ask' && box(), '지금 잠그기: 바로 잠금 창');
+
+    // ----- 다른 곳에서 잠근 세션 (다른 창의 지금 잠그기 · 다른 기기에서 5번 틀림 · HR 초기화): "아직 있어요" 답이 open:false면 이 창도 잠금 창으로 -----
+    Object.assign(PIN, { state:'open', last:Date.now(), veiled:false }); payShow = true; renderContent(); await wait(10);
+    calls.length = 0; PIN.sent = Date.now() - 61e3; pinTouch(); await wait();
+    ok(posts('/api/pay/alive')===1 && PIN.state==='open' && !box() && PAY_LIVE.mine.length>0 && payShow===true, '아직 있어요 답이 open:true면 풀린 그대로');
+    reply['/api/pay/alive'] = ()=>json({ open:false }); calls.length = 0; PIN.sent = Date.now() - 61e3; pinTouch(); await wait();
+    ok(posts('/api/pay/alive')===1 && PIN.state==='ask' && PAY_LIVE.mine.length===0 && payShow===false && box() && txt().includes('비밀번호를 입력해 주세요') && !barred().length, '아직 있어요 답이 open:false면 받아 둔 것을 지우고 잠금 창 (잠긴 길을 다시 부르지 않는다)');
+    reply['/api/pay/alive'] = ()=>json({ open:true });
+
+    // ----- 다른 창 · 탭 · 앱으로 가면 바로 가림, 돌아오면 쉰 시간으로 -----
+    const vis = v=>{ Object.defineProperty(document, 'visibilityState', { configurable:true, get:()=>v }); document.dispatchEvent(new Event('visibilitychange')); };
+    wsPull = async ()=>{}; pushInit = ()=>{}; kpiProgAt = Date.now();
+    Object.assign(PIN, { state:'open', last:Date.now(), veiled:false }); payShow = true; renderContent();
+    vis('hidden'); ok(PIN.veiled && payShow===false && bar()?.classList.contains('warn'), '보이지 않게 되면 바로 1분 가림');
+    PIN.last = Date.now() - 301e3; calls.length = 0; vis('visible'); await wait();
+    ok(PIN.state==='ask' && box() && !barred().length && sent('/api/pay/counts').length>=1, '5분 넘게 있다가 돌아오면 잠그고 숫자만 받는다 (급여·계약 길을 부르지 않는다)');
+    Object.assign(PIN, { state:'open', last:Date.now() }); calls.length = 0; vis('visible'); await wait();
+    ok(sent('/api/payslips').length>=1 && PIN.state==='open', '풀린 채 돌아오면 지금처럼 새로 받는다');
+    delete document.visibilityState;
+
+    // ----- 로그아웃(authLock)도 같은 지우기 -----
+    Object.assign(PIN, { state:'open', last:Date.now(), veiled:false }); rz.pay = { file:'가상.xlsx', people:[] }; currentTab = currentNav.tabs[1]; renderContent(); pinVeil();
+    ok(veil(), '(가림막이 있는 채로)'); authLock('out');
+    ok(rz.pay===null && PIN.state==='' && !PIN.veiled && !veil() && PAY_LIVE.mine.length===0, '로그아웃: 같은 지우기(pinForget) · 연봉 엑셀 · 비밀번호 상태 · 가림막');
+    Object.assign(PIN, { state:'set', typed:'258036', first:'258036', row:1, err:'가상 글', forgot:true }); authLock('out');
+    ok(PIN.typed==='' && PIN.first==='' && PIN.row===0 && PIN.err==='' && PIN.forgot===false, '로그아웃: 치던 숫자(정하기 두 줄) · 글도 지운다');
+    for(const kind of ['contact', 'slip', 'contract', 'pay', 'grade', 'wh']){ rz.lock = { kind, file:{ name:'가상.xlsx' } }; pinForget(); ok(kind==='contact' ? rz.lock?.kind==='contact' : rz.lock===null, `잠글 때 암호 창(${kind}): 급여·계약 것은 지우고 구성원 설정의 비상연락망은 둔다 (열기가 그대로 되게)`); }
+    rz.lock = { kind:'contact', file:{ name:'가상.xlsx' } }; authLock('out'); ok(rz.lock===null, '로그아웃은 비상연락망 암호 창도 지운다 (창도 닫힌다)');
+    ok(String(authBoot).includes('setInterval(pinTick'), '로그인 뒤 5초마다 쉰 시간을 본다');
+
+    // ----- HR 구성원 설정: 급여 비밀번호 줄 · 초기화 (설계 4.5) · 사용법 문구 (4.6) -----
+    const mem = o=>({ id:7, name:'가상직원', title:'', team:'가상팀', division:'가상본부', use:true, lead:'', hr:false, kpi:true, ev:true, ct:true, me:false, payPin:'none', payPinLockedAt:null, ...o });
+    const pm = o=>pinMemberRow(mem(o)), pmTxt = o=>pm(o).replace(/<[^>]*>/g, '').replace(/\s+/g, ' '), pmBtn = o=>pm(o).includes('msPinReset(7)');
+    const KEEP_NOTE = '초기화하면 다음에 급여·계약 메뉴에 들어갈 때 본인이 새로 정해요. HR도 비밀번호는 볼 수 없어요.', LOCKED_AT = '2026-10-23T00:12:00Z';
+    const lk = pmTxt({ payPin:'locked', payPinLockedAt:LOCKED_AT });
+    ok(lk.includes('급여 비밀번호: 잠김') && lk.includes('5번 틀림') && lk.includes(ctKst(LOCKED_AT)) && lk.includes(KEEP_NOTE) && pmBtn({ payPin:'locked', payPinLockedAt:LOCKED_AT }) && pm({ payPin:'locked', payPinLockedAt:LOCKED_AT }).includes('비밀번호 초기화</button>'), '잠김 + 시각: "잠김" · 5번 틀림 · 한국 시각 · 작은 글 · 초기화 단추');
+    ok(pmTxt({ payPin:'locked' }).includes('잠김') && !pmTxt({ payPin:'locked' }).includes('undefined') && !pmTxt({ payPin:'locked' }).includes('Invalid'), '잠김인데 시각이 없어도 깨지지 않는다');
+    const st = pmTxt({ payPin:'set' });
+    ok(st.includes('급여 비밀번호: 정함') && !st.includes('잠김') && st.includes(KEEP_NOTE) && pmBtn({ payPin:'set' }), '정함: 문구 · 작은 글 · 초기화 단추');
+    const nn = pmTxt({ payPin:'none' });
+    ok(nn.includes('급여 비밀번호: 아직 안 정함') && !pmBtn({ payPin:'none' }) && !pm({ payPin:'none' }).includes('<button') && !nn.includes('초기화하면'), '아직 안 정함: 단추 · 작은 글 없음');
+    ok(pmTxt({}).includes('아직 안 정함') && !pmBtn({ payPin:undefined }), '값이 없으면(옛 응답) 아직 안 정함');
+    for(const s of ['set', 'locked']){
+      const me = pmTxt({ payPin:s, payPinLockedAt:LOCKED_AT, me:true });
+      ok(me.includes('다른 HR에게 요청해 주세요.') && me.includes(KEEP_NOTE) && !pmBtn({ payPin:s, payPinLockedAt:LOCKED_AT, me:true }) && !pm({ payPin:s, me:true }).includes('<button'), `내 줄(${s}): 단추 대신 "다른 HR에게 요청해 주세요." · 작은 글은 그대로`);
+    }
+    ok(!pmTxt({ payPin:'none', me:true }).includes('다른 HR에게'), '내 줄이어도 아직 안 정했으면 요청 문구 없음');
+    const phoneRow = mem({ phone:'가상 휴대폰', no:'A1', payPin:'locked', payPinLockedAt:LOCKED_AT });
+    keep.ms = { list:MS_LIVE.list, state:MS_LIVE.state }; MS_LIVE.list = [phoneRow]; orgCloseModal(true); msSee(7);
+    let mh = modal()?.innerHTML || '';
+    ok(mh.includes('급여 비밀번호: ') && mh.includes('msPinReset(7)') && mh.indexOf('휴대폰 해제') > 0 && mh.indexOf('휴대폰 해제') < mh.indexOf('급여 비밀번호'), '구성원 설정 창: 휴대폰 해제 줄 바로 아래에 급여 비밀번호 줄');
+    ok(mh.includes('사원코드(급여명세서): A1') && mh.indexOf('급여 비밀번호') < mh.indexOf('사원코드'), '(사원코드 줄보다 앞)');
+    orgCloseModal(true); AUTH.live = false; MS_LIVE.list = []; msSee(orgMembers[0].id); mh = modal()?.innerHTML || '';
+    ok(mh && !mh.includes('급여 비밀번호') && !mh.includes('msPinReset'), '시연 화면은 그대로 (급여 비밀번호 줄 없음)');
+    orgCloseModal(true); AUTH.live = true; MS_LIVE.list = [phoneRow];
+
+    const conf = []; let yes = true; keep.confirm = window.confirm; window.confirm = t=>(conf.push(t), yes);
+    reply['/api/members/7/pay-pin/reset'] = ()=>json({ ok:true });
+    const resetPath = '/api/members/7/pay-pin/reset';
+    calls.length = 0; MS_LIVE.state = 'ok'; kpiMsg = null; msSee(7); await msPinReset(7);
+    ok(conf.length===1 && conf[0]==='가상직원 님의 급여 비밀번호를 초기화할까요? 다음에 들어올 때 본인이 새로 정해요.', '확인 창 문구에 이름');
+    ok(posts(resetPath)===1 && !modal() && MS_LIVE.state==='' && kpiMsg?.type==='success' && kpiMsg.msg==='급여 비밀번호를 초기화했습니다. 본인이 다음에 들어올 때 새로 정해요.', 'true: POST · 창 닫기 · 명단 다시 받기 표시 · 알림');
+    calls.length = 0; conf.length = 0; yes = false; MS_LIVE.state = 'ok'; kpiMsg = null; msSee(7); const mo2 = modal(); await msPinReset(7);
+    ok(conf.length===1 && posts(resetPath)===0 && !sent(resetPath).length && modal()===mo2 && MS_LIVE.state==='ok' && kpiMsg===null, 'false: 부르지 않는다 · 창 · 명단 그대로');
+    yes = true; orgCloseModal(true); reply[resetPath] = ()=>json({ error:'x' }, 403); calls.length = 0; MS_LIVE.state = 'ok'; kpiMsg = null; msSee(7); await msPinReset(7);
+    ok(posts(resetPath)===1 && !modal() && MS_LIVE.state==='ok' && kpiMsg?.type==='danger' && kpiMsg.msg==='비밀번호를 초기화하지 못했습니다.', '서버가 거절하면: 실패 알림 · 명단은 그대로');
+    reply[resetPath] = ()=>{ throw new Error('끊김'); }; kpiMsg = null; MS_LIVE.state = 'ok'; msSee(7); await msPinReset(7);
+    ok(kpiMsg?.type==='danger' && MS_LIVE.state==='ok' && !modal(), '연결이 끊겨도 같은 실패 알림 (걸리지 않는다)');
+    window.confirm = keep.confirm; MS_LIVE.list = keep.ms.list; MS_LIVE.state = keep.ms.state;
+
+    const tp = TOURS.pay.steps(), at = sel=>tp.findIndex(s=>s.el===sel), eyeAt = at('.pay-eye');
+    ok(at('#pinBox')===0 && tp[0].title==='비밀번호' && tp[0].body==='급여·계약 메뉴는 <b>비밀번호 6자리</b>를 넣어야 금액이 보여요. 처음 한 번은 본인이 정해요.', '사용법: 맨 앞에 잠금 창(#pinBox) 단계');
+    ok(at('#pinBand')>0 && at('#pinBand')===eyeAt-1 && tp[at('#pinBand')].title==='지금 잠그기' && tp[at('#pinBand')].body==='자리를 비울 때는 <b>지금 잠그기</b>를 눌러 주세요. 1분 쉬면 금액을 가리고, 5분 쉬면 다시 잠겨요.', '사용법: 눈 단추 단계 바로 앞에 풀림 띠(#pinBand) 단계');
+    ok(tp[eyeAt].body==='비밀번호를 넣으면 금액이 보여요. 눈 모양으로 다시 가릴 수 있어요.' && tp[eyeAt].title==='금액 보기', '사용법: 눈 단추 단계 새 문구');
+    ok(TOUR_MENU.pay.includes('금액은 비밀번호를 넣어야 보입니다.') && !TOUR_MENU.pay.includes('눈 모양'), '사이트 둘러보기: 급여·계약 설명 끝 문장');
+    const whHero = ()=>TOURS.wh.steps().find(s=>s.el==='.wh-hero').body;
+    ok(whHero().includes('금액은 비밀번호를 넣으면 보이고') && !whHero().includes('눌러야 보입니다'), '원천징수영수증 사용법: 금액은 비밀번호를 넣으면 보인다');
+    AUTH.live = false;
+    ok(TOUR_MENU.pay.endsWith('금액은 눈 모양을 눌러야 보입니다.') && TOURS.pay.steps().find(s=>s.el==='.pay-eye').body==='금액은 가려져 있습니다. <b>눈 모양</b>을 누르면 보이고, 다시 누르면 가려집니다.'
+      && whHero()==='<b>돌려받는 돈</b>(환급)인지 <b>더 낼 돈</b>(추가 납부)인지 맨 위에 크게 나옵니다. 금액은 <b>눈 모양</b>을 눌러야 보입니다.', '시연: 비밀번호 말 없이 눈 단추 문구 그대로');
+    AUTH.live = true; PIN.on = false; ok(TOUR_MENU.pay.endsWith('눈 모양을 눌러야 보입니다.') && whHero().includes('<b>눈 모양</b>을 눌러야 보입니다.'), '서버에 열쇠가 없으면(실제 로그인) 눈 단추 문구'); PIN.on = true;
+
+    // ----- 처음 사용법: 잠긴 급여·계약에서는 자동으로 띄우지 않고(본 것으로 치지 않는다), 풀린 뒤 처음 들어올 때 띄운다 -----
+    const seenWas = tourSeen(), wcWas = document.documentElement.classList.contains('wc-on'), sleep = ms=>new Promise(r=>setTimeout(r, ms));
+    try {
+      AUTH.locked = false; document.getElementById('authLock')?.remove();   // 위 로그아웃 검사 뒤 — 다시 그리게
+      localStorage.setItem('tourSeen', seenWas.filter(k=>k!=='pay').join(',')); document.documentElement.classList.remove('wc-on'); orgCloseModal(true);
+      currentNav = NAV.find(n=>n.id==='pay'); currentTab = currentNav.tabs[0]; kpiRole = 'emp'; ps.view = 'me';
+      Object.assign(PIN, { state:'ask', typed:'', err:'', forgot:false }); renderContent(); tourAuto(); await sleep(400);
+      ok(!tour.steps && !tourSeen().includes('pay'), '잠긴 급여·계약: 처음 사용법을 자동으로 띄우지 않고 본 것으로 치지 않는다');
+      Object.assign(PIN, { state:'open', last:Date.now() }); renderContent(); tourAuto(); await sleep(400);
+      ok(tour.key==='pay' && tour.steps.some(s=>s.el==='#pinBand') && tourSeen().includes('pay'), '풀린 뒤 처음: 사용법(지금 잠그기 단계까지)을 띄운다');
+    } finally { tourEnd(); try { localStorage.setItem('tourSeen', seenWas.join(',')); } catch(e){} document.documentElement.classList.toggle('wc-on', wcWas); }
+  } finally {
+    window.fetch = keep.fetch; window.open = keep.open; if(keep.clip) Object.defineProperty(navigator, 'clipboard', keep.clip); else delete navigator.clipboard; isPhone = keep.phone;
+    AUTH.live = keep.live; AUTH.me = keep.me; AUTH.locked = keep.locked; kpiRole = keep.role; currentNav = keep.nav; currentTab = keep.tab;
+    Object.assign(PIN, keep.pin); Object.assign(PAY_COUNTS, keep.cnt); Object.assign(PAY_LIVE, keep.pay); Object.assign(WH_LIVE, keep.wh); Object.assign(CT_LIVE, keep.ct);
+    payShow = keep.show; payOpen = keep.po; [ps.state, ps.view] = keep.ps; [wh.state, wh.view] = keep.whs;
+    Object.assign(rz, keep.rz); kpiMsg = keep.msg; ctPadDirty = keep.pad; whOrig = keep.wo; wsPull = keep.wsPull; pushInit = keep.pushInit; kpiProgAt = keep.progAt; PAY_CHAR_MEM = keep.chr; whYear = keep.wy; delete document.visibilityState;
+    if(keep.confirm) window.confirm = keep.confirm; if(keep.ms){ MS_LIVE.list = keep.ms.list; MS_LIVE.state = keep.ms.state; }
+    document.getElementById('pinVeil')?.remove(); document.getElementById('authLock')?.remove(); orgCloseModal(true);
+    document.getElementById('wsToast')?.remove(); renderContent();
+  }
+  return 'pinSelfCheck 통과';
+}
 function payContent(){
   const role = kpiRole, live = AUTH.live;
   let picker = '', head = (live ? '' : roleSwitcher()) + paySwitch() + (kpiIsHr(role) && kpiMsg ? kpiNote(kpiMsg.msg, kpiMsg.type) : '');   // 실제 로그인에는 시연용 역할 전환 줄이 없다 (이 화면은 실제 자료). HR은 두 화면을 오간다
@@ -9098,6 +9644,7 @@ function psMembers(){   // 맞출 명단 — 실제는 구성원 설정 명단(�
   return AUTH.live ? MS_LIVE.list : Object.keys(PAY_PEOPLE).map(k=>({ id:k, name:KPI_USERS[k].name, team:PAY_PEOPLE[k].dept, division:'', no:PAY_PEOPLE[k].code }));
 }
 async function psLoad(){   // 실제 로그인 HR: 올린 달 목록 + 서버에 잠금 열쇠가 있는지
+  if(pinGated()) return;   // 잠긴 동안 부르지 않는다 (올리기가 잠김 응답으로 실패한 뒤 다시 받기 등)
   ps.state = 'loading';
   try {
     const r = await fetch('/api/payslips/months');
@@ -9106,7 +9653,7 @@ async function psLoad(){   // 실제 로그인 HR: 올린 달 목록 + 서버에
   } catch(e){ ps.state = 'err'; }
   if(currentTab.id==='p1') renderContent();
 }
-async function psLiveDone(){ ps.state = ''; PAY_LIVE.state = ''; await payLoadMine(); renderSidebar(); }   // 실제: 올리기·공개·내리기 뒤 — 달 목록 · HR이 고른 직원 화면 · 내 메뉴 숫자를 새로
+async function psLiveDone(){ if(pinGated()) return; ps.state = ''; PAY_LIVE.state = ''; await payLoadMine(); renderSidebar(); }   // 실제: 올리기·공개·내리기 뒤 — 달 목록 · HR이 고른 직원 화면 · 내 메뉴 숫자를 새로
 function paySwitch(){   // HR에게만: 내 급여명세서 / 명세서 올리기 · 공개 (평가·성과의 hrSwitch와 같은 모양)
   if(!kpiIsHr()) return '';
   const btn = (v, label)=>`<button type="button" class="${ps.view===v ? 'on' : ''}" onclick="ps.view='${v}'; kpiFlash(null)" aria-pressed="${ps.view===v}">${label}</button>`;
@@ -9745,8 +10292,9 @@ async function whSelfCheck(){   // 브라우저 콘솔에서 await whSelfCheck()
   const wsrc = await PDFLib.PDFDocument.create(); wsrc.addPage([595.28, 841.89]); wsrc.addPage([841.89, 595.28]);
   const wb = await wsrc.save(), wb0 = wb.slice(), wm = await whMark(wb, '가상직원', new Date(2027, 2, 5, 14, 30)), xo = p=>p.node.Resources()?.lookupMaybe(PDFLib.PDFName.of('XObject'), PDFLib.PDFDict)?.keys().length || 0;
   ok(wm instanceof Uint8Array && wm!==wb && wb.every((b, i)=>b===wb0[i]) && (await PDFLib.PDFDocument.load(wb)).getPages().every(p=>xo(p)===0) && (await PDFLib.PDFDocument.load(wm)).getPages().map(xo).join()==='2,2', '워터마크: 새 바이트 · 원본은 그대로 · 쪽 수 그대로 · 쪽마다 그림 둘(바닥 한 줄 · 가운데 빗금)');
-  const keep = [AUTH.live, payShow, WH_LIVE.mine, wh.mem, whOrig];   // 넷째 부분: 직원 화면 요약 · 새 영수증 숫자 (상태는 끝나면 되돌린다)
+  const keep = [AUTH.live, payShow, WH_LIVE.mine, wh.mem, whOrig, PIN.on];   // 넷째 부분: 직원 화면 요약 · 새 영수증 숫자 (상태는 끝나면 되돌린다)
   try {
+    PIN.on = false;   // 실제 로그인만 흉내 — 비밀번호 잠금은 끈다 (pinSelfCheck가 따로 본다)
     AUTH.live = false; payShow = true; whOrig = null;
     const full = whSum(s), body = (o, who = 'emp')=>whBody({ year:2025, sum:{ ...full, ...o }, revised:false, seen:true, pdf:null }, who), steps = h=>(h.match(/class="wh-step/g) || []).length;
     const h = body({});
@@ -9788,7 +10336,7 @@ async function whSelfCheck(){   // 브라우저 콘솔에서 await whSelfCheck()
       await whUpload();
       ok(wh.up===null && wh.pick===null && !document.getElementById('orgModal') && !k.busy, '다 올리면 확인 창 자료와 올리던 자료를 놓는다 (wh.up · wh.pick)');
     } finally { orgCloseModal(); [wh.ask, kpiMsg] = ka; }
-  } finally { [AUTH.live, payShow, WH_LIVE.mine, wh.mem, whOrig] = keep; }
+  } finally { [AUTH.live, payShow, WH_LIVE.mine, wh.mem, whOrig, PIN.on] = keep; }
   const wd = [whMark, kpiOwner, kpiFlash, URL.createObjectURL, HTMLAnchorElement.prototype.click, whPrintUrl, whOrig, window.open, window.setTimeout, window.matchMedia], got = [], seen = [], box = document.createElement('div');   // 다섯째 부분: 내려받기 · 인쇄 길 (whMark · 다운로드 · 틀은 가짜로 바꿔 끼우고 끝나면 되돌린다). 해 1999 = 지금 화면에 있는 진짜 단추와 겹치지 않게
   try {
     box.innerHTML = `<button onclick="whDown(1999, 'emp')">내려받기</button><button onclick="whPrint(1999, 'emp')">인쇄</button>`; document.body.appendChild(box);
@@ -9814,7 +10362,7 @@ async function whSelfCheck(){   // 브라우저 콘솔에서 await whSelfCheck()
     window.setTimeout = wd[8]; window.matchMedia = wd[9];
     ok(f.isConnected && printed===1 && f.onload===null && later.length===1 && WH_PRINT_KEEP===600000 && later[0][1]===WH_PRINT_KEEP, '인쇄: 숨긴 틀의 인쇄 창 한 번 · 다시 load돼도 또 뜨지 않게 onload를 지운다 · print()가 돌아온 뒤 10분 타이머');
     later[0][0]();
-    ok(!f.isConnected && whPrintFrame===null && String(authLock).includes('whPrintGone()'), '10분 뒤(그리고 로그아웃 authLock 때) 인쇄 틀과 PDF 주소를 치운다');
+    ok(!f.isConnected && whPrintFrame===null && String(authLock).includes('pinForget()') && String(pinForget).includes('whPrintGone()'), '10분 뒤(그리고 로그아웃 authLock 때) 인쇄 틀과 PDF 주소를 치운다');
     got.length = 0; Object.defineProperty(navigator, 'pdfViewerEnabled', { configurable:true, value:false });
     window.open = ()=>null; whPrintUrl(URL.createObjectURL(new Blob(['x']))); window.open = ()=>({}); whPrintUrl(URL.createObjectURL(new Blob(['x'])));
     ok(got.map(g=>g[1]).join('|')==='브라우저가 새 창을 막아 바로 인쇄할 수 없습니다. 내려받기로 받은 파일을 열어 인쇄해 주세요.|PDF를 내려받았습니다. 받은 파일을 열어 인쇄해 주세요.', '인쇄 안내: 새 창이 막혔을 때 · PDF를 화면에 못 여는 브라우저(새 창이 내려받기가 된다)');
@@ -9880,7 +10428,7 @@ function whBody(r, who){   // 한 해의 요약 + 원본. r = { year, sum, revis
     pre!==null && ['③ 미리 낸 세금 (매월 공제)', won(pre), `소득세 ${won(s.taxPrepaid)} + 지방 ${won(s.localPrepaid)}`],
     !!st && [refund ? '③ − ② 환급' : '② − ③ 추가 납부', (refund ? '+' : '−') + won(amt), '10원 미만은 버립니다', refund ? 'refund' : 'extra'],   // 차감징수세액은 칸마다 10원 미만 절사한 값
   ].filter(Boolean).map(([k, v, sm, c])=>`<div class="wh-step${c ? ' '+c : ''}"><span>${k}</span><b>${v}</b>${sm ? `<small>${sm}</small>` : ''}</div>`).join('');
-  const eye = `<button type="button" class="pay-eye" onclick="payShow=!payShow; renderContent()" aria-pressed="${payShow}" aria-label="${payShow?'금액 가리기':'금액 보기'}">${icon(payShow?'eyeOff':'eye')}</button>`;
+  const eye = `<button type="button" class="pay-eye" onclick="payEye()" aria-pressed="${payShow}" aria-label="${payShow?'금액 가리기':'금액 보기'}">${icon(payShow?'eyeOff':'eye')}</button>`;
   const hero = !st ? `<section class="wh-hero none" aria-label="연말정산 결과"><div><div class="wh-lead">${lead}</div><div class="pay-amt-row"><span class="wh-none">${st===null ? '요약을 만들지 못했습니다. 원본 PDF를 확인해 주세요.' : '돌려받거나 더 낼 세금이 없습니다.'}</span>${steps ? eye : ''}</div></div></section>`   // 환급/추가를 못 읽었으면 효과 없이 안내만. 아래 흐름 줄에 가린 금액이 있으면 눈 단추는 둔다
     : `<section class="wh-hero ${refund?'refund':'extra'}" aria-label="연말정산 결과">
         <div>
@@ -9935,7 +10483,7 @@ function whSeen(r){   // 내 영수증의 해를 처음 열면 — paySeen과 �
   const t = WH_LIVE.mine.find(x=>x.year===r.year); if(t) t.seen = true;
   fetch(`/api/withholding/${r.year}/seen`, { method:'POST' }).catch(()=>{});
 }
-function whLiveDone(){ wh.state = ''; WH_LIVE.state = ''; whOrig = null; whFetchMine().then(renderSidebar); }   // 실제: 올리기 · 공개 · 내리기 뒤 — 현황 · 고른 직원 화면 · 내 메뉴 숫자를 새로 (psLiveDone과 같다)
+function whLiveDone(){ if(pinGated()) return; wh.state = ''; WH_LIVE.state = ''; whOrig = null; whFetchMine().then(renderSidebar); }   // 실제: 올리기 · 공개 · 내리기 뒤 — 현황 · 고른 직원 화면 · 내 메뉴 숫자를 새로 (psLiveDone과 같다)
 async function whPdfBytes(year, who){   // 원본 PDF 바이트 — 실제는 서버(HR이 고른 직원은 ?user= — 열람 기록), 시연은 올린 바이트
   if(!AUTH.live) return wh.mem.rows[year]?.[who]?.pdf || null;
   try { const r = await fetch(`/api/withholding/${year}/pdf` + (who===null ? '' : '?user='+who)); return r.ok ? new Uint8Array(await r.arrayBuffer()) : null; } catch(e){ return null; }
@@ -10029,6 +10577,7 @@ function whMembers(){   // 맞출 명단 — 실제는 구성원 설정 명단(�
 function whYearList(){ return AUTH.live ? wh.years : Object.values(wh.mem.years).sort((a, b)=>b.year-a.year); }   // 최근 해부터
 function whYearOf(y){ return whYearList().find(x=>x.year===y); }
 async function whYearsLoad(){   // 실제 로그인 HR: 올린 해 목록 + 서버에 잠금 열쇠가 있는지
+  if(pinGated()) return;   // 잠긴 동안 부르지 않는다 (psLoad와 같다)
   wh.state = 'loading';
   try {
     const r = await fetch('/api/withholding/years');
@@ -11659,7 +12208,7 @@ async function pushSelfCheck(){   // 브라우저 콘솔에서 await pushSelfChe
   ok(st({ ios:true, key:'' })==='off' && st({ ios:true, live:false })==='off' && st({ ios:true, phone:false })==='off', '아이폰이어도 서버에 키가 없으면 · 시연 · PC 세션이면 칸 없음');
   ok(st({ ios:true, standalone:true })==='ask' && st({ ios:true, standalone:true, perm:'granted' })==='on' && st({ ios:true, standalone:true, perm:'denied' })==='denied', '아이폰 홈 화면 앱: 안드로이드와 같은 규칙');
   ok(st({ perm:'granted', key:'' })==='off', '이미 허용했어도 서버에 키가 없으면 구독하지 않는다');
-  const keep = [AUTH.live, AUTH.me, KPI_LIVE.inbox, KPI_LIVE.deleg, PUSH.state, homePortalTasks, PUSH.key, PUSH.sw, currentNav], calls = [], realFetch0 = window.fetch;
+  const keep = [AUTH.live, AUTH.me, KPI_LIVE.inbox, KPI_LIVE.deleg, PUSH.state, homePortalTasks, PUSH.key, PUSH.sw, currentNav, PIN.state], calls = [], realFetch0 = window.fetch;
   try {
     ['ask', 'denied', 'ios'].forEach(s=>ok(pushCard(s).includes('휴대폰 알림 켜기') && pushCard(s).includes('class="btn primary"') && pushCard(s).includes(icon('bell')), s+' 칸: 제목 · 종 · 파란 단추'));
     ok(pushCard('ask').includes('처리할 일이 생기면<br>휴대폰으로 알려 드려요') && pushCard('ask').includes('pushEnable()') && pushCard('ask').includes('>켜기<'), 'ask 칸 문구 · [켜기]');
@@ -11725,7 +12274,7 @@ async function pushSelfCheck(){   // 브라우저 콘솔에서 await pushSelfChe
     ok(calls.join()==='0,0' && AUTH.locked && AUTH.live===false, 'authLogout 이 끝나면 authLock 이 한 번 더 지운다 (잠금 화면)');
     calls.length = 0; AUTH.locked = false; authLock('login'); ok(calls.join()==='0' && AUTH.locked, '세션이 끝나 authLock 만 불려도(401) 아이콘 숫자를 지운다');
   } finally {
-    [AUTH.live, AUTH.me, KPI_LIVE.inbox, KPI_LIVE.deleg, PUSH.state, homePortalTasks, PUSH.key, PUSH.sw, currentNav] = keep; window.fetch = realFetch0;
+    [AUTH.live, AUTH.me, KPI_LIVE.inbox, KPI_LIVE.deleg, PUSH.state, homePortalTasks, PUSH.key, PUSH.sw, currentNav, PIN.state] = keep; window.fetch = realFetch0;   // PIN.state: 로그아웃 검사(authLock)가 비운 비밀번호 상태
     delete navigator.setAppBadge; delete navigator.clearAppBadge; delete navigator.serviceWorker;
     if(AUTH.locked || document.getElementById('authLock')){ AUTH.locked = false; document.getElementById('authLock')?.remove(); renderContent(); }   // 로그아웃 검사가 가린 화면을 되돌린다
   }
@@ -12192,6 +12741,22 @@ async function msPhoneRevoke(id){   // 실제 로그인: 그 사람의 휴대폰
   MS_LIVE.state = '';
   kpiFlash('휴대폰 등록을 해제했습니다. 그 휴대폰은 바로 로그아웃됩니다.');
 }
+function pinMemberRow(m){   // 구성원 설정 창의 "급여 비밀번호" 줄 (실제 로그인 · 휴대폰 줄과 같은 모양, 급여·계약 비밀번호 잠금 설계 4.5). payPin = none · set · locked (서버 members_list)
+  const s = m.payPin==='locked' ? 'locked' : m.payPin==='set' ? 'set' : 'none';
+  const state = s==='locked' ? `<b style="color:var(--danger);">잠김</b>(5번 틀림${m.payPinLockedAt ? ', '+ctKst(m.payPinLockedAt) : ''})` : s==='set' ? '정함' : '아직 안 정함';
+  const act = s==='none' ? '' : m.me ? '<span class="list-sub" style="margin:0;">다른 HR에게 요청해 주세요.</span>' : `<button type="button" class="btn sm" onclick="msPinReset(${m.id})">비밀번호 초기화</button>`;   // 자기 것은 서버도 막는다(403)
+  return `<div style="display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:${s==='none' ? 10 : 4}px;"><span class="list-sub" style="margin:0;">급여 비밀번호: ${state}</span>${act}</div>`
+    + (s==='none' ? '' : '<div class="list-sub" style="margin:0 0 10px;">초기화하면 다음에 급여·계약 메뉴에 들어갈 때 본인이 새로 정해요. HR도 비밀번호는 볼 수 없어요.</div>');
+}
+async function msPinReset(id){   // 실제 로그인 · HR: 그 사람의 급여 비밀번호 초기화 — 확인 창 한 번 뒤. 비밀번호는 서버가 지우고, 본인이 다음에 새로 정한다
+  const m = msList().find(o=>o.id===id);
+  if(!confirm(`${m ? m.name : '이 사람'} 님의 급여 비밀번호를 초기화할까요? 다음에 들어올 때 본인이 새로 정해요.`)) return;
+  const r = await fetch(`/api/members/${id}/pay-pin/reset`, { method:'POST' }).catch(()=>null);
+  orgCloseModal();
+  if(!r || !r.ok) return kpiFlash('비밀번호를 초기화하지 못했습니다.', 'danger');
+  MS_LIVE.state = '';
+  kpiFlash('급여 비밀번호를 초기화했습니다. 본인이 다음에 들어올 때 새로 정해요.');
+}
 /* ----- 비상연락망 파일로 넣기 (실제 로그인 · HR, 2026-10-19 인사담당자 결정) -----
    HR 이 고른 엑셀을 브라우저 안에서 읽어(rzLoad — 암호가 걸려 있으면 묻는다) 하이웍스 명단과 이름으로 맞춘 뒤 서버에 보낸다.
    파일은 서버로 보내지 않고 맞춘 값(직급·내선·연락처·메일)만 보낸다. 엑셀 값이 하이웍스 값보다 먼저 보이고, 매일 아침 명단 가져오기는 이 값을 덮어쓰지 않는다.
@@ -12397,6 +12962,7 @@ function msSee(id, err){   // err = 맡은 부서를 고르다 막힌 이유 (�
       : m.use ? `<ul class="ms-see">${msSeeList(m).map(([a, b])=>`<li class="${b?'':'no'}"><b>${a}</b><span>${b || '보이는 것이 없음'}</span></li>`).join('')}</ul>`
       : kpiNote('포털 사용이 꺼져 있어 <b>들어올 수 없습니다.</b> 하이웍스에서 메뉴를 누르면 "인사포털은 준비 중입니다" 화면이 나옵니다.')}
     ${AUTH.live && m.phone ? `<div style="display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:10px;"><span class="list-sub" style="margin:0;">등록된 휴대폰: ${escapeHtml(m.phone)}</span><button type="button" class="btn sm" onclick="msPhoneRevoke(${id})">휴대폰 해제</button></div>` : ''}
+    ${AUTH.live ? pinMemberRow(m) : ''}
     ${AUTH.live && m.no ? `<div style="display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:10px;"><span class="list-sub" style="margin:0;">사원코드(급여명세서): ${escapeHtml(m.no)}</span><button type="button" class="btn sm" id="msNoBtn" onclick="msNoAsk(${id})">사원코드 지우기</button></div>` : ''}
     ${AUTH.live ? `<div class="ms-hire"><label for="msHire" class="list-sub" style="margin:0;">입사일</label><input type="date" id="msHire" value="${escapeHtml(m.hireDate || '')}"><button type="button" class="btn sm" onclick="msHireSave(${id})">저장</button><span class="list-sub" style="margin:0;">${m.hireDate ? '' : '아직 없음 — 홈 배너의 재직 기간이 보이지 않습니다'}</span></div>
       <div class="ms-hire"><label for="msBday" class="list-sub" style="margin:0;">생일</label><input id="msBday" value="${escapeHtml(m.birthday || '')}" placeholder="03-15" style="width:92px;" aria-label="생일 (월-일)"><button type="button" class="btn sm" onclick="msBdaySave(${id})">저장</button>
@@ -12458,9 +13024,9 @@ function evTodo(part){   // 평가 진행에서 처리할 일 (평가가 시작�
   return part==='me' ? mine : part==='admin' ? admin : mine + admin;
 }
 const TODO = {
-  p1: ()=>AUTH.live ? PAY_LIVE.mine.filter(s=>!s.seen).length : 0,   // 공개됐는데 아직 안 연 내 급여명세서 (실제 로그인만 — 시연에는 새 명세서가 없다)
-  p2: ()=>{ if(AUTH.live) return CT_LIVE.mine.filter(c=>c.canSign).length; const me = ctActor(kpiRole), c = me && ctActive(ctContracts, me.pid); return c && c.status==='SENT' ? 1 : 0; },   // 서명할 연봉계약서 — 실제 로그인: 서버가 준 내 계약서 중 서명할 수 있는 것 (ctLoadMine)
-  p3: ()=>AUTH.live ? WH_LIVE.mine.filter(y=>!y.seen).length : 0,   // 공개됐는데 아직 안 연 내 원천징수영수증 (실제 로그인만 — 급여명세서 p1과 같다)
+  p1: ()=>!AUTH.live ? 0 : pinGated() ? PAY_COUNTS.p1 : PAY_LIVE.mine.filter(s=>!s.seen).length,   // 공개됐는데 아직 안 연 내 급여명세서 (실제 로그인만 — 시연에는 새 명세서가 없다). 급여 비밀번호로 잠겨 있으면 서버가 센 숫자(/api/pay/counts)
+  p2: ()=>{ if(AUTH.live) return pinGated() ? PAY_COUNTS.p2 : CT_LIVE.mine.filter(c=>c.canSign).length; const me = ctActor(kpiRole), c = me && ctActive(ctContracts, me.pid); return c && c.status==='SENT' ? 1 : 0; },   // 서명할 연봉계약서 — 실제 로그인: 서버가 준 내 계약서 중 서명할 수 있는 것 (ctLoadMine, 잠겨 있으면 숫자만)
+  p3: ()=>!AUTH.live ? 0 : pinGated() ? PAY_COUNTS.p3 : WH_LIVE.mine.filter(y=>!y.seen).length,   // 공개됐는데 아직 안 연 내 원천징수영수증 (실제 로그인만 — 급여명세서 p1과 같다)
   e1: ()=>AUTH.live ? KPI_LIVE.inbox.length + kpiLiveBack() + kpiLivePrev() + kpiRev('memos')   // 실제 로그인: 처리할 KPI(계획서 + 일정 변경) + 돌려보내진 내 계획서 + 마감 전 지난달 한 줄 + 확인할 메모 (아직 안 불렀으면 0)
     : kpiWaiting().length + (kpiSheets[kpiRole]?.rejectNote ? 1 : 0) + kvMemoTodo(kvMe()),   // 승인할 KPI + 반려되어 다시 쓸 내 KPI + 확인할 메모
   e4: ()=>!kvCanUse() ? 0 : AUTH.live ? kpiRev('check') + kpiRev('replies') : kvReplyTodo(kvMe()),   // 실제 로그인: 그 달 기록을 확인 안 한 바로 아래 사람 + 내가 쓴 메모에 새 답글이 온 사람 (처리함 review) / 시연: 새 답글이 온 사람 수
@@ -12532,8 +13098,10 @@ function renderContent(){   // 화면을 다시 그릴 때마다 메뉴·탭 숫
   if(AUTH.locked) return;   // 로그인 안내가 덮은 뒤에는 늦게 온 답(payLoad 등)이 화면을 다시 채우지 않게
   if(currentTab.show && !currentTab.show()) currentTab = navTabs(currentNav)[0];   // 역할을 바꿔 지금 탭이 안 보이게 되면 첫 탭으로
   document.getElementById('pageTitle').textContent = currentNav.label;
-  document.getElementById('contentArea').innerHTML = currentTab.render();
+  const lockView = currentNav.id==='pay' && pinGated();   // 급여·계약 메뉴가 비밀번호로 잠겨 있으면 탭 내용 대신 잠금 창 — 금액 화면을 그리지도(부르지도) 않는다. 탭 줄 · 숫자는 그대로
+  document.getElementById('contentArea').innerHTML = lockView ? pinView() : (currentNav.id==='pay' && pinUnlocked() ? pinBand() : '') + currentTab.render();   // 풀려 있으면 탭 내용 맨 위에 띠 (설계 4.3)
   renderSidebar(); renderSubtabs(); tourHelpSync();
+  if(lockView) pinFocus();
 }
 function selectNav(id){
   if(pcOnlyBlocked(id)){ pcOnlyNotice(); return false; }
@@ -12569,7 +13137,7 @@ function closeSidebar(){ document.querySelector('.sidebar').classList.remove('op
 const TOUR_MENU = {   // 메뉴 id → 둘러보기 설명
   home:'<b>오늘 할 일</b>, 이번 주 달성률, 일정, 급여일까지 남은 날을 한눈에 봅니다. 포털에 들어오면 가장 먼저 보는 화면입니다.',
   ws:'내가 <b>끝내야 할 일</b>(나의 업무)과 <b>꾸준히 할 일</b>(나의 일상)을 적고 체크합니다. 여기 적은 내용은 본인만 보고 평가와 상관없습니다.',
-  pay:'<b>급여명세서</b>, <b>전자연봉계약서</b>(서명), <b>원천징수영수증</b>을 봅니다. 금액은 눈 모양을 눌러야 보입니다.',
+  get pay(){ return '<b>급여명세서</b>, <b>전자연봉계약서</b>(서명), <b>원천징수영수증</b>을 봅니다. ' + (AUTH.live && PIN.on ? '금액은 비밀번호를 넣어야 보입니다.' : '금액은 눈 모양을 눌러야 보입니다.'); },   // 시연 · 열쇠 없는 서버는 눈 단추만 (설계 2장)
   perf:'올해 <b>KPI를 작성</b>하고, 연말에 <b>자기평가</b>를 하고, <b>평가 결과</b>를 확인합니다. 정확한 작성을 위해 PC에서만 열립니다.',
   rule:'인사·급여·보안 규정을 <b>낱말로 검색</b>합니다. 자주 묻는 질문도 여기 있습니다.',
   trip:'출발지와 출장지를 넣으면 <b>출장 경비</b>를 계산해 주고, 신청서와 회계전표 줄까지 만들어 줍니다.',
@@ -12649,11 +13217,13 @@ const TOURS = {   // 단계: el = 가리킬 곳(여러 개면 묶어서, 배열�
     { el:['[onclick="expVoucherCopy()"]', '#expVoucherWrap .card'], title:'표 복사 (엑셀 없이 바로 붙여넣기)', body:'경비를 계산해 <b>전표에 담기</b>를 누르면 여기에 쌓입니다. <b>표 복사</b>를 누른 다음 ERP 전표 입력창 첫 줄의 <b>계정과목 칸</b>을 누르고 붙여넣기(Ctrl+V) 하세요. 계정과목·금액 줄이 자동으로 채워집니다.' },
   ]},
   pay:{ label:'급여명세서 보는 법', tab:'p1', steps:()=>[
+    { el:'#pinBox', title:'비밀번호', body:'급여·계약 메뉴는 <b>비밀번호 6자리</b>를 넣어야 금액이 보여요. 처음 한 번은 본인이 정해요.' },
     { el:'#psUp', title:'명세서 올리기 (HR)', body:'급여 프로그램에서 내려받은 <b>급여대장 엑셀</b>을 고릅니다. 암호가 걸린 파일은 암호를 묻고, 파일은 이 PC 화면 안에서만 읽습니다. 확인 창에서 인원 · 합계 · 직원 맞추기를 본 뒤 <b>올리기 (공개 전)</b>를 누릅니다.' },
     { el:'#psMonths [onclick^="psOpenAsk"]', one:true, title:'공개 (HR)', body:'올린 달은 아직 직원에게 보이지 않습니다. <b>미리 보기</b>로 확인한 뒤 <b>공개</b>를 누르면 각자 본인 것만 볼 수 있습니다. 고칠 것이 있으면 <b>공개 내리기</b> → 다시 올리기 → 공개 순서로 하고, 직원 화면에는 "수정됨"으로 보입니다.' },
     { el:'select[onchange^="payViewKey"]', title:'볼 직원 고르기 (HR)', body:'HR은 직원을 골라 그 사람의 명세서를 볼 수 있습니다. 직원은 본인 것만 봅니다.' },
     { el:'.pay-pick', title:'캐릭터 고르기', body:'처음 한 번, 급여일까지 함께 걸어갈 캐릭터를 고릅니다. 고르면 급여일까지의 진행 그림이 나오고, 바꾸고 싶으면 그림 아래 <b>캐릭터 바꾸기</b>를 누릅니다.' },
-    { el:'.pay-eye', title:'금액 보기', body:'금액은 가려져 있습니다. <b>눈 모양</b>을 누르면 보이고, 다시 누르면 가려집니다.' },
+    { el:'#pinBand', title:'지금 잠그기', body:'자리를 비울 때는 <b>지금 잠그기</b>를 눌러 주세요. 1분 쉬면 금액을 가리고, 5분 쉬면 다시 잠겨요.' },
+    { el:'.pay-eye', title:'금액 보기', body:AUTH.live && PIN.on ? '비밀번호를 넣으면 금액이 보여요. 눈 모양으로 다시 가릴 수 있어요.' : '금액은 가려져 있습니다. <b>눈 모양</b>을 누르면 보이고, 다시 누르면 가려집니다.' },
     { el:'.pay-years, .pay-mgrid', title:'연도 · 월 고르기', body:'연도를 고르고 <b>월</b>을 누르면 아래에 그달 명세서가 열립니다.' + (AUTH.live ? ' 새로 공개된 달에는 <b>새 명세서</b> 표시가 붙고, 열어 보면 사라집니다.' : '') + ' 열린 명세서는 <b>인쇄 / PDF 저장</b>으로 보관할 수 있습니다.' },
     { el:'#paySlip .card-title', title:'인쇄 · PDF 저장', body:'오른쪽 단추로 이 명세서를 <b>인쇄하거나 PDF로 저장</b>합니다.' },
   ]},
@@ -12661,7 +13231,7 @@ const TOURS = {   // 단계: el = 가리킬 곳(여러 개면 묶어서, 배열�
     { el:'#whSeg', title:'화면 고르기 (HR)', body:'<b>내 원천징수영수증</b>은 내 것과 직원별 영수증을 보는 화면, <b>영수증 올리기 · 공개</b>는 NAS의 zip을 올리고 공개하는 화면입니다.' },
     { el:'#whUp', title:'영수증 올리기 (HR)', body:'NAS의 <b>원천징수영수증 zip</b>을 고르고 압축 암호를 넣습니다. 파일은 이 PC 화면 안에서만 풀고, 확인 창에서 사람 · 금액 · 직원 맞추기를 본 뒤 올립니다. 올린 해는 <b>공개</b>를 눌러야 직원에게 보입니다.' },
     { el:'select[onchange^="whViewKey"]', title:'볼 직원 고르기 (HR)', body:'HR은 직원을 골라 그 사람의 영수증을 볼 수 있습니다. 직원은 본인 것만 봅니다.' },
-    { el:'.wh-hero', title:'연말정산 결과', body:'<b>돌려받는 돈</b>(환급)인지 <b>더 낼 돈</b>(추가 납부)인지 맨 위에 크게 나옵니다. 금액은 <b>눈 모양</b>을 눌러야 보입니다.' + (AUTH.live ? ' 새로 공개된 해에는 <b>새 영수증</b> 표시가 붙고, 열어 보면 사라집니다.' : '') },
+    { el:'.wh-hero', title:'연말정산 결과', body:'<b>돌려받는 돈</b>(환급)인지 <b>더 낼 돈</b>(추가 납부)인지 맨 위에 크게 나옵니다. ' + (AUTH.live && PIN.on ? '금액은 비밀번호를 넣으면 보이고, <b>눈 모양</b>으로 다시 가릴 수 있습니다.' : '금액은 <b>눈 모양</b>을 눌러야 보입니다.') + (AUTH.live ? ' 새로 공개된 해에는 <b>새 영수증</b> 표시가 붙고, 열어 보면 사라집니다.' : '') },
     { el:'[onclick^="whViewer"]', title:'원본 PDF 보기', body:'누르면 이 화면 안에 원본이 쪽마다 열립니다. 자세한 공제 내역은 원본에서 확인합니다. <b>내려받기</b>로 PC에 저장하거나 <b>인쇄</b>할 수 있고, 내려받은 파일 · 인쇄물에는 회사명 · 출력 일시 · 출력한 사람이 워터마크로 들어갑니다.' },
   ]},
   ct:{ label:'연봉계약서 사용법', tab:'p2', steps:()=>[   // 실제 로그인 + 시연이 같은 단계를 쓴다 — 지금 화면에 없는 칸의 단계(HR 화면의 단계는 직원 화면에서, 서명 전후 단계는 서로)는 건너뛴다
@@ -12791,7 +13361,7 @@ function tourPlace(){   // 밝은 칸과 말풍선의 자리 (스크롤·창 크
 function tourFirst(){ return tourShould('menu', tourSeen(), !!tour.steps) && tourStart('menu'); }   // 처음 들어온 브라우저: 사이트 둘러보기 (환영 페이지에서 들어온 직후, 또는 환영 페이지가 없는 날에는 바로)
 function tourAuto(){   // 화면을 옮긴 뒤: 그 화면에 처음이면 사용법을 한 번 띄운다. 화면이 마저 그려지도록 한 박자 늦춘다
   clearTimeout(tourTimer);
-  tourTimer = setTimeout(()=>{ const key = tourTabKey(); if(key && tourShould(key, tourSeen(), tourBusy())) tourStart(key); }, 250);
+  tourTimer = setTimeout(()=>{ const key = tourTabKey(); if(key && !(currentNav.id==='pay' && pinGated()) && tourShould(key, tourSeen(), tourBusy())) tourStart(key); }, 250);   // 잠긴 급여·계약은 띄우지 않는다(본 것으로 치지 않게) — 풀린 뒤 처음 들어올 때 전체 사용법이 뜬다. 잠금 창 단계는 "이 화면 사용법"으로
 }
 
 /* ---------------- 키보드·화면 읽기 보조 ----------------
@@ -12842,9 +13412,8 @@ function authLock(kind){   // 로그아웃 · 세션 끝(401)에도 부른다 �
   AUTH.locked = true;
   pushBadgeClear();   // 앱 아이콘 숫자도 (같은 휴대폰을 다음 사람이 쓸 수 있다)
   document.getElementById('contentArea').innerHTML = '';   // #payAmt 도 사라져 payTick 이 멈춘다
-  orgCloseModal(true);   // 급여대장 확인 창 · 미리 보기 등
-  ps.pick = null; ps.prev = null; Object.assign(PAY_LIVE, { state:'', who:null, slips:[], mine:[] }); ctDrop();
-  Object.assign(WH_LIVE, { state:'', who:null, years:[], mine:[] }); whOrig = null; whPrintGone(); whDrop(); wh.up = null; wh.prev = null; wh.run = null;   // 받아 둔 원천징수영수증 원본 · 인쇄용 틀 · 확인 창의 사람별 PDF(주민등록번호가 있다) · 미리 보기 · 읽는 중인 것도 버린다 (orgCloseModal(true)는 whDrop을 건너뛴다)
+  orgCloseModal(true);   // 급여대장 확인 창 · 미리 보기 등 (다른 메뉴의 창도)
+  pinForget(); rz.lock = null; Object.assign(PIN, { state:'', typed:'', first:'', row:0, err:'', forgot:false });   // 받아 둔 급여명세서 · 영수증 · 계약서 · 읽은 연봉 엑셀 · 가림막 — 5분 잠금과 같은 지우기. 치던 숫자(정하기 두 줄)도 지운다. 비밀번호 상태는 다음 로그인에서 다시 받는다
   if(kind==='login' && isPhone()) kind = 'phone';
   const [title, body] = AUTH_TEXT[kind];
   let el = document.getElementById('authLock');
@@ -12874,7 +13443,8 @@ async function authBoot(){
   AUTH.live = true; AUTH.me = me;
   kpiSetRole(authRole(AUTH.me));
   await wsPull(true);   // 나의 업무 · 나의 일상을 서버에서 (이 기기에 적어 둔 것은 처음 한 번 합친다)
-  await Promise.all([payLoadMine(), whFetchMine(), ctLoadMine()]);   // 메뉴 숫자용: 공개됐는데 아직 안 연 내 급여명세서 · 원천징수영수증 · 서명할 내 연봉계약서
+  setInterval(pinTick, 5e3);   // 쉰 시간 보기 — 1분 가림 · 5분 잠금 (풀려 있을 때만 일을 한다)
+  await pinBoot();   // 급여 비밀번호 상태 + 메뉴 숫자용: 공개됐는데 아직 안 연 내 급여명세서 · 원천징수영수증 · 서명할 내 연봉계약서 (잠겨 있으면 숫자만 — /api/pay/counts)
   const kpi = kpiLiveLoad();   // 메뉴 · 홈의 처리할 KPI 숫자 — 기다리지 않는다 (다 오면 다시 그린다)
   renderSidebar(); renderContent();
   if(code) installNotice(null, true);   // 방금 등록한 휴대폰: 홈 화면에 추가하는 순서
@@ -12898,7 +13468,7 @@ function authLogout(){
   fetch('/api/auth/logout', { method:'POST' }).catch(()=>{}).finally(()=>{ AUTH.live = false; authLock('out'); });
 }
 const authFetch = window.fetch.bind(window);   // 쓰는 도중 로그인이 끝나면(4시간 쉼 · HR이 꺼 둠 등) 다음 요청에서 바로 안내한다
-window.fetch = async (...a)=>{ const r = await authFetch(...a); if(r.status===401 && AUTH.live && String(a[0]).startsWith('/api/')) authLock('login'); return r; };
+window.fetch = async (...a)=>{ const r = await authFetch(...a); if(r.status===401 && AUTH.live && String(a[0]).startsWith('/api/')) authLock('login'); await pinSeen(r, a[0]); return r; };   // 급여·계약 길의 423(비밀번호 잠김)이면 잠금 창으로 (pinSeen)
 
 renderContent();
 a11yEnhance(document.body);
