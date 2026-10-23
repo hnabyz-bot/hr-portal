@@ -878,8 +878,11 @@
      줄마다 칸 폭이 같아 숫자 · 상태 글자의 시작이 맞는다. 이름 · 상태 글자는 두 줄로 나뉘지 않고, 줄 높이는 표시가 있든 없든 같다.
      부진 · 확인 전 · 안 씀은 붉은 계열(--coral-text · --danger) — 화면을 파랑 한 색으로만 칠하지 않는다. 좁은 창에서는 표가 옆으로 넘어간다. */
   .kvl-card{ margin-bottom:14px; }
-  .kvl-tt{ display:inline-flex; align-items:center; gap:14px; flex-wrap:wrap; }
-  .kvl-mon{ display:inline-flex; gap:12px; }
+  .kvl-tt{ font-size:21px; font-weight:800; }   /* 제목 크게 + 달 단추 줄 — 월별로 본다는 게 보이게 (2026-10-23 인사담당자 B안) */
+  .kvl-tt small{ font-size:17px; font-weight:600; color:var(--text-secondary); }
+  .kvl-months{ gap:6px; }
+  .kvl-months button{ width:66px; justify-content:center; padding:10px 0; font-size:15px; }
+  .kvl-months button:disabled{ opacity:.4; cursor:default; }
   .kvl-tools .btn{ margin-left:auto; }
   .kvl-rows{ overflow-x:auto; }
   .kvl-rows > *{ min-width:860px; }
@@ -5697,11 +5700,11 @@ function kvLiveTable(){   // 월간 점검 카드 (시안 4): 제목 + 달 넘�
   const scope = hr ? '전 직원' : me.position==='CEO' ? '본부장 · 팀장' : b.scope?.name || '';   // 팀장 · 본부장은 맡은 부서 (소속이 '임원'인 본부장도 이끄는 본부)
   const mine = b.people.filter(p=>p.direct && p.month), n = st=>mine.filter(p=>p.month.check===st).length, todo = n('TODO'), none = n('NONE');
   const badge = todo || none ? `<span class="badge warning">${[todo ? `확인할 사람 ${todo}명` : '', none ? `안 쓴 사람 ${none}명` : ''].filter(Boolean).join(' · ')}</span>` : '';
-  const nav = `<span class="kvl-mon" id="kvlMonth">${M>1 ? `<button type="button" class="kp-lnk" onclick="kvLiveMonth(-1)">‹ ${M - 1}월</button>` : ''}${M<kvLiveNow() ? `<button type="button" class="kp-lnk" onclick="kvLiveMonth(1)">${M + 1}월 ›</button>` : ''}</span>`;
+  const nav = `<div class="hr-seg kvl-months" id="kvlMonth" role="group" aria-label="달 고르기">${[...Array(12)].map((_, i)=>`<button type="button"${i + 1===M ? ' class="on"' : ''} aria-pressed="${i + 1===M}"${i + 1>kvLiveNow() ? ' disabled' : ''} onclick="kvLiveMonth(${i + 1})">${i + 1}월</button>`).join('')}</div>`;   // 1월 ~ 12월 — 고른 달은 검게, 앞으로 올 달은 흐리게
   const tools = !hr ? '' : `<div class="kv-tools kvl-tools" id="kvlTools"><input class="kv-q" placeholder="이름 검색" aria-label="이름 검색" value="${escapeHtml(KV_LIVE.q)}" oninput="KV_LIVE.q=this.value.trim(); kvLiveRows()">
       <button type="button" class="kv-only${KV_LIVE.onlySlow ? ' on' : ''}" aria-pressed="${KV_LIVE.onlySlow}" onclick="KV_LIVE.onlySlow=!KV_LIVE.onlySlow; renderContent()">부진만 보기</button>
       <button type="button" class="btn sm" onclick="kvLiveExport()" title="엑셀에서 열리는 CSV 파일">${icon('download')}엑셀 내려받기</button></div>`;
-  return `<div class="card kvl-card" id="kvlTable"><div class="card-title"><span class="kvl-tt">${M}월 월간 점검 · ${escapeHtml(scope)}${nav}</span>${badge}</div>${tools}
+  return `<div class="card kvl-card" id="kvlTable"><div class="card-title"><span class="kvl-tt">${+b.year}년 월간 점검 <small>${scope ? `· ${escapeHtml(scope)} ` : ''}· 달을 눌러 그 달 기록을 봐요</small></span>${badge}</div>${nav}${tools}
     <div class="kvl-rows${chk ? '' : ' nochk'}" id="kvlRows">${kvLiveList()}</div></div>`;
 }
 function kvLiveList(b=KV_LIVE.board){   // 표의 줄 — 머리 줄 + 부서 묶음(묶음이 하나면 머리 없이). HR 검색 · 부진만 보기 중에는 맞는 사람만 보이고 묶음은 모두 펼친다
@@ -5724,7 +5727,7 @@ function kvLiveList(b=KV_LIVE.board){   // 표의 줄 — 머리 줄 + 부서 �
 }
 function kvLiveRows(){ const el = document.getElementById('kvlRows'); if(el) el.innerHTML = kvLiveList(); }   // 표만 다시 그린다 — 검색어를 적는 동안 입력칸을 다시 그리면 한글 조합이 끊긴다
 function kvLiveFold(id){ KV_LIVE.open[id] = !(KV_LIVE.open[id] ?? !AUTH.me.is_hr); kvLiveRows(); }   // 묶음 머리 줄: 접고 편다
-function kvLiveMonth(d){ const m = KV_LIVE.board.month + d, now = kvLiveNow(); if(m>=1 && m<=now && KV_LIVE.state!=='loading') kvLiveLoad(m===now ? 0 : m); }   // ‹ 지난달 · 다음 달 › — 1월 ~ 이번 달
+function kvLiveMonth(m){ const now = kvLiveNow(); if(m>=1 && m<=now && m!==KV_LIVE.board.month && KV_LIVE.state!=='loading') kvLiveLoad(m===now ? 0 : m); }   // 달 단추 — 1월 ~ 이번 달 (이번 달은 month 0)
 function kvLiveRow(p, chk){   // 사람 한 줄: 이름(+ 직급 · 종 · 말풍선) · 진행률 막대 · n% · 기대 n% · 그 달에 적을 것 · 확인 · [펼침]/[보기]. 확정본이 없으면 상태 배지와 "—"만 (누를 수 없음)
   const m = p.month, a = p.alarm, slow = !!a?.slow, memo = p.memo;
   const nm = `<span class="kvl-nm"><b>${escapeHtml(p.name)}</b>${p.title ? `<small>${escapeHtml(p.title)}</small>` : ''}${slow ? `<span class="kv-mk bell" title="부진 — 기대보다 ${Math.round(a.expected) - Math.round(a.pct)}%p 늦어요${p.items.some(i=>i.mute) ? ' (알람 끈 항목 빼고)' : ''}">${icon('bell')}</span>` : ''}${memo.count ? `<span class="kv-mk memo${memo.fresh ? ' new' : ''}" title="${memo.fresh ? '새 답글이 있어요' : `확인 메모 ${memo.count}건`}">${icon('message')}</span>` : ''}</span>`;
@@ -5961,10 +5964,10 @@ async function kvLiveSelfCheck(){   // 브라우저 콘솔에서 await kvLiveSel
     ok(txt(r[0], '.kvl-m').join()==='정기 1/2 · 비정기 결과 0/1' && txt(r[1], '.kvl-ck').join()==='✓확인함' && txt(r[0], '.kvl-ck').join()==='확인 전' && txt(r[2], '.kvl-ck').join()==='안 씀', '그 달에 적을 것 · 확인 상태');
     ok(v.querySelector('#kvlTable .card-title .badge').textContent==='확인할 사람 1명 · 안 쓴 사람 1명', '배지: 바로 아래 사람 중 확인 전 · 안 씀 수');
     ok(!view(TL, B([P(12, 3, { month:mo('DONE') })])).querySelector('#kvlTable .card-title .badge') && view(TL, B([P(13, 3, { month:mo('NONE') })])).querySelector('#kvlTable .card-title .badge').textContent==='안 쓴 사람 1명', '배지: 0인 말은 빼고 · 둘 다 0이면 없음');
-    ok(v.querySelector('#kvlTable .card-title').textContent.includes(`${now}월 월간 점검 · 가상1팀`) && !v.textContent.includes('시연') && !v.querySelector('#kvlTools, #kvlPerson') && v.textContent.includes('진행률은 본인이 적은 실적 · 결과로 계산하며 평가 점수와는 별개예요.'), '제목 · 시연 안내 없음 · 도구 줄은 HR만 · 맨 아래 안내');
-    const nav = b=>txt(view(TL, b), '#kvlMonth button').join('|');
-    ok(!nav(B(tlPeople)).includes('›') && (now===1 || nav(B(tlPeople))===`‹ ${now - 1}월`), '달 넘기기: 이번 달에는 › 없음');
-    ok(!nav(B(tlPeople, { month:1 })).includes('‹') && (now===1 || nav(B(tlPeople, { month:1 }))==='2월 ›'), '달 넘기기: 1월에는 ‹ 없음');
+    ok(v.querySelector('#kvlTable .card-title').textContent.includes('2026년 월간 점검 · 가상1팀 · 달을 눌러 그 달 기록을 봐요') && !v.textContent.includes('시연') && !v.querySelector('#kvlTools, #kvlPerson') && v.textContent.includes('진행률은 본인이 적은 실적 · 결과로 계산하며 평가 점수와는 별개예요.'), '제목 · 시연 안내 없음 · 도구 줄은 HR만 · 맨 아래 안내');
+    const nav = b=>{ const bs = [...view(TL, b).querySelectorAll('#kvlMonth button')]; return [bs.length, bs.filter(x=>x.classList.contains('on')).map(x=>x.textContent).join(), bs.filter(x=>x.disabled).length, bs[0].getAttribute('onclick')].join('|'); };
+    ok(nav(B(tlPeople))===`12|${now}월|${12 - now}|kvLiveMonth(1)`, '달 단추: 1월 ~ 12월 · 보는 달이 검게 · 앞으로 올 달은 못 누름');
+    ok(nav(B(tlPeople, { month:1 }))===`12|1월|${12 - now}|kvLiveMonth(1)`, '달 단추: 1월을 보면 1월이 검게');
     const c = mount(TL, B(tlPeople)), x = s=>{ const g = document.createRange(); g.selectNodeContents(c.querySelector(s).lastChild); return g.getBoundingClientRect().left; };
     ok(Math.abs(x('.kvl-ck.done') - x('.kvl-ck.todo')) < 0.5 && Math.abs(x('.kvl-ck.done') - x('.kvl-ck.none')) < 0.5, '✓ 자리: 확인함 · 확인 전 · 안 씀 글자의 시작 위치가 같다');
     const ib = proxy=>({ kind:'PLAN', userId:21, name:'가상21', dept:'가상1팀', title:'프로', status:'SUBMITTED', at:'2026-10-20T00:12:00Z', reason:null, items:3, reg:1, irr:2, scheds:4, proxy });
@@ -5980,7 +5983,7 @@ async function kvLiveSelfCheck(){   // 브라우저 콘솔에서 await kvLiveSel
     ok(hd.length===3 && hd[0].startsWith('가상본부 › 가상1팀') && hd[0].includes('가상31 팀장 70%') && hd[0].includes('부진 1명') && hd[1]==='가상본부 › 가상2팀' && hd[2].includes('가상61 팀장 작성 중'), '본부장: 머리 줄 "본부 › 팀 · 팀장 이름 진행률 · 부진 n명"');
     ok(R(v).length===5 && v.querySelector('#kvlRows .kvl-r.h').textContent.includes('확인') && !v.querySelector('#kvlRows .kvl-r.h').textContent.includes('팀장 확인'), '본부장: 처음엔 모두 펼침 · 확인 열 머리 "확인"');
     const dt = view({ ...DH, department:'임원' }, B(dhPeople, { scope:{ deptId:1, name:'가상본부' } })).querySelector('#kvlTable .card-title .kvl-tt').textContent;
-    ok(dt.startsWith(`${now}월 월간 점검 · 가상본부`) && !dt.includes('임원'), '제목의 부서는 맡은 부서(서버 scope) — 소속이 임원인 본부장도 이끄는 본부 이름');
+    ok(dt.startsWith('2026년 월간 점검 · 가상본부') && !dt.includes('임원'), '제목의 부서는 맡은 부서(서버 scope) — 소속이 임원인 본부장도 이끄는 본부 이름');
     v = view(DH, B(dhPeople), { open:{ 3:false } });
     ok(R(v).length===2 && v.querySelector('.kvl-g').getAttribute('aria-expanded')==='false' && v.querySelectorAll('.kvl-g')[1].getAttribute('aria-expanded')==='true', '본부장: 접은 묶음은 사람 줄을 숨긴다');
     kvLiveFold(3); const f1 = KV_LIVE.open[3]; kvLiveFold(3);
@@ -6164,7 +6167,7 @@ async function kvLiveSelfCheck(){   // 브라우저 콘솔에서 await kvLiveSel
       KPI_LIVE.inbox = []; mount(TL, B(tlPeople)); const t1 = tt();
       mount(TL, pb, { month:5, sel:11, prog, memos:md('writer', []) }); const t2 = tt();
       mount(HR, B(hrPeople)); const t3 = tt();
-      ok(t1.join()===(now>1 ? '#kvlTable,#kvlMonth button' : '#kvlTable') && t2.join()==='#kvlTable,#kvlMonth button,#kvlPerson,#kvlCheck,#kvMemo' && t3.join()===(now>1 ? '#kvlTable,#kvlMonth button,#kvlTools' : '#kvlTable,#kvlTools'),
+      ok(t1.join()==='#kvlTable,#kvlMonth button' && t2.join()==='#kvlTable,#kvlMonth button,#kvlPerson,#kvlCheck,#kvMemo' && t3.join()==='#kvlTable,#kvlMonth button,#kvlTools',
         'KPI 현황 사용법: 지금 화면에 있는 칸만 — 펼친 기록 · M월 확인 · 확인 메모 · (HR) 도구 줄은 있을 때만');
       // Task 7 리뷰에서 넘어온 것
       currentTab = { id:'e4' }; KPI_LIVE.state = 'ok'; KV_LIVE.state = 'ok'; kvLiveFresh();
@@ -12694,7 +12697,7 @@ const TOURS = {   // 단계: el = 가리킬 곳(여러 개면 묶어서, 배열�
     if(AUTH.live) return [   // 실제 로그인 (시안 4) — 지금 화면에 없는 칸의 단계는 건너뛴다 (tourSteps)
       { el:'#kvlInbox', title:'처리할 요청', body:'제출 · 수정 요청한 KPI와 일정 변경 요청이에요. 여기서 바로 <b>확정</b> · <b>확인</b>하거나 이유를 적어 <b>돌려보내기</b>해요.' },
       { el:'#kvlTable', title:'월간 점검 표', body:'사람마다 <b>종합 진행률</b>(세로선은 오늘 기준 기대) · 그 달에 적을 것 · 확인 상태가 한 줄씩 나와요. <b>빨간 종</b>은 기대보다 많이 늦은 사람, <b>말풍선</b>은 확인 메모가 있는 사람이에요(붉으면 새 답글). <b>이름을 누르면</b> 그 사람의 그 달 기록이 아래에 펼쳐지고, 바로 위 관리자는 거기서 <b>확인</b> · <b>확인 메모</b>를 남겨요.' },
-      { el:'#kvlMonth button', title:'달 넘기기', body:'<b>‹ 지난달 · 다음 달 ›</b>로 1월부터 이번 달까지 그 달의 기록과 확인을 봐요.' },
+      { el:'#kvlMonth button', title:'달 고르기', body:'<b>달 단추</b>를 누르면 1월부터 이번 달까지 그 달의 기록과 확인을 봐요. 고른 달은 검게, 앞으로 올 달은 흐리게 보여요.' },
       { el:'#kvlPerson', title:'펼친 기록', body:'사람을 누르면 아래에 그 달 기록이 실행목표마다 나와요. 정기는 그 달 한 줄, 비정기는 그 달에 기한이 있는 일정의 결과예요. <b>계획서 보기</b>로 확정된 KPI도 봐요.' },
       { el:'#kvlCheck', title:`${KV_LIVE.board?.month || ''}월 확인`, body:`그 달 기록을 읽었으면 눌러요. 본인 화면에 <b>✓ ${AUTH.me?.position==='DIVISION_HEAD' ? '본부장' : '팀장'} 확인</b>이 붙어요. 본인이 그 달 기록을 고치면 확인이 풀려 다시 "확인 전"이 돼요.` },
       { el:'#kvMemo', title:'확인 메모', body:'하고 싶은 말은 <b>확인 메모</b>로 남겨요(200자). 본인이 <b>확인했습니다</b>를 누르거나 답글을 달아요. 쓴 날에는 고치거나 지울 수 있어요.' },
