@@ -5215,7 +5215,7 @@ let kvMemoSeq = 0, kvMemoUi = { reply:null, edit:null }, kvMuteUi = null;
   kvMemoReply(old, 'owner', '홍길동 대리', '네, 4분기도 같은 주기로 발행하겠습니다.', kpiDay(-19)); old.seen = 1;
   kvPeople.find(x=>x.name==='홍길동').memos.push(kvMemoNew(kpiDay(-2), '김영희 팀장', '웨비나가 밀린 사정 들었습니다. 11월 첫 주로 다시 잡고, 그때 진행률을 올리기로 했습니다.'), old);
 })();
-function kvReset(){ Object.assign(KV_LIVE, { state:'', board:null, month:0, sel:null, prog:null, memos:null, open:{}, q:'', onlySlow:false }); }   // 시연 역할을 바꾸면 KPI 현황을 처음부터 (보는 범위가 바뀐다)
+function kvReset(){ Object.assign(KV_LIVE, { state:'', board:null, month:0, sel:null, prog:null, memos:null, open:{}, q:'', onlySlow:false, memoUi:{ ...KV_LIVE.memoUi, reply:null, edit:null } }); }   // 시연 역할을 바꾸면 KPI 현황을 처음부터 (보는 범위가 바뀐다)
 
 /* ----- 규칙 (순수 로직, kvSelfCheck가 검증) ----- */
 function kvExpect(today=kpiDay(0)){   // 오늘 기준 기대 진행률(%) = 1월 1일부터 오늘까지 날수 / 그해 날수
@@ -6107,7 +6107,8 @@ async function kvLiveSelfCheck(){   // 브라우저 콘솔에서 await kvLiveSel
       const fv = dom(kvContent()), fg = [...fv.querySelectorAll('.kvl-g')].find(g=>g.getAttribute('onclick')==='kvLiveFold(null)');
       ok(fg && fg.getAttribute('aria-expanded')==='true' && R(fv).some(r=>r.textContent.includes('가상81')), '부서가 없는 묶음: 누르는 열쇠와 펼친 상태의 열쇠가 같다 (null)');
     } finally { ORG_LIVE.people = o8.people; ORG_LIVE.tree = o8.tree; currentTab = o8.tab; KPI_LIVE.state = o8.kst; orgCloseModal(); }
-    AUTH.live = false; ok(!kvContent().includes('kvlTable'), '시연(AUTH.live 거짓)은 지금 화면 그대로');
+    AUTH.live = false; const kr = kpiRole, see = r=>{ kpiRole = r; return kvContent(); }, ce = see('emp'), ch = see('hr'); kpiRole = kr;
+    ok(!ce.includes('kvlTable') && ce.includes('KPI 현황은 팀장·본부장·대표이사·HR에게만 보입니다.') && ch.includes('id="kvlTable"') && ch.includes('시연용 역할 전환'), '시연: 같은 화면(실제 표)을 역할 전환 아래에 — 직원 역할에는 KPI 현황이 없다');
   } finally {
     AUTH.live = sv.live; AUTH.me = sv.me; Object.assign(KV_LIVE, sv.kv); KPI_LIVE.state = sv.kst; KPI_LIVE.review = sv.rev; KPI_LIVE.inbox = sv.inbox; kpiMsg = sv.msg; window.fetch = sv.fetch; renderContent = sv.rc; wsNotice = sv.notice; kpiLiveLoad = sv.load;
     [URL.createObjectURL, URL.revokeObjectURL] = sv.url; HTMLAnchorElement.prototype.click = sv.click; renderContent();
