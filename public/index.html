@@ -1195,40 +1195,43 @@
   .pay-pick-btn .stage{ height:100px; width:100%; display:flex; align-items:flex-end; justify-content:center; }
   .pay-pick-btn .stage > span{ display:block; height:96px; }
   .pay-pick-btn .stage > span.ant{ height:76px; }
-  .pay-sum{ display:flex; flex-wrap:wrap; gap:6px 18px; font-size:var(--fs-sm); color:var(--text-secondary); margin-bottom:8px; }
-  .pay-sum b{ color:var(--text-primary); }
-  .pay-legend{ display:flex; flex-wrap:wrap; gap:14px; align-items:center; font-size:var(--fs-xs); color:var(--text-secondary); margin-bottom:10px; }
-  .pay-legend span, .pay-tip span{ display:inline-flex; align-items:center; gap:6px; }
+  /* 급여 수령 현황 (2026-10-23 인사담당자 시안 A + 공제 내역): 한 줄 = 한 달, 실수령 금액을 바로 읽는다. 색은 급여 화면 위쪽과 같은 따뜻한 색 —
+     실수령 #A8431E · 공제 #E0954F (색 구별 검사 통과). 금액 글자는 글자 색, 색 칸은 옆에서 이름만 맡는다 */
   .sw{ display:inline-block; width:10px; height:10px; border-radius:3px; }
-  .sw.net{ background:#3E9A6B; } .sw.ded{ background:#E9A24B; }
-  .pay-chart{ position:relative; height:calc(var(--h) + 26px); margin:22px 0 6px 48px; }
-  .pay-val{ font-size:11px; font-weight:700; color:var(--text-primary); margin-bottom:4px; white-space:nowrap; letter-spacing:-0.02em; }
-  .pay-val .short{ display:none; }
-  .pay-unit{ display:none; }
-  @media (max-width:1180px){ .pay-val .full{ display:none; } .pay-val .short{ display:inline; } .pay-unit{ display:inline; } }
-  .pay-grid{ position:absolute; left:0; right:0; border-top:1px solid var(--border); }
-  .pay-grid span{ position:absolute; right:calc(100% + 6px); top:-8px; font-size:var(--fs-xs); color:var(--text-muted); white-space:nowrap; }
-  .pay-cols{ position:absolute; inset:0; display:grid; grid-template-columns:repeat(12,minmax(0,1fr)); gap:4px; }
-  .pay-col{ position:relative; display:flex; flex-direction:column; justify-content:flex-end; align-items:center; border:0; background:none; padding:0; font:inherit; cursor:pointer; border-radius:var(--radius-sm); }
-  .pay-col.empty{ cursor:default; }
-  .pay-col:hover:not(.empty), .pay-col.on{ background:#FFF4EC; }
-  .pay-bar{ width:min(28px,70%); display:flex; flex-direction:column; gap:2px; }
-  .pay-bar i{ display:block; width:100%; }
-  .pay-bar i.ded{ background:#E9A24B; border-radius:4px 4px 0 0; }
-  .pay-bar i.net{ background:#3E9A6B; }
-  .pay-mlabel{ height:26px; line-height:26px; font-size:var(--fs-xs); color:var(--text-secondary); }
-  .pay-col.empty .pay-mlabel{ color:var(--text-muted); }
-  .pay-tip{ position:absolute; bottom:calc(100% - 20px); left:50%; transform:translateX(-50%); z-index:5; display:none; flex-direction:column; gap:3px; min-width:150px; text-align:left;
-    background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-sm); box-shadow:0 8px 20px -8px rgba(27,36,51,.3); padding:8px 10px; font-size:var(--fs-xs); color:var(--text-primary); white-space:nowrap; }
-  .pay-col:hover .pay-tip, .pay-col:focus-visible .pay-tip{ display:flex; }
-  .pay-table summary{ cursor:pointer; font-size:var(--fs-xs); font-weight:600; color:#A33A45; margin-top:6px; }
-  .pay-table table{ margin-top:8px; }
+  .sw.net{ background:#A8431E; } .sw.ded{ background:#E0954F; }
+  .yc-head{ display:flex; justify-content:space-between; align-items:flex-start; gap:10px; margin-bottom:12px; }
+  .yc-big{ font-size:var(--fs-xs); color:var(--text-secondary); }
+  .yc-big b{ display:block; margin-top:2px; font-size:22px; font-weight:800; letter-spacing:-0.02em; color:var(--text-primary); }
+  .yc-sub{ margin-top:4px; font-size:var(--fs-xs); color:var(--text-muted); }
+  .yc-seg{ display:inline-flex; flex:none; border:1px solid var(--border); border-radius:999px; padding:2px; background:var(--bg-page); }
+  .yc-seg button{ border:0; background:none; font:inherit; font-size:var(--fs-xs); font-weight:700; color:var(--text-secondary); padding:6px 12px; border-radius:999px; min-height:32px; cursor:pointer; }
+  .yc-seg button.on{ background:var(--surface); color:#7A3E1D; box-shadow:0 1px 2px rgba(0,0,0,.08); }
+  .yc-legend{ display:flex; flex-wrap:wrap; gap:6px 14px; align-items:center; font-size:var(--fs-xs); color:var(--text-secondary); margin-bottom:8px; }
+  .yc-legend span{ display:inline-flex; align-items:center; gap:6px; }
+  .yc-row{ display:grid; grid-template-columns:76px minmax(0,1fr) 104px; align-items:center; gap:10px; width:calc(100% + 16px); min-height:46px; padding:6px 8px; margin:0 -8px; border:0; border-bottom:1px solid #F4EBE3; background:none; font:inherit; text-align:left; border-radius:var(--radius-sm); cursor:pointer; break-inside:avoid; }
+  .yc-row:hover, .yc-row.on{ background:#FFF4EC; }
+  .yc-row .mo b{ display:block; font-size:var(--fs-sm); color:var(--text-primary); white-space:nowrap; }
+  .yc-row .mo small{ font-size:11px; color:var(--text-muted); white-space:nowrap; }
+  .yc-bar{ display:flex; gap:2px; height:12px; }
+  .yc-bar i{ display:block; height:100%; }
+  .yc-bar i.net{ background:#A8431E; border-radius:4px 0 0 4px; }
+  .yc-bar i.ded{ background:#E0954F; border-radius:0 4px 4px 0; }
+  .yc-row .amt{ text-align:right; line-height:1.25; white-space:nowrap; }
+  .yc-row .amt b{ display:block; font-size:var(--fs-sm); color:var(--text-primary); }
+  .yc-row .amt small{ font-size:11px; color:var(--text-muted); }
+  .yc-diff{ display:inline-block; margin-left:5px; padding:0 5px; border-radius:999px; background:#FDF2F0; color:var(--coral-text); font-size:10px; font-weight:800; vertical-align:1px; }
+  .yc-rest{ padding:10px 0 2px; font-size:var(--fs-xs); color:var(--text-muted); }
+  .yc-ded{ margin-top:12px; border-top:1px solid var(--border); padding-top:10px; }
+  .yc-ded summary{ cursor:pointer; font-size:var(--fs-sm); font-weight:700; color:#7A3E1D; padding:6px 0; min-height:32px; }
+  .yc-dl{ display:grid; grid-template-columns:96px minmax(0,1fr) 104px; gap:8px; align-items:center; font-size:var(--fs-xs); padding:5px 0; color:var(--text-secondary); }
+  .yc-dl .bar{ height:8px; border-radius:4px; background:#F6E7D8; overflow:hidden; }
+  .yc-dl .bar i{ display:block; height:100%; background:#E0954F; border-radius:4px; }
+  .yc-dl b{ text-align:right; color:var(--text-primary); white-space:nowrap; }
+  .yc-dl.tot{ border-top:1px solid #F4EBE3; margin-top:4px; padding-top:8px; font-weight:700; }
+  @media (min-width:1000px){ .yc-rows{ columns:2; column-gap:48px; } .yc-ded-list{ max-width:560px; } }
+  @media (max-width:768px){ .yc-tbl .pd{ display:none; } .yc-tbl th, .yc-tbl td{ padding-left:4px; padding-right:4px; white-space:nowrap; } }   /* 휴대폰 표: 지급일을 빼서 실수령까지 한 화면에 */
   @media (max-width:768px){
     .pay-mgrid{ grid-template-columns:repeat(4,minmax(0,1fr)); }
-    .pay-chart{ margin-left:0; }
-    .pay-grid span{ display:none; }
-    .pay-cols{ gap:2px; }
-    .pay-val{ font-size:10px; letter-spacing:-0.04em; } .pay-val .u{ display:none; }
   }
   .pay-doc{ max-width:760px; margin:0 auto; padding:8px 4px; }
   .pay-doc-title{ text-align:center; font-size:var(--fs-xl); font-weight:800; margin-bottom:12px; }
@@ -8652,7 +8655,7 @@ const PAY_PEOPLE = {   // 시연 역할별 가상 사원 정보와 월 지급 �
   hrl:  { gender:'f', code:'10095', birth:'1983.04.18', dept:'지원팀',         title:'팀장',   step:'',      base:2491500, ability:1640000, ot:313920, pos:300000 },
   line: { gender:'m', code:'10420', birth:'1996.08.05', dept:'국내영업팀',     title:'사원',   step:'1호봉', base:2491500, ability:1081500, ot:269630, pos:0 },
 };
-let payYear = null, paySlips = null, payOpen = null, payShow = false, payViewKey = null, payTimer = null, payPreview = false;   // payPreview: 시연용 급여일 모습 미리보기. payViewKey: 시연 = 역할 열쇠 · 실제 = null(본인) 또는 HR이 고른 직원 번호
+let payYear = null, paySlips = null, payOpen = null, payShow = false, payViewKey = null, payTimer = null, payPreview = false, payChartView = 'graph', payDedOpen = false;   // payChartView: 급여 수령 현황 그래프 · 표. payDedOpen: 공제 내역 펼침   // payPreview: 시연용 급여일 모습 미리보기. payViewKey: 시연 = 역할 열쇠 · 실제 = null(본인) 또는 HR이 고른 직원 번호
 const PAY_LIVE = { state:'', who:null, slips:[], mine:[] };   // 실제 로그인: 지금 화면의 명세서(slips, who = null 본인 · 직원 번호) + 내 공개된 명세서(mine, 메뉴 숫자). state: '' 아직 · loading · ok · err (MS_LIVE와 같은 방식)
 let PAY_CHAR_MEM = '', payPicking = false;   // 고른 캐릭터 'f' | 'm' | 'a' — 브라우저 저장소를 못 쓰면 이번 화면 동안만 기억한다 · payPicking: "캐릭터 바꾸기"로 고르기 카드를 다시 연 상태
 
@@ -8719,6 +8722,23 @@ function paySelfCheck(){   // 브라우저 콘솔에서 paySelfCheck() 실행
   ok(['식대','기숙사비','연장근로시간','생년월일'].every(t=>!h.includes(t)), 'payDetail: 0원 항목은 감춘다 · 근로시간 표·생년월일은 없다');
   ok(!h.includes('수정됨') && payDetail({ ...base, revised:true }).includes('수정됨'), '다시 올린 명세서는 제목에 수정됨');
   ok(!payDetail({ ...base, head:{ ...base.head, name:'<b>가상</b>' }, pay:[['<i>수당', 5]] }).match(/<b>가상|<i>수당/), '엑셀에서 온 글자는 그대로 HTML이 되지 않는다');
+  { const kv = [payShow, payOpen, payChartView, payDedOpen];   // 급여 수령 현황 (한 줄 = 한 달 · 공제 내역 · 표)
+    try {
+      const mk = (m, net, ded, extra = [])=>({ ...payNorm({ ym:`2026-${String(m).padStart(2,'0')}`, payDate:`2026-${String(m+1).padStart(2,'0')}-20` }), gross:net+ded, net, deduct:ded, ded:[['소득세', ded-100000], ['국민연금', 100000], ['고용보험', 0], ...extra] });
+      const yl = [mk(1, 3000000, 600000), mk(2, 3100000, 600000), mk(3, 3100000, 600000, [['<b>가상</b>', 1]])];
+      payShow = true; payOpen = yl[1].label; payChartView = 'graph'; payDedOpen = false;
+      const g = payYearChart(yl, 2026);
+      ok((g.match(/class="yc-row( on)?"/g) || []).length===3 && g.includes('9,200,000원') && g.includes('3,100,000원'), '그래프: 한 줄 = 한 달 · 위에 올해 실수령 누적');
+      ok(g.includes(`payPick('${yl[0].label}', true)`) && /yc-row on"[^>]*aria-expanded="true"/.test(g), '줄을 누르면 그 달 명세서 (열린 달은 표시)');
+      ok((g.match(/yc-diff/g) || []).length===1 && g.includes('+10만'), '앞 달보다 바뀐 달에만 차이 표시 (같으면 없음)');
+      ok(g.includes('4월 ~ 12월은 아직 명세서가 없어요') && payYearChart([mk(11, 1, 1)], 2026).includes('12월은 아직') && !payYearChart([...Array(12)].map((_, i)=>mk(i+1, 1, 1)), 2026).includes('아직 명세서'), '남은 달 안내 (12월까지 있으면 없음)');
+      ok(g.includes('공제 내역 (올해 합계 1,800,000원)') && g.includes('1,500,000원') && g.includes('300,000원') && !g.includes('고용보험') && !g.includes('<b>가상') && g.includes('&lt;b&gt;가상') && !g.includes(' open'), '공제 내역: 항목별 올해 합계 · 0원 항목은 뺀다 · 처음엔 접힘');
+      payDedOpen = true; ok(payYearChart(yl, 2026).includes('class="yc-ded" open'), '펼친 공제 내역은 다시 그려도 펼친 그대로');
+      payShow = false; const m0 = payYearChart(yl, 2026);
+      ok(!/\d,\d{3},\d{3}원/.test(m0) && !m0.includes('yc-diff') && m0.includes(PAY_MASK), '금액을 가리면 누적 · 달별 · 차이 · 공제 금액이 모두 가려진다');
+      payShow = true; payChartView = 'table'; const t = payYearChart(yl, 2026);
+      ok(t.includes('<table>') && (t.match(/<tr><td>/g) || []).length===3 && t.includes('3/20') && !t.includes('yc-row') && t.includes('aria-pressed="true">표'), '표: 월 · 지급일 · 세전 · 공제 · 실수령');
+    } finally { [payShow, payOpen, payChartView, payDedOpen] = kv; } }
   const keep = [AUTH.live, PAY_LIVE.mine, PAY_CHAR_MEM, (()=>{ try{ return localStorage.getItem('payChar'); }catch(e){ return null; } })(), PIN.on];
   try {   // 새 명세서 숫자 · 캐릭터 고르기 (실제 로그인)
     PIN.on = false;   // 실제 로그인만 흉내 — 비밀번호 잠금은 끈다 (서버 열쇠가 있는 세션에서도 그대로, pinSelfCheck가 따로 본다)
@@ -9025,26 +9045,27 @@ function payDetail(s){   // 명세서 하나 — 사람 정보는 s.head. 엑셀
     </div>
   </div>`;
 }
-function payYearChart(slips, year){   // 막대 = 세전, 아래 실수령(진한 파랑) + 위 공제(파랑). 축은 하나
-  const bym = Object.fromEntries(slips.filter(s=>s.y===year).map(s=>[s.m, s]));
-  const max = Math.max(...Object.values(bym).map(s=>s.gross), 1), top = Math.ceil(max/1e6)*1e6, H = 180;
-  const won = n=>payShow ? payWon(n) : PAY_MASK;
-  const grid = [0, .5, 1].map(f=>`<div class="pay-grid" style="bottom:calc(26px + ${f} * var(--h))"><span>${payShow ? (top*f/1e4).toLocaleString('ko-KR')+'만' : ''}</span></div>`).join('');
-  const bars = Array.from({length:12}, (_,m)=>{
-    const sl = bym[m];
-    if(!sl) return `<div class="pay-col empty"><div class="pay-bar"></div><span class="pay-mlabel">${m+1}월</span></div>`;
-    const hNet = sl.net/top*H, hDed = sl.deduct/top*H;
-    return `<button type="button" class="pay-col${sl.label===payOpen?' on':''}" onclick="payPick('${sl.label}')"
-        aria-label="${m+1}월 세전 ${won(sl.gross)}, 실수령 ${won(sl.net)}, 공제 ${won(sl.deduct)}">
-      <div class="pay-tip" role="tooltip"><b>${year}년 ${m+1}월분</b><span><i class="sw net"></i>실수령 ${won(sl.net)}</span><span><i class="sw ded"></i>공제 ${won(sl.deduct)}</span><span>세전 ${won(sl.gross)}</span></div>
-      ${payShow ? `<span class="pay-val"><span class="full">${sl.gross.toLocaleString('ko-KR')}</span><span class="short">${Math.round(sl.gross/1e4).toLocaleString('ko-KR')}<span class="u">만</span></span></span>` : ''}<div class="pay-bar"><i class="ded" style="height:${hDed}px"></i><i class="net" style="height:${hNet}px"></i></div><span class="pay-mlabel">${m+1}월</span></button>`;
-  }).join('');
-  const list = Object.values(bym), net = list.reduce((a,s)=>a+s.net, 0), gross = list.reduce((a,s)=>a+s.gross, 0);
-  const rows = list.sort((a,b)=>a.m-b.m).map(s=>`<tr><td>${s.m+1}월</td><td class="num">${won(s.gross)}</td><td class="num">${won(s.deduct)}</td><td class="num">${won(s.net)}</td></tr>`).join('');
-  return `<div class="pay-sum"><span>${year}년 누적 실수령 <b>${won(net)}</b></span><span>월평균 <b>${won(list.length ? net/list.length : 0)}</b></span><span>세전 합계 ${won(gross)} · ${list.length}개월</span></div>
-    <div class="pay-legend"><span><i class="sw net"></i>실수령</span><span><i class="sw ded"></i>공제 (세금·4대보험)</span><span class="list-sub" style="margin:0;">막대 전체 = 세전 · 막대 위 숫자 = 세전<span class="pay-unit">(만원)</span></span></div>
-    <div class="pay-chart" style="--h:${H}px">${grid}<div class="pay-cols">${bars}</div></div>
-    <details class="pay-table"><summary>표로 보기</summary><div class="ct-tbl"><table><thead><tr><th>월</th><th class="num">세전</th><th class="num">공제</th><th class="num">실수령</th></tr></thead><tbody>${rows}</tbody></table></div></details>`;
+function payYearChart(slips, year){   // 급여 수령 현황 (시안 A + 공제 내역): 위에 올해 실수령 누적, [그래프 | 표], 한 줄 = 한 달(실수령 · 공제 막대 + 금액), 아래에 공제 내역(올해 합계, 펼치기)
+  const list = slips.filter(s=>s.y===year).sort((a,b)=>a.m-b.m), won = n=>payShow ? payWon(n) : PAY_MASK;
+  const net = list.reduce((a,s)=>a+s.net, 0), top = Math.max(...list.map(s=>s.gross), 1), md = d=>`${+d.slice(5,7)}/${+d.slice(8)}`;
+  const seg = (v, t)=>`<button type="button" class="${payChartView===v ? 'on' : ''}" onclick="payChartView='${v}'; renderContent()" aria-pressed="${payChartView===v}">${t}</button>`;
+  const head = `<div class="yc-head"><div class="yc-big">${year}년 받은 돈 (실수령 누적)<b>${won(net)}</b><div class="yc-sub">${list.length}개월 · 월평균 ${won(list.length ? net/list.length : 0)}</div></div>
+    <span class="yc-seg" role="group" aria-label="보기 고르기">${seg('graph', '그래프')}${seg('table', '표')}</span></div>`;
+  const last = list.length ? list[list.length-1].m : -1, rest = last<11 && list.length ? `<div class="yc-rest">${last===10 ? '12월은' : `${last+2}월 ~ 12월은`} 아직 명세서가 없어요</div>` : '';
+  if(payChartView==='table') return `${head}<div class="ct-tbl yc-tbl"><table><thead><tr><th>월</th><th class="pd">지급일</th><th class="num">세전</th><th class="num">공제</th><th class="num">실수령</th></tr></thead>
+    <tbody>${list.map(s=>`<tr><td>${s.m+1}월</td><td class="pd">${md(s.payday)}</td><td class="num">${won(s.gross)}</td><td class="num">${won(s.deduct)}</td><td class="num">${won(s.net)}</td></tr>`).join('')}</tbody></table></div>${rest}`;
+  const rows = list.map((s, i)=>{ const d = i && payShow ? Math.round((s.net - list[i-1].net)/1e4) : 0;   // 앞 달보다 바뀐 실수령(만원) — 가렸을 때는 금액이 드러나지 않게 안 보인다
+    return `<button type="button" class="yc-row${s.label===payOpen ? ' on' : ''}" onclick="payPick('${s.label}', true)" aria-expanded="${s.label===payOpen}" aria-label="${s.m+1}월 실수령 ${won(s.net)}, 세전 ${won(s.gross)}, 공제 ${won(s.deduct)}">
+      <span class="mo"><b>${s.m+1}월${d ? `<span class="yc-diff">${d>0 ? '+' : ''}${d.toLocaleString('ko-KR')}만</span>` : ''}</b><small>${md(s.payday)} 지급</small></span>
+      <span class="yc-bar" aria-hidden="true"><i class="net" style="width:${s.net/top*100}%"></i><i class="ded" style="width:${s.deduct/top*100}%"></i></span>
+      <span class="amt"><b>${won(s.net)}</b><small>세전 ${won(s.gross)}</small></span></button>`; }).join('');
+  const sums = {}; list.forEach(s=>psShow(s.ded || []).forEach(([l, v])=>{ sums[l] = (sums[l] || 0) + v; }));
+  const items = Object.entries(sums).filter(([, v])=>v>0).sort((a,b)=>b[1]-a[1]), dmax = items.length ? items[0][1] : 1, dsum = list.reduce((a,s)=>a+s.deduct, 0);
+  const ded = items.length ? `<details class="yc-ded"${payDedOpen ? ' open' : ''} ontoggle="payDedOpen=this.open"><summary>공제 내역 (올해 합계 ${won(dsum)})</summary><div class="yc-ded-list">
+    ${items.map(([l, v])=>`<div class="yc-dl"><span>${escapeHtml(l)}</span><span class="bar" aria-hidden="true"><i style="width:${v/dmax*100}%"></i></span><b>${won(v)}</b></div>`).join('')}
+    <div class="yc-dl tot"><span>합계</span><span></span><b>${won(dsum)}</b></div></div></details>` : '';
+  return `${head}<div class="yc-legend"><span><i class="sw net"></i>실수령</span><span><i class="sw ded"></i>공제 (세금·4대보험)</span><span class="list-sub" style="margin:0;">막대 전체 = 세전 · 줄을 누르면 그 달 명세서</span></div>
+    <div class="yc-rows">${rows}</div>${rest}${ded}`;
 }
 function payPick(label, toggle){   // 달을 연다. toggle이면 열려 있는 달을 다시 눌러 접는다. 내 명세서를 처음 열면 '봤음'을 서버에 알린다
   payOpen = toggle && label===payOpen ? null : label;
