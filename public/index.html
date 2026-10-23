@@ -4103,7 +4103,7 @@ function kpiLiveKeep(me, admin, biz){   // R21: 새로 받은 것(상태 · 사�
     gapEd:KPI_LIVE.gapDirty && KPI_LIVE.gapEd!=null ? KPI_LIVE.gapEd : admin ? String(admin.alarmGap ?? '') : null,
     bizEd:KPI_LIVE.bizDirty && KPI_LIVE.bizEd ? KPI_LIVE.bizEd : biz ? biz.goals.map(g=>({ goal:g.goal, detail:g.detail })) : null };   // 경영계획을 못 읽었으면 null — HR 칸 없이 안내 (빈 목록을 저장해 지우지 않게)
 }
-const KPI_LIVE_ST = { NONE:['아직 안 씀','neutral'], DRAFT:['작성 중','info'], RETURNED:['돌려받음','danger'], SUBMITTED:['제출 · 확인 대기','info'], CONFIRMED:['확정 · 잠김','success'], CHANGE_REQUESTED:['수정 요청','warning'] };
+const KPI_LIVE_ST = { NONE:['작성 전','neutral'], DRAFT:['작성 중','info'], RETURNED:['돌려받음','danger'], SUBMITTED:['제출 · 확인 대기','info'], CONFIRMED:['확정 · 잠김','success'], CHANGE_REQUESTED:['수정 요청','warning'] };
 const KPI_STEPS = [['작성','KPI · 정기/비정기 · 예정 기한'], ['제출 · 팀장 확인','제출하면 팀장이 확인'], ['확정 (잠김)','팀장이 확정하면 고칠 수 없음'], ['수정 요청 → 해제','팀장이 해제하면 다시 작성']];
 async function kpiLiveLoad(){
   KPI_LIVE.state = 'loading';
@@ -4481,7 +4481,7 @@ function kpiProgPlan(me=KPI_LIVE.me, prog=KPI_LIVE.prog){   // KPI 계획서 보
     ${kpiTable(c.content)}${kpiKindSection(c.content, false, dues)}</div>`);
 }
 /* ----- 관리자: 처리할 KPI · 우리 팀 KPI 상태 (시안 2) · HR 관리 화면 · 대표이사 맡기기 ----- */
-const KPI_TEAM_ST = { CONFIRMED:['확정','success'], SUBMITTED:['확인 대기','info'], CHANGE_REQUESTED:['수정 요청','warning'], DRAFT:['작성 중','neutral'], NONE:['아직 안 씀','danger'] };   // 이 순서로 배지 다섯 개 (R18)
+const KPI_TEAM_ST = { CONFIRMED:['확정','success'], SUBMITTED:['확인 대기','info'], CHANGE_REQUESTED:['수정 요청','warning'], DRAFT:['작성 중','neutral'], NONE:['작성 전','danger'] };   // 이 순서로 배지 다섯 개 (R18)
 function kpiLiveSt(st, label=KPI_TEAM_ST[st][0]){ return `<span class="kl-st"><i>${st==='CONFIRMED' ? '✓' : '&#8203;'}</i><span class="badge ${KPI_TEAM_ST[st][1]}">${label}</span></span>`; }   // 상태 배지 — 앞의 ✓ 자리는 비어 있어도 둔다
 function kpiYmd(iso){ return new Date(Date.parse(iso) + 324e5).toISOString().slice(0, 10); }   // 서버 시각(UTC "…Z") → 한국 날짜 "2026-10-21" (확인 메모 · 팀장 확인 — 서버도 한국 날짜로 같은 날을 본다)
 function kpiAt(iso){ const d = new Date(iso), p = n=>String(n).padStart(2,'0'); return iso ? `${d.getMonth()+1}월 ${d.getDate()}일 ${p(d.getHours())}:${p(d.getMinutes())}` : ''; }
@@ -4643,7 +4643,7 @@ async function kpiLiveSelfCheck(){   // 브라우저 콘솔에서 await kpiLiveS
   ok(!r1.textContent.includes('대신 처리') && r2.textContent.includes('대신 처리'), 'HR이 대신 하는 줄에만 "대신 처리"');
   ok(r1.querySelector('.kl-st i') && r2.querySelector('.kl-st i'), '처리함 상태 글자 앞 아이콘 자리는 늘 있다');
   ok(!r1.querySelector('.kl-who i') && r1.textContent.includes('가상<i>3') && r2.querySelector('.why').textContent.includes('가상 사유'), '이름 · 사유는 글자 그대로');
-  ok([...dom(kpiLiveTeam({ NONE:1, DRAFT:2, SUBMITTED:3, CONFIRMED:4, CHANGE_REQUESTED:5 })).querySelectorAll('.kl-team .badge')].map(b=>b.textContent).join()==='확정 4명,확인 대기 3명,수정 요청 5명,작성 중 2명,아직 안 씀 1명', '우리 팀 KPI 상태 배지 다섯 개 (R18)');
+  ok([...dom(kpiLiveTeam({ NONE:1, DRAFT:2, SUBMITTED:3, CONFIRMED:4, CHANGE_REQUESTED:5 })).querySelectorAll('.kl-team .badge')].map(b=>b.textContent).join()==='확정 4명,확인 대기 3명,수정 요청 5명,작성 중 2명,작성 전 1명', '우리 팀 KPI 상태 배지 다섯 개 (R18)');
   const hp = (userId, status, x)=>({ userId, name:'가상'+userId, dept:'가상팀', manager:{ id:2, name:'가상팀장' }, status, confirmedVersion:null, window:null, canAct:true, ...x });
   const hrDom = (win, people)=>dom(kpiLiveHr({ year:2026, window:{ evalStart:null, ...win }, people }));
   const hpl = [hp(1, 'CONFIRMED', { manager:null, confirmedVersion:1, canAct:false }), hp(2, 'NONE', { window:{ from:'2026-10-21', to:'2026-10-24', evalStart:null, open:false } }),
@@ -5761,7 +5761,7 @@ function kvLiveItem(it, M, year, gap, uid){   // 펼친 사람의 실행목표 �
   if(reg){
     const c = it.months[M];
     mid = c.text!=null ? `<span class="kp-text">${escapeHtml(c.text)}</span>${kpiProgLink(c.link)}` : c.state==='MISSED' ? '<span class="kp-miss">안 씀</span>'
-      : `<span class="kl-hint">${c.state==='OPEN' ? `아직 안 씀 · ${M===12 ? 1 : M + 1}/7까지` : c.state==='NA' ? '해당 없음' : '—'}</span>`;
+      : `<span class="kl-hint">${c.state==='OPEN' ? `작성 전 · ${M===12 ? 1 : M + 1}/7까지` : c.state==='NA' ? '해당 없음' : '—'}</span>`;
     at = c.at;
   } else {
     const ss = it.scheds.filter(s=>s.due.startsWith(ym)), nx = it.scheds.filter(s=>s.due > ym+'-31').sort((x, y)=>x.due<y.due ? -1 : 1)[0];   // 그 달에 기한이 있는 일정 · 그 뒤 가장 가까운 기한
