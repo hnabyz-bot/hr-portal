@@ -197,13 +197,10 @@
     border:1px solid rgba(255,255,255,.55); background:rgba(20,44,84,.28); color:#fff; font-family:inherit; font-size:var(--fs-xs); font-weight:600; cursor:pointer; backdrop-filter:blur(6px); }
   .hero-install:hover{ background:rgba(20,44,84,.45); }
   .hero-install svg{ width:14px; height:14px; }
-  .push-card{ display:flex; align-items:center; gap:12px; padding:14px 16px; }   /* 휴대폰 홈 "알림 켜기" 칸 (2026-10-22) — 흰 카드 · 붉은 종 · 파란 단추 */
+  .hero-install.dot::after{ content:''; position:absolute; top:1px; right:1px; width:11px; height:11px; border-radius:50%; background:var(--alert); border:2px solid #fff; }   /* 휴대폰 알림을 아직 못 켰다 (pushHeroBtn, 2026-10-23) */
+  .push-ask{ display:flex; align-items:center; gap:12px; margin:6px 0 4px; line-height:1.6; word-break:keep-all; }   /* 아이폰 앱을 열 때 "휴대폰 알림 받기" 창 (pushAsk) — 붉은 종 */
   .push-ic{ flex:none; display:grid; place-items:center; width:40px; height:40px; border-radius:50%; background:var(--bg-danger); color:var(--coral-text); }
   .push-ic svg{ width:20px; height:20px; }
-  .push-tx{ flex:1; min-width:0; word-break:keep-all; }   /* 두 줄로 끊고 한 단어만 넘어가지 않게 */
-  .push-tx b{ display:block; font-size:var(--fs-md); }
-  .push-tx span{ display:block; margin-top:2px; font-size:var(--fs-xs); line-height:1.5; color:var(--text-secondary); text-wrap:balance; }
-  .push-card .btn{ flex:none; white-space:nowrap; }
   .push-way{ margin:6px 0 0; line-height:1.6; word-break:keep-all; }
   .hm-quick{ display:grid; grid-template-columns:repeat(6,1fr); }
   .hm-q{ display:flex; flex-direction:column; align-items:center; gap:9px; padding:4px 0; border-left:1px solid var(--border); font-weight:600; text-align:center; cursor:pointer; }
@@ -513,6 +510,7 @@
   .inst-steps li:last-child{ border-bottom:0; }
   .inst-steps li > i{ flex:none; width:22px; height:22px; margin-top:1px; border-radius:50%; background:var(--accent); color:#fff; font-style:normal; font-size:12px; font-weight:700;
     display:flex; align-items:center; justify-content:center; }
+  .inst-steps small{ display:block; margin-top:2px; font-size:var(--fs-xs); color:var(--text-secondary); text-wrap:balance; }
   .inst-sub{ margin:12px 0 0; font-size:var(--fs-sm); font-weight:700; color:var(--text-secondary); }
   .inst-tabs{ display:flex; gap:6px; }
   .inst-tabs button{ flex:1; min-height:44px; border:1px solid var(--border); border-radius:var(--radius-sm); background:var(--surface); color:var(--text-secondary);
@@ -1962,8 +1960,8 @@ function homeHero(t){
         <li>${icon('wallet')}${w.isPayday ? '<b>오늘은 급여일</b>' : `급여일까지 <b>D-${left}</b>`}</li>
       </ul>
     </div>
-    ${AUTH.live && !isPhone() ? `<button type="button" class="hero-install" onclick="phoneReg()" aria-label="휴대폰 등록">${icon('mobile')}<span>휴대폰 등록</span></button>`
-      : `<button type="button" class="hero-install" onclick="installNotice()" aria-label="휴대폰에 설치">${icon('mobile')}<span>휴대폰에 설치</span></button>`}
+    ${AUTH.live && AUTH.me?.kind!=='phone' ? `<button type="button" class="hero-install" onclick="phoneReg()" aria-label="휴대폰 등록">${icon('mobile')}<span>휴대폰 등록</span></button>`
+      : pushHeroBtn()}
   </section>`;
 }
 function homePortalRows(pre=''){   // 인사포털이 만든 일의 줄. pre = 누르면 먼저 할 일(팝업 닫기)
@@ -1974,8 +1972,10 @@ function homePortalRows(pre=''){   // 인사포털이 만든 일의 줄. pre = �
    환영 페이지가 뜨지 않을 때('일주일간 보지 않기' · 처음 들어온 날부터 2주 뒤)에도 사이트에 새로 들어오면(새 창 · 앱을 새로 열기) 뜬다 — 맨 아래 (2026-10-22, 인사담당자 지시) */
 let authReady = Promise.resolve();   // 로그인 확인(authBoot)이 끝나면 풀린다 — 맨 아래에서 authBoot()로 바꿔 끼운다
 async function todayPopAuto(){   // 들어올 때 자동으로: 내 업무 · KPI가 다 온 뒤에(시연 목록이 잠깐 뜨지 않게), 로그인 안내 · 둘러보기 · 다른 창이 없을 때만
-  await authReady;
-  if(!AUTH.locked && !PUSH.go && !tour.steps && !document.getElementById('orgModal')) homeTodayPop();   // PUSH.go: 알림을 눌러 그 화면으로 들어왔으면 창이 덮이지 않게
+  await authReady; await Promise.race([PUSH.ready, new Promise(r=>setTimeout(r, 3000))]);   // 휴대폰 알림 상태까지 본다 — 네트워크가 느려도 3초 넘게 붙잡지 않는다(그때는 이번엔 묻지 않음)
+  if(AUTH.locked || PUSH.go || tour.steps || document.getElementById('orgModal')) return;   // PUSH.go: 알림을 눌러 그 화면으로 들어왔으면 창이 덮이지 않게
+  if(PUSH.state==='ask'){ if(pushIos()) return pushAsk(); pushEnable(); }   // 아직 안 켠 홈 화면 앱: 새로 열 때마다 묻는다(켤 때까지, 인사담당자 2026-10-23). 갤럭시는 휴대폰 허용 창을 바로, 아이폰은 누른 순간에만 물을 수 있어 안내 창 — 닫으면 오늘 할 일
+  homeTodayPop();
 }
 function homeTodayPop(){
   const today = kpiDay(0), t = celebParse(today), [left, done] = wsTodayCount(), close = 'orgCloseModal(); ';
@@ -2098,7 +2098,6 @@ function homeContent(){
   const tile = (cls, id, label, n, unit, sub)=>`<div class="hm-tile ${cls}" onclick="homeJump('${id}')"><span>${label}</span><b>${n}<small>${unit}</small></b><em>${sub}</em></div>`;
   return `<div class="hm">
     ${homeHero(t)}
-    ${isPhone() ? pushCard() : ''}
     <div class="card">
       <div class="card-title">빠른 서비스</div>
       <div class="hm-quick">${HOME_QUICK.map(q=>`<div class="hm-q" onclick="${q[4] ? `location.href='${q[4]}'` : `goTo('${q[2]}','${q[3]}')`}"><i>${icon(q[0])}</i>${q[1]}</div>`).join('')}</div>
@@ -12169,11 +12168,12 @@ const INSTALL_STEPS = {
     ['사파리로 열렸을 때', ['화면 아래쪽 <b>공유 버튼</b>(네모에서 화살표가 위로 나가는 모양)을 누릅니다.', '목록을 위로 올려 <b>홈 화면에 추가</b>를 누릅니다.', '오른쪽 위 <b>추가</b>를 누릅니다.']],
   ]],
 };
+const INSTALL_AFTER = ['설치한 뒤', ['홈 화면에 생긴 <b>인사포털 아이콘</b>으로 엽니다.', '알림을 묻는 창이 뜨면 <b>허용</b>을 누릅니다.<small>브라우저 화면에서 이미 켰어도 아이콘으로 열어 한 번 더 허용해 주세요</small>']];   // 알림은 설치한 앱에서만 켠다 — 브라우저 탭에서 켠 알림은 남지 않았다 (2026-10-23 갤럭시). 갤럭시 · 아이폰 공통
 function installNotice(tab, fresh){   // fresh = QR 로 방금 등록한 휴대폰 (authBoot)
   const head = t=>`<div class="card-title"><span>${t}</span><button type="button" class="x-btn" onclick="orgCloseModal()" aria-label="닫기">${icon('x')}</button></div>`;
   const steps = list=>`<ol class="inst-steps">${list.map((t, i)=>`<li><i>${i+1}</i><span>${t}</span></li>`).join('')}</ol>`;
   const app = `<div class="inst-app"><figure><img src="android-chrome-192x192.png?v=3" alt="" width="52" height="52">인사포털</figure><span>설치하면 휴대폰 홈 화면에 <b>회사 리본 아이콘</b>이 생깁니다.</span></div>`;
-  if(!isPhone()) return orgModal(`<div class="inst">${head('휴대폰에 인사포털 설치')}
+  if(!isPhone() && AUTH.me?.kind!=='phone') return orgModal(`<div class="inst">${head('휴대폰에 인사포털 설치')}
     <div class="inst-body"><div class="inst-qr">${installQrSvg()}휴대폰 카메라로 찍어 주세요</div>
       ${steps(['휴대폰 <b>기본 카메라</b>로 왼쪽 QR을 찍습니다.', '열린 인사포털에서 <b>휴대폰에 설치</b>를 누릅니다. 갤럭시·아이폰에 맞는 순서가 나옵니다.', '홈 화면에 생긴 아이콘으로 바로 들어옵니다.'])}</div>
     ${app}<div class="inst-note">카카오톡으로 QR을 찍으면 설치가 되지 않습니다. 휴대폰 기본 카메라로 찍어 주세요.</div></div>`);
@@ -12183,7 +12183,7 @@ function installNotice(tab, fresh){   // fresh = QR 로 방금 등록한 휴대�
       <p class="inst-sub" style="margin-bottom:10px;">홈 화면에 추가하면 다음부터 아이콘으로 바로 들어옵니다</p>` : ''}
     <div class="inst-tabs">${Object.keys(INSTALL_STEPS).map(k=>`<button type="button" aria-pressed="${k===tab}" onclick="installNotice('${k}', ${!!fresh})">${INSTALL_STEPS[k][0]}</button>`).join('')}</div>
     ${INSTALL_STEPS[tab][1].map(g=>`<p class="inst-sub">${g[0]}</p>${steps(g[1])}`).join('')}
-    ${app}<div class="inst-note">${fresh ? '아이폰은 이 화면이 열린 <b>사파리</b>에서 바로 홈 화면에 추가해 주세요. ' : ''}카카오톡 안에서 열린 화면에서는 설치가 되지 않습니다. 메뉴에서 <b>다른 브라우저로 열기</b>를 먼저 눌러 주세요.</div>
+    ${app}<p class="inst-sub">${INSTALL_AFTER[0]}</p>${steps(INSTALL_AFTER[1])}<div class="inst-note">${fresh ? '아이폰은 이 화면이 열린 <b>사파리</b>에서 바로 홈 화면에 추가해 주세요. ' : ''}카카오톡 안에서 열린 화면에서는 설치가 되지 않습니다. 메뉴에서 <b>다른 브라우저로 열기</b>를 먼저 눌러 주세요.</div>
     <button type="button" class="btn primary" style="width:100%; justify-content:center; margin-top:14px;" onclick="orgCloseModal()">확인</button></div>`);
 }
 
@@ -12236,19 +12236,22 @@ async function phoneRevoke(){
 }
 
 /* ---------------- 휴대폰 알림 (푸시 알림 설계 §4, 2026-10-22) ----------------
-   알림은 서비스 워커(public/sw.js)가 받아 띄운다. 이 화면이 하는 일: (1) 휴대폰 홈에 "알림 켜기" 칸 (2) 켠 휴대폰의 구독을 서버에 다시 알림
-   (3) 앱 아이콘 숫자 맞추기 (4) 알림을 눌러 들어오면(/?go=메뉴.탭) 그 화면으로 옮기기.
-   칸은 실제 로그인 + 휴대폰 세션 + 서버에 알림 키가 있을 때만 — 거부한 뒤 · 아이폰 사파리(설치 안 함) · 서버에 키 없음에서도 엉뚱한 칸이 뜨지 않게 상태를 pushState 한 곳에서 정한다(pushSelfCheck).
-   state: '' 아직 · off 못 함(칸 없음) · ask 묻기 전 · denied 거부 · ios 아이폰인데 홈 화면 앱이 아님 · on 켬. sw: 서비스 워커 등록에 성공. go: /?go= 로 들어왔다(오늘 할 일 창을 띄우지 않는다) */
-const PUSH = { state:'', key:'', sw:false, go:false };
-function pushState(e){   // 순수 함수. e = { live, phone, sw, push, key, perm, ios, standalone } → PUSH.state
+   알림은 서비스 워커(public/sw.js)가 받아 띄운다. 이 화면이 하는 일: (1) 알림 켜기 — 홈 화면 앱을 새로 열 때 묻고(todayPopAuto), 아직 못 켰으면 홈 배너 오른쪽 위 단추에 빨간 점(pushHeroBtn)
+   (2) 켠 휴대폰의 구독을 서버에 다시 알림 (3) 앱 아이콘 숫자 맞추기 (4) 알림을 눌러 들어오면(/?go=메뉴.탭) 그 화면으로 옮기기.
+   켜는 곳은 홈 화면 앱뿐이다 — 브라우저 탭은 아이폰 사파리에 알림 기능이 없고, 갤럭시 크롬 · 삼성 인터넷은 허용해도 남지 않았다(2026-10-23). 그래서 탭이면 설치 안내로 보낸다.
+   실제 로그인 + 휴대폰 세션 + 서버에 알림 키가 있을 때만 — 엉뚱한 단추 · 창이 뜨지 않게 상태를 pushState 한 곳에서 정한다(pushSelfCheck).
+   state: '' 아직 · off 못 함 · ask 묻기 전 · denied 거부 · app 홈 화면 앱이 아닌 브라우저 탭 · on 켬. sw: 서비스 워커 등록에 성공. go: /?go= 로 들어왔다(오늘 할 일 창을 띄우지 않는다). ready: 첫 pushInit (todayPopAuto 가 기다린다) */
+const PUSH = { state:'', key:'', sw:false, go:false, ready:null };
+function pushState(e){   // 순수 함수. e = { live, phone, sw, push, key, perm, standalone } → PUSH.state
   if(!e.live || !e.phone || !e.key) return 'off';
-  if(e.ios && !e.standalone) return 'ios';   // 아이폰은 홈 화면 앱에서만 알림을 받는다 (사파리 탭에는 알림 기능이 없어 아래 검사보다 먼저)
+  if(!e.standalone) return 'app';   // 알림은 홈 화면 앱에서만 켠다 — 아이폰 사파리 탭은 알림 기능이 없고, 갤럭시 크롬 · 삼성 인터넷 탭은 허용해도 남지 않았다(2026-10-23). 그래서 아래 검사보다 먼저
   if(!e.sw || !e.push) return 'off';
   return e.perm==='granted' ? 'on' : e.perm==='denied' ? 'denied' : 'ask';
 }
 const pushEnv = ()=>({ live:AUTH.live, phone:AUTH.me?.kind==='phone', sw:PUSH.sw, push:'PushManager' in window && 'Notification' in window, key:PUSH.key, perm:window.Notification?.permission,
-  ios:/iPhone|iPad|iPod/.test(navigator.userAgent), standalone:navigator.standalone===true || matchMedia('(display-mode: standalone)').matches });
+  standalone:pushApp() });
+function pushApp(){ return navigator.standalone===true || !matchMedia('(display-mode: browser)').matches; }   // 홈 화면 앱 — 브라우저 탭만 아니면 (standalone · fullscreen · minimal-ui 모두)
+function pushIos(){ return /iPhone|iPad|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints>1); }   // 아이폰 — 허용 창을 저절로 띄울 수 없다 (검사가 바꿔 끼운다)
 const pushBytes = b64=>Uint8Array.from(atob(b64.replace(/-/g, '+').replace(/_/g, '/')), c=>c.charCodeAt(0));   // base64url → 구독에 넘기는 서버 키
 const pushSameKey = (a, b)=>a.byteLength===b.length && new Uint8Array(a).every((v, i)=>v===b[i]);   // 구독에 남은 서버 키(ArrayBuffer)와 지금 서버 키(Uint8Array)가 바이트까지 같은가
 async function pushSubscribe(reg){   // 이 휴대폰의 구독을 서버에 알린다. 성공하면 true. reg = 서비스 워커 등록 (검사가 가짜를 넣는다)
@@ -12266,16 +12269,16 @@ async function pushSubscribe(reg){   // 이 휴대폰의 구독을 서버에 알
 async function pushClean(){   // 앱을 열었으니 떠 있는 인사포털 알림은 모두 닫는다 (갤럭시는 알림이 있는 동안 아이콘에 숫자가 붙는다. 앱 안 메뉴 숫자는 그대로)
   try { (await (await navigator.serviceWorker.ready).getNotifications()).forEach(n=>n.close()); } catch(e){}
 }
-async function pushInit(){   // 로그인 확인(authBoot)이 끝난 뒤, 그리고 앱으로 돌아올 때마다(휴대폰 설정에서 알림을 켜고 왔을 수 있다). 이미 켠 사람은 조용히 다시 등록 — 묻는 창은 다시 띄우지 않는다
-  if(!AUTH.live || AUTH.me?.kind!=='phone') return;
-  const before = pushCard();
+async function pushInit(done){   // 로그인 확인(authBoot)이 끝난 뒤, 그리고 앱으로 돌아올 때마다(휴대폰 설정에서 알림을 켜고 왔을 수 있다). 이미 켠 사람은 조용히 다시 등록 — 묻는 창은 다시 띄우지 않는다. done: 상태를 정하면 바로 (authBoot — 오늘 할 일 창은 구독을 기다리지 않는다)
+  if(!AUTH.live || AUTH.me?.kind!=='phone') return done?.();
+  const before = pushHeroBtn();
   try { const r = await fetch('/api/push/key'); PUSH.key = r.ok ? (await r.json()).key || '' : ''; } catch(e){}   // 매번 다시 받는다 — 휴대폰은 앱을 메모리에서 되살리기만 해서 새로 고침이 없고, 열쇠를 바꾼 뒤에도 pushSubscribe 가 새 열쇠를 봐야 한다. 404 = 서버에 키가 없다 → 칸도 없다. 네트워크가 끊겼으면 알고 있던 열쇠를 그대로 둔다
   if(PUSH.key && 'serviceWorker' in navigator) PUSH.sw = await navigator.serviceWorker.register('/sw.js').then(()=>true, ()=>false);
-  PUSH.state = pushState(pushEnv());
+  PUSH.state = pushState(pushEnv()); done?.();
   if(PUSH.state==='on') await Promise.all([pushSubscribe(), pushClean()]);
-  if(currentNav.id==='home' && pushCard()!==before) renderContent(); else pushBadgeSync();
+  if(currentNav.id==='home' && pushHeroBtn()!==before) renderContent(); else pushBadgeSync();
 }
-async function pushEnable(){   // 칸의 [켜기] — 누른 그 자리에서 바로 허용을 묻는다 (아이폰 규칙: 사용자가 누른 순간에만 띄울 수 있다)
+async function pushEnable(){   // 허용을 묻는다 — 앱을 열 때(todayPopAuto: 갤럭시는 바로, 아이폰은 안내 창 [확인]) · 배너 종 단추. 아이폰은 사용자가 누른 순간에만 띄울 수 있어 그 자리에서 곧바로 부른다
   let perm; try { perm = await Notification.requestPermission(); } catch(e){}
   if(perm==='granted'){
     if(!await pushSubscribe()) return wsNotice('알림을 켜지 못했어요. 잠시 뒤 다시 눌러 주세요.');
@@ -12288,12 +12291,20 @@ function pushHelp(){   // 거부한 뒤: 휴대폰 설정에서 켜는 길
   const way = (name, ...path)=>`<p class="inst-sub">${name}</p><p class="push-way">${path.map(t=>`<b>${t}</b>`).join(' → ')}</p>`;
   orgModal(`<div class="inst"><div class="card-title"><span>휴대폰 알림 켜는 방법</span><button type="button" class="x-btn" onclick="orgCloseModal()" aria-label="닫기">${icon('x')}</button></div>
     ${way('갤럭시', '설정', '애플리케이션', '인사포털', '알림')}${way('아이폰', '설정', '알림', '인사포털')}
-    <div class="list-sub" style="margin-top:12px;">켠 뒤 인사포털로 돌아오면 이 칸이 저절로 사라져요.</div>
+    <div class="list-sub" style="margin-top:12px;">켠 뒤 인사포털로 돌아오면 배너의 종 단추가 저절로 사라져요.</div>
     <button type="button" class="btn primary" style="width:100%; justify-content:center; margin-top:14px;" onclick="orgCloseModal()">확인</button></div>`);
 }
-function pushCard(s = PUSH.state){   // 휴대폰 홈 인사 배너 바로 아래 칸 (설계 §4.1; 휴대폰 폭에서만 그리는 것은 homeContent). on · off · 아직 = 칸 없음
-  const c = { ask:['처리할 일이 생기면<br>휴대폰으로 알려 드려요', 'pushEnable()', '켜기'], denied:['휴대폰 설정에서 인사포털 알림을 켜 주세요', 'pushHelp()', '방법 보기'], ios:['홈 화면에 추가하면 알림을 받을 수 있어요', 'installNotice()', '추가 방법'] }[s];
-  return !c ? '' : `<div class="card push-card" id="pushCard"><i class="push-ic">${icon('bell')}</i><div class="push-tx"><b>휴대폰 알림 켜기</b><span>${c[0]}</span></div><button type="button" class="btn primary" onclick="${c[1]}">${c[2]}</button></div>`;
+function pushHeroBtn(s = PUSH.state){   // 홈 배너 오른쪽 위 단추 (homeHero — 실제 로그인한 PC는 "휴대폰 등록"). 홈 칸 대신 여기로(홈 자리를 덜 차지하게, 인사담당자 2026-10-23)
+  const b = (fn, ic, t, dot)=>`<button type="button" class="hero-install${dot ? ' dot' : ''}" onclick="${fn}" aria-label="${t}">${icon(ic)}<span>${t}</span></button>`;   // dot = 알림을 아직 못 켰다(빨간 점)
+  return s==='app' ? b('installNotice()', 'mobile', '휴대폰에 설치', 1) : s==='ask' ? b('pushEnable()', 'bell', '알림 켜기', 1) : s==='denied' ? b('pushHelp()', 'bell', '알림 켜는 방법', 1)
+    : (isPhone() || AUTH.me?.kind==='phone') && pushApp() ? '' : b('installNotice()', 'mobile', '휴대폰에 설치');   // 홈 화면 앱 안이면 이미 설치했다 — 켠 뒤에는 단추 없음
+}
+function pushAsk(){   // 아이폰 홈 화면 앱을 열 때(todayPopAuto) — 허용 창은 사람이 누른 순간에만 뜬다. [확인]이 그 자리에서 묻고, 닫으면(나중에 · X) 오늘 할 일 창
+  const next = 'orgCloseModal(); homeTodayPop();';
+  orgModal(`<div class="inst"><div class="card-title"><span>휴대폰 알림 받기</span><button type="button" class="x-btn" onclick="${next}" aria-label="닫기">${icon('x')}</button></div>
+    <div class="push-ask"><i class="push-ic">${icon('bell')}</i><span>처리할 일이 생기면<br>휴대폰으로 알려 드려요.</span></div>
+    <div class="list-sub" style="margin-top:10px;">[확인]을 누르면 아이폰이 묻는 창이 떠요. <b>허용</b>을 눌러 주세요.</div>
+    <div style="display:flex; gap:8px; margin-top:14px;"><button type="button" class="btn" style="flex:1; justify-content:center;" onclick="${next}">나중에</button><button type="button" class="btn primary" style="flex:2; justify-content:center;" onclick="pushEnable(); ${next}">확인</button></div></div>`);
 }
 function pushBadgeCount(){   // 앱 아이콘 숫자 = 왼쪽 메뉴 숫자의 합. 대표이사가 KPI 승인을 맡긴 동안은 처리함 몫을 뺀다 (서버가 알림에 싣는 숫자 · 9시 묶음과 같은 규칙)
   return homePortalTasks().reduce((a, p)=>a+p.n, 0) - (AUTH.me?.position==='CEO' && KPI_LIVE.deleg ? KPI_LIVE.inbox.length : 0);
@@ -12314,24 +12325,32 @@ function pushGoParse(q){   // '?go=pay.p1' → ['pay','p1']. NAV 에 있는 메�
 }
 async function pushSelfCheck(){   // 브라우저 콘솔에서 await pushSelfCheck() 실행 (화면 상태 · 실제 로그인 흉내는 끝나면 되돌린다)
   const ok = (c,m)=>{ if(!c) throw new Error('pushSelfCheck 실패: '+m); };
-  const base = { live:true, phone:true, sw:true, push:true, key:'K', perm:'default', ios:false, standalone:false }, st = o=>pushState({ ...base, ...o });
-  ok(st({})==='ask' && st({ perm:'granted' })==='on' && st({ perm:'denied' })==='denied', '안드로이드: 묻기 전 ask · 허용 on · 거부 denied');
-  ok(st({ live:false })==='off' && st({ phone:false })==='off' && st({ key:'' })==='off', '시연 · PC 세션 · 서버에 키 없음 → 칸 없음');
-  ok(st({ sw:false })==='off' && st({ push:false })==='off' && st({ sw:false, push:false, perm:'granted' })==='off', '브라우저가 알림을 못 하면 칸 없음');
-  ok(st({ perm:'denied' })==='denied' && st({ perm:'denied', key:'' })==='off' && st({ perm:'denied', push:false })==='off', '거부한 뒤: 묻는 칸이 아니라 안내 칸, 서버 키가 없거나 브라우저가 못 하면 그 칸도 없음');
-  ok(st({ ios:true, push:false })==='ios' && st({ ios:true, push:false, sw:false })==='ios' && st({ ios:true, push:false, perm:'denied' })==='ios', '아이폰 사파리(설치 안 함): 알림 기능이 없어도 "홈 화면에 추가" 칸이지 묻는 칸이 아니다');
-  ok(st({ ios:true, key:'' })==='off' && st({ ios:true, live:false })==='off' && st({ ios:true, phone:false })==='off', '아이폰이어도 서버에 키가 없으면 · 시연 · PC 세션이면 칸 없음');
-  ok(st({ ios:true, standalone:true })==='ask' && st({ ios:true, standalone:true, perm:'granted' })==='on' && st({ ios:true, standalone:true, perm:'denied' })==='denied', '아이폰 홈 화면 앱: 안드로이드와 같은 규칙');
+  const base = { live:true, phone:true, sw:true, push:true, key:'K', perm:'default', standalone:true }, st = o=>pushState({ ...base, ...o });
+  ok(st({})==='ask' && st({ perm:'granted' })==='on' && st({ perm:'denied' })==='denied', '홈 화면 앱: 묻기 전 ask · 허용 on · 거부 denied');
+  ok(st({ live:false })==='off' && st({ phone:false })==='off' && st({ key:'' })==='off', '시연 · PC 세션 · 서버에 키 없음 → 안내 없음');
+  ok(st({ sw:false })==='off' && st({ push:false })==='off' && st({ sw:false, push:false, perm:'granted' })==='off', '브라우저가 알림을 못 하면 안내 없음');
+  ok(st({ perm:'denied' })==='denied' && st({ perm:'denied', key:'' })==='off' && st({ perm:'denied', push:false })==='off', '거부한 뒤: 묻지 않고 설정 안내, 서버 키가 없거나 브라우저가 못 하면 그것도 없음');
+  ok(['default', 'granted', 'denied'].every(perm=>st({ standalone:false, perm })==='app') && st({ standalone:false, push:false, sw:false })==='app', '휴대폰 브라우저 탭(갤럭시 · 아이폰): 알림 기능 · 허용과 상관없이 설치 안내 — 탭에서 켠 알림은 남지 않았다');
+  ok(st({ standalone:false, key:'' })==='off' && st({ standalone:false, live:false })==='off' && st({ standalone:false, phone:false })==='off', '브라우저 탭이어도 서버에 키가 없으면 · 시연 · PC 세션이면 안내 없음');
   ok(st({ perm:'granted', key:'' })==='off', '이미 허용했어도 서버에 키가 없으면 구독하지 않는다');
   const keep = [AUTH.live, AUTH.me, KPI_LIVE.inbox, KPI_LIVE.deleg, PUSH.state, homePortalTasks, PUSH.key, PUSH.sw, currentNav, PIN.state], calls = [], realFetch0 = window.fetch;
+  const keep2 = [pushEnable, pushAsk, homeTodayPop, pushIos, PUSH.ready, PUSH.go];
   try {
-    ['ask', 'denied', 'ios'].forEach(s=>ok(pushCard(s).includes('휴대폰 알림 켜기') && pushCard(s).includes('class="btn primary"') && pushCard(s).includes(icon('bell')), s+' 칸: 제목 · 종 · 파란 단추'));
-    ok(pushCard('ask').includes('처리할 일이 생기면<br>휴대폰으로 알려 드려요') && pushCard('ask').includes('pushEnable()') && pushCard('ask').includes('>켜기<'), 'ask 칸 문구 · [켜기]');
-    ok(pushCard('denied').includes('휴대폰 설정에서 인사포털 알림을 켜 주세요') && pushCard('denied').includes('>방법 보기<') && pushCard('denied').includes('pushHelp()') && !pushCard('denied').includes('pushEnable'), 'denied 칸: 방법 보기만 (켜기 없음)');
-    ok(pushCard('ios').includes('홈 화면에 추가하면 알림을 받을 수 있어요') && pushCard('ios').includes('>추가 방법<') && pushCard('ios').includes('installNotice()') && !pushCard('ios').includes('pushEnable'), 'ios 칸: 추가 방법 → installNotice');
-    ok(['on', 'off', ''].every(s=>pushCard(s)===''), '켠 뒤 · 못 함 · 아직 → 칸 없음');
-    PUSH.state = 'ask'; const h = homeContent(), at = h.indexOf('id="pushCard"');   // 휴대폰 폭에서만, 인사 배너 바로 다음
-    ok(isPhone() ? at > h.indexOf('</section>') && at < h.indexOf('빠른 서비스') : at < 0, '칸은 휴대폰 폭의 홈에서 배너 바로 아래에만');
+    const hb = pushHeroBtn;
+    ok(hb('app').includes('installNotice()') && hb('app').includes(icon('mobile')) && hb('ask').includes('pushEnable()') && hb('denied').includes('pushHelp()') && !hb('denied').includes('pushEnable') && ['ask', 'denied'].every(s=>hb(s).includes(icon('bell'))), '배너 단추: 브라우저 탭 → 설치 안내 · 안 켬 → 켜기 · 거부 → 설정 안내');
+    ok(['app', 'ask', 'denied'].every(s=>hb(s).includes('class="hero-install dot"')) && ['on', 'off', ''].every(s=>!hb(s).includes(' dot')), '빨간 점은 아직 못 켠 세 경우에만');
+    ok(['on', 'off', ''].every(s=>hb(s)===((isPhone() || AUTH.me?.kind==='phone') && pushApp() ? '' : hb('app').replace(' dot', ''))), '켠 뒤 · 못 함 · 아직: 홈 화면 앱이면 단추 없음, 아니면 점 없는 설치 단추');
+    PUSH.state = 'ask'; const h = homeContent();
+    ok(!h.includes('pushCard') && h.includes(AUTH.live && AUTH.me?.kind!=='phone' ? 'phoneReg()' : 'pushEnable()'), '홈에는 알림 칸이 없고 배너 단추로 (실제 로그인한 PC는 휴대폰 등록 그대로)');
+    pushAsk(); const am = document.getElementById('orgModal'), ab = [...am.querySelectorAll('button')].map(x=>[x.textContent.trim(), x.getAttribute('onclick')]), at = am.textContent; orgCloseModal();
+    ok(at.includes('휴대폰 알림 받기') && ab.some(([t, f])=>t==='확인' && f.startsWith('pushEnable()') && f.includes('homeTodayPop()')) && ab.some(([t, f])=>t==='나중에' && !f.includes('pushEnable') && f.includes('homeTodayPop()')), '아이폰 안내 창: [확인]은 누른 그 자리에서 먼저 묻고 · [나중에]는 묻지 않고 · 둘 다 이어서 오늘 할 일');
+    // 앱을 새로 열 때(todayPopAuto): 아직 안 켠 앱이면 묻는다 — 갤럭시는 바로 + 오늘 할 일, 아이폰은 안내 창(닫으면 오늘 할 일)
+    const seen = [], run = async (state, ios)=>{ seen.length = 0; PUSH.state = state; pushIos = ()=>ios; await todayPopAuto(); return seen.join(); };
+    pushEnable = ()=>seen.push('ask'); pushAsk = ()=>seen.push('ios'); homeTodayPop = ()=>seen.push('today'); PUSH.ready = Promise.resolve(); PUSH.go = false;
+    ok(await run('ask', false)==='ask,today' && await run('ask', true)==='ios', '아직 안 켠 앱: 갤럭시는 휴대폰 허용 창을 바로 띄우고 오늘 할 일 · 아이폰은 안내 창만(오늘 할 일은 닫은 뒤)');
+    ok(await run('on', true)==='today' && await run('denied', false)==='today' && await run('app', true)==='today' && await run('off', false)==='today', '켠 뒤 · 거부 · 브라우저 탭 · 못 함: 묻지 않고 오늘 할 일만');
+    PUSH.go = true; ok(await run('ask', false)==='', '알림을 눌러 들어오면 묻지도 오늘 할 일을 띄우지도 않는다');
+    [pushEnable, pushAsk, homeTodayPop, pushIos, PUSH.ready, PUSH.go] = keep2;
     const go = q=>String(pushGoParse(q));
     ok(go('?go=pay.p1')==='pay,p1' && go('?x=1&go=perf.e1')==='perf,e1' && go('?go=pay.p4')==='pay,p4' && go('?go=home.dash')==='home,dash', '?go= : NAV 에 있는 메뉴 · 탭이면 그 화면으로');
     ok(go('?go=nope.p1')==='home' && go('?go=pay.nope')==='home' && go('?go=pay')==='home' && go('?go=')==='home' && go('?go=..%2F..%2Fx')==='home', '?go= : 모르는 값은 홈');
@@ -12371,11 +12390,11 @@ async function pushSelfCheck(){   // 브라우저 콘솔에서 await pushSelfChe
     await pushInit(); const first = PUSH.key;
     served.key = b64u(bytes(2)); await pushInit();
     ok(first===b64u(bytes(1)) && PUSH.key===b64u(bytes(2)) && keyGets.length===2, '앱을 다시 열 때마다 열쇠를 다시 받는다 (이미 받아 둔 열쇠가 있어도) — 열쇠를 바꾼 뒤 새로 고침 없이도 새 열쇠로');
-    served.status = 404; await pushInit();
-    ok(PUSH.key==='' && PUSH.state==='off' && keyGets.length===3, '서버에서 열쇠가 없어지면(404) 열쇠를 비우고 칸을 숨긴다');
+    let dn = 0; served.status = 404; await pushInit(()=>dn++);
+    ok(PUSH.key==='' && PUSH.state==='off' && keyGets.length===3 && dn===1, '서버에서 열쇠가 없어지면(404) 열쇠를 비우고 칸을 숨긴다');
     window.fetch = async url=>{ if(url==='/api/push/key') throw new TypeError('offline'); return { ok:true }; };
     PUSH.key = b64u(bytes(1)); await pushInit(); ok(PUSH.key===b64u(bytes(1)), '네트워크가 끊겨 열쇠를 못 받으면 알고 있던 열쇠를 그대로 둔다');
-    window.fetch = async url=>{ keyGets.push(1); return { ok:false }; }; AUTH.me = { kind:'pc' }; keyGets.length = 0; await pushInit(); ok(!keyGets.length, 'PC 세션이면 열쇠를 요청하지 않는다');
+    window.fetch = async url=>{ keyGets.push(1); return { ok:false }; }; AUTH.me = { kind:'pc' }; keyGets.length = 0; dn = 0; await pushInit(()=>dn++); ok(!keyGets.length && dn===1, 'PC 세션이면 열쇠를 요청하지 않는다 — 상태는 정해졌다고 바로 알린다(오늘 할 일 창이 기다리지 않게)');
     // 로그아웃 · 세션 끝: 앱 아이콘 숫자를 지운다 (다음 사람이 앞사람의 숫자를 보지 않게) — 지원하지 않거나 거절돼도 조용히
     calls.length = 0; pushBadgeClear(); ok(calls.join()==='0', 'pushBadgeClear: 아이콘 숫자를 지운다');
     const rejects = [], onReject = e=>{ rejects.push(1); e.preventDefault(); }; window.addEventListener('unhandledrejection', onReject);
@@ -12390,6 +12409,7 @@ async function pushSelfCheck(){   // 브라우저 콘솔에서 await pushSelfChe
     calls.length = 0; AUTH.locked = false; authLock('login'); ok(calls.join()==='0' && AUTH.locked, '세션이 끝나 authLock 만 불려도(401) 아이콘 숫자를 지운다');
   } finally {
     [AUTH.live, AUTH.me, KPI_LIVE.inbox, KPI_LIVE.deleg, PUSH.state, homePortalTasks, PUSH.key, PUSH.sw, currentNav, PIN.state] = keep; window.fetch = realFetch0;   // PIN.state: 로그아웃 검사(authLock)가 비운 비밀번호 상태
+    [pushEnable, pushAsk, homeTodayPop, pushIos, PUSH.ready, PUSH.go] = keep2;   // 중간에 실패해도 바꿔 끼운 함수를 되돌린다
     delete navigator.setAppBadge; delete navigator.clearAppBadge; delete navigator.serviceWorker;
     if(AUTH.locked || document.getElementById('authLock')){ AUTH.locked = false; document.getElementById('authLock')?.remove(); renderContent(); }   // 로그아웃 검사가 가린 화면을 되돌린다
   }
@@ -13568,7 +13588,7 @@ async function authBoot(){
     PUSH.go = true; goTo(...go);
     const u = new URL(location.href); u.searchParams.delete('go'); history.replaceState(null, '', u.pathname + u.search + u.hash);   // 새로 고침 · 앱 다시 열기에서 또 옮기지 않게
   }
-  pushInit();   // 휴대폰 알림 — 기다리지 않는다 (휴대폰 세션일 때만 한다)
+  PUSH.ready = new Promise(r=>pushInit(r));   // 휴대폰 알림 — 기다리지 않는다 (휴대폰 세션일 때만 한다). 오늘 할 일 창(todayPopAuto)만 상태가 정해질 때까지 기다려 아직 안 켠 앱이면 묻는다
   return kpi;   // 오늘 할 일 창(todayPopAuto)은 KPI까지 온 뒤에 — 처리할 KPI 줄이 빠지지 않게
 }
 // ponytail: 창을 닫았는지는 서버가 알 수 없어 화면이 판단한다. 개발자 도구로 표시를 만들면 넘어갈 수 있다 — 세션 쿠키는 브라우저를 끄면 사라지고, 서버 만료(4시간·12시간)는 그대로
