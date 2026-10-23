@@ -4121,7 +4121,7 @@ function kpiLiveContent(){
   const mine = inbox.filter(i=>!i.proxy), leads = Object.values(team).some(n=>n>0);   // 처리할 KPI · 우리 팀은 맡은 사람이 있거나 처리할 것이 있을 때만 (시안 2: 내 계획서 위)
   const boss = (mine.length || leads ? kpiLiveInbox(mine) : '') + (leads ? kpiLiveTeam(team) : '') + (KPI_LIVE.deleg==null ? '' : kpiLiveDeleg());
   const b = KPI_LIVE.biz, pos = AUTH.me.position, plan = b && (pos==='CEO' || pos==='DIVISION_HEAD') ? kpiPlanList(b.goals.map(g=>[g.goal, g.detail]), pos==='CEO', b.year) : '';   // 경영계획 목표 — 대표이사는 HR에 맡기기 아래, 본부장은 내 KPI 위 (시연과 같은 자리)
-  return hrSwitch() + msg + boss + plan + (me.writesKpi ? kpiLiveMine() : boss ? '' : kpiNote('KPI를 작성하지 않는 분이에요. 바뀌어야 하면 HR에 알려 주세요.'));
+  return hrSwitch() + msg + boss + plan + (me.writesKpi ? kpiLiveMine() : pos==='CEO' ? '' : kpiNote('KPI를 작성하지 않는 분이에요. 바뀌어야 하면 HR에 알려 주세요.'));   // KPI 작성을 끈 팀장 · 본부장도 팀원 KPI 아래에 이 한 줄 (없으면 처리함의 "작성 기간이 아니에요"만 보여 내 KPI 기간으로 읽힌다). 대표이사는 원래 쓰지 않는다
 }
 function kpiLiveFresh(){ if(AUTH.live && currentTab.id==='e1' && KPI_LIVE.state!=='loading') KPI_LIVE.state = ''; }   // 목표설정 탭에 들어올 때마다 서버에서 새로 (처리함은 늘 새것이어야 한다 · 못 불렀으면 다시)
 function kpiBoss(me=KPI_LIVE.me){   // 바로 위 관리자 "김○○ 팀장" — 직책은 조직도 명단에서, 못 찾으면 "님"
@@ -5053,6 +5053,8 @@ async function kpiLiveSelfCheck(){   // 브라우저 콘솔에서 await kpiLiveS
         ok(C9.querySelector('#kpiDeleg + #kpiPlanView') && [...C9.querySelectorAll('#kpiPlanView .kv-plan li b')].map(b=>b.textContent).join()==='가상 <b>목표1</b>,가상 목표2' && C9.querySelector('#kpiPlanView .badge').textContent==='대표이사는 KPI를 쓰지 않아요', '대표이사 목표설정: HR에 맡기기 아래에 경영계획 목표 (서버 목록)');
         ok(H9.querySelector('#kpiPlanView + #kpiMine') && H9.querySelectorAll('#kpiPlanView li').length===2, '본부장: 내 KPI 위에 경영계획 목표');
         ok(!page('TEAM_LEADER', me(true, 'DRAFT')).querySelector('#kpiPlanView') && !page(null, me(true, 'DRAFT')).querySelector('#kpiPlanView'), '팀장 · 직원에게는 경영계획 목표가 없다');
+        const off = '작성하지 않는 분이에요', L9 = (page('TEAM_LEADER', { ...me(true, 'DRAFT'), writesKpi:false, plan:null }), KPI_LIVE.team = { NONE:1 }, dom(kpiLiveContent()));
+        ok(L9.querySelector('#kpiTeam') && L9.textContent.includes(off) && !C9.textContent.includes(off), 'KPI 작성을 끈 팀장: 우리 팀 KPI 아래에 "작성하지 않는 분" 한 줄 · 대표이사에게는 없음');
         KPI_LIVE.biz = null; const C0 = page('CEO', ceoMe(), false);
         ok(!C0.querySelector('#kpiPlanView') && C0.querySelector('#kpiDeleg'), '경영계획을 못 읽었으면 카드 없이 나머지는 그린다');
         // HR 관리 화면: 알람 기준 · 경영계획 목표 두 카드
