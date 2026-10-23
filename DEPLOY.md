@@ -28,6 +28,7 @@ main merge
 | **서버 `.env`** | **자동 아님** — 사람이 직접 (3장) |
 | **`regulations/` 원문** | **자동 아님** — 사람이 직접 (4장) |
 | **직원 명단 가져오기** (하이웍스 → `data/`) | **자동 아님** — 서버 타이머로 하루 1회 (9장) |
+| **휴대폰 알림** 열쇠(`.env`) · 평일 9시 타이머 | **자동 아님** — 서버에서 사람이 한 번 (10장) |
 | **`data/` 직원·로그인 DB** | 계산 컨테이너가 처음 뜰 때 `data/hr-portal.db`를 만들고, 새 표가 생기면 시작할 때 더한다(자동). 재빌드해도 남는다. **이 폴더를 지우면 직원·로그인 정보가 모두 사라진다** — 백업 절차는 로그인 설계(PR #51) 9장 7번 |
 
 ---
@@ -200,3 +201,88 @@ docker compose exec -T api python -m hr_eval.roster_sync --apply   # 반영
 - 하루 1회는 서버 타이머로 건다(예: 매일 06:00에 `--apply`). 배포 타이머와 같은 방식으로 두면 된다. 하이웍스 호출 한도는 하루 1,000건이고 한 번에 2건을 쓴다.
 - 퇴사자는 다음 날까지 기다리지 않고 HR이 포털에서 당일에 비활성화한다(로그인 설계 §4).
 
+---
+
+## 10. 휴대폰 알림 — 열쇠 한 번 · 평일 아침 9시 타이머
+
+휴대폰에 설치한 인사포털로 처리할 일 알림을 보낸다(설계: `docs/superpowers/specs/2026-10-22-push-notifications-design.md`). **서버에서 사람이 한 번만 하면 된다 — 자동이 아니다.** 열쇠를 넣지 않으면 알림 보내기만 조용히 건너뛰고(휴대폰 홈에 "알림 켜기" 칸도 나오지 않는다) 나머지 기능은 그대로 된다. 타이머를 만들지 않으면 아침 9시 묶음 알림만 오지 않는다(일이 생길 때 바로 가는 알림은 온다).
+
+### ① 열쇠 만들기 — 한 번
+
+```bash
+cd ~/workspace/github-hnabyz-bot/hr-portal
+docker compose exec -T api python -m push keygen
+```
+
+`HR_PUSH_PUBLIC=…` · `HR_PUSH_PRIVATE=…` 두 줄이 나온다. **`keygen`은 개인키를 터미널 화면에 한 번 그대로 찍는다** — 옆에서 보는 사람이 없고 화면을 공유하지 않을 때 돌리고, 붙여 넣은 뒤 바로 `clear` 한다. 이 두 줄을 서버 `.env`의 같은 이름 줄(`.env.example`에 비어 있는 채로 있다)에 붙인다. 서버 `.env`에 그런 줄이 없으면 새 줄로 더한다. 그리고 다시 띄운다.
+
+```bash
+nano .env                                  # 두 줄 붙여 넣기 (= 앞뒤 띄어쓰기 · 따옴표 없이 — 3장 "흔한 실수")
+clear                                      # 화면에 남은 열쇠 지우기
+awk -F= '/^HR_PUSH/{print $1": "length($2)"자"}' .env    # 값은 보이지 않고 글자 수만 — 둘 다 0자가 아니면 성공
+docker compose up -d
+```
+
+- **`HR_PUSH_PRIVATE`(개인키)는 서버 `.env`에만 있어야 한다.** 채팅 · 이슈 · 메일 · PR · 화면 캡처 · 터미널 공유 어디에도 보이거나 붙이지 않는다(값을 확인할 때는 위 `awk`처럼 글자 수만 본다). 공개키(`HR_PUSH_PUBLIC`)는 휴대폰에 알려 주는 값이라 숨길 필요는 없지만 같은 줄에 붙어 나오므로 함께 조심한다.
+- **열쇠를 바꾸면 휴대폰마다 등록을 새로 해야 한다.** 옛 열쇠로 한 휴대폰 등록은 새 열쇠로 보낸 알림을 받지 못한다. 직원이 누를 단추는 없다 — **휴대폰이 인사포털 앱을 다음에 열 때 저절로** 옛 등록을 풀고 새 열쇠로 다시 등록한다(알림을 이미 허용한 휴대폰은 묻는 창도 뜨지 않는다). 그 전까지는 그 휴대폰으로 알림이 가지 않는다 — 앱을 열지 않은 사람은 열 때까지 못 받는다. 그래서 열쇠는 한 번 만들면 바꾸지 않는다(잃어도 다시 만들 수는 있다).
+
+### ② 평일 아침 9시 타이머 — 한 번
+
+매일 아침 "처리할 일이 N건 있어요" 묶음 알림을 보내는 명령(`python -m push morning`)을 서버 타이머로 건다. 앱 안에는 예약 작업을 두지 않는다(계산 컨테이너의 작업자가 둘이라 두 번 돈다). 이 명령은 **평일 9~18시(한국 시간)에만 보내고, 같은 날 두 번 돌지 않으며**, 처리할 일이 1건 이상인 사람에게만 보낸다. 출력은 보낸 사람 수 하나뿐이다. **오늘을 보내기 전에 먼저 기록한다**(`push_morning` 표) — 두 실행이 겹쳐도 같은 사람에게 두 번 가지 않는다. 대신 보내는 도중에 멈추면(서버 재시작 등) 그날 묶음은 일부만 가고 다시 돌지 않는다(두 번 울리는 것보다 낫다고 본 선택 — 그날 기록 줄을 지우면 다시 보낼 수 있지만 이미 받은 사람은 한 통 더 받는다).
+
+배포 타이머(`hr-portal-deploy`)와 같은 곳(`/etc/systemd/system/`)에 파일 둘을 만든다. **`User=` 줄과 저장소 경로는 배포 서비스 파일을 그대로 따른다** — 먼저 열어서 본다.
+
+```bash
+systemctl cat hr-portal-deploy.service     # User= 줄과 저장소 경로를 확인
+```
+
+`/etc/systemd/system/hr-portal-push-morning.service`
+
+```ini
+[Unit]
+Description=인사포털 아침 9시 처리할 일 알림 (휴대폰)
+
+[Service]
+Type=oneshot
+User=<배포 서비스와 같은 사용자>
+ExecStart=/usr/bin/docker compose -f <저장소 경로>/docker-compose.yml exec -T api python -m push morning
+```
+
+`/etc/systemd/system/hr-portal-push-morning.timer`
+
+```ini
+[Unit]
+Description=평일 아침 9시 처리할 일 알림 (휴대폰)
+
+[Timer]
+OnCalendar=Mon..Fri 09:00 Asia/Seoul
+Persistent=false
+
+[Install]
+WantedBy=timers.target
+```
+
+- `<저장소 경로>`는 2장의 폴더(`~/workspace/github-hnabyz-bot/hr-portal`)의 **절대 경로**다 — systemd는 `~`를 풀지 않는다.
+- **`Persistent=false`는 일부러 고른 것이다.** 서버가 9시에 꺼져 있으면 **그날은 아침 묶음 알림이 없다**(다음 평일 묶음에 밀린 일이 모두 들어간다). 켜진 뒤 뒤늦게 돌려 주는 방식(`Persistent=true`)은 쓰지 않는다 — 근무시간(평일 9~18시) 밖이면 명령이 어차피 아무것도 안 보내고, 근무시간 안이어도 갑자기 늦게 울리는 것보다 그날은 안 오는 편이 낫다고 보기 때문이다. 밤에 휴대폰이 울리는 일은 절대 없어야 한다.
+- 시각은 서버 시계(UTC일 수 있다)와 상관없이 한국 시간 9시다(`Asia/Seoul`). 공휴일은 따로 빼지 않는다(평일이면 돈다).
+
+켜기:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now hr-portal-push-morning.timer
+```
+
+### ③ 확인
+
+```bash
+systemd-analyze calendar "Mon..Fri 09:00 Asia/Seoul"       # 타이머 줄 문법 검사 — 파일을 만들기 전에 (Normalized form · Next elapse 가 나오면 맞는 문법)
+systemctl list-timers | grep push          # 다음 실행이 다음 평일로 잡혀 있으면 성공
+sudo journalctl -u hr-portal-push-morning.service -n 20    # 지난 실행 이력 (보낸 사람 수)
+```
+
+- **`list-timers`는 서버 시계의 시각으로 보여 준다.** 서버가 UTC이면 한국 시간 평일 09:00이 `00:00 UTC`(같은 평일 0시)로 보인다 — 틀린 게 아니다. 시간대 이름을 붙인 줄(`Asia/Seoul`)이라 서버 시계와 상관없이 한국 9시에 돈다.
+
+- 지금 바로 한 번 돌려 보려면 `sudo systemctl start hr-portal-push-morning.service`. **시험용이 아니다 — 평일 9~18시이고 오늘 아직 안 돌았으면 진짜로 보내고, 그날은 9시 타이머가 다시 보내지 않는다.** 평일 9~18시가 아니거나 오늘 이미 돌았으면 `0`만 나오고 아무것도 보내지 않는다(정상 — 밤·주말에 울리지 않고 같은 날 두 번 울리지 않게 하는 규칙).
+- 처음에는 직원이 휴대폰에서 "휴대폰 알림 켜기"를 눌러 둬야 받는 사람이 생긴다. 아무도 안 켰으면 `0`이 나오는 것도 정상이다.
+- 타이머를 잠시 끄려면 `sudo systemctl stop hr-portal-push-morning.timer`.

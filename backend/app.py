@@ -22,6 +22,7 @@ import export_utils
 import game
 import kpi
 import payslip
+import push
 import withholding
 from services import opinet_api
 from services.calculator import (
@@ -57,6 +58,7 @@ app.register_blueprint(payslip.bp)  # 급여명세서: 잠가 저장 · 본인(�
 app.register_blueprint(eval_report.bp)  # 평가 결과 보고용 엑셀 (HR 만 — 지금은 화면이 보낸 시연 결과로 만든다)
 app.register_blueprint(withholding.bp)  # 원천징수영수증: 잠가 저장 · 해 전체/사람만 · 본인(공개된 해)·HR 만 (같은 HR_PAY_KEY)
 app.register_blueprint(contract.bp)  # 연봉계약서: 잠가 저장 · HR 이 올려 발송 · 직원이 서명 (같은 HR_PAY_KEY)
+app.register_blueprint(push.bp)  # 휴대폰 알림: 공개키 · 구독 · 구독 해제 (휴대폰 세션만 구독 — 키가 없으면 /api/push/key 가 404)
 # 규정 11개를 장·조·표로 나누는 데 30초쯤 걸린다(요청 제한 30초). 서버가 요청을 받기 전에 한 번 읽어 둔다 —
 # gunicorn --preload라 이 결과를 작업 프로세스들이 함께 쓴다. 이후 규정 파일이 바뀌면 그 파일만 다시 읽는다(수 초).
 rules_search.list_rules()

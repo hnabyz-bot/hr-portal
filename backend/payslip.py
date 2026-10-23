@@ -30,6 +30,7 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from flask import Blueprint, Response, g, jsonify, request
 
 import auth
+import push
 from hr_eval.domain.models import AuditEntry
 
 bp = Blueprint("payslip", __name__)
@@ -261,14 +262,15 @@ def upload(ym: str) -> Response:
 
 
 def _toggle(ym: str, to: str, action: str) -> Response:
-    """공개(OPEN) · 내리기(DRAFT). 이미 그 상태면 그대로 두고 감사로그도 더하지 않는다."""
+    """공개(OPEN) · 내리기(DRAFT). 이미 그 상태면 그대로 두고 감사로그도 더하지 않는다. 공개로 바뀌었으면 COMMIT 뒤에 그 달 명세서가 있는 사람의 휴대폰에 알림(push.notify)."""
     if (denied := auth._hr_only()) is not None:
         return denied
     conn = auth._db()
     conn.execute("BEGIN IMMEDIATE")
     try:
         row = conn.execute("SELECT status, people FROM payslip_months WHERE ym = ?", (ym,)).fetchone()
-        if row and row[0] != to:
+        changed = bool(row) and row[0] != to
+        if changed:
             if to == "OPEN":
                 conn.execute("UPDATE payslip_months SET status = 'OPEN', opened_at = ?, opened_by = ? WHERE ym = ?",
                              (auth._iso(auth._now()), g.actor.user_id, ym))
@@ -279,6 +281,8 @@ def _toggle(ym: str, to: str, action: str) -> Response:
     except BaseException:
         conn.execute("ROLLBACK")
         raise
+    if changed and to == "OPEN":  # 저장(COMMIT)이 끝난 뒤 — 그 달 명세서가 있는 사람에게 알림
+        push.notify(lambda: [r[0] for r in conn.execute("SELECT user_id FROM payslips WHERE ym = ?", (ym,))], "payslip", month=int(ym[5:7]))
     return jsonify(status=to) if row else (jsonify(error="올린 적 없는 달입니다."), 404)
 
 

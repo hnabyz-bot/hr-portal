@@ -101,6 +101,10 @@ jobs:
         working-directory: backend
         run: python -m contract_doc
 
+      - name: 휴대폰 알림 문구 · 근무시간 · 키 자체 검증
+        working-directory: backend
+        run: python -m push check
+
       - name: 출장경비 계산(활동비 기준·복귀 구간) 자체 검증
         working-directory: backend
         run: python -m services.calculator

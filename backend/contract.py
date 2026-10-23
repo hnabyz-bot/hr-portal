@@ -71,6 +71,7 @@ import auth
 import contract_doc
 import kpi
 import payslip
+import push
 from hr_eval.domain import access
 from hr_eval.domain.models import AuditEntry, Role
 from hr_eval.domain.org import target_of
@@ -547,7 +548,7 @@ def send(key: bytes) -> Response:
         if (cfg := _settings(conn, key)) is None:
             raise kpi._Refuse(MSG_NO_CFG, 409)
         company, seal_id = {"name": contract_doc.COMPANY_NAME, **cfg[0]}, cfg[1]
-        users, now, skipped, years = _users(conn), auth._iso(auth._now()), [], {}
+        users, now, skipped, years, sent_to = _users(conn), auth._iso(auth._now()), [], {}, []
         for cid in ids:
             row = conn.execute("SELECT year, user_id, version, status FROM contracts WHERE id = ?", (cid,)).fetchone()
             if (why := _cannot_send(row, users)) is not None:
@@ -557,8 +558,10 @@ def send(key: bytes) -> Response:
             conn.execute("UPDATE contracts SET status = 'SENT', sent_at = ?, sent_by = ?, due_on = ?, company = ?, seal_id = ? WHERE id = ?",
                          (now, g.actor.user_id, due, _lock(key, _aad(year, uid, ver, "company"), company), seal_id, cid))
             years[year] = years.get(year, 0) + 1
+            sent_to.append(uid)
         for year, n in years.items():
             _log(conn, "CONTRACT_SEND", "contract_year", None, year=year, people=n, due=due)
+    push.notify(sent_to, "contract_sign")  # 저장(COMMIT)이 끝난 뒤 — 이번에 서명 대기가 된 사람에게 알림
     return jsonify(sent=sum(years.values()), skipped=skipped)
 
 
@@ -717,6 +720,8 @@ def cancel(key: bytes, cid: int) -> Response:
                      (auth._iso(auth._now()), g.actor.user_id, reason, cid))
         new = None if then == "none" else _follow(conn, key, cid, year, uid, start, content, (due, co, seal_id) if then == "resend" else None)
         _log(conn, "CONTRACT_CANCELLED", "contract", cid, contract=cid, then=then)
+    if then == "resend":  # 새 서명 대기 줄이 생긴 경우만 (draft 는 발송 전 · none 은 끝)
+        push.notify([uid], "contract_sign")
     return jsonify(ok=True, id=new)
 
 
@@ -774,6 +779,7 @@ def ask(key: bytes, cid: int) -> Response:
         conn.execute("UPDATE contracts SET ask = ?, ask_at = ?, ask_closed_at = NULL, ask_closed_by = NULL WHERE id = ?",
                      (_lock(key, _aad(year, me, ver, "ask"), text), auth._iso(auth._now()), cid))
         _log(conn, "CONTRACT_ASK", "contract", cid, contract=cid)
+    push.notify(lambda: [u for u in push.hr_admins(conn) if u != me], "contract_ask")  # 알림만 — 처리할 일 개수에는 넣지 않는다 (계약서 화면 안의 숫자). HR 이 자기 계약서에 문의하면 본인 휴대폰은 울리지 않는다 (approvers 가 주인을 빼는 것과 같다)
     return jsonify(ok=True)
 
 

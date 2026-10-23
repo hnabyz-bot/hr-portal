@@ -31,6 +31,9 @@ services:
       - HIWORKS_SSO_LINK_BY_EMPLOYEE_NO=${HIWORKS_SSO_LINK_BY_EMPLOYEE_NO:-}
       # 급여명세서 · 원천징수영수증 잠금 열쇠 (backend/payslip.py · withholding.py). 값은 서버 .env 에만 — 없으면 HR 의 명세서 · 영수증 올리기가 막힌다
       - HR_PAY_KEY=${HR_PAY_KEY:-}
+      # 휴대폰 알림(웹 푸시) 열쇠 한 쌍 (backend/push.py). 값은 서버 .env 에만 — 없으면 알림 보내기만 조용히 건너뛴다
+      - HR_PUSH_PUBLIC=${HR_PUSH_PUBLIC:-}
+      - HR_PUSH_PRIVATE=${HR_PUSH_PRIVATE:-}
     volumes:
       - ./regulations:/app/regulations:ro
       # 직원·로그인 DB. 상자(이미지) 안에 두면 merge 때 재빌드하면서 사라진다 → 서버 폴더 data/ 에 보관

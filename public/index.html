@@ -191,6 +191,14 @@
     border:1px solid rgba(255,255,255,.55); background:rgba(20,44,84,.28); color:#fff; font-family:inherit; font-size:var(--fs-xs); font-weight:600; cursor:pointer; backdrop-filter:blur(6px); }
   .hero-install:hover{ background:rgba(20,44,84,.45); }
   .hero-install svg{ width:14px; height:14px; }
+  .push-card{ display:flex; align-items:center; gap:12px; padding:14px 16px; }   /* 휴대폰 홈 "알림 켜기" 칸 (2026-10-22) — 흰 카드 · 붉은 종 · 파란 단추 */
+  .push-ic{ flex:none; display:grid; place-items:center; width:40px; height:40px; border-radius:50%; background:var(--bg-danger); color:var(--coral-text); }
+  .push-ic svg{ width:20px; height:20px; }
+  .push-tx{ flex:1; min-width:0; word-break:keep-all; }   /* 두 줄로 끊고 한 단어만 넘어가지 않게 */
+  .push-tx b{ display:block; font-size:var(--fs-md); }
+  .push-tx span{ display:block; margin-top:2px; font-size:var(--fs-xs); line-height:1.5; color:var(--text-secondary); text-wrap:balance; }
+  .push-card .btn{ flex:none; white-space:nowrap; }
+  .push-way{ margin:6px 0 0; line-height:1.6; word-break:keep-all; }
   .hm-quick{ display:grid; grid-template-columns:repeat(6,1fr); }
   .hm-q{ display:flex; flex-direction:column; align-items:center; gap:9px; padding:4px 0; border-left:1px solid var(--border); font-weight:600; text-align:center; cursor:pointer; }
   .hm-q:first-child{ border-left:0; }
@@ -1869,11 +1877,12 @@ function homeRate(){   // 이번 주 달성률 [종합, 업무, 루틴] %. 업�
 }
 function homeKpiTo(){ if(!AUTH.live) return kpiPeriod.editTo; const w = KPI_LIVE.me?.window; return w && w.open ? w.to : ''; }   // 홈의 KPI 마감일 — 실제 로그인은 서버 작성 기간이 열려 있을 때 그 마지막 날만 (닫혀 있으면 '')
 function homeDates(y, m){   // 그 달의 급여일 + KPI·평가 기간 날짜 (달력 점, 주요 일정)
+  const ev = d=>AUTH.live ? '' : d;   // 실제 로그인: 평가는 포털 밖이라 시연 평가 날짜를 달력 · 마감 임박에 두지 않는다 (설계 §7.1)
   return [ { ymd:ctYmd(payDayOf(y, m)), label:'급여일', color:'var(--accent)' },
     { ymd:homeKpiTo(), label:'KPI 작성·수정 마감', color:'#7A56C8' },
-    { ymd:kpiPeriod.evalFrom, label:'평가 기간 시작', color:'var(--success)' },
-    { ymd:kpiPeriod.selfTo, label:'자기평가 마감', color:'var(--success)' },
-    { ymd:kpiPeriod.evalTo, label:'평가 기간 마감', color:'var(--success)' } ].filter(e=>e.ymd);
+    { ymd:ev(kpiPeriod.evalFrom), label:'평가 기간 시작', color:'var(--success)' },
+    { ymd:ev(kpiPeriod.selfTo), label:'자기평가 마감', color:'var(--success)' },
+    { ymd:ev(kpiPeriod.evalTo), label:'평가 기간 마감', color:'var(--success)' } ].filter(e=>e.ymd);
 }
 function homeSelfCheck(){   // 브라우저 콘솔에서 homeSelfCheck() 실행
   const ok = (c,m)=>{ if(!c) throw new Error('homeSelfCheck 실패: '+m); };
@@ -1925,7 +1934,7 @@ function homePortalRows(pre=''){   // 인사포털이 만든 일의 줄. pre = �
 let authReady = Promise.resolve();   // 로그인 확인(authBoot)이 끝나면 풀린다 — 맨 아래에서 authBoot()로 바꿔 끼운다
 async function todayPopAuto(){   // 들어올 때 자동으로: 내 업무 · KPI가 다 온 뒤에(시연 목록이 잠깐 뜨지 않게), 로그인 안내 · 둘러보기 · 다른 창이 없을 때만
   await authReady;
-  if(!AUTH.locked && !tour.steps && !document.getElementById('orgModal')) homeTodayPop();
+  if(!AUTH.locked && !PUSH.go && !tour.steps && !document.getElementById('orgModal')) homeTodayPop();   // PUSH.go: 알림을 눌러 그 화면으로 들어왔으면 창이 덮이지 않게
 }
 function homeTodayPop(){
   const today = kpiDay(0), t = celebParse(today), [left, done] = wsTodayCount(), close = 'orgCloseModal(); ';
@@ -2016,9 +2025,10 @@ function homeKpiLive(me=KPI_LIVE.me, prog=KPI_LIVE.prog){   // 실제 로그인:
   if(!me || !me.writesKpi) return '';
   const p = me.plan, st = !p ? 'NONE' : p.status==='DRAFT' && p.noteKind==='RETURNED' ? 'RETURNED' : p.status, w = me.window;
   const head = t=>`<div class="card-title"><span>나의 KPI${t} <span class="hm-dim">${+me.year}년</span> <span class="badge ${KPI_LIVE_ST[st][1]}">${KPI_HOME_ST[st]}</span>${prog?.alarm?.slow ? `<span class="kv-mk bell" title="진행이 기대보다 늦어요" style="vertical-align:-5px;">${icon('bell')}</span>` : ''}</span><span class="more" onclick="goTo('perf','e1')">상세 보기 →</span></div>`;
+  const cl = w.open ? null : kpiClosedText(w, kpiDay(0));   // 닫혀 있으면 띠와 같은 문구 (평가 시작 · 열립니다 · 지남 · 기간 없음)
   if(!prog) return `<div class="card" id="hmKpi">
     ${head('')}
-    <div class="list-sub" style="margin:0;">${w.open ? `작성 기간 ${kpiMd(w.from)} ~ ${kpiMd(w.to)}` : '작성 기간이 아니에요'}</div>
+    <div class="list-sub" style="margin:0;">${cl ? [cl.head, cl.sub].filter(Boolean).join(' · ') : `작성 기간 ${kpiMd(w.from)} ~ ${kpiMd(w.to)}`}</div>
   </div>`;
   const slow = kpiProgGap(prog.total, prog.totalExpected)>0, nx = prog.next && prog.items.flatMap(it=>it.scheds || []).find(s=>s.sid===prog.next.sid);
   return `<div class="card" id="hmKpi">
@@ -2047,6 +2057,7 @@ function homeContent(){
   const tile = (cls, id, label, n, unit, sub)=>`<div class="hm-tile ${cls}" onclick="homeJump('${id}')"><span>${label}</span><b>${n}<small>${unit}</small></b><em>${sub}</em></div>`;
   return `<div class="hm">
     ${homeHero(t)}
+    ${isPhone() ? pushCard() : ''}
     <div class="card">
       <div class="card-title">빠른 서비스</div>
       <div class="hm-quick">${HOME_QUICK.map(q=>`<div class="hm-q" onclick="${q[4] ? `location.href='${q[4]}'` : `goTo('${q[2]}','${q[3]}')`}"><i>${icon(q[0])}</i>${q[1]}</div>`).join('')}</div>
@@ -2536,7 +2547,7 @@ function wsNotice(msg){   // 아래쪽 알림(되돌리기 알림과 같은 자�
   d.innerHTML = `<span>${escapeHtml(msg)}</span><button type="button" onclick="this.parentNode.remove()">닫기</button>`;
   document.body.appendChild(d); setTimeout(()=>d.remove(), 8000);
 }
-document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='visible' && AUTH.live){ wsPull(false); payWake(); whWake(); ctWake(); } });   // 다른 기기에서 고친 업무 · 그사이 공개된 급여명세서 · 원천징수영수증 · 새로 온 연봉계약서
+document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='visible' && AUTH.live){ wsPull(false); payWake(); whWake(); ctWake(); pushInit(); } });   // 다른 기기에서 고친 업무 · 그사이 공개된 급여명세서 · 원천징수영수증 · 새로 온 연봉계약서 · 휴대폰 알림 설정(설정에서 켜고 돌아왔나, 떠 있는 알림 닫기)
 function wsSyncSelfCheck(){   // 브라우저 콘솔에서 wsSyncSelfCheck() 실행
   const ok = (c, msg)=>{ if(!c) throw new Error('wsSyncSelfCheck 실패: '+msg); };
   const srv = [{ id:1, title:'보고', due:'2026-10-20' }, { id:2, title:'회의', due:'' }];
@@ -4041,7 +4052,7 @@ function roleSwitcher(){
 function hrAdmin(){ return kpiIsHr() && hrView==='admin'; }   // HR이 "직원 인사평가 관리" 화면을 보고 있나
 function kpiNative(k){ return KPI_USERS[k].approvers[kpiSheets[k].pending.step]===kpiRole; }   // 내가 승인자인 KPI (대표이사가 맡겨 대신 승인하는 것이 아니다)
 function hrTodo(){   // [내 화면에서 처리할 일, 관리 화면에서 처리할 일] — 평가·성과의 세 탭을 합친 수
-  const wait = kpiWaiting(), mine = wait.filter(kpiNative).length, ap = evPeople.filter(p=>p.appeal), proxy = KPI_LIVE.inbox.filter(i=>i.proxy).length;   // 실제 로그인: KPI 몫은 처리함(계획서 · 일정 변경) — 대신 처리할 것은 관리 화면
+  const wait = kpiWaiting(), mine = wait.filter(kpiNative).length, ap = AUTH.live ? [] : evPeople.filter(p=>p.appeal), proxy = KPI_LIVE.inbox.filter(i=>i.proxy).length;   // 실제 로그인: KPI 몫은 처리함(계획서 · 일정 변경) — 대신 처리할 것은 관리 화면
   return [(AUTH.live ? TODO.e1() - proxy : mine + (kpiSheets[kpiRole]?.rejectNote ? 1 : 0) + kvMemoTodo(kvMe())) + evTodo('me'),
     (AUTH.live ? proxy : wait.length - mine) + evTodo('admin') + ap.filter(p=>p.appeal.status==='OPEN').length + ap.filter(p=>p.appeal.status==='CEO' && evCeoActs(p)).length];
 }
@@ -4125,9 +4136,15 @@ function kpiSteps(status){   // 단계 표시 네 칸 — 지난 칸 done(✓), 
 }
 function kpiMd(d){ return +d.slice(5,7)+'/'+ +d.slice(8,10); }   // "2026-10-13" → "10/13"
 function kpiLeft(to){ return Math.round((new Date(to) - new Date(kpiDay(0))) / 864e5); }   // 마지막 날까지 남은 날 수
+function kpiClosedText(win, today){   // 닫힌 작성 기간 안내 {head, sub} (설계 §7.1). 띠(kpiWindowBand)와 홈 KPI 카드가 함께 쓴다. 평가 시작일부터는 서버가 기간을 닫는다 — 새해 기간이 아직 시작 전이어도 이 문구가 먼저
+  if(win.evalStart && today>=win.evalStart) return { head:'평가가 시작되어 올해 KPI는 고칠 수 없어요', sub:'' };
+  if(!win.from) return { head:'작성 기간이 아니에요', sub:'HR이 작성 기간을 열면 쓸 수 있어요' };
+  const day = d=>+d.slice(5,7)+'월 '+ +d.slice(8,10)+'일';
+  return today<win.from ? { head:'KPI 작성 기간이 열립니다', sub:`${day(win.from)} ~ ${day(win.to)}` } : { head:'작성 기간이 아니에요', sub:`정한 기간 ${kpiMd(win.from)} ~ ${kpiMd(win.to)}` };
+}
 function kpiWindowBand(win){   // 작성 기간 띠 — 열림 초록 · 닫힘 회색. 열렸는지는 서버가 정한다(한국 날짜)
   const md = kpiMd;
-  if(!win.open) return `<div class="kl-period closed"><b>작성 기간이 아니에요</b><span>${win.from ? `정한 기간 ${md(win.from)} ~ ${md(win.to)}` : 'HR이 작성 기간을 열면 쓸 수 있어요'}</span></div>`;
+  if(!win.open){ const c = kpiClosedText(win, kpiDay(0)); return `<div class="kl-period closed"><b>${c.head}</b>${c.sub ? `<span>${c.sub}</span>` : ''}</div>`; }
   const left = kpiLeft(win.to);
   return `<div class="kl-period"><b>작성 기간 ${md(win.from)} ~ ${md(win.to)}</b><span>${left>0 ? left+'일 남음' : '오늘까지'}</span><span class="sp"></span><span>기간이 끝나면 제출 · 수정 요청 · 확정 · 해제가 모두 막힙니다</span></div>`;
 }
@@ -11034,6 +11051,7 @@ function evProxyToggle(){   // 대표이사만 켜고 끈다
 }
 function evDemoToCeo(){ evDemoFillData('CEO'); evPoolLog.div.head = { at:kpiDay(0), seen:{} }; kpiFlash('시연용으로 대표이사 확인 직전까지 채웠습니다. 대표이사로 바꿔 "대표이사 확인" 목록에서 체크해 넘겨 보세요.'); }
 function evContent(){
+  if(AUTH.live) return kpiNote('2026년 평가는 포털 밖에서 진행합니다.');   // 실제 로그인: 시연 자료를 모두 숨기고 안내만 (설계 §7.1 — 평가 3단계에서 실제 화면으로 바꾼다). 평가 결과 탭(evResultContent)은 그대로. 해를 KPI_YEAR 로 두지 않는다 — 2027년 평가는 포털에서 하기로 해서, 새해(1월 1일)에 "2027년 평가는 포털 밖에서"로 바뀌면 안 된다. 평가 3단계를 붙일 때 이 줄을 없앤다
   const me = evMe(), role = kpiRole, hr = kpiIsHr(role);
   const mine = me && me.out ? `<div class="card" style="margin-bottom:14px;"><div class="card-title">나의 ${KPI_YEAR}년 평가</div><div class="list-sub" style="margin:0;">이번 평가 대상이 아닙니다. (${escapeHtml(me.out.why)} · HR 처리 ${me.out.at})</div></div>` : me && evIsLine(me) ? evLineMyCard(me) : me ? (me.stage==='SELF' || evCanUpload(me, role, kpiDay(0)) ? evSelfCard(me) : `<div class="card" style="margin-bottom:14px;"><div class="card-title"><span>나의 ${KPI_YEAR}년 평가</span>${evStageBadge(me)}</div>${evSteps(me)}<div class="list-sub">${me.noSelf ? '자기평가 마감일이 지나 HR이 자기평가 없이 진행했습니다.' : '자기평가를 제출했습니다.'} 결과는 확정 후 평가 결과 탭에서 공개됩니다.</div></div>`)
     : role==='head' ? `<div class="card" style="margin-bottom:14px;"><div class="card-title">나의 ${KPI_YEAR}년 평가</div><div class="list-sub" style="margin:0;">본부장은 연말 평가 대상이 아닙니다. 본부 KPI는 목표설정 탭에서 그대로 관리하고, 여기서는 팀장을 평가하고 본부 팀원의 등급을 배정합니다.</div></div>` : '';
@@ -11041,6 +11059,49 @@ function evContent(){
     ${hrAdmin() ? evBoard() + evNewsStrip() + evPoolCard('hr') + evProxyCard() + (evProxy ? evMyTargets('proxy') + evPoolCard('ceo') : '') + evRosterCard()   // HR 관리 화면
       : mine + evMyTargets(hr ? 'mine' : '') + (role==='head' ? evHeadCard() : '') + (role==='ceo' ? evPoolCard('ceo') + evProxyCard() : '')}
     <div class="list-sub">시연용 가상 인원 ${evPeople.length}명입니다 (${EV_DIVISION} 팀원 · 전사 팀장 · 직속부서). 본부장과 대표이사는 평가받지 않습니다. 다른 본부의 팀원은 시연 명단에 없습니다 — 실제로는 대표이사 확인·HR 확정 목록에 본부마다 한 줄씩 나옵니다. 홍길동은 목표설정 탭의 확정 KPI를 그대로 씁니다. 최현장·윤라인은 KPI 없는 현장직(팀장 평가)입니다.</div>`;
+}
+
+function evLiveSelfCheck(){   // 브라우저 콘솔에서 evLiveSelfCheck() 실행 — 실제 로그인(가짜 AUTH.live)의 평가 진행 탭 안내 · 평가 숫자 0 · KPI 닫힘 문구 (설계 §7.1). 시연 모드는 그대로인지도 본다 (상태는 끝나면 되돌린다)
+  const ok = (c,m)=>{ if(!c) throw new Error('evLiveSelfCheck 실패: '+m); };
+  const dom = html=>{ const t = document.createElement('template'); t.innerHTML = html; return t.content; };
+  const W = (from, to, evalStart)=>({ from, to, evalStart, open:false });
+  const t = kpiClosedText, S = '평가가 시작되어 올해 KPI는 고칠 수 없어요', same = (c, head, sub)=>c.head===head && c.sub===sub;
+  // 닫힘 문구 네 경우 (순수 함수)
+  ok(same(t(W('2026-10-13', '2026-10-27', '2026-12-01'), '2026-12-01'), S, '') && same(t(W('2026-10-13', '2026-10-27', '2026-12-01'), '2026-12-31'), S, ''), '평가 시작일부터는 "평가가 시작되어 올해 KPI는 고칠 수 없어요"');
+  ok(same(t(W('2027-01-05', '2027-01-16', '2026-12-01'), '2027-01-01'), S, ''), '평가 시작일이 지났으면 새해 기간보다 먼저 (서버가 평가 시작일에 닫는다)');
+  ok(same(t(W('2026-10-13', '2026-10-27', '2026-12-01'), '2026-11-30'), '작성 기간이 아니에요', '정한 기간 10/13 ~ 10/27'), '평가 시작 전에 기간이 끝났으면 지금 문구');
+  ok(same(t(W('2027-01-05', '2027-01-16', null), '2027-01-01'), 'KPI 작성 기간이 열립니다', '1월 5일 ~ 1월 16일') && same(t(W('2027-01-05', '2027-01-16', ''), '2027-01-04'), 'KPI 작성 기간이 열립니다', '1월 5일 ~ 1월 16일'), '기간이 아직 시작 전이면 "KPI 작성 기간이 열립니다" + M월 D일 ~ M월 D일');
+  ok(same(t(W('2026-10-13', '2026-10-27', null), '2026-10-28'), '작성 기간이 아니에요', '정한 기간 10/13 ~ 10/27'), '기간이 지났으면 지금 문구 그대로');
+  ok(same(t(W(null, null, null), '2027-01-01'), '작성 기간이 아니에요', 'HR이 작성 기간을 열면 쓸 수 있어요') && same(t(W('', '', ''), '2027-01-01'), '작성 기간이 아니에요', 'HR이 작성 기간을 열면 쓸 수 있어요'), '기간을 안 넣었으면 지금 문구 그대로');
+  // 닫힘 띠 · 홈 KPI 카드가 같은 문구를 쓴다
+  const band = w=>dom(kpiWindowBand(w)).querySelector('.kl-period.closed')?.textContent.trim() || '', md = d=>+d.slice(5, 7)+'월 '+ +d.slice(8, 10)+'일';
+  const soon = W(kpiDay(3), kpiDay(10), null), cut = W(kpiDay(-20), kpiDay(-10), kpiDay(-1)), past = W(kpiDay(-20), kpiDay(-10), null), none = W(null, null, null);
+  ok(band(soon)==='KPI 작성 기간이 열립니다'+md(soon.from)+' ~ '+md(soon.to), '닫힘 띠: 시작 전이면 "KPI 작성 기간이 열립니다 · 날짜"');
+  ok(band(cut)===S && band(past)==='작성 기간이 아니에요정한 기간 '+kpiMd(past.from)+' ~ '+kpiMd(past.to) && band(none)==='작성 기간이 아니에요HR이 작성 기간을 열면 쓸 수 있어요', '닫힘 띠: 평가 시작 · 기간 지남 · 기간 없음');
+  const card = w=>dom(homeKpiLive({ year:KPI_YEAR, writesKpi:true, plan:null, window:w }, null)).querySelector('.list-sub').textContent.trim();
+  ok(card(soon)==='KPI 작성 기간이 열립니다 · '+md(soon.from)+' ~ '+md(soon.to) && card(cut)===S && card(past).startsWith('작성 기간이 아니에요') && card(none).startsWith('작성 기간이 아니에요'), '홈 KPI 카드도 같은 문구');
+  // 평가 화면 · 평가 숫자
+  const keep = [AUTH.live, kpiRole, hrView, kpiPeriod.evalFrom, evPeople[0].appeal], res = live=>{ AUTH.live = live; return evResultContent().replace(roleSwitcher(), '').replace(/<b class="nav-badge"[^>]*>\d+<\/b>/g, ''); };   // 같은지 볼 때 맨 위 줄 · HR 전환 단추 숫자(실제 로그인은 0이 맞다)는 뺀다
+  try {
+    kpiPeriod.evalFrom = kpiDay(-1); kpiRole = 'hr'; hrView = 'admin';   // 오늘이 평가 시작일 뒤 · HR (근태 입력을 안 마쳐 늘 +1) · 이의 신청 한 건
+    evPeople[0].appeal = { reason:'검사용', at:kpiDay(0), status:'OPEN', answer:'', before:evPeople[0].grade || 'B', after:null };
+    AUTH.live = false;
+    ok(TODO.e2()>0 && TODO.e3()>0 && homePortalTasks().some(p=>p.title.startsWith('평가 진행')) && homeDates(2026, 11).some(e=>e.label.startsWith('평가')), '시연: 평가 숫자 · 날짜는 그대로');
+    ok(evContent().includes('시연용 가상 인원') && evContent().includes(evPeople[0].name), '시연: 평가 진행 탭은 그대로 (가상 표)');
+    const demoRes = res(false);
+    AUTH.live = true;
+    ok(TODO.e2()===0 && TODO.e3()===0 && evTodo()===0 && evTodo('me')===0 && evTodo('admin')===0, '실제 로그인: 평가 진행 · 평가 결과 숫자 0 (오늘이 평가 시작일 뒤여도)');
+    ok(!homePortalTasks().some(p=>/^(평가 진행|이의 신청)/.test(p.title)) && !homeDates(2026, 11).some(e=>e.label.startsWith('평가') || e.label.startsWith('자기평가')), '실제 로그인: 홈 오늘의 업무 · 달력에 평가 일 · 날짜 없음');
+    ok(hrTodo()[0]+hrTodo()[1]===TODO.e1(), '실제 로그인: HR 전환 단추 숫자에도 평가 몫 없음');
+    const ev = evContent(), el = dom(ev);
+    ok(el.textContent.trim()==='2026년 평가는 포털 밖에서 진행합니다.' && !ev.includes('시연용') && evPeople.every(p=>!ev.includes(p.name)) && !el.querySelector('table, button'), '실제 로그인: 평가 진행 탭 = 안내 한 줄만 (시연 표 · 가상 이름 없음)');
+    kpiRole = 'emp'; ok(dom(evContent()).textContent.trim()==='2026년 평가는 포털 밖에서 진행합니다.', '직원이 봐도 같은 안내');
+    ok(/kpiNote\('2026년 평가는 포털 밖에서 진행합니다\.'\)/.test(String(evContent)) && !/kpiNote\(`\$\{KPI_YEAR\}년 평가는/.test(String(evContent)), '안내의 해는 2026 으로 고정 — 새해(KPI_YEAR 가 바뀐 뒤)에도 "2027년 평가는 포털 밖에서"로 바뀌지 않는다');
+    kpiRole = 'hr';
+    const liveRes = res(true);
+    ok(liveRes===demoRes && liveRes.includes('보고서 엑셀 내려받기') && liveRes.includes('답변 보내기') && evResultContent().includes('시연용 가상 자료'), '실제 로그인: 평가 결과 탭은 그대로 (보고서 엑셀 단추 · 이의 신청 답변 칸 · 맨 위 "시연용 가상 자료")');
+  } finally { [AUTH.live, kpiRole, hrView, kpiPeriod.evalFrom, evPeople[0].appeal] = keep; }
+  return 'evLiveSelfCheck 통과';
 }
 
 /* ---------------- 현장직 (KPI 없는 직원) 평가 ----------------
@@ -11564,6 +11625,167 @@ async function phoneRevoke(){
   if(!r.ok){ orgCloseModal(); return kpiFlash('휴대폰 등록을 해제하지 못했습니다. 잠시 뒤 다시 해 주세요.', 'danger'); }
   Object.assign(PHONE, { cur:null, state:'off' });
   phoneDraw();
+}
+
+/* ---------------- 휴대폰 알림 (푸시 알림 설계 §4, 2026-10-22) ----------------
+   알림은 서비스 워커(public/sw.js)가 받아 띄운다. 이 화면이 하는 일: (1) 휴대폰 홈에 "알림 켜기" 칸 (2) 켠 휴대폰의 구독을 서버에 다시 알림
+   (3) 앱 아이콘 숫자 맞추기 (4) 알림을 눌러 들어오면(/?go=메뉴.탭) 그 화면으로 옮기기.
+   칸은 실제 로그인 + 휴대폰 세션 + 서버에 알림 키가 있을 때만 — 거부한 뒤 · 아이폰 사파리(설치 안 함) · 서버에 키 없음에서도 엉뚱한 칸이 뜨지 않게 상태를 pushState 한 곳에서 정한다(pushSelfCheck).
+   state: '' 아직 · off 못 함(칸 없음) · ask 묻기 전 · denied 거부 · ios 아이폰인데 홈 화면 앱이 아님 · on 켬. sw: 서비스 워커 등록에 성공. go: /?go= 로 들어왔다(오늘 할 일 창을 띄우지 않는다) */
+const PUSH = { state:'', key:'', sw:false, go:false };
+function pushState(e){   // 순수 함수. e = { live, phone, sw, push, key, perm, ios, standalone } → PUSH.state
+  if(!e.live || !e.phone || !e.key) return 'off';
+  if(e.ios && !e.standalone) return 'ios';   // 아이폰은 홈 화면 앱에서만 알림을 받는다 (사파리 탭에는 알림 기능이 없어 아래 검사보다 먼저)
+  if(!e.sw || !e.push) return 'off';
+  return e.perm==='granted' ? 'on' : e.perm==='denied' ? 'denied' : 'ask';
+}
+const pushEnv = ()=>({ live:AUTH.live, phone:AUTH.me?.kind==='phone', sw:PUSH.sw, push:'PushManager' in window && 'Notification' in window, key:PUSH.key, perm:window.Notification?.permission,
+  ios:/iPhone|iPad|iPod/.test(navigator.userAgent), standalone:navigator.standalone===true || matchMedia('(display-mode: standalone)').matches });
+const pushBytes = b64=>Uint8Array.from(atob(b64.replace(/-/g, '+').replace(/_/g, '/')), c=>c.charCodeAt(0));   // base64url → 구독에 넘기는 서버 키
+const pushSameKey = (a, b)=>a.byteLength===b.length && new Uint8Array(a).every((v, i)=>v===b[i]);   // 구독에 남은 서버 키(ArrayBuffer)와 지금 서버 키(Uint8Array)가 바이트까지 같은가
+async function pushSubscribe(reg){   // 이 휴대폰의 구독을 서버에 알린다. 성공하면 true. reg = 서비스 워커 등록 (검사가 가짜를 넣는다)
+  try {
+    reg = reg || await navigator.serviceWorker.ready;
+    const want = pushBytes(PUSH.key);
+    let sub = await reg.pushManager.getSubscription();
+    const had = sub?.options?.applicationServerKey;   // 서버 열쇠를 바꿨으면 옛 구독은 새 열쇠로 보낸 알림을 못 받는다 — 구독이 기억하는 열쇠가 다르면 해지하고 새 열쇠로 다시 구독 (열쇠를 알려 주지 않는 브라우저는 그대로 쓴다)
+    if(sub && had && !pushSameKey(had, want)){ await sub.unsubscribe(); sub = null; }
+    sub = sub || await reg.pushManager.subscribe({ userVisibleOnly:true, applicationServerKey:want });
+    const { endpoint, keys } = sub.toJSON();   // keys 는 이미 base64url — 서버가 그대로 받는다
+    return (await fetch('/api/push/subscribe', { method:'POST', headers:{ 'Content-Type':'application/json' }, body:JSON.stringify({ endpoint, keys }) })).ok;
+  } catch(e){ return false; }
+}
+async function pushClean(){   // 앱을 열었으니 떠 있는 인사포털 알림은 모두 닫는다 (갤럭시는 알림이 있는 동안 아이콘에 숫자가 붙는다. 앱 안 메뉴 숫자는 그대로)
+  try { (await (await navigator.serviceWorker.ready).getNotifications()).forEach(n=>n.close()); } catch(e){}
+}
+async function pushInit(){   // 로그인 확인(authBoot)이 끝난 뒤, 그리고 앱으로 돌아올 때마다(휴대폰 설정에서 알림을 켜고 왔을 수 있다). 이미 켠 사람은 조용히 다시 등록 — 묻는 창은 다시 띄우지 않는다
+  if(!AUTH.live || AUTH.me?.kind!=='phone') return;
+  const before = pushCard();
+  try { const r = await fetch('/api/push/key'); PUSH.key = r.ok ? (await r.json()).key || '' : ''; } catch(e){}   // 매번 다시 받는다 — 휴대폰은 앱을 메모리에서 되살리기만 해서 새로 고침이 없고, 열쇠를 바꾼 뒤에도 pushSubscribe 가 새 열쇠를 봐야 한다. 404 = 서버에 키가 없다 → 칸도 없다. 네트워크가 끊겼으면 알고 있던 열쇠를 그대로 둔다
+  if(PUSH.key && 'serviceWorker' in navigator) PUSH.sw = await navigator.serviceWorker.register('/sw.js').then(()=>true, ()=>false);
+  PUSH.state = pushState(pushEnv());
+  if(PUSH.state==='on') await Promise.all([pushSubscribe(), pushClean()]);
+  if(currentNav.id==='home' && pushCard()!==before) renderContent(); else pushBadgeSync();
+}
+async function pushEnable(){   // 칸의 [켜기] — 누른 그 자리에서 바로 허용을 묻는다 (아이폰 규칙: 사용자가 누른 순간에만 띄울 수 있다)
+  let perm; try { perm = await Notification.requestPermission(); } catch(e){}
+  if(perm==='granted'){
+    if(!await pushSubscribe()) return wsNotice('알림을 켜지 못했어요. 잠시 뒤 다시 눌러 주세요.');
+    PUSH.state = 'on'; renderContent();
+    return wsNotice('알림을 켰어요. 처리할 일이 생기면 알려 드릴게요');
+  }
+  if(perm==='denied'){ PUSH.state = 'denied'; renderContent(); }   // 묻는 창만 닫았으면('default') 칸은 그대로
+}
+function pushHelp(){   // 거부한 뒤: 휴대폰 설정에서 켜는 길
+  const way = (name, ...path)=>`<p class="inst-sub">${name}</p><p class="push-way">${path.map(t=>`<b>${t}</b>`).join(' → ')}</p>`;
+  orgModal(`<div class="inst"><div class="card-title"><span>휴대폰 알림 켜는 방법</span><button type="button" class="x-btn" onclick="orgCloseModal()" aria-label="닫기">${icon('x')}</button></div>
+    ${way('갤럭시', '설정', '애플리케이션', '인사포털', '알림')}${way('아이폰', '설정', '알림', '인사포털')}
+    <div class="list-sub" style="margin-top:12px;">켠 뒤 인사포털로 돌아오면 이 칸이 저절로 사라져요.</div>
+    <button type="button" class="btn primary" style="width:100%; justify-content:center; margin-top:14px;" onclick="orgCloseModal()">확인</button></div>`);
+}
+function pushCard(s = PUSH.state){   // 휴대폰 홈 인사 배너 바로 아래 칸 (설계 §4.1; 휴대폰 폭에서만 그리는 것은 homeContent). on · off · 아직 = 칸 없음
+  const c = { ask:['처리할 일이 생기면<br>휴대폰으로 알려 드려요', 'pushEnable()', '켜기'], denied:['휴대폰 설정에서 인사포털 알림을 켜 주세요', 'pushHelp()', '방법 보기'], ios:['홈 화면에 추가하면 알림을 받을 수 있어요', 'installNotice()', '추가 방법'] }[s];
+  return !c ? '' : `<div class="card push-card" id="pushCard"><i class="push-ic">${icon('bell')}</i><div class="push-tx"><b>휴대폰 알림 켜기</b><span>${c[0]}</span></div><button type="button" class="btn primary" onclick="${c[1]}">${c[2]}</button></div>`;
+}
+function pushBadgeCount(){   // 앱 아이콘 숫자 = 왼쪽 메뉴 숫자의 합. 대표이사가 KPI 승인을 맡긴 동안은 처리함 몫을 뺀다 (서버가 알림에 싣는 숫자 · 9시 묶음과 같은 규칙)
+  return homePortalTasks().reduce((a, p)=>a+p.n, 0) - (AUTH.me?.position==='CEO' && KPI_LIVE.deleg ? KPI_LIVE.inbox.length : 0);
+}
+function pushBadgeClear(){   // 로그아웃 · 세션 끝(authLock, authLogout) — 앞 사람의 처리할 일 숫자가 아이콘에 남지 않게. 지원하지 않는 기기 · 거절돼도 조용히
+  try { navigator.clearAppBadge?.()?.catch(()=>{}); } catch(e){}
+}
+function pushBadgeSync(){   // 아이콘 숫자를 지원하는 휴대폰(아이폰 홈 화면 앱 등)에서 알림을 켜 둔 경우만 — 아니면 건드리지 않는다. renderSidebar 끝에서 부른다(메뉴 숫자가 바뀔 때마다)
+  if(!AUTH.live || PUSH.state!=='on' || !navigator.setAppBadge) return;
+  const n = pushBadgeCount();
+  (n>0 ? navigator.setAppBadge(n) : navigator.clearAppBadge()).catch(()=>{});
+}
+function pushGoParse(q){   // '?go=pay.p1' → ['pay','p1']. NAV 에 있는 메뉴 · 탭이 아니면 ['home'], go 가 없으면 null
+  const v = new URLSearchParams(q).get('go');
+  if(v===null) return null;
+  const [n, t] = v.split('.');
+  return NAV.find(x=>x.id===n)?.tabs.some(x=>x.id===t) ? [n, t] : ['home'];
+}
+async function pushSelfCheck(){   // 브라우저 콘솔에서 await pushSelfCheck() 실행 (화면 상태 · 실제 로그인 흉내는 끝나면 되돌린다)
+  const ok = (c,m)=>{ if(!c) throw new Error('pushSelfCheck 실패: '+m); };
+  const base = { live:true, phone:true, sw:true, push:true, key:'K', perm:'default', ios:false, standalone:false }, st = o=>pushState({ ...base, ...o });
+  ok(st({})==='ask' && st({ perm:'granted' })==='on' && st({ perm:'denied' })==='denied', '안드로이드: 묻기 전 ask · 허용 on · 거부 denied');
+  ok(st({ live:false })==='off' && st({ phone:false })==='off' && st({ key:'' })==='off', '시연 · PC 세션 · 서버에 키 없음 → 칸 없음');
+  ok(st({ sw:false })==='off' && st({ push:false })==='off' && st({ sw:false, push:false, perm:'granted' })==='off', '브라우저가 알림을 못 하면 칸 없음');
+  ok(st({ perm:'denied' })==='denied' && st({ perm:'denied', key:'' })==='off' && st({ perm:'denied', push:false })==='off', '거부한 뒤: 묻는 칸이 아니라 안내 칸, 서버 키가 없거나 브라우저가 못 하면 그 칸도 없음');
+  ok(st({ ios:true, push:false })==='ios' && st({ ios:true, push:false, sw:false })==='ios' && st({ ios:true, push:false, perm:'denied' })==='ios', '아이폰 사파리(설치 안 함): 알림 기능이 없어도 "홈 화면에 추가" 칸이지 묻는 칸이 아니다');
+  ok(st({ ios:true, key:'' })==='off' && st({ ios:true, live:false })==='off' && st({ ios:true, phone:false })==='off', '아이폰이어도 서버에 키가 없으면 · 시연 · PC 세션이면 칸 없음');
+  ok(st({ ios:true, standalone:true })==='ask' && st({ ios:true, standalone:true, perm:'granted' })==='on' && st({ ios:true, standalone:true, perm:'denied' })==='denied', '아이폰 홈 화면 앱: 안드로이드와 같은 규칙');
+  ok(st({ perm:'granted', key:'' })==='off', '이미 허용했어도 서버에 키가 없으면 구독하지 않는다');
+  const keep = [AUTH.live, AUTH.me, KPI_LIVE.inbox, KPI_LIVE.deleg, PUSH.state, homePortalTasks, PUSH.key, PUSH.sw, currentNav], calls = [], realFetch0 = window.fetch;
+  try {
+    ['ask', 'denied', 'ios'].forEach(s=>ok(pushCard(s).includes('휴대폰 알림 켜기') && pushCard(s).includes('class="btn primary"') && pushCard(s).includes(icon('bell')), s+' 칸: 제목 · 종 · 파란 단추'));
+    ok(pushCard('ask').includes('처리할 일이 생기면<br>휴대폰으로 알려 드려요') && pushCard('ask').includes('pushEnable()') && pushCard('ask').includes('>켜기<'), 'ask 칸 문구 · [켜기]');
+    ok(pushCard('denied').includes('휴대폰 설정에서 인사포털 알림을 켜 주세요') && pushCard('denied').includes('>방법 보기<') && pushCard('denied').includes('pushHelp()') && !pushCard('denied').includes('pushEnable'), 'denied 칸: 방법 보기만 (켜기 없음)');
+    ok(pushCard('ios').includes('홈 화면에 추가하면 알림을 받을 수 있어요') && pushCard('ios').includes('>추가 방법<') && pushCard('ios').includes('installNotice()') && !pushCard('ios').includes('pushEnable'), 'ios 칸: 추가 방법 → installNotice');
+    ok(['on', 'off', ''].every(s=>pushCard(s)===''), '켠 뒤 · 못 함 · 아직 → 칸 없음');
+    PUSH.state = 'ask'; const h = homeContent(), at = h.indexOf('id="pushCard"');   // 휴대폰 폭에서만, 인사 배너 바로 다음
+    ok(isPhone() ? at > h.indexOf('</section>') && at < h.indexOf('빠른 서비스') : at < 0, '칸은 휴대폰 폭의 홈에서 배너 바로 아래에만');
+    const go = q=>String(pushGoParse(q));
+    ok(go('?go=pay.p1')==='pay,p1' && go('?x=1&go=perf.e1')==='perf,e1' && go('?go=pay.p4')==='pay,p4' && go('?go=home.dash')==='home,dash', '?go= : NAV 에 있는 메뉴 · 탭이면 그 화면으로');
+    ok(go('?go=nope.p1')==='home' && go('?go=pay.nope')==='home' && go('?go=pay')==='home' && go('?go=')==='home' && go('?go=..%2F..%2Fx')==='home', '?go= : 모르는 값은 홈');
+    ok(pushGoParse('')===null && pushGoParse('?x=1')===null, '?go= 가 없으면 아무것도 안 한다');
+    AUTH.live = true; AUTH.me = { position:'CEO' }; KPI_LIVE.inbox = [{ kind:'PLAN' }, { kind:'SCHED' }];
+    const sum = homePortalTasks().reduce((a, p)=>a+p.n, 0);
+    KPI_LIVE.deleg = false; ok(sum>=2 && pushBadgeCount()===sum, '대표이사가 직접 승인: 아이콘 숫자 = 왼쪽 메뉴 숫자의 합');
+    KPI_LIVE.deleg = true; ok(pushBadgeCount()===sum-2, '대표이사가 KPI 승인을 맡긴 동안은 처리함 몫이 빠진다 (메뉴 숫자는 그대로)');
+    AUTH.me = { position:'TEAM_LEADER' }; ok(pushBadgeCount()===sum, '대표이사가 아니면 빠지지 않는다');
+    AUTH.me = { position:'CEO' };
+    Object.entries({ setAppBadge:n=>(calls.push(n), Promise.resolve()), clearAppBadge:()=>(calls.push(0), Promise.resolve()) }).forEach(([k, v])=>Object.defineProperty(navigator, k, { value:v, configurable:true }));
+    PUSH.state = 'on'; pushBadgeSync(); ok(calls.pop()===sum-2 && !calls.length, '켜 둔 휴대폰: 아이콘 숫자를 맞춘다');
+    homePortalTasks = ()=>[]; pushBadgeSync(); ok(calls.pop()===0 && !calls.length, '할 일이 없으면 숫자를 지운다');
+    PUSH.state = 'ask'; pushBadgeSync(); AUTH.live = false; PUSH.state = 'on'; pushBadgeSync(); ok(!calls.length, '알림을 켜지 않았거나 시연이면 아이콘 숫자를 건드리지 않는다');
+    // 서버 열쇠가 바뀐 휴대폰 (가짜 pushManager) — 같은 열쇠면 구독을 그대로 쓰고, 다르면 해지한 뒤 새 열쇠로 다시 구독해 새 주소를 서버에 알린다
+    const bytes = last=>Uint8Array.from({ length:65 }, (_, i)=>i===0 ? 4 : i===64 ? last : i), b64u = u=>btoa(String.fromCharCode(...u)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''), posts = [];
+    window.fetch = async (url, o)=>(posts.push([url, JSON.parse(o.body).endpoint]), { ok:true });
+    const fake = (opts, unsubFails)=>{   // opts: 이미 있는 구독의 {applicationServerKey} (없으면 구독 없음, null 이면 열쇠를 알려 주지 않는 브라우저)
+      const log = [], make = (o, endpoint)=>({ ...(o ? { options:o } : {}), unsubscribe:async()=>{ if(unsubFails) throw new Error('x'); log.push('unsub'); cur = null; return true; }, toJSON:()=>({ endpoint, keys:{ p256dh:'p', auth:'a' } }) });
+      let cur = opts === undefined ? null : make(opts, 'https://push.example.invalid/old');
+      return { log, pushManager:{ getSubscription:async()=>cur, subscribe:async o=>{ log.push('sub:'+(pushSameKey(o.applicationServerKey, bytes(1)) ? 'new' : 'other')); return cur = make({ applicationServerKey:o.applicationServerKey.buffer }, 'https://push.example.invalid/new'); } } };
+    };
+    PUSH.key = b64u(bytes(1));
+    let r = fake(), res = await pushSubscribe(r); ok(res && r.log.join()==='sub:new' && posts.pop()[1].endsWith('/new'), '구독이 없으면 새로 구독하고 서버에 알린다');
+    r = fake({ applicationServerKey:bytes(1).buffer }); res = await pushSubscribe(r); ok(res && !r.log.length && posts.pop()[1].endsWith('/old'), '서버 열쇠가 같으면 구독을 그대로 쓴다 (해지 · 새 구독 없음)');
+    r = fake({ applicationServerKey:bytes(2).buffer }); res = await pushSubscribe(r); ok(res && r.log.join()==='unsub,sub:new' && posts.pop()[1].endsWith('/new') && !posts.length, '서버 열쇠가 다르면 해지 → 새 열쇠로 다시 구독 → 새 주소를 서버에 알린다');
+    r = fake({ applicationServerKey:new Uint8Array(64).buffer }); res = await pushSubscribe(r); ok(res && r.log.join()==='unsub,sub:new' && posts.pop()[1].endsWith('/new') && !posts.length, '열쇠 길이가 달라도 다른 열쇠다');
+    r = fake(null); res = await pushSubscribe(r); ok(res && !r.log.length && posts.pop()[1].endsWith('/old'), '구독이 열쇠를 알려 주지 않는 브라우저는 그대로 쓴다');
+    r = fake({ applicationServerKey:bytes(2).buffer }, true); res = await pushSubscribe(r); ok(res===false && !posts.length, '해지에 실패하면 false — 서버에 알리지 않는다');
+    // 앱을 다시 열 때마다 서버 열쇠를 다시 받는다 — 휴대폰은 앱을 메모리에서 되살리기만 해서 새로 고침이 없다. 열쇠가 바뀌면 PUSH.key 도 바뀌어 pushSubscribe 가 새 열쇠로 다시 구독한다
+    const served = { status:200, key:b64u(bytes(1)) }, keyGets = [];
+    window.fetch = async url=>{ if(url!=='/api/push/key') return { ok:true }; keyGets.push(1); return served.status===200 ? { ok:true, status:200, json:async()=>({ key:served.key }) } : { ok:false, status:served.status }; };
+    Object.defineProperty(navigator, 'serviceWorker', { configurable:true, value:{ register:async()=>({}), ready:Promise.resolve({ getNotifications:async()=>[],
+      pushManager:{ getSubscription:async()=>null, subscribe:async()=>({ toJSON:()=>({ endpoint:'https://push.example.invalid/n', keys:{ p256dh:'p', auth:'a' } }) }) } }) } });
+    currentNav = NAV.find(n=>n.id!=='home');   // 끝에서 화면을 다시 그리지 않게 (홈이 아니면 pushInit 은 칸만 맞춘다)
+    AUTH.live = true; AUTH.me = { kind:'phone', position:null }; PUSH.key = ''; PUSH.state = '';
+    await pushInit(); const first = PUSH.key;
+    served.key = b64u(bytes(2)); await pushInit();
+    ok(first===b64u(bytes(1)) && PUSH.key===b64u(bytes(2)) && keyGets.length===2, '앱을 다시 열 때마다 열쇠를 다시 받는다 (이미 받아 둔 열쇠가 있어도) — 열쇠를 바꾼 뒤 새로 고침 없이도 새 열쇠로');
+    served.status = 404; await pushInit();
+    ok(PUSH.key==='' && PUSH.state==='off' && keyGets.length===3, '서버에서 열쇠가 없어지면(404) 열쇠를 비우고 칸을 숨긴다');
+    window.fetch = async url=>{ if(url==='/api/push/key') throw new TypeError('offline'); return { ok:true }; };
+    PUSH.key = b64u(bytes(1)); await pushInit(); ok(PUSH.key===b64u(bytes(1)), '네트워크가 끊겨 열쇠를 못 받으면 알고 있던 열쇠를 그대로 둔다');
+    window.fetch = async url=>{ keyGets.push(1); return { ok:false }; }; AUTH.me = { kind:'pc' }; keyGets.length = 0; await pushInit(); ok(!keyGets.length, 'PC 세션이면 열쇠를 요청하지 않는다');
+    // 로그아웃 · 세션 끝: 앱 아이콘 숫자를 지운다 (다음 사람이 앞사람의 숫자를 보지 않게) — 지원하지 않거나 거절돼도 조용히
+    calls.length = 0; pushBadgeClear(); ok(calls.join()==='0', 'pushBadgeClear: 아이콘 숫자를 지운다');
+    const rejects = [], onReject = e=>{ rejects.push(1); e.preventDefault(); }; window.addEventListener('unhandledrejection', onReject);
+    Object.defineProperty(navigator, 'clearAppBadge', { value:()=>Promise.reject(new Error('x')), configurable:true }); pushBadgeClear(); await new Promise(r=>setTimeout(r, 30));
+    window.removeEventListener('unhandledrejection', onReject); ok(!rejects.length, '거절돼도 처리 안 된 거절(unhandledrejection)이 남지 않는다');
+    Object.defineProperty(navigator, 'clearAppBadge', { value:()=>{ throw new Error('x'); }, configurable:true }); pushBadgeClear(); delete navigator.clearAppBadge; pushBadgeClear(); ok(true, '던지는 기기 · 지원하지 않는 기기에서도 오류가 나지 않는다');
+    Object.defineProperty(navigator, 'clearAppBadge', { value:()=>(calls.push(0), Promise.resolve()), configurable:true });
+    window.fetch = async ()=>({ ok:true }); calls.length = 0; AUTH.live = true; authLogout();
+    ok(calls.join()==='0', 'authLogout: 서버 답을 기다리지 않고 바로 아이콘 숫자를 지운다');
+    await new Promise(r=>setTimeout(r, 30));
+    ok(calls.join()==='0,0' && AUTH.locked && AUTH.live===false, 'authLogout 이 끝나면 authLock 이 한 번 더 지운다 (잠금 화면)');
+    calls.length = 0; AUTH.locked = false; authLock('login'); ok(calls.join()==='0' && AUTH.locked, '세션이 끝나 authLock 만 불려도(401) 아이콘 숫자를 지운다');
+  } finally {
+    [AUTH.live, AUTH.me, KPI_LIVE.inbox, KPI_LIVE.deleg, PUSH.state, homePortalTasks, PUSH.key, PUSH.sw, currentNav] = keep; window.fetch = realFetch0;
+    delete navigator.setAppBadge; delete navigator.clearAppBadge; delete navigator.serviceWorker;
+    if(AUTH.locked || document.getElementById('authLock')){ AUTH.locked = false; document.getElementById('authLock')?.remove(); renderContent(); }   // 로그아웃 검사가 가린 화면을 되돌린다
+  }
+  return 'pushSelfCheck 통과';
 }
 
 /* ---------------- 탕비실 ----------------
@@ -12282,7 +12504,7 @@ let currentNav = NAV[0], currentTab = NAV[0].tabs[0];
    탭 id → 지금 역할이 처리할 일 건수. 끝내면 0이 되어 숫자가 사라진다. 왼쪽 메뉴에는 탭 합계를 보인다.
    안 본 급여명세서(p1)는 누가 봤는지 서버가 기억하므로 실제 로그인에서만 센다. */
 function evTodo(part){   // 평가 진행에서 처리할 일 (평가가 시작된 뒤). 'me' = 내 일: 자기평가 · 내가 평가할 사람 · 윗사람이 고친 내 평가 확인 · 본부장 등급 배정 · 대표이사 확인 / 'admin' = HR 관리: 확정할 묶음 · 마감 알림 · 근태 입력 · 대표이사가 맡긴 일 / 없으면 합
-  if(!evStarted()) return 0;
+  if(AUTH.live || !evStarted()) return 0;   // 실제 로그인은 평가가 포털 밖이라 0 (설계 §7.1) — 메뉴 · 홈 · HR 전환 단추가 모두 이 함수를 지난다
   const me = evMe(), n = (...st)=>EV_POOLS.filter(k=>st.includes(evPoolState(k))).length;
   const mine = (me && !me.out && !evIsLine(me) && me.stage==='SELF' && evKpi(me).length && evSelfOpen() ? 1 : 0)
     + evActive().filter(p=>p.stage==='SCORE' && evEvaluatorOf(p)===kpiRole).length + evEditNews().length
@@ -12299,7 +12521,7 @@ const TODO = {
     : kpiWaiting().length + (kpiSheets[kpiRole]?.rejectNote ? 1 : 0) + kvMemoTodo(kvMe()),   // 승인할 KPI + 반려되어 다시 쓸 내 KPI + 확인할 메모
   e4: ()=>!kvCanUse() ? 0 : AUTH.live ? kpiRev('check') + kpiRev('replies') : kvReplyTodo(kvMe()),   // 실제 로그인: 그 달 기록을 확인 안 한 바로 아래 사람 + 내가 쓴 메모에 새 답글이 온 사람 (처리함 review) / 시연: 새 답글이 온 사람 수
   e2: ()=>evTodo(),
-  e3: ()=>(kpiIsHr() ? evPeople.filter(p=>p.appeal && p.appeal.status==='OPEN').length : 0) + evPeople.filter(p=>p.appeal && p.appeal.status==='CEO' && evCeoActs(p)).length,   // HR: 답변할 이의 신청 / 대표이사(또는 맡은 HR): 확인할 등급 변경
+  e3: ()=>AUTH.live ? 0 : (kpiIsHr() ? evPeople.filter(p=>p.appeal && p.appeal.status==='OPEN').length : 0) + evPeople.filter(p=>p.appeal && p.appeal.status==='CEO' && evCeoActs(p)).length,   // HR: 답변할 이의 신청 / 대표이사(또는 맡은 HR): 확인할 등급 변경
 };
 function todoCount(tab){ return TODO[tab.id] ? TODO[tab.id]() : 0; }
 function navBadge(n){ return n ? `<b class="nav-badge" aria-label="처리할 일 ${n}건">${n}</b>` : ''; }
@@ -12334,6 +12556,7 @@ function renderSidebar(){
     <div class="nav-item ${n.id===currentNav.id?'active':''}${n.id===PC_ONLY_NAV?' pc-only':''}" onclick="selectNav('${n.id}')" ${n.id===currentNav.id?'aria-current="page"':''}>
       ${icon(n.icon)}<span>${n.label}</span>${n.id===PC_ONLY_NAV?'<b class="nav-pc">PC 전용</b>':''}${navBadge(n.tabs.reduce((a,t)=>a+todoCount(t), 0))}
     </div>`).join('');
+  pushBadgeSync();   // 휴대폰 앱 아이콘 숫자도 메뉴 숫자와 함께
 }
 /* ---------------- 휴대폰에서는 평가·성과를 열지 않는다 ----------------
    2026-10-08 인사담당자 지시: 작성과 평가의 정확성을 위해 PC에서만 작업한다.
@@ -12681,6 +12904,7 @@ function authRole(me){   // 서버의 직책·HR 권한 → 화면이 쓰는 역
 }
 function authLock(kind){   // 로그아웃 · 세션 끝(401)에도 부른다 — 가린 화면 밑에 급여 금액 · 명단이 남지 않게 지우고 다시 그리지 않는다(renderContent)
   AUTH.locked = true;
+  pushBadgeClear();   // 앱 아이콘 숫자도 (같은 휴대폰을 다음 사람이 쓸 수 있다)
   document.getElementById('contentArea').innerHTML = '';   // #payAmt 도 사라져 payTick 이 멈춘다
   orgCloseModal(true);   // 급여대장 확인 창 · 미리 보기 등
   ps.pick = null; ps.prev = null; Object.assign(PAY_LIVE, { state:'', who:null, slips:[], mine:[] }); ctDrop();
@@ -12718,6 +12942,12 @@ async function authBoot(){
   const kpi = kpiLiveLoad();   // 메뉴 · 홈의 처리할 KPI 숫자 — 기다리지 않는다 (다 오면 다시 그린다)
   renderSidebar(); renderContent();
   if(code) installNotice(null, true);   // 방금 등록한 휴대폰: 홈 화면에 추가하는 순서
+  const go = pushGoParse(location.search);   // 알림을 눌러 들어왔다 (/?go=메뉴.탭) — 그 화면으로. 오늘 할 일 창은 그 위에 덮이지 않게 띄우지 않는다(todayPopAuto)
+  if(go){
+    PUSH.go = true; goTo(...go);
+    const u = new URL(location.href); u.searchParams.delete('go'); history.replaceState(null, '', u.pathname + u.search + u.hash);   // 새로 고침 · 앱 다시 열기에서 또 옮기지 않게
+  }
+  pushInit();   // 휴대폰 알림 — 기다리지 않는다 (휴대폰 세션일 때만 한다)
   return kpi;   // 오늘 할 일 창(todayPopAuto)은 KPI까지 온 뒤에 — 처리할 KPI 줄이 빠지지 않게
 }
 // ponytail: 창을 닫았는지는 서버가 알 수 없어 화면이 판단한다. 개발자 도구로 표시를 만들면 넘어갈 수 있다 — 세션 쿠키는 브라우저를 끄면 사라지고, 서버 만료(4시간·12시간)는 그대로
@@ -12728,6 +12958,7 @@ function authEntered(){   // 하이웍스 메뉴로 연 창인가. 표시는 창
   catch(e){ return true; }   // 창 저장소를 못 쓰는 브라우저는 막지 않는다
 }
 function authLogout(){
+  pushBadgeClear();   // 서버 답을 기다리지 않고 바로 (authLock 이 끝에 한 번 더)
   fetch('/api/auth/logout', { method:'POST' }).catch(()=>{}).finally(()=>{ AUTH.live = false; authLock('out'); });
 }
 const authFetch = window.fetch.bind(window);   // 쓰는 도중 로그인이 끝나면(4시간 쉼 · HR이 꺼 둠 등) 다음 요청에서 바로 안내한다

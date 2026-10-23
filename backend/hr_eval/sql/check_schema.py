@@ -117,6 +117,8 @@ def apply_schema(path: str) -> sqlite3.Connection | None:
         "kpi_memo_replies",
         "kpi_mutes",
         "game_hours",
+        "push_subscriptions",
+        "push_morning",
     }
     missing = expected - tables
     _report(not missing, f"테이블 {len(expected)}개 생성", f"누락: {sorted(missing)}")
@@ -1292,6 +1294,58 @@ def check_contract_live_tables(conn: sqlite3.Connection) -> None:
     _report(idx is not None, "직원별 찾기 색인이 user_id 칸을 걸고 있음")
 
 
+def check_push_tables(conn: sqlite3.Connection) -> None:
+    """휴대폰 알림 표 (017 — 판 17). 주소 · 키 값은 전부 가상(example.invalid). 누가 받는지(살아 있는 휴대폰 세션 · 활성 직원)는 표가 아니라 backend/push.py targets 가 거르고 auth_check.py 가 본다."""
+    print("29. 휴대폰 알림 (017)")
+    ver = conn.execute("PRAGMA user_version").fetchone()[0]
+    _report(ver >= 17, f"판 번호가 17 이상 — {ver}", f"실제 {ver}")
+    emp = conn.execute(
+        "INSERT INTO users (employee_no, name, email, department_id)"
+        " VALUES ('T034', '가상알림직원', 't034@example.invalid', (SELECT id FROM departments WHERE code='DIV1')) RETURNING id"
+    ).fetchone()[0]
+    ses = ("INSERT INTO sessions (token_hash, user_id, created_at, last_seen_at, expires_at, kind)"
+           " VALUES (?, ?, '2027-03-02T09:00:00Z', '2027-03-02T09:00:00Z', '2027-04-01T09:00:00Z', 'phone')")
+    conn.execute(ses, ("e" * 64, emp))
+    conn.execute(ses, ("c" * 64, emp))  # 구독 없는 세션 — 없는 직원 거부를 따로 보려고
+    sub = "INSERT INTO push_subscriptions (token_hash, user_id, endpoint, p256dh, auth, created_at) VALUES (?, ?, ?, ?, ?, '2027-03-02T09:01:00Z')"
+    ep = "https://push.example.invalid/send/abc"
+    conn.execute(sub, ("e" * 64, emp, ep, "k", "a"))
+    _report(True, "휴대폰 세션의 구독 저장")
+
+    def rej(sql: str, params: tuple, word: str) -> tuple[bool, str]:
+        ok, msg = _rejects(conn, sql, params)
+        return ok and word in msg, msg
+
+    for args, why, word in ((("e" * 64, emp, ep, "k2", "a2"), "같은 세션에 두 번째 구독(덮어쓰기는 앱이 한다)", "UNIQUE"),
+                            (("9" * 64, emp, ep, "k", "a"), "없는 세션", "FOREIGN KEY"),
+                            (("c" * 64, 9999, ep, "k", "a"), "없는 직원", "FOREIGN KEY"),
+                            ((None, emp, ep, "k", "a"), "세션 번호 비어 있음(NULL 은 외래키 검사를 건너뛴다)", "NOT NULL"),
+                            (("8" * 64, emp, None, "k", "a"), "주소 비어 있음", "NOT NULL"),
+                            (("8" * 64, emp, ep, None, "a"), "공개키 비어 있음", "NOT NULL"),
+                            (("8" * 64, emp, ep, "k", None), "비밀값 비어 있음", "NOT NULL")):
+        ok, msg = rej(sub, args, word)
+        _report(ok, f"구독 {why} 거부", msg)
+    idx = conn.execute("SELECT 1 FROM pragma_index_info('idx_push_subscriptions_user') WHERE name = 'user_id'").fetchone()
+    _report(idx is not None, "직원별 찾기 색인이 user_id 칸을 걸고 있음")
+
+    conn.execute("DELETE FROM sessions WHERE token_hash = ?", ("e" * 64,))
+    gone = conn.execute("SELECT COUNT(*) FROM push_subscriptions WHERE token_hash = ?", ("e" * 64,)).fetchone()[0]
+    _report(gone == 0, "세션이 지워지면 구독도 함께 지워짐")
+    conn.execute(ses, ("d" * 64, emp))
+    conn.execute(sub, ("d" * 64, emp, ep, "k", "a"))
+    conn.execute("DELETE FROM users WHERE id = ?", (emp,))
+    left = conn.execute("SELECT (SELECT COUNT(*) FROM sessions WHERE user_id = ?), (SELECT COUNT(*) FROM push_subscriptions WHERE user_id = ?)", (emp, emp)).fetchone()
+    _report(left == (0, 0), "직원이 지워지면 세션 · 구독도 함께 지워짐 (구독이 지우기를 막지 않음)", f"실제 {left}")
+
+    mo = "INSERT INTO push_morning (day, people, ran_at) VALUES (?, ?, '2027-03-02T00:00:05Z')"
+    conn.execute(mo, ("2027-03-02", 3))
+    _report(True, "아침 묶음 돌린 날 저장")
+    for args, why, word in ((("2027-03-02", 5), "같은 날 두 번째", "UNIQUE"), (("2027-03-03", None), "보낸 사람 수 비어 있음", "NOT NULL"),
+                            ((None, 1), "날짜 비어 있음", "NOT NULL")):
+        ok, msg = rej(mo, args, word)
+        _report(ok, f"아침 묶음 {why} 거부", msg)
+
+
 def main() -> int:
     print("=" * 62)
     print("SQLite 스키마 적용 + 제약조건 동작 검사")
@@ -1318,6 +1372,7 @@ def main() -> int:
             check_kpi_review_tables(conn)
             check_game_hours_table(conn)
             check_contract_live_tables(conn)
+            check_push_tables(conn)
         finally:
             conn.close()
 
