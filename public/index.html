@@ -9269,19 +9269,20 @@ function pinTouch(){   // 움직임(포털 어디서든) — 5분을 다시 센�
   if(pinUnlocked() && PIN.last - PIN.sent>=PIN_ALIVE_MS){ PIN.sent = PIN.last; fetch('/api/pay/alive', { method:'POST' }).catch(()=>{}); }
 }
 ['pointermove', 'pointerdown', 'keydown', 'wheel', 'touchstart'].forEach(e=>document.addEventListener(e, pinTouch, { passive:true }));
-document.addEventListener('scroll', pinTouch, { capture:true, passive:true });   // 안쪽 칸의 스크롤은 문서로 올라오지 않는다 — capture로 받는다
+document.addEventListener('scroll', ()=>{ if(!PIN.veiled) pinTouch(); }, { capture:true, passive:true });   // 안쪽 칸의 스크롤은 문서로 올라오지 않는다 — capture로 받는다. 가린 동안은 뺀다: 가림이 다시 그려 짧아진 화면을 브라우저가 스크롤해도(사람 없음) 움직임이 아니다 — 사람의 스크롤은 휠 · 터치 · 키 · 누르기로 온다
 function pinTick(){   // 5초마다(authBoot) · 화면이 다시 보일 때: 쉰 시간이 5분이면 잠그고, 1분이면 가린다
   if(!pinUnlocked()) return;
   const idle = Date.now() - PIN.last;
   if(idle>=PIN_LOCK_MS) pinLockNow();
   else if(idle>=PIN_VEIL_MS && !PIN.veiled) pinVeil();
 }
-function pinVeil(){   // 1분 가림 (그림 6): 금액을 가리고 열린 명세서 · 원본 PDF를 닫는다. 급여명세서 · 원천징수영수증의 내 화면은 다시 그리고, 그 밖(계약서 서명 · HR 올리기 ·
-  // 연봉 인상 계산 · 떠 있는 확인 창)은 다시 그리지 않고 가림막만 덮는다 — 그린 서명 · 치던 칸 · 확인 창이 그대로 남게(설계 2장). 다른 메뉴면 값만 바꾼다
+function pinVeil(){   // 1분 가림 (그림 6): 금액을 가리고 열린 명세서 · 원본 PDF를 닫는다. 급여명세서 · 원천징수영수증의 내 화면은 다시 그린다 — 떠 있는 확인 창은 body에 있어
+  // 다시 그려도 창 · 친 글 · 초점이 남으니, 그때는 그 위에 가림막도 덮는다. 그 밖(계약서 서명 · HR 올리기 · 연봉 인상 계산)은 다시 그리지 않고 가림막만 — 그린 서명 · 치던 칸이
+  // 그대로 남게(설계 2장). 다른 메뉴면 값만 바꾼다
   PIN.veiled = true; payShow = false; payOpen = null; whOrig = null;
   if(currentNav.id!=='pay') return;
   const t = currentTab.id;
-  if(!document.getElementById('orgModal') && (t==='p1' && ps.view!=='admin' || t==='p3' && wh.view!=='admin')) return renderContent();
+  if(t==='p1' && ps.view!=='admin' || t==='p3' && wh.view!=='admin'){ renderContent(); if(!document.getElementById('orgModal')) return; }
   if(!document.getElementById('pinVeil')) document.body.insertAdjacentHTML('beforeend', `<button type="button" class="pl-veil" id="pinVeil" onclick="pinVeilOff()"><span>${icon('eyeOff')}1분 동안 움직임이 없어 가렸어요. 누르면 다시 보여요.</span></button>`);
   pinBandPaint();
 }
@@ -9311,7 +9312,7 @@ async function pinSelfCheck(){   // 브라우저 콘솔에서 await pinSelfCheck
   const ok = (c, m)=>{ if(!c) throw new Error('pinSelfCheck 실패: '+m); };
   const keep = { fetch:window.fetch, open:window.open, clip:Object.getOwnPropertyDescriptor(navigator, 'clipboard'), phone:isPhone, live:AUTH.live, me:AUTH.me, locked:AUTH.locked, role:kpiRole, nav:currentNav, tab:currentTab,
     pin:{ ...PIN }, cnt:{ ...PAY_COUNTS }, pay:{ ...PAY_LIVE }, wh:{ ...WH_LIVE }, ct:{ ...CT_LIVE }, show:payShow, po:payOpen, ps:[ps.state, ps.view], whs:[wh.state, wh.view],
-    rz:{ ...rz }, msg:kpiMsg, pad:ctPadDirty, wo:whOrig, wsPull, pushInit, progAt:kpiProgAt };
+    rz:{ ...rz }, msg:kpiMsg, pad:ctPadDirty, wo:whOrig, wsPull, pushInit, progAt:kpiProgAt, chr:PAY_CHAR_MEM, wy:whYear };
   const calls = [], order = [], opened = [], copied = [], reply = {}, wait = async (n = 5)=>{ for(let i = 0; i<n; i++) await new Promise(r=>setTimeout(r, 0)); };
   const json = (b, status = 200)=>new Response(JSON.stringify(b), { status, headers:{ 'Content-Type':'application/json' } });
   const box = ()=>document.getElementById('pinBox'), txt = ()=>(box()?.textContent || '').replace(/\s+/g, ' '), toast = ()=>document.getElementById('wsToast')?.textContent || '';
@@ -9472,6 +9473,12 @@ async function pinSelfCheck(){   // 브라우저 콘솔에서 await pinSelfCheck
     ok(bar().querySelector('button[onclick="pinLockNow()"]'), '가린 띠에도 지금 잠그기');
     payEye(); ok(PIN.veiled===false && payShow===true && !bar().classList.contains('warn'), '눈 모양(payEye)을 누르면 다시 보이고 띠도 돌아온다');
     ok([payHero, whBody].every(f=>String(f).includes('onclick="payEye()"')), '두 눈 단추(급여명세서 · 원천징수영수증)가 payEye를 부른다');
+    const sc = document.getElementById('contentArea'), frames = ()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
+    PIN.last = Date.now(); payShow = true; payOpen = slip.label; renderContent(); await wait(); sc.scrollTop = sc.scrollHeight; await frames(); const top = sc.scrollTop;
+    calls.length = 0; PIN.sent = Date.now() - 61e3; idle(61); const was = PIN.last; await frames(); await frames();
+    ok(top>0 && sc.scrollTop<top && PIN.veiled, '(열린 명세서까지 내려 둔 채 가림 — 다시 그려 짧아진 화면을 브라우저가 스크롤한다)');
+    ok(PIN.last===was && !posts('/api/pay/alive'), '가림이 다시 그려 생긴 스크롤은 움직임이 아니다 (쉰 시간 그대로 · 서버에 아직 있어요를 보내지 않는다)');
+    payEye(); PIN.last = Date.now();
     PIN.last = Date.now(); currentTab = currentNav.tabs[2]; renderContent(); await wait(); whOrig = { year:2025, who:null, bytes:null, state:'loading' };
     idle(61); ok(whOrig===null && PIN.veiled && !veil() && bar()?.classList.contains('warn'), '원천징수영수증: 원본 PDF 보기를 닫고 다시 그린다');
     pinVeilOff(); PIN.last = Date.now();
@@ -9489,16 +9496,28 @@ async function pinSelfCheck(){   // 브라우저 콘솔에서 await pinSelfCheck
     ok(veil() && rin.isConnected && rin.value==='7.5', '연봉 인상 계산: 치던 칸(같은 요소 · 값) 그대로 · 가림막'); pinVeilOff(); PIN.last = Date.now();
     ps.view = 'admin'; currentTab = currentNav.tabs[0]; renderContent(); await wait(); const adm = document.getElementById('paySeg');
     idle(61); ok(veil() && adm && adm.isConnected, 'HR 명세서 올리기 화면: 다시 그리지 않고 가림막'); pinVeilOff(); PIN.last = Date.now();
-    kpiRole = 'emp'; ps.view = 'me'; renderContent();
-    orgModal('<div class="ps-cf"><input id="pinTestIn" value="가상"></div>'); const mo = modal();
+    kpiRole = 'emp'; ps.view = 'me'; PAY_CHAR_MEM = 'm';
+    const eyeLab = ()=>document.querySelector('#contentArea .pay-eye')?.getAttribute('aria-label'), typed = ()=>document.getElementById('pinTestIn');
+    const wr = { ...whRows('emp')[0], seen:true }; currentTab = currentNav.tabs[2]; Object.assign(WH_LIVE, { state:'ok', who:null, years:[wr], mine:[wr] }); whYear = wr.year;
+    whOrig = { year:wr.year, who:null, bytes:null, state:'loading' }; payShow = true; renderContent();
+    ok(area().includes('원본 PDF를 불러오는 중') && eyeLab()==='금액 가리기', '(원천징수영수증: 원본 보기를 열고 금액이 보이는 채로)');
+    orgModal('<div><input id="pinTestIn" value="가상"></div>'); let mo = modal(); typed().value = '가상2'; idle(61);
+    ok(whOrig===null && !area().includes('원본 PDF를 불러오는 중') && eyeLab()==='금액 보기' && modal()===mo && typed()?.value==='가상2' && document.activeElement===typed() && veil(), '원천징수영수증 + 확인 창: 원본 보기를 닫아 다시 그려 가리고, 창 · 친 글 · 초점은 그대로 · 가림막');
+    veil().click(); ok(eyeLab()==='금액 보기' && !area().includes('원본 PDF를 불러오는 중'), '가림막을 걷어도 금액 · 원본은 가린 그대로 (눈 단추로 다시 보인다)');
+    orgCloseModal(); PIN.last = Date.now(); currentTab = currentNav.tabs[0];
+    payShow = true; payOpen = slip.label; renderContent(); await wait();
+    ok(document.getElementById('paySlip') && eyeLab()==='금액 가리기' && area().includes(amt), '(급여명세서: 명세서를 열고 금액이 보이는 채로)');
+    orgModal('<div class="ps-cf"><input id="pinTestIn" value="가상"></div>'); mo = modal(); typed().value = '가상2';
     idle(61);
-    ok(modal()===mo && document.getElementById('pinTestIn')?.value==='가상' && veil() && +getComputedStyle(veil()).zIndex > +getComputedStyle(mo).zIndex, '확인 창이 떠 있으면: 창 그대로 · 가림막이 그 위');
+    ok(!document.getElementById('paySlip') && eyeLab()==='금액 보기' && !area().includes(amt), '급여명세서 + 확인 창: 다시 그려 열린 명세서를 닫고 금액을 가린다 (눈 단추는 "금액 보기")');
+    ok(modal()===mo && typed()?.value==='가상2' && document.activeElement===typed() && veil() && +getComputedStyle(veil()).zIndex > +getComputedStyle(mo).zIndex, '확인 창이 떠 있으면: 창 · 친 글 · 초점 그대로 · 가림막이 그 위');
 
     // ----- 아직 있어요 (움직임 → /api/pay/alive, 1분에 한 번까지) -----
     calls.length = 0; PIN.sent = Date.now() - 61e3; pinTouch(); pinTouch(); await wait();
     ok(posts('/api/pay/alive')===1 && Date.now() - PIN.last < 1e3, '움직이면 마지막 움직임을 적고, 1분 넘었으면 한 번 알린다 (곧바로 또 움직여도 한 번)');
     const lastWas = PIN.last; PIN.last = 0; document.dispatchEvent(new Event('wheel')); ok(Date.now() - PIN.last < 1e3, '휠도 움직임');
-    PIN.last = 0; document.getElementById('contentArea').dispatchEvent(new Event('scroll')); ok(Date.now() - PIN.last < 1e3, '안쪽 스크롤도 움직임 (capture)'); PIN.last = lastWas;
+    PIN.veiled = false; PIN.last = 0; sc.dispatchEvent(new Event('scroll')); ok(Date.now() - PIN.last < 1e3, '안쪽 스크롤도 움직임 (capture)');
+    PIN.veiled = true; PIN.last = 0; sc.dispatchEvent(new Event('scroll')); ok(PIN.last===0, '가린 동안의 스크롤은 움직임이 아니다 (휠 · 터치 · 키 · 누르기만)'); PIN.last = lastWas;
 
     // ----- 5분 잠금 — 로그아웃처럼 하던 것을 지우고 잠금 창 -----
     rz.pay = { file:'가상.xlsx', people:[] }; rz.edited = true; kpiMsg = { msg:'가상 글', type:'danger' }; PAY_LIVE.mine = [slip]; calls.length = 0;
@@ -9531,7 +9550,7 @@ async function pinSelfCheck(){   // 브라우저 콘솔에서 await pinSelfCheck
     AUTH.live = keep.live; AUTH.me = keep.me; AUTH.locked = keep.locked; kpiRole = keep.role; currentNav = keep.nav; currentTab = keep.tab;
     Object.assign(PIN, keep.pin); Object.assign(PAY_COUNTS, keep.cnt); Object.assign(PAY_LIVE, keep.pay); Object.assign(WH_LIVE, keep.wh); Object.assign(CT_LIVE, keep.ct);
     payShow = keep.show; payOpen = keep.po; [ps.state, ps.view] = keep.ps; [wh.state, wh.view] = keep.whs;
-    Object.assign(rz, keep.rz); kpiMsg = keep.msg; ctPadDirty = keep.pad; whOrig = keep.wo; wsPull = keep.wsPull; pushInit = keep.pushInit; kpiProgAt = keep.progAt; delete document.visibilityState;
+    Object.assign(rz, keep.rz); kpiMsg = keep.msg; ctPadDirty = keep.pad; whOrig = keep.wo; wsPull = keep.wsPull; pushInit = keep.pushInit; kpiProgAt = keep.progAt; PAY_CHAR_MEM = keep.chr; whYear = keep.wy; delete document.visibilityState;
     document.getElementById('pinVeil')?.remove(); document.getElementById('authLock')?.remove(); orgCloseModal(true);
     document.getElementById('wsToast')?.remove(); renderContent();
   }
