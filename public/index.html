@@ -779,60 +779,24 @@
   .kv{ display:grid; grid-template-columns:minmax(0,1fr); gap:14px; }
   .kv .hm-tile{ cursor:default; }
   .kv .hm-tile em{ white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-  .kv-legend{ display:flex; flex-wrap:wrap; gap:6px 22px; align-items:center; font-size:var(--fs-xs); color:var(--text-secondary); }
-  .kv-legend span{ display:inline-flex; align-items:center; gap:6px; }
-  .kv-legend b{ color:var(--text-primary); }
-  .kv-legend i{ display:inline-block; width:2px; height:14px; background:var(--text-primary); opacity:.55; border-radius:1px; }
-  .kv-cols{ display:grid; grid-template-columns:minmax(410px,.8fr) minmax(0,1fr); gap:14px; align-items:start; }
-  .kv-cols > .card:last-child{ position:sticky; top:0; max-height:calc(100dvh - 130px); overflow-y:auto; }   /* 명단이 길어도 고른 사람의 KPI가 따라오고, 길면 이 칸 안에서 넘긴다 */
-  @media (max-width:1180px){ .kv-cols{ grid-template-columns:minmax(0,1fr); } .kv-cols > .card:last-child{ position:static; max-height:none; overflow:visible; } }
   .kv-tools{ display:flex; align-items:center; gap:8px; margin-bottom:10px; flex-wrap:wrap; }
   .kv-tools .ws-seg button.on{ background:var(--coral-text); color:#fff; }
   .kv-q{ width:130px; border:1px solid var(--border); border-radius:var(--radius-sm); padding:6px 9px; font:inherit; font-size:var(--fs-xs); background:var(--surface); color:var(--text-primary); }
   .kv-only{ border:1px solid var(--border); border-radius:999px; background:var(--surface); color:var(--text-secondary); font:inherit; font-size:var(--fs-xs); font-weight:600; padding:5px 11px; cursor:pointer; }
   .kv-only.on{ background:var(--bg-danger); border-color:#F0C4C7; color:var(--danger); }
-  .kv-row{ display:grid; grid-template-columns:14px minmax(0,1fr) 110px 44px; align-items:center; gap:10px; padding:10px 8px; border-bottom:1px solid var(--border); border-radius:var(--radius-sm); cursor:pointer; }
-  .kv-row:last-child{ border-bottom:none; }
-  .kv-row:hover{ background:var(--accent-soft); }
-  .kv-row.on{ background:var(--accent-light); }
-  .kv-row.lv1{ padding-left:26px; } .kv-row.lv2{ padding-left:44px; }
-  .kv-caret{ display:flex; color:var(--text-muted); } .kv-caret svg{ width:14px; height:14px; }
-  .kv-name{ display:flex; align-items:center; gap:6px; min-width:0; height:20px; font-size:var(--fs-md); font-weight:600; white-space:nowrap; }
-  .kv-name small{ font-size:var(--fs-xs); font-weight:500; color:var(--text-muted); overflow:hidden; text-overflow:ellipsis; }
-  .kv-sub{ font-size:var(--fs-xs); color:var(--text-muted); margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .kv-mk{ flex-shrink:0; display:inline-flex; align-items:center; justify-content:center; width:20px; height:20px; border-radius:50%; }
   .kv-mk svg{ width:12px; height:12px; }
   .kv-mk.bell{ background:var(--coral-text); color:#fff; }
   .kv-mk.clock{ background:#FFF1D6; color:#8A5A00; }
   .kv-mk.memo{ background:var(--accent-soft); color:var(--accent); }
   .kv-cnt{ flex-shrink:0; padding:1px 7px; border-radius:999px; background:var(--bg-danger); color:var(--danger); font-size:11px; font-weight:700; }
-  .kv-tag{ font-size:var(--fs-xs); color:var(--text-muted); text-align:right; white-space:nowrap; }
   .kv-bar{ position:relative; height:8px; border-radius:4px; background:#E8EEF5; }
   .kv-bar i{ display:block; height:100%; border-radius:4px; background:#3E9A6B; }
   .kv-bar.slow i{ background:var(--coral-text); }
   .kv-bar u{ position:absolute; top:-3px; bottom:-3px; width:2px; margin-left:-1px; background:var(--text-primary); opacity:.55; border-radius:1px; }   /* 오늘 기준 기대 진행률 */
-  .kv-pct{ text-align:right; font-size:var(--fs-md); font-weight:700; }
-  .kv-pct.slow, .kv-big.slow, .kv-ibar b.slow{ color:var(--coral-text); }
-  .kv-empty{ padding:70px 20px; text-align:center; color:var(--text-muted); line-height:1.8; }
-  .kv-empty b{ display:block; color:var(--text-secondary); font-size:var(--fs-md); }
-  .kv-back{ display:inline-block; margin-bottom:10px; font-size:var(--fs-xs); }
-  .kv-head{ display:flex; align-items:flex-start; justify-content:space-between; gap:16px; }
-  .kv-head h3{ display:flex; align-items:center; gap:7px; margin:0; font-size:var(--fs-lg); }
-  .kv-big{ font-size:var(--fs-2xl); font-weight:700; letter-spacing:-.02em; line-height:1; white-space:nowrap; }
-  .kv-big small{ font-size:var(--fs-md); font-weight:600; color:var(--text-secondary); margin-left:2px; }
-  .kv-meter{ position:relative; margin:16px 0 0; padding-bottom:22px; }
-  .kv-meter .kv-bar{ height:12px; border-radius:6px; } .kv-meter .kv-bar i{ border-radius:6px; }
-  .kv-meter em{ position:absolute; top:18px; transform:translateX(-50%); font-style:normal; font-size:var(--fs-xs); color:var(--text-secondary); white-space:nowrap; }
   .kv-alert{ display:flex; align-items:center; gap:8px; margin-top:8px; padding:9px 12px; border-radius:var(--radius-sm); background:var(--bg-danger); color:var(--danger); font-weight:600; }
   .kv-alert.amber{ background:#FFF7E8; color:#8A5A00; }
   .kv-alert svg{ width:15px; height:15px; flex-shrink:0; }
-  .kv-items{ table-layout:fixed; margin-top:14px; }
-  .kv-items th, .kv-items td{ padding-left:6px; padding-right:6px; }
-  .kv-ibar{ display:grid; grid-template-columns:minmax(0,1fr) 40px; align-items:center; gap:8px; }
-  .kv-ibar b{ text-align:right; }
-  .kv-why{ display:flex; align-items:flex-start; gap:5px; margin-top:5px; padding:5px 8px; border-radius:var(--radius-sm); background:#FFF7E8; color:#6B4A00; font-size:var(--fs-xs); line-height:1.5; }
-  .kv-why svg{ width:13px; height:13px; flex-shrink:0; margin-top:2px; }
-  .kv-foot{ margin-top:12px; padding-top:12px; border-top:1px solid var(--border); }
   .kv-sec{ margin:20px 0 4px; font-size:var(--fs-sm); font-weight:700; display:flex; align-items:center; justify-content:space-between; gap:10px; }
   .kv-sec small{ font-weight:500; color:var(--text-muted); font-size:var(--fs-xs); }
   .kv-memo{ padding:9px 0; border-bottom:1px solid var(--border); line-height:1.6; }
@@ -3761,7 +3725,7 @@ function kpiKey(item){ return JSON.stringify({...item, progress:undefined, why:u
 function kpiProgress(goals){ const items = goals.flatMap(g=>g.items); return Math.round(items.reduce((a,i)=>a+(+i.weight||0)*(+i.progress||0),0)/100); }   // 가중 달성률 (가중치 합 100 전제)
 
 const kpiPeriod = { editFrom:kpiDay(-7), editTo:kpiDay(7), evalFrom:KPI_YEAR+'-12-01', selfTo:KPI_YEAR+'-12-05', evidDue:KPI_YEAR+'-12-07', scoreTo:KPI_YEAR+'-12-09', gradeTo:KPI_YEAR+'-12-11', ceoTo:KPI_YEAR+'-12-13', evalTo:KPI_YEAR+'-12-15' };   // 평가는 단계마다 마감일이 있다 (HR이 평가 진행 탭의 진행표에서 정한다): 평가 시작 evalFrom · 자기평가 selfTo · 증빙 evidDue · 평가자 평가 scoreTo · 등급 배정 gradeTo · 대표이사 확인 ceoTo · HR 확정 evalTo
-const kpiAlarm = { gap:20, stale:30 };   // KPI 현황 알람 기준 (HR이 바꾼다): 기대 진행률보다 gap(%p) 이상 낮으면 부진, stale일 넘게 진행률을 안 고치면 갱신 필요
+const kpiAlarm = { gap:20 };   // KPI 현황 알람 기준 (HR이 바꾼다): 기대 진행률보다 gap(%p) 이상 낮으면 부진
 const kpiPlan = [   // 올해 경영계획 목표 [목표, 내용] (가상 값). HR이 등록·수정하고 대표이사·본부장·HR이 본다 (kpiPlanCanSee)
   ['매출 성장','전사 매출 전년 대비 15% 성장'], ['해외 시장 확대','신규 진출 국가 3곳 확보'], ['차세대 제품','차세대 디텍터 연내 출시'], ['품질·인증','고객 불량 30% 감소, 해외 인증 유지'] ];
 const kpiSeed = [
@@ -3965,7 +3929,6 @@ function kpiHrPanel(){
     <div class="card-title"><span>KPI 현황 알람 기준 (HR)</span><span class="more" onclick="goTo('perf','e4')">KPI 현황 보기 →</span></div>
     <div class="field-row" style="margin-bottom:0;">
       <div class="field"><label>부진 — 오늘 기준 기대 진행률(지금 ${kvExpect()}%)보다 이만큼 낮으면 빨간 종</label><div style="display:flex; gap:8px; align-items:center;">${num('gap', 100, '%p 이상')}</div></div>
-      <div class="field"><label>갱신 필요 — 진행률을 이 날수 넘게 고치지 않으면 시계 표시</label><div style="display:flex; gap:8px; align-items:center;">${num('stale', 365, '일')}</div></div>
     </div>
   </div>
   <div class="card" style="margin-bottom:14px;">
@@ -4216,7 +4179,7 @@ function kpiLiveSheet(me=KPI_LIVE.me){   // 내 계획서 (시안 1)
 const KPI_LIVE_DONE = { draft:'임시 저장했어요.', submit:'제출했어요. 확정 전까지는 제출 취소로 다시 고칠 수 있어요.', cancel:'제출을 취소했어요. 고쳐서 다시 제출해 주세요.', 'request-change':'수정 요청을 보냈어요.' };
 async function kpiLivePost(path, body, box){   // path: 내 계획서 일('draft' …) 또는 '/api/kpi/…' 주소 → 응답 상태 번호 (0 = 못 보냄). 400 은 위쪽 붉은 칸(시연 제출 오류와 같은 자리, R17c) — 창이 떠 있으면 창 안, 403 · 409 는 아래쪽 알림 (R17d). box: 창 안 오류 칸(일정 변경 요청 창) — 창이 떠 있는 동안은 모든 오류를 그 안에
   try {
-    const r = await fetch(path[0]==='/' ? path : '/api/kpi/me/'+path, { method:'POST', headers:{ 'Content-Type':'application/json' }, body:JSON.stringify(body || {}) });
+    const r = await kvGet(path[0]==='/' ? path : '/api/kpi/me/'+path, { method:'POST', headers:{ 'Content-Type':'application/json' }, body:JSON.stringify(body || {}) });
     const j = r.ok ? {} : await r.json().catch(()=>({})), err = [j.error, ...(j.issues || [])].filter(Boolean).map(escapeHtml).join('<br>');
     if(!r.ok && box?.isConnected) box.innerHTML = err || '처리하지 못했어요. 잠시 뒤 다시 해 주세요.';
     else if(r.status===400) kpiMsg = { msg:err, type:'danger' };
@@ -4520,11 +4483,11 @@ function kpiLiveTeam(team){   // 우리 팀 KPI 상태 — 내가 바로 위 관
 }
 async function kpiLiveView(uid){   // 내용 보기 — 제출한 것은 초안, 수정 요청은 지금 확정된 KPI와 그 이유. 읽기만. 확정본이면 비정기 기한은 지금 실제 기한 — 바뀐 일정은 "(바뀜)" (진행 기록을 못 읽으면 계획서 기한만)
   let p;
-  try { const r = await fetch('/api/kpi/plans/'+uid); p = await r.json(); if(!r.ok) return wsNotice(p.error || '불러오지 못했어요.'); }
+  try { const r = await kvGet('/api/kpi/plans/'+uid); p = await r.json(); if(!r.ok) return wsNotice(p.error || '불러오지 못했어요.'); }
   catch(e){ return wsNotice('불러오지 못했어요. 잠시 뒤 다시 해 주세요.'); }
   const cr = p.status==='CHANGE_REQUESTED', old = p.status!=='SUBMITTED' && p.confirmed, goals = old ? p.confirmed.content : p.draft;   // HR 표에서는 다시 쓰는 중(DRAFT)인 사람도 연다 — 그때도 확정본
-  const prog = old ? await fetch('/api/kpi/progress/'+(+uid)).then(r=>r.ok ? r.json() : null).catch(()=>null) : null;   // 확정본의 일정 변경(확인된 것)은 진행 기록의 실제 기한에 있다
-  orgModal(`<div class="kl-view"><div class="card-title"><span>${KPI_LIVE.me.year}년 KPI 계획서 <span style="font-weight:500; color:var(--text-secondary);">[${escapeHtml(p.owner.dept)}_${escapeHtml(p.owner.name)}]</span></span><button type="button" class="x-btn" aria-label="닫기" onclick="orgCloseModal()">${icon('x')}</button></div>
+  const prog = old ? await kvGet('/api/kpi/progress/'+(+uid)).then(r=>r.ok ? r.json() : null).catch(()=>null) : null;   // 확정본의 일정 변경(확인된 것)은 진행 기록의 실제 기한에 있다
+  orgModal(`<div class="kl-view"><div class="card-title"><span>${KPI_LIVE.me?.year ?? KV_LIVE.board.year}년 KPI 계획서 <span style="font-weight:500; color:var(--text-secondary);">[${escapeHtml(p.owner.dept)}_${escapeHtml(p.owner.name)}]</span></span><button type="button" class="x-btn" aria-label="닫기" onclick="orgCloseModal()">${icon('x')}</button></div>
     ${cr ? kpiNote(`수정 요청 이유: ${escapeHtml(p.changeReason || '')}<br>아래는 지금 확정된 KPI예요.`, 'warning') : old && p.status==='DRAFT' ? kpiNote('다시 고쳐 쓰고 있어요. 아래는 지금 확정된 KPI예요.', 'warning') : ''}
     ${kpiTable(goals)}${kpiKindSection(goals, false, prog && kpiDues(prog))}</div>`);
 }
@@ -5163,8 +5126,8 @@ async function kpiLiveSelfCheck(){   // 브라우저 콘솔에서 await kpiLiveS
         ok(kvSteps.map(tsel).join('|')==='#kvlInbox|#kvlTable|#kvlMonth button|#kvlPerson|#kvlCheck|#kvMemo|#kvlTools' && kvSteps.every(s=>s.title && s.body.includes('요')) && kvSteps[1].body.includes('이름을 누르면') && kvSteps[1].body.includes('확인 메모'), 'KPI 현황 사용법(실제 로그인): 처리할 요청 · 월간 점검 표(이름을 누르면 확인 · 확인 메모) · 달 넘기기 · 펼친 기록 · M월 확인 · 확인 메모 · (HR) 도구 줄 (~해요)');
         const kp = TOURS.kpi.steps(), kpSel = kp.map(tsel);
         ok(kpSel.indexOf('#kpiSlow')>=0 && kpSel.indexOf('#kpiSlow') < kpSel.indexOf('#kpiProg .kp-sum') && kpSel.filter(s=>s==='#kvMyMemo').length===1 && kp.find(s=>tsel(s)==='#kvMyMemo').body.includes('요.'), '목표설정 사용법(실제 로그인): 부진 알람(요약 위) · 확인 메모 단계 (~해요)');
-        AUTH.live = false; const dk = TOURS.kpi.steps().map(tsel), dkv = tsel(TOURS.kv.steps()[0]); AUTH.live = true;
-        ok(!dk.includes('#kpiSlow') && dk.includes('#kvMyMemo') && dkv==='#kvList', '시연 사용법은 그대로');
+        AUTH.live = false; const dk = TOURS.kpi.steps().map(tsel), dkv = TOURS.kv.steps().map(tsel).join('|'); AUTH.live = true;
+        ok(!dk.includes('#kpiSlow') && dk.includes('#kvMyMemo') && dkv===kvSteps.map(tsel).join('|'), '시연: 목표설정 사용법은 그대로 · KPI 현황 사용법은 실제와 같다');
       } finally {
         Object.assign(KPI_LIVE, o9.kl); window.fetch = o9.fetch; renderContent = o9.rc; kpiLiveLoad = o9.load; kpiRole = o9.role; currentTab = o9.tab; ORG_LIVE.state = o9.ost; kpiMsg = o9.msg; kpiProgStale = false;
         o9.btns.forEach(([b, d])=>{ b.disabled = d; }); orgCloseModal();
@@ -5252,8 +5215,7 @@ let kvMemoSeq = 0, kvMemoUi = { reply:null, edit:null }, kvMuteUi = null;
   kvMemoReply(old, 'owner', '홍길동 대리', '네, 4분기도 같은 주기로 발행하겠습니다.', kpiDay(-19)); old.seen = 1;
   kvPeople.find(x=>x.name==='홍길동').memos.push(kvMemoNew(kpiDay(-2), '김영희 팀장', '웨비나가 밀린 사정 들었습니다. 11월 첫 주로 다시 잡고, 그때 진행률을 올리기로 했습니다.'), old);
 })();
-let kvSel = null, kvBack = null, kvView = 'div', kvOnlySlow = false, kvQuery = '', kvOpen = {};
-function kvReset(){ kvSel = kvBack = null; kvView = 'div'; kvOnlySlow = false; kvQuery = ''; kvOpen = {}; }
+function kvReset(){ Object.assign(KV_LIVE, { state:'', board:null, month:0, sel:null, prog:null, memos:null, open:{}, q:'', onlySlow:false }); }   // 시연 역할을 바꾸면 KPI 현황을 처음부터 (보는 범위가 바뀐다)
 
 /* ----- 규칙 (순수 로직, kvSelfCheck가 검증) ----- */
 function kvExpect(today=kpiDay(0)){   // 오늘 기준 기대 진행률(%) = 1월 1일부터 오늘까지 날수 / 그해 날수
@@ -5261,7 +5223,6 @@ function kvExpect(today=kpiDay(0)){   // 오늘 기준 기대 진행률(%) = 1�
   return Math.round((Date.UTC(y,m-1,d) - start + 864e5) / (Date.UTC(y+1,0,1) - start) * 100);
 }
 function kvSlow(pct, expect, gap){ return pct!==null && expect - pct >= gap; }   // 부진: 기대보다 gap(%p) 이상 낮음
-function kvStale(days, limit){ return days!==null && days > limit; }             // 갱신 필요: limit일 넘게 고치지 않음
 function kvCanView(role, me, t){   // role = 시연 역할, me = 보는 사람(명단에 없으면 null), t = KPI 주인
   if(kpiIsHr(role)) return true;                       // HR 담당자·HR 팀장: 전 직원
   if(role==='ceo') return t.kind!=='member';           // 대표이사: 본부장·팀장까지 (팀원은 인원·부진 수만)
@@ -5276,7 +5237,6 @@ function kvSelfCheck(){   // 브라우저 콘솔에서 kvSelfCheck() 실행
   const ok = (c,m)=>{ if(!c) throw new Error('kvSelfCheck 실패: '+m); }, P = n=>kvPeople.find(p=>p.name===n);
   ok(kvExpect('2026-10-12')===78 && kvExpect('2026-01-01')===0 && kvExpect('2026-12-31')===100 && kvExpect('2024-07-01')===50, '기대 진행률 = 지나간 날수 비율(윤년 포함)');
   ok(kvSlow(58,78,20) && !kvSlow(59,78,20) && !kvSlow(null,78,20), '부진: 기대보다 20%p 이상 낮을 때만');
-  ok(kvStale(31,30) && !kvStale(30,30) && !kvStale(null,30), '갱신 필요: 30일을 넘길 때만');
   const lead = P('김영희'), head = P('이철수'), emp = P('홍길동'), other = P('정해외'), oLead = P('문해외'), far = P('오디바'), hr = P('박인사');
   ok(kvCanView('lead', lead, emp) && !kvCanView('lead', lead, other) && !kvCanView('lead', lead, head) && !kvCanView('lead', lead, lead), '팀장: 자기 팀원만');
   ok(kvCanView('head', head, emp) && kvCanView('head', head, oLead) && kvCanView('head', head, other) && !kvCanView('head', head, far), '본부장: 자기 본부의 팀장·팀원');
@@ -5305,6 +5265,16 @@ function kvSelfCheck(){   // 브라우저 콘솔에서 kvSelfCheck() 실행
   ok(mk.until==='2026-11' && kvMuteWhy(mk)==='11월에 끝나는 일' && kvMuteUntil(mk)==='11월 말까지' && kvMuteMake('year', '', '', '2026-10-13').until==='2026-12' && kvMuteWhy(kvMuteMake('etc', 12, '감사 일정', '2026-10-13'))==='감사 일정', '알람 끄기: 고른 달의 말일까지');
   ok(str('', 11, '') && str('month', 9, '') && str('month', 13, '') && str('etc', 11, ' '), '알람 끄기: 이유와 달(이번 달~12월)이 있어야 하고, 직접 적기는 글이 있어야 한다');
   ok(kpiPlanCanSee('ceo') && kpiPlanCanSee('head') && kpiPlanCanSee('hr') && kpiPlanCanSee('hrl') && !kpiPlanCanSee('lead') && !kpiPlanCanSee('emp') && !kpiPlanCanSee('line'), '경영계획 목표: 대표이사·본부장·HR만 본다');
+  const r0 = kpiRole;   // 시연 KPI 현황 — 실제 화면에 주는 시연 자료 (kvDemoBoard · kvDemoMonth)
+  try {
+    kpiRole = 'lead'; const bl = kvDemoBoard(kvLiveNow());
+    ok(bl.people.map(x=>x.name).join()==='나영업,박영업,오견적,한거래,홍길동' && bl.people.every(x=>x.direct && x.checkStep) && bl.scope.name==='국내영업팀' && !bl.teams.length, '시연 KPI 현황(팀장): 자기 팀원만 · 현장직 빼고 · 이름 순 · 모두 바로 아래');
+    kpiRole = 'ceo'; const bc = kvDemoBoard(kvLiveNow());
+    ok(bc.people.length && bc.people.every(x=>x.position) && bc.teams.length && bc.people.filter(x=>x.direct).every(x=>!kvMemoWriter(kvPeople[x.userId])), '시연 KPI 현황(대표이사): 본부장 · 팀장 줄만 · 팀원은 팀 숫자로 · 바로 아래 = 대표이사에게 보고하는 분');
+    kpiRole = 'hr'; ok(kvDemoBoard(kvLiveNow()).people.length===kvPeople.filter(p=>!kvIsLine(p) && p.key!=='hr').length, '시연 KPI 현황(HR): 전 직원(현장직 · 나 빼고)');
+    const pr = { year:2026, checkStep:true, checks:{ 9:'x' }, items:[{ kind:'reg', months:{ 9:{ state:'DONE' }, 10:{ state:'OPEN' } } }, { kind:'irr', scheds:[{ due:'2026-09-28', result:{} }] }] }, mo = (x, m)=>kvDemoMonth(x, m);
+    ok(mo(pr, 9).check==='DONE' && mo(pr, 9).records===2 && mo(pr, 10).check==='NONE' && mo(pr, 10).noSched && mo({ ...pr, checkStep:false }, 9).check==='NOSTEP', '그 달 요약 · 확인 상태: 서버 month_summary · check_state 와 같은 규칙');
+  } finally { kpiRole = r0; }
   return 'kvSelfCheck 통과';
 }
 
@@ -5332,9 +5302,6 @@ function kvDays(p){   // 진행률(또는 늦어지는 이유)을 마지막으�
   return at ? Math.round((celebParse(kpiDay(0)) - celebParse(at))/864e5) : null;
 }
 function kvIsSlow(p){ return kvSlow(kvAlarmPct(kvItems(p)), kvExpect(), kpiAlarm.gap); }   // 알람을 끈 항목은 빼고 따진다
-function kvIsStale(p){ return kvPct(p)!==null && kvStale(kvDays(p), kpiAlarm.stale); }
-function kvAvg(list){ const v = list.map(kvPct).filter(x=>x!==null); return v.length ? Math.round(v.reduce((a,b)=>a+b, 0)/v.length) : null; }
-function kvNames(list){ return !list.length ? '없음' : list.slice(0,2).map(p=>p.name).join(' · ') + (list.length>2 ? ` 외 ${list.length-2}명` : ''); }
 function kvMemoWriter(p){ return p.kind==='member' ? kvTeam(p.team).lead : p.kind==='lead' ? kvDiv(p.div).head : null; }   // 그 사람의 확인 메모를 쓰는 사람
 function kvMemoShown(p){ return !!kvMemoWriter(p); }   // 메모 칸이 있는 사람 = 바로 위에 쓸 사람이 있는 사람. 본인도 본다(2026-10-13 변경)
 function kvCanUse(){ if(AUTH.live) return ['TEAM_LEADER','DIVISION_HEAD','CEO'].includes(AUTH.me?.position) || !!AUTH.me?.is_hr; const me = kvMe(); return kpiIsHr() || kpiRole==='ceo' || (!!me && me.kind!=='member'); }   // KPI 현황 탭을 쓰는 사람 — 실제 로그인은 직책 · HR 권한으로
@@ -5490,180 +5457,25 @@ function kvUnmute(pid, fi){
   kvMuteSet(p, fi, null); kpiFlash('알람을 다시 켰습니다.');
 }
 
-/* ----- 줄 ----- */
-function kvBar(v, slow){ const e = kvExpect(); return v===null ? '<span></span>' : `<div class="kv-bar${(slow ?? kvSlow(v, e, kpiAlarm.gap))?' slow':''}"><i style="width:${Math.min(100, v)}%"></i><u style="left:${e}%" title="오늘 기준 기대 ${e}%"></u></div>`; }
-function kvMarks(p){
-  if(!p) return '';
-  return (kvIsSlow(p) ? `<span class="kv-mk bell" title="부진 — 기대 진행률보다 ${kvExpect()-kvAlarmPct(kvItems(p))}%p 낮음">${icon('bell')}</span>` : '')
-    + (kvIsStale(p) ? `<span class="kv-mk clock" title="${kvDays(p)}일째 진행률을 고치지 않음">${icon('clock')}</span>` : '')
-    + (!(kvMemoShown(p) && p.memos.length) ? '' : kvMemoRole(kvMe(), p)==='writer' && p.memos.some(m=>kvMemoUnread(m) > 0) ? `<span class="kv-mk memo new" title="새 답글이 있습니다">${icon('message')}</span>`
-      : `<span class="kv-mk memo" title="확인 메모 ${p.memos.length}건">${icon('message')}</span>`);
-}
-function kvCnt(list){ const n = list.filter(kvIsSlow).length; return n ? `<span class="kv-cnt">부진 ${n}명</span>` : ''; }
-function kvRow({ key, back='', lv=0, caret, name, small='', mk='', sub, v, tag, slow }){   // slow를 주지 않으면 진행률 숫자로 따진다(부서·본부 줄)
-  return `<div class="kv-row lv${lv}${kvSel===key||kvBack===key?' on':''}" onclick="kvPick('${key}','${back}')">
-    <span class="kv-caret">${caret===undefined ? '' : icon(caret?'chevD':'chevR')}</span>
-    <div style="min-width:0;"><div class="kv-name"><span>${escapeHtml(name)}</span>${small ? `<small>${escapeHtml(small)}</small>` : ''}${mk}</div><div class="kv-sub">${escapeHtml(sub)}</div></div>
-    ${tag ? `<span class="kv-tag">${escapeHtml(tag)}</span>` : kvBar(v, slow)}<span class="kv-pct${(slow ?? kvSlow(v, kvExpect(), kpiAlarm.gap))?' slow':''}">${v===null ? '–' : v+'%'}</span></div>`;
-}
-function kvPRow(p, lv=0, o={}){
-  const v = kvPct(p), days = kvDays(p), where = o.dept ? `${p.team||p.div} · ` : '';
-  return kvRow({ key:p.id, back:o.back, lv, name:p.name, small:p.title, mk:kvMarks(p), v, slow:kvIsSlow(p), tag:v===null ? kvState(p) : '',
-    sub:v!==null ? where + (days===null ? '갱신 기록 없음' : days===0 ? '오늘 갱신' : `${days}일 전 갱신`) : where + (kvIsLine(p) ? '현장직 · 팀장이 평가' : 'KPI '+kvState(p)) });
-}
-function kvTRow(t, lv=0, o={}){
-  return kvRow({ key:t.id, back:o.back, lv, caret:o.caret, name:t.team, mk:kvMarks(t.lead)+kvCnt(t.members), v:kvPct(t.lead), slow:kvIsSlow(t.lead), tag:kvPct(t.lead)===null ? kvState(t.lead) : '',
-    sub:`${t.lead.name} 팀장 · 팀원 ${t.members.length}명${o.dept ? ' · '+t.div : ''}` });
-}
-function kvDRow(d, caret){
-  const all = kvDivAll(d);
-  return kvRow({ key:d.id, caret, name:d.div, mk:kvMarks(d.head)+kvCnt(all.filter(p=>p!==d.head)), v:d.head ? kvPct(d.head) : null, slow:!!d.head && kvIsSlow(d.head), tag:d.head && kvPct(d.head)===null ? kvState(d.head) : '',
-    sub:`${d.head ? d.head.name+' 본부장' : '본부장 없음'} · ${d.teams.length}개 부서 · ${all.length}명` });
-}
-
-/* ----- 왼쪽 명단 ----- */
-function kvList(){
-  const me = kvMe(), none = '<div class="list-sub" style="padding:14px 8px;">해당하는 사람이 없습니다.</div>';
-  if(kpiIsHr()){
-    const filt = kvOnlySlow || kvQuery, keep = p=>(!kvOnlySlow || kvIsSlow(p)) && (!kvQuery || p.name.includes(kvQuery)), opened = k=>filt || kvOpen[k];
-    const teamBlock = (t, lv, dept)=>!kvTeamAll(t).some(keep) ? '' : kvTRow(t, lv, { caret:!!opened(t.id), dept }) + (opened(t.id) ? kvTeamAll(t).filter(keep).map(p=>kvPRow(p, lv+1)).join('') : '');
-    if(kvView==='person') return kvPeople.filter(keep).sort((a,b)=>(kvPct(a)??999)-(kvPct(b)??999)).map(p=>kvPRow(p, 0, { dept:true })).join('') || none;   // 진행률 낮은 순, 확정 전·현장직은 맨 뒤
-    if(kvView==='team') return kvTeams.map(t=>teamBlock(t, 0, true)).join('') || none;
-    return KV_ORG.map(d=>!kvDivAll(d).some(keep) ? '' : kvDRow(d, !!opened(d.id)) + (opened(d.id) ? d.teams.map(t=>teamBlock(t, 1)).join('') : '')).join('') || none;
-  }
-  if(kpiRole==='ceo') return KV_ORG.map(d=>kvDRow(d, !!kvOpen[d.id]) + (kvOpen[d.id] ? d.teams.map(t=>kvTRow(t, 1)).join('') : '')).join('');
-  return me.kind==='head' ? kvDiv(me.div).teams.map(t=>kvTRow(t)).join('') : kvTeam(me.team).members.map(p=>kvPRow(p)).join('');
-}
-function kvRenderList(){ const el = document.getElementById('kvList'); if(el) el.innerHTML = kvList(); }   // 검색어를 적는 동안에는 명단만 다시 그린다(입력칸을 다시 그리면 한글 조합이 끊긴다)
-function kvListCard(){
-  const me = kvMe(), hr = kpiIsHr();
-  const title = hr ? '전 직원' : kpiRole==='ceo' ? '본부 · 부서' : me.kind==='head' ? '부서' : '부서원';
-  const side = hr ? `<button type="button" class="btn sm" onclick="kvExport()" title="엑셀에서 열리는 CSV 파일">${icon('download')}엑셀 내려받기</button>`
-    : `<span class="list-sub" style="margin:0; font-weight:500;">${escapeHtml(kpiRole==='ceo' ? '본부를 누르면 소속 부서가 펼쳐집니다' : me.kind==='head' ? me.div : me.team)}</span>`;
-  const tools = !hr ? '' : `<div class="kv-tools">
-      <div class="ws-seg" role="group" aria-label="보기">${[['div','본부별'],['team','부서별'],['person','개인별']].map(([k,l])=>`<button type="button" class="${kvView===k?'on':''}" aria-pressed="${kvView===k}" onclick="kvView='${k}'; renderContent()">${l}</button>`).join('')}</div>
-      <input class="kv-q" placeholder="이름 검색" aria-label="이름 검색" value="${escapeHtml(kvQuery)}" oninput="kvQuery=this.value.trim(); kvRenderList()">
-      <button type="button" class="kv-only${kvOnlySlow?' on':''}" aria-pressed="${kvOnlySlow}" onclick="kvOnlySlow=!kvOnlySlow; renderContent()">부진만 보기</button></div>`;
-  return `<div class="card"><div class="card-title"><span>${title}</span>${side}</div>${tools}<div id="kvList">${kvList()}</div></div>`;
-}
-
-/* ----- 오른쪽: 고른 사람·부서의 KPI ----- */
-function kvItemsTable(p){
-  const can = !!kvMemoRole(kvMe(), p);   // 본인과 바로 위 관리자는 끈 알람을 다시 켤 수 있다
-  return `<table class="kv-items"><colgroup><col><col style="width:124px"><col style="width:54px"><col style="width:168px"></colgroup>
-    <thead><tr><th>실행목표</th><th>측정식</th><th style="text-align:center;">가중치</th><th>진행률</th></tr></thead>
-    <tbody>${kvItems(p).map((i, fi)=>{ const off = kvMuted(i.mute), slow = !off && kvSlow(i.progress, kvExpect(), kpiAlarm.gap);
-      return `<tr><td><div class="ev-goal">${escapeHtml(i.goal)}</div>${escapeHtml(i.action)}${i.why ? `<div class="kv-why">${icon('message')}<span><b>본인이 적은 이유</b> · ${escapeHtml(i.why)}</span></div>` : ''}${off ? `<div class="kv-mute">${icon('bellOff')}<span>본인이 알람 끔 · ${escapeHtml(kvMuteWhy(i.mute))} (${kvMuteUntil(i.mute)})${can ? ` <button type="button" class="kv-link" onclick="kvUnmute('${p.id}',${fi})">다시 켜기</button>` : ''}</span></div>` : ''}</td>
-      <td>${escapeHtml(i.formula)}</td><td style="text-align:center;">${i.weight}</td>
-      <td><div class="kv-ibar">${kvBar(i.progress, slow)}<b class="${slow?'slow':''}">${i.progress}%</b></div></td></tr>`; }).join('')}</tbody></table>`;
-}
-function kvBlock(p, title, sub){
-  const v = kvPct(p), e = kvExpect(), days = kvDays(p), it = kvItems(p) || [], a = kvAlarmPct(it), off = it.filter(i=>kvMuted(i.mute)).length, slow = kvIsSlow(p);
-  if(v===null) return `<div class="kv-head"><div><h3>${escapeHtml(title)}</h3><div class="list-sub">${escapeHtml(sub)}</div></div><span class="badge neutral">${escapeHtml(kvState(p))}</span></div>
-    <div class="placeholder-note">${kvIsLine(p) ? '현장직은 KPI를 작성하지 않습니다. 팀장이 평가 진행 탭에서 등급을 매깁니다.' : '아직 확정된 KPI가 없습니다. 확정되면 항목과 진행률이 여기에 나옵니다.'}</div>`;
-  return `<div class="kv-head"><div><h3>${escapeHtml(title)}${kvMarks(p)}</h3><div class="list-sub">${escapeHtml(sub)}</div></div><div class="kv-big${slow?' slow':''}">${v}<small>%</small></div></div>
-    <div class="kv-meter">${kvBar(v, slow)}<em style="left:${e}%">오늘 기준 기대 ${e}%</em></div>
-    ${slow ? `<div class="kv-alert">${icon('bell')}${off ? `알람을 끈 ${off}개 항목을 빼면 ${a}% — ` : ''}기대 진행률보다 ${e-a}%p 낮습니다.</div>` : off ? `<div class="kv-alert mute">${icon('bellOff')}알람을 끈 ${off}개 항목은 빼고 따집니다${a===null ? '' : ` (나머지 ${a}%)`}.</div>` : ''}
-    ${kvIsStale(p) ? `<div class="kv-alert amber">${icon('clock')}${days}일째 진행률을 고치지 않았습니다.</div>` : ''}
-    ${kvItemsTable(p)}
-    <div class="kv-foot"><span class="list-sub" style="margin:0;">상태 ${escapeHtml(kvState(p))} · ${days===null ? '갱신 기록 없음' : days===0 ? '오늘 갱신' : `마지막 갱신 ${days}일 전`}</span></div>`;
-}
-function kvMemoBlock(p){
-  const me = kvMe(), w = kvMemoWriter(p);
-  if(!kvMemoShown(p)) return '';
-  const can = kvCanMemo(me, p);
-  return `<div class="kv-sec"><span>${w.title} 확인 메모</span><small>${w.title}이 쓰고 본인·${p.kind==='lead' ? '대표이사·HR' : kvDiv(p.div).head ? '본부장·HR' : 'HR'}이 함께 봅니다</small></div>
-    ${kvThread(p) || (can ? '' : '<div class="list-sub">아직 메모가 없습니다.</div>')}
-    ${can ? `<div class="kv-memo-in"><input id="kvMemo" maxlength="200" placeholder="확인·면담한 내용을 적어 주세요" aria-label="확인 메모" onkeydown="if(event.key==='Enter' && !event.isComposing) kvAddMemo('${p.id}')"><button type="button" class="btn sm" onclick="kvAddMemo('${p.id}')">남기기</button></div>` : ''}`;
-}
-function kvDetail(){
-  const role = kpiRole, me = kvMe(), n = kvSel && kvNode(kvSel), kind = kvSel && kvSel[0];
-  const owner = !n ? null : kind==='p' ? n : kind==='t' ? n.lead : n.head;   // 열람 권한은 그 KPI의 주인으로 따진다
-  if(!n || !(kind==='d' ? kpiIsHr(role) || role==='ceo' : kvCanView(role, me, owner))){
-    kvSel = kvBack = null;
-    return `<div class="kv-empty"><b>${kpiIsHr(role) ? '본부 · 부서 · 이름을 누르면' : role==='ceo' ? '본부나 부서를 누르면' : me.kind==='head' ? '부서를 누르면' : '부서원 이름을 누르면'}</b>KPI 항목과 진행률이 여기에 나옵니다.</div>`;
-  }
-  const backNode = kvBack && kvNode(kvBack), back = backNode ? `<span class="more kv-back" onclick="kvPick('${kvBack}')">‹ ${escapeHtml(backNode.team||backNode.div)}</span><br>` : '';
-  if(kind==='p') return back + kvBlock(n, `${n.name} ${n.title}`, [n.div, n.team].filter(Boolean).join(' · ')) + kvMemoBlock(n);
-  if(kind==='t'){ const m = n.members;
-    return back + kvBlock(n.lead, `${n.team} KPI`, `부서 KPI = ${n.lead.name} 팀장의 KPI`) + kvMemoBlock(n.lead)
-      + (me && me.kind==='head' && !kpiIsHr(role) ? `<div class="kv-sec"><span>팀원 진행률 <small>평균 ${kvAvg(m)??'–'}%</small></span><small>이름을 누르면 개인 KPI</small></div>${m.map(p=>kvPRow(p, 0, { back:n.id })).join('')}`
-        : `<div class="placeholder-note">팀원 ${m.length}명 · 팀원 평균 ${kvAvg(m)??'–'}% · 부진 ${m.filter(kvIsSlow).length}명${role==='ceo' ? ' — 팀원 개인 KPI는 팀장·본부장이 챙깁니다.' : ''}</div>`); }
-  const all = kvDivAll(n);
-  return (n.head ? kvBlock(n.head, `${n.div} KPI`, `본부 KPI = ${n.head.name} 본부장의 KPI`) : `<div class="kv-head"><div><h3>${escapeHtml(n.div)}</h3><div class="list-sub">본부장이 없는 부서입니다.</div></div></div>`)
-    + `<div class="placeholder-note">${n.teams.length}개 부서 · ${all.length}명 · 전체 평균 ${kvAvg(all)??'–'}% · 부진 ${all.filter(kvIsSlow).length}명 — 왼쪽에서 부서를 누르면 팀장 KPI가 나옵니다.</div>`;
-}
-
-/* ----- 동작 ----- */
-function kvPick(key, back){
-  if(key[0]!=='p' && !back) kvOpen[key] = kvSel===key ? !kvOpen[key] : true;   // 묶음은 누르면 펼치고 다시 누르면 접는다
-  kvSel = key; kvBack = back||null; kvMemoUi = { reply:null, edit:null }; renderContent();
-  const n = kvNode(key); kvSeeReplies(kvMe(), key[0]==='p' ? n : key[0]==='t' ? n.lead : null);   // 열어 본 답글은 본 것으로 한다(다음에 그릴 때 "새 답글" 표시가 사라진다)
-}
-function kvAddMemo(id){
-  const p = kvNode(id), me = kvMe(), el = document.getElementById('kvMemo'), text = el ? el.value.trim() : '';
-  if(!kvCanMemo(me, p)) return kpiFlash('확인 메모는 바로 위 관리자만 남길 수 있습니다.', 'danger');
-  if(!text) return;
-  p.memos.unshift(kvMemoNew(kpiDay(0), `${me.name} ${me.title}`, text.slice(0, 200)));
-  kpiFlash(null);
-}
-function kvExport(){   // HR: 전 직원 진행률 표
-  // ponytail: 엑셀에서 바로 열리는 CSV. 진짜 .xlsx는 서버 저장(로그인 이후)에 붙일 때 백엔드에서 만든다
-  if(!kpiIsHr()) return;
-  const e = kvExpect(), me = kvMe();
-  const head = ['본부','부서','이름','직급','구분','KPI 상태','종합 진행률(%)','기대 진행률(%)','차이(%p)','부진','마지막 갱신(일 전)','갱신 필요','확인 메모(건)','확인 안 한 메모(건)','늦어지는 이유','알람 끈 항목(개)','알람 끈 이유'];
-  const rows = kvPeople.map(p=>{ const v = kvPct(p), it = kvItems(p) || [];
-    return [p.div, p.team, p.name, p.title, { head:'본부장', lead:'팀장', member:'팀원' }[p.kind], kvState(p), v ?? '', v===null ? '' : e, v===null ? '' : v-e, kvIsSlow(p) ? '부진' : '',
-      v===null ? '' : kvDays(p) ?? '', kvIsStale(p) ? '갱신 필요' : '', kvMemoShown(p) ? p.memos.length : '', kvMemoShown(p) ? kvMemoTodo(p) : '', it.filter(i=>i.why).map(i=>`${i.action}: ${i.why}`).join(' / '),
-      it.filter(i=>kvMuted(i.mute)).length || '', it.filter(i=>kvMuted(i.mute)).map(i=>`${i.action}: ${kvMuteWhy(i.mute)} (${kvMuteUntil(i.mute)})`).join(' / ')]; });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([csvText([head, ...rows])], { type:'text/csv;charset=utf-8' }));
-  a.download = `KPI진행현황_${kpiDay(0)}.csv`; a.click(); URL.revokeObjectURL(a.href);
-}
-
-/* ----- 화면 ----- */
-function kvTiles(){
-  const role = kpiRole, me = kvMe(), hr = kpiIsHr(role);
-  const T = (c, label, val, em)=>`<div class="hm-tile ${c}"><span>${label}</span><b>${val}</b><em>${escapeHtml(em)}</em></div>`;
-  const pc = v=>v===null ? '–' : `${v}<small>%</small>`, cnt = l=>`${l.length}<small>명</small>`;
-  let scope, a, tail = '';
-  if(hr){ scope = kvPeople; const wait = kvPeople.filter(p=>!kvIsLine(p) && kvPct(p)===null);
-    a = T('blue','전 직원 평균 진행률', pc(kvAvg(kvPeople)), `KPI 대상 ${kvPeople.filter(p=>!kvIsLine(p)).length}명`) + T('slate','아직 확정 전', cnt(wait), kvNames(wait)); }
-  else if(role==='ceo'){ const heads = KV_ORG.map(d=>d.head).filter(Boolean), leads = kvTeams.map(t=>t.lead); scope = [...heads, ...leads]; tail = ' (본부장·팀장)';
-    a = T('blue','본부 KPI 평균', pc(kvAvg(heads)), `${heads.length}개 본부`) + T('green','부서 KPI 평균', pc(kvAvg(leads)), `${leads.length}개 부서`); }
-  else if(me.kind==='head'){ const d = kvDiv(me.div); scope = kvDivAll(d).filter(p=>p!==me);
-    a = T('blue','우리 본부 KPI', pc(kvPct(me)), '내 KPI = 본부 KPI') + T('green','부서 KPI 평균', pc(kvAvg(d.teams.map(t=>t.lead))), `${d.teams.length}개 부서`); }
-  else { scope = kvTeam(me.team).members;
-    a = T('blue','우리 부서 KPI', pc(kvPct(me)), '내 KPI = 부서 KPI') + T('green','팀원 평균 진행률', pc(kvAvg(scope)), `KPI 대상 ${scope.filter(p=>kvPct(p)!==null).length}명`); }
-  const slow = scope.filter(kvIsSlow), stale = scope.filter(kvIsStale), memoed = slow.filter(p=>kvMemoShown(p) && p.memos.length).length;
-  return `<div class="hm-tiles">${a}${T('red','부진'+tail, cnt(slow), hr ? `확인 메모 있음 ${memoed}명 · 없음 ${slow.length-memoed}명` : kvNames(slow))}${T('amber','갱신 필요'+tail, cnt(stale), kvNames(stale))}</div>`;
-}
-function kvContent(){
-  if(AUTH.live) return kvLiveContent();   // 실제 로그인: 서버 명단 (시안 4) — 아래 시연 화면은 그대로
-  if(!kvCanUse()) return `${roleSwitcher()}${kpiNote('KPI 현황은 팀장·본부장·대표이사·HR에게만 보입니다.')}`;
-  return `${roleSwitcher()}${kpiMsg ? kpiNote(kpiMsg.msg, kpiMsg.type) : ''}<div class="kv">${kvTiles()}
-    <div class="kv-legend"><span><span class="kv-mk bell">${icon('bell')}</span><b>부진</b> 오늘 기준 기대 진행률(${kvExpect()}%)보다 ${kpiAlarm.gap}%p 이상 낮음</span>
-      <span><span class="kv-mk clock">${icon('clock')}</span><b>갱신 필요</b> ${kpiAlarm.stale}일 넘게 진행률을 고치지 않음</span>
-      <span><span class="kv-mk memo">${icon('message')}</span><b>메모 있음</b> 팀장·본부장이 확인 메모를 남김 (붉으면 새 답글)</span>
-      <span><i></i>막대 위 세로선 = 오늘 기준 기대 진행률</span></div>
-    <div class="kv-cols">${kvListCard()}<div class="card">${kvDetail()}</div></div>
-    <div class="list-sub">진행률은 본인이 입력한 값이며 평가 점수와는 별개입니다. 시연용 가상 인원이고, 홍길동·김영희·이철수·박인사·최지원은 목표설정 탭의 KPI·진행률을 그대로 읽습니다.</div></div>`;
+function kvContent(){   // 실제 로그인은 서버 명단, 시연은 같은 화면(kvLive*)을 시연 자료로 그린다 (kvDemoFetch — 2026-10-23 인사담당자: 시연도 실제와 같은 모양으로)
+  if(AUTH.live) return kvLiveContent();
+  return roleSwitcher() + (kvCanUse() ? kvLiveContent() : kpiNote('KPI 현황은 팀장·본부장·대표이사·HR에게만 보입니다.'));
 }
 
 /* ---------------- KPI 현황 — 실제 로그인 (2단계 ②, 2026-10-21) ----------------
    인사담당자 결정: 모든 직책이 시안 4의 표 하나를 쓴다. 팀장은 시안 그대로, 본부장 · 대표이사 · HR은 같은 표를 부서별로 묶는다.
    명단 한 번(GET /api/kpi/board?month=)에 사람마다 종합 진행률 · 기대 · 부진 · 그 달 요약 · 확인 상태 · 메모 수가 온다 — 숫자는 서버가 센다.
    사람을 누르면 표 아래에 그 사람의 그 달 기록(GET /api/kpi/progress/<uid>)이 나오고, [M월 확인]은 바로 위 관리자에게만 보인다(서버가 다시 본다).
-   대표이사에게는 팀원 줄이 오지 않는다 — 팀마다 인원 · 평균 · 부진 수 한 줄만. 시연(kv*)은 그대로다.
+   대표이사에게는 팀원 줄이 오지 않는다 — 팀마다 인원 · 평균 · 부진 수 한 줄만. 시연 모드도 이 화면을 쓴다 — 서버 대신 kvDemoFetch (아래 "시연 자료").
    시안: 뉴디자인/KPI 진행 관리 시안 - 4 팀장 월간 점검. 모양은 .kvl-* (막대 · 종 · 말풍선은 .kv-bar · .kv-mk 그대로). */
 const KV_LIVE = { state:'', board:null, month:0, sel:null, prog:null, memos:null, open:{}, q:'', onlySlow:false, memoUi:{ reply:null, edit:null, draft:{} } };   // state: '' 아직(또는 다시 읽기) · loading · ok · err. month: 0 = 이번 달. sel: 펼친 사람 번호 — prog · memos 는 그 사람의 진행 기록 · 확인 메모. open: 접고 편 묶음 {부서 번호: 참/거짓}. q · onlySlow: HR 검색 · 부진만 보기. memoUi: 확인 메모 칸 — 답글 · 고치기를 연 메모 번호, draft = 적고 안 보낸 글 {'kvMemo:사람 번호' | 'kvMemoEdit:메모 번호' | 'kvMemoReply:메모 번호': 글} — 다른 사람을 펼치거나 탭을 오가도 남는다 (본인 화면의 메모 카드도 같이 쓴다)
 const KV_CHECK = { DONE:['✓', '확인함', 'done'], TODO:['', '확인 전', 'todo'], NONE:['', '안 씀', 'none'], NA:['', '—', ''], NOSTEP:['', '—', ''] };   // 확인 상태 → [앞 아이콘, 글자, 모양]
 function kvLiveFresh(){   // KPI 현황 탭에 들어올 때마다 서버에서 새로 — 이번 달부터, 펼친 사람 없이. 맨 위 처리할 요청(KPI_LIVE)도 새로 읽는다
-  if(!AUTH.live || currentTab.id!=='e4' || KV_LIVE.state==='loading') return;
+  if(currentTab.id!=='e4' || KV_LIVE.state==='loading') return;   // 시연도 (시연 자료를 새로)
   Object.assign(KV_LIVE, { state:'', board:null, month:0, sel:null, prog:null, memos:null });
-  if(KPI_LIVE.state!=='loading') KPI_LIVE.state = '';
+  if(AUTH.live && KPI_LIVE.state!=='loading') KPI_LIVE.state = '';
 }
-const kvLiveChk = b=>(!!AUTH.me.is_hr || AUTH.me.position!=='CEO') && b.people.some(p=>p.checkStep);   // 확인 열을 그리나 — 모든 줄이 확인 단계 없음이면 없고, 대표이사는 보기만 하므로(확인 단계 밖) 늘 없다
+const kvLiveChk = b=>(!!kvWho().is_hr || kvWho().position!=='CEO') && b.people.some(p=>p.checkStep);   // 확인 열을 그리나 — 모든 줄이 확인 단계 없음이면 없고, 대표이사는 보기만 하므로(확인 단계 밖) 늘 없다
 const kvLiveNow = ()=>+kpiDay(0).slice(5, 7);   // 이번 달 — 달 넘기기의 끝 (서버는 오늘의 달보다 뒤를 400)
 const kvLiveDay = iso=>{ const d = new Date(iso); return `${d.getMonth() + 1}/${d.getDate()}`; };   // 서버 시각(UTC) → 이 PC 날짜 "10/21"
 const kvLiveMute = m=>`${m.why==='etc' ? m.text : m.why==='month' ? `${m.until}월에 끝나는 일` : KV_MUTE[m.why]} (${m.until===12 ? '올해 말까지' : `${m.until}월 말까지`})`;   // 끈 알람의 이유 (끝나는 때)
@@ -5671,7 +5483,7 @@ let kvLiveSeq = 0;   // 명단 요청 차례 — 늦게 온 옛 응답이 나중
 async function kvLiveLoad(month=KV_LIVE.month){   // 명단을 서버에서 (month 0 = 이번 달) + 처리할 일 숫자(메뉴 · 홈). 못 읽으면: 그린 표가 없으면 오류 안내, 있으면 그 표를 두고 아래쪽 알림
   const seq = ++kvLiveSeq;
   KV_LIVE.state = 'loading';
-  const [b] = await Promise.all([fetch('/api/kpi/board' + (month ? '?month='+month : '')).then(r=>r.ok ? r.json() : null).catch(()=>null),
+  const [b] = await Promise.all([kvGet('/api/kpi/board' + (month ? '?month='+month : '')).then(r=>r.ok ? r.json() : null).catch(()=>null),
     KPI_LIVE.state==='ok' && kpiRevGet()]);   // 확인 · 메모 · 새 답글 본 것 뒤에 숫자가 바로 따라온다 (처리함을 통째로 다시 읽는 중이면 그쪽이 읽는다)
   if(seq!==kvLiveSeq) return;   // 그사이 새 요청을 보냈다 — 그쪽이 넣고 그린다
   if(b){
@@ -5680,7 +5492,7 @@ async function kvLiveLoad(month=KV_LIVE.month){   // 명단을 서버에서 (mon
     else if(!KV_LIVE.prog) await kvLiveRead(KV_LIVE.sel);   // 펼친 사람도 다시 읽어야 할 때 (처리할 요청에서 일정 변경을 확인한 뒤 등 — prog 를 비워 둔다)
   } else if(KV_LIVE.board){ KV_LIVE.state = 'ok'; wsNotice('KPI 현황을 불러오지 못했어요. 잠시 뒤 다시 해 주세요.'); }
   else KV_LIVE.state = 'err';
-  if(!['ok', 'loading'].includes(KPI_LIVE.state)) kpiLiveLoad();   // 맨 위 처리할 요청 — 처리함을 아직 못 불렀으면 (다 오면 그쪽이 다시 그린다)
+  if(AUTH.live && !['ok', 'loading'].includes(KPI_LIVE.state)) kpiLiveLoad();   // 맨 위 처리할 요청 (시연에는 없다) — 처리함을 아직 못 불렀으면 (다 오면 그쪽이 다시 그린다)
   kpiProgShow();   // 확인 메모 칸에 적는 중이면 그 칸을 떠날 때 그린다 (한글 조합이 끊기지 않게 — 진행 관리와 같은 규칙)
 }
 function kvLiveContent(){   // 처리할 요청(내 몫) → 월간 점검 표 → 펼친 사람 → 맨 아래 한 줄. 시연 역할 전환 · 가상 자료 안내는 없다
@@ -5696,7 +5508,7 @@ function kvMonthText(m){   // 그 달에 적을 것 — 서버의 그 달 요약
 }
 function kvCheckText(st, at){ const [i, t, c] = KV_CHECK[st] || KV_CHECK.NA; return `<span class="kvl-ck ${c}"${st==='DONE' && at ? ` title="${kvLiveDay(at)} 확인"` : ''}><i>${i || '&#8203;'}</i>${t}</span>`; }   // 확인 상태 — 앞의 ✓ 자리는 비어 있어도 둔다
 function kvLiveTable(){   // 월간 점검 카드 (시안 4): 제목 + 달 넘기기 · 확인할 사람 배지 · (HR) 도구 줄 · 표
-  const b = KV_LIVE.board, M = b.month, me = AUTH.me, hr = !!me.is_hr, chk = kvLiveChk(b);
+  const b = KV_LIVE.board, M = b.month, me = kvWho(), hr = !!me.is_hr, chk = kvLiveChk(b);
   const scope = hr ? '전 직원' : me.position==='CEO' ? '본부장 · 팀장' : b.scope?.name || '';   // 팀장 · 본부장은 맡은 부서 (소속이 '임원'인 본부장도 이끄는 본부)
   const mine = b.people.filter(p=>p.direct && p.month), n = st=>mine.filter(p=>p.month.check===st).length, todo = n('TODO'), none = n('NONE');
   const badge = todo || none ? `<span class="badge warning">${[todo ? `확인할 사람 ${todo}명` : '', none ? `안 쓴 사람 ${none}명` : ''].filter(Boolean).join(' · ')}</span>` : '';
@@ -5708,7 +5520,7 @@ function kvLiveTable(){   // 월간 점검 카드 (시안 4): 제목 + 달 넘�
     <div class="kvl-rows${chk ? '' : ' nochk'}" id="kvlRows">${kvLiveList()}</div></div>`;
 }
 function kvLiveList(b=KV_LIVE.board){   // 표의 줄 — 머리 줄 + 부서 묶음(묶음이 하나면 머리 없이). HR 검색 · 부진만 보기 중에는 맞는 사람만 보이고 묶음은 모두 펼친다
-  const me = AUTH.me, hr = !!me.is_hr, q = KV_LIVE.q, filt = hr && (!!q || KV_LIVE.onlySlow), chk = kvLiveChk(b);
+  const me = kvWho(), hr = !!me.is_hr, q = KV_LIVE.q, filt = hr && (!!q || KV_LIVE.onlySlow), chk = kvLiveChk(b);
   const keep = p=>!filt || ((!q || p.name.includes(q)) && (!KV_LIVE.onlySlow || !!p.alarm?.slow));
   const by = Object.fromEntries(b.depts.map(d=>[d.id, d])), team = Object.fromEntries(b.teams.map(t=>[t.deptId, t]));
   const order = b.depts.filter(d=>!by[d.parentId]).flatMap(r=>[r.id, ...b.depts.filter(d=>d.parentId===r.id).map(d=>d.id)]);   // 묶음 순서 = 부서 순서, 본부 다음에 그 본부의 팀
@@ -5726,7 +5538,7 @@ function kvLiveList(b=KV_LIVE.board){   // 표의 줄 — 머리 줄 + 부서 �
   }).join('');
 }
 function kvLiveRows(){ const el = document.getElementById('kvlRows'); if(el) el.innerHTML = kvLiveList(); }   // 표만 다시 그린다 — 검색어를 적는 동안 입력칸을 다시 그리면 한글 조합이 끊긴다
-function kvLiveFold(id){ KV_LIVE.open[id] = !(KV_LIVE.open[id] ?? !AUTH.me.is_hr); kvLiveRows(); }   // 묶음 머리 줄: 접고 편다
+function kvLiveFold(id){ KV_LIVE.open[id] = !(KV_LIVE.open[id] ?? !kvWho().is_hr); kvLiveRows(); }   // 묶음 머리 줄: 접고 편다
 function kvLiveMonth(m){ const now = kvLiveNow(); if(m>=1 && m<=now && m!==KV_LIVE.board.month && KV_LIVE.state!=='loading') kvLiveLoad(m===now ? 0 : m); }   // 달 단추 — 1월 ~ 이번 달 (이번 달은 month 0)
 function kvLiveRow(p, chk){   // 사람 한 줄: 이름(+ 직급 · 종 · 말풍선) · 진행률 막대 · n% · 기대 n% · 그 달에 적을 것 · 확인 · [펼침]/[보기]. 확정본이 없으면 상태 배지와 "—"만 (누를 수 없음)
   const m = p.month, a = p.alarm, slow = !!a?.slow, memo = p.memo;
@@ -5737,7 +5549,7 @@ function kvLiveRow(p, chk){   // 사람 한 줄: 이름(+ 직급 · 종 · 말�
     <span class="kvl-m" title="${mt}">${mt}</span>${chk ? kvCheckText(m.check, m.checkedAt) : ''}<span class="kvl-b"><button type="button" class="btn sm${act ? ' primary' : ''}" aria-expanded="${on}">${act ? '펼침' : '보기'}</button></span></div>`;   // 단추는 줄을 누른 것과 같다 (누르면 줄로 올라간다)
 }
 async function kvLiveRead(uid){   // 펼친 사람의 진행 기록 + 확인 메모 → KV_LIVE.prog · memos. 못 읽으면 아래쪽 알림을 띄우고 카드를 닫는다 → 읽었나
-  const get = u=>fetch(u).then(r=>r.json().catch(()=>({})).then(j=>r.ok ? j : { error:j.error || '불러오지 못했어요.' })).catch(()=>({ error:'불러오지 못했어요. 인터넷 연결을 확인해 주세요.' }));
+  const get = u=>kvGet(u).then(r=>r.json().catch(()=>({})).then(j=>r.ok ? j : { error:j.error || '불러오지 못했어요.' })).catch(()=>({ error:'불러오지 못했어요. 인터넷 연결을 확인해 주세요.' }));
   const [prog, memos] = await Promise.all([get('/api/kpi/progress/'+uid), get('/api/kpi/memos/'+uid)]);
   if(KV_LIVE.sel!==uid) return false;   // 그사이 다른 사람을 눌렀다
   if(prog.error || memos.error){ Object.assign(KV_LIVE, { sel:null, prog:null, memos:null }); wsNotice(prog.error || memos.error); renderContent(); return false; }
@@ -5751,7 +5563,7 @@ async function kvLivePick(uid){   // 사람을 누르면 표 아래에 그 사�
   Object.assign(KV_LIVE, { sel:uid, prog:null, memos:null });
   renderContent();
   if(!await kvLiveRead(uid)) return;
-  const upTo = (KV_LIVE.memos.memos || []).filter(m=>m.authorId===+AUTH.me.user_id).flatMap(m=>m.replies).filter(r=>r.who==='owner').map(r=>r.at).sort().pop();   // 화면에 보인 가장 새 본인 답글 — 읽은 뒤 보내기 전에 달린 답글은 새 답글로 남는다
+  const upTo = (KV_LIVE.memos.memos || []).filter(m=>m.authorId===+kvWho().user_id).flatMap(m=>m.replies).filter(r=>r.who==='owner').map(r=>r.at).sort().pop();   // 화면에 보인 가장 새 본인 답글 — 읽은 뒤 보내기 전에 달린 답글은 새 답글로 남는다
   if(p && p.memo.fresh && upTo && await kpiLivePost(`/api/kpi/memos/${+uid}/seen`, { year:KV_LIVE.board.year, upTo })===200) await kvLiveLoad();   // 붉은 말풍선이 사라진다 (kvLiveLoad 가 다시 그린다)
   else renderContent();
   document.getElementById('kvlPerson')?.scrollIntoView({ block:'nearest' });
@@ -5781,7 +5593,7 @@ function kvLivePerson(){   // 펼친 사람 카드 (시안 4 아래): 제목 · 
   if(!p) return '';
   const title = t=>`<div class="card kvl-card" id="kvlPerson"><div class="card-title"><span>${escapeHtml(p.name)} · ${M}월 기록</span>${t}</div>`;
   if(!prog) return title('') + kpiNote('불러오는 중이에요…') + '</div>';
-  const st = p.month?.check, mine = p.direct && p.checkStep, boss = AUTH.me.position==='DIVISION_HEAD' ? '본부장' : '팀장';
+  const st = p.month?.check, mine = p.direct && p.checkStep, boss = kvWho().position==='DIVISION_HEAD' ? '본부장' : '팀장';
   const chk = st==='DONE' ? `<span class="kvl-ck done"><i>✓</i>${M}월 확인함 ${kvLiveDay(p.month.checkedAt)}</span>` : mine && st==='TODO' ? `<button type="button" class="btn sm primary" id="kvlCheck" onclick="kvLiveCheck(${+p.userId})">${M}월 확인</button>` : '';
   const btns = `<span class="kvl-btns"><button type="button" class="btn sm" onclick="kpiLiveView(${+p.userId})">계획서 보기</button>${KV_LIVE.memos?.canWrite ? `<button type="button" class="btn sm" onclick="document.getElementById('kvMemo')?.focus()">확인 메모 쓰기</button>` : ''}${chk}</span>`;
   const say = !p.checkStep ? '대표이사에게 보고하는 분은 월간 확인이 없어요.' : mine ? `"${M}월 확인"을 누르면 ${escapeHtml(p.name)} 님 화면에 <b class="ok">✓ ${boss} 확인</b>이 붙고, 하고 싶은 말은 <b>확인 메모</b>로 남겨요.` : '읽기만 해요 · 확인과 메모는 바로 위 관리자가 해요.';
@@ -5791,7 +5603,7 @@ function kvLivePerson(){   // 펼친 사람 카드 (시안 4 아래): 제목 · 
 function kvLiveMemos(){   // 펼친 사람 카드 아래 확인 메모 (시연 kvMemoBlock) — 바로 위 관리자가 쓰고(canWrite) 본인 · 윗사람 · HR이 함께 본다. 쓸 사람이 없으면(대표이사에게 보고) 안내 한 줄
   const d = KV_LIVE.memos, p = KV_LIVE.board.people.find(x=>x.userId===KV_LIVE.sel);
   if(!d || !d.memos || !p) return '';
-  const w = d.writer, lead = w ? kpiLeadName(w.id) : '', also = w ? kvLiveAlso(w.id) : '', uid = +p.userId;
+  const w = d.writer, lead = w ? w.lead || kpiLeadName(w.id) : '', also = w ? w.also ?? kvLiveAlso(w.id) : '', uid = +p.userId;   // lead · also: 시연 자료가 직접 준다 (조직도 명단이 없다)
   return `<div class="kv-sec"><span>${lead ? lead+' ' : ''}확인 메모</span>${w ? `<small>${lead}${kpiGa(lead)} 쓰고 본인 · ${also ? also+' · ' : ''}HR이 함께 봐요</small>` : ''}</div>`
     + (w ? '' : '<div class="list-sub">대표이사에게 보고하는 분은 확인 메모가 없어요.</div>')
     + (kvLiveThread(d, p.name, uid) || (w && !d.canWrite ? '<div class="list-sub">아직 메모가 없어요.</div>' : ''))
@@ -5808,7 +5620,7 @@ async function kvLiveCheck(uid){   // [M월 확인] — 받으면 아래쪽 알�
 function kvLiveExport(){   // HR: 지금 보는 달의 명단 전부(검색 · 부진만 보기와 상관없이)를 엑셀에서 열리는 CSV로. 숫자는 화면처럼 반올림
   // ponytail: kvExport 와 같은 CSV (진짜 .xlsx 가 필요하면 서버에서 만든다)
   const b = KV_LIVE.board;
-  if(!AUTH.me?.is_hr || !b) return;
+  if(!kvWho()?.is_hr || !b) return;
   const by = Object.fromEntries(b.depts.map(d=>[d.id, d])), r = Math.round, cur = b.month===kvLiveNow();   // 지난달을 보며 받으면 열 이름 · 파일 이름에 그 달
   const head = ['본부','부서','이름','직급','구분','KPI 상태','종합 진행률(%)','기대 진행률(%)','차이(%p)','부진',`${cur ? '이번 달' : b.month+'월'} 기록 상태`,'확인 메모(건)','확인 안 한 메모(건)','늦어지는 이유','알람 끈 항목(개)','알람 끈 이유'];
   const rows = b.people.map(p=>{
@@ -5845,7 +5657,7 @@ function kvLiveMemoOne(d, m, owner, uid){   // 메모 하나 (시연 kvMemoOne �
   return `<div class="kv-memo"><div class="kv-memo-h"><b>${day(m.at)} · ${escapeHtml(m.by)}</b>${m.canEdit && !edit ? `<span><button type="button" class="kv-link" onclick="kvLiveMemoOpen('edit',${+m.id})">수정</button><button type="button" class="kv-link" onclick="${go('del')}">삭제</button><small>오늘까지 고칠 수 있음</small></span>` : ''}</div>
     ${edit ? box('kvMemoEdit', ui.draft['kvMemoEdit:'+m.id] ?? m.text, '메모를 고쳐 주세요', 'edit', '저장') : `<div class="kv-memo-t">${escapeHtml(m.text)}</div>`}
     ${replies}
-    <div class="kv-memo-f">${state}${(d.role==='owner' || m.authorId===+AUTH.me.user_id) && !reply ? `<button type="button" class="kv-link" onclick="kvLiveMemoOpen('reply',${+m.id})">${icon('message')}답글</button>` : ''}</div>
+    <div class="kv-memo-f">${state}${(d.role==='owner' || m.authorId===+kvWho().user_id) && !reply ? `<button type="button" class="kv-link" onclick="kvLiveMemoOpen('reply',${+m.id})">${icon('message')}답글</button>` : ''}</div>
     ${reply ? box('kvMemoReply', ui.draft['kvMemoReply:'+m.id] || '', '답글을 적어 주세요', 'reply', '답글 남기기') : ''}</div>`;
 }
 function kvLiveThread(d, owner, uid){   // 메모 묶음 (시연 kvThread — 모양을 고치면 짝도 함께) — 맨 새것 · 본인이 확인 안 한 것(본인일 때) · 새 답글이 온 것(쓴 사람일 때) · 고치거나 답글을 다는 중인 것은 펼치고, 나머지는 "지난 메모 N건"
@@ -5885,7 +5697,7 @@ async function kvLiveMemoDo(act, id, uid, box){   // 확인 메모 일: add(메�
       if(act==='del'){ delete ui.draft['kvMemoEdit:'+id]; delete ui.draft['kvMemoReply:'+id]; }   // 지운 메모에 적던 글은 다시 열 길이 없다 — 나가기 확인을 붙잡지 않게
     }
     if(s!==400 && s!==0){   // 받았거나 거절(403 · 404) — 그사이 바뀌었을 수 있으니 서버 것을 다시 읽는다
-      if(uid===+AUTH.me.user_id){ const [m] = await Promise.all([kpiMemoGet(KPI_LIVE.me), kpiRevGet()]); KPI_LIVE.memos = m || KPI_LIVE.memos; }   // 확인할 메모 숫자(메뉴 · 홈)도
+      if(uid===+kvWho().user_id){ const [m] = await Promise.all([kpiMemoGet(KPI_LIVE.me), kpiRevGet()]); KPI_LIVE.memos = m || KPI_LIVE.memos; }   // 확인할 메모 숫자(메뉴 · 홈)도
       else { await kvLiveRead(uid); await kvLiveLoad(); }   // 명단과 함께 처리할 일 숫자도 (kvLiveLoad)
     }
     if(s===200 && dk && (ui.draft[dk] ?? '').trim()===text) delete ui.draft[dk];   // 보낸 그대로인 글만 비운다 — 보내고 다시 읽는 사이 더 적은 글은 남긴다 (kpiProgSave 와 같은 규칙)
@@ -5915,11 +5727,126 @@ function kvLiveMuteSave(){   // 창의 [알람 끄기] — 진행 기록 저장 
   return kpiProgDo(()=>['/api/kpi/me/mute', body, '', ()=>orgCloseModal(), err], [`kp-mu-${+rid}`], 'mute'+rid).then(()=>btns.forEach(b=>b.disabled = false));
 }
 async function kvLiveUnmute(uid, rid){   // [다시 켜기] — 본인 · 확인 단계가 있는 바로 위 관리자만 (대표이사는 보기만 — 서버가 다시 본다). 본인 화면이면 진행 기록 저장 줄로(진행 기록을 다시 읽는다), KPI 현황이면 받든 못 받든 펼친 사람 · 명단을 다시 읽는다
-  if(uid===+AUTH.me.user_id) return kpiProgDo(()=>[`/api/kpi/plans/${+uid}/unmute`, { year:KPI_LIVE.prog.year, rid }, ''], [`kp-mu-${+rid}`], 'unmute'+rid);
+  if(uid===+kvWho().user_id) return kpiProgDo(()=>[`/api/kpi/plans/${+uid}/unmute`, { year:KPI_LIVE.prog.year, rid }, ''], [`kp-mu-${+rid}`], 'unmute'+rid);
   kpiMsg = null;
   if(await kpiLivePost(`/api/kpi/plans/${+uid}/unmute`, { year:KV_LIVE.board.year, rid })===200) wsNotice('알람을 다시 켰어요.');
   await kvLiveRead(uid);
   await kvLiveLoad();
+}
+/* ----- KPI 현황 — 시연 자료 (2026-10-23 인사담당자: 시연 사이트도 실제 화면과 같은 모양으로) -----
+   서버가 없으면(시연 모드) 실제 화면(kvLive* · 계획서 보기 · kpiLivePost)이 /api/kpi/… 대신 kvDemoFetch 에 묻는다. 시연 자료(KV_ORG · kvPeople · 목표설정 시연 계획서)를
+   서버 응답과 같은 모양으로 바꿔 준다 — 보는 범위(kvCanView) · 순서 · 그 달 요약 · 확인 상태는 서버(kpi.py board · kpi_review.month_summary · check_state)와 같은 규칙.
+   보는 사람은 시연 역할(kvDemoMe). 시연 자료에는 달마다의 기록이 없어 만든다: 실행목표 셋 중 앞 둘은 정기(진행률을 마지막으로 고친 날까지 매달 한 줄),
+   셋째는 비정기(분기마다 결과 — 진행률만큼 냈다). 확인 · 메모 · 알람 다시 켜기는 시연 자료에 바로 반영된다(새로 고치면 처음으로). */
+const KV_DEMO_POS = { lead:'TEAM_LEADER', hrl:'TEAM_LEADER', head:'DIVISION_HEAD', ceo:'CEO' }, kvDemoChecked = new Set();   // 시연에서 누른 [M월 확인] — '사람 번호:달'
+function kvDemoMe(){ const p = kvMe(); return { user_id:p ? kvPeople.indexOf(p) : -1, name:KPI_USERS[kpiRole]?.name || '', position:KV_DEMO_POS[kpiRole] || null, is_hr:kpiIsHr() }; }
+function kvWho(){ return AUTH.live ? AUTH.me : kvDemoMe(); }   // KPI 현황을 보는 사람 — 실제 로그인은 서버가 알려 준 나, 시연은 시연 역할
+function kvGet(u, o){ return AUTH.live ? fetch(u, o) : kvDemoFetch(u, o); }   // KPI 현황 · 계획서 보기 · kpiLivePost 가 묻는 곳
+const kvDemoDept = p=>p.kind==='head' ? 100 + KV_ORG.findIndex(d=>d.div===p.div) : 200 + kvTeams.findIndex(t=>t.team===p.team);   // 부서 번호: 본부 100~ · 팀 200~ (팀장 · 팀원은 팀)
+const kvDemoAt = (ymd, h=1)=>`${ymd}T0${h}:00:00Z`;   // 시연 날짜 → 서버 시각 모양
+const kvDemoMm = m=>String(m).padStart(2, '0');
+function kvDemoStatus(p){   // 계획서 상태 — 서버 kpi_plans.status 와 같은 말 (반려됨 = 다시 쓰는 중 DRAFT)
+  const s = p.key && kpiSheets[p.key];
+  if(s) return s.pending ? (s.confirmed ? 'CHANGE_REQUESTED' : 'SUBMITTED') : s.confirmed ? 'CONFIRMED' : 'DRAFT';
+  return Array.isArray(p.prog) ? 'CONFIRMED' : 'DRAFT';
+}
+function kvDemoProg(p){   // GET /api/kpi/progress/<uid> 모양 — 확정본이 있는 사람만
+  const it = kvItems(p), Y = KPI_YEAR, today = kpiDay(0), now = kvLiveNow(), e = kvExpect(), last = kpiDay(-(kvDays(p) ?? 5)), w = kvMemoWriter(p), uid = kvPeople.indexOf(p);
+  const items = it.map((x, i)=>{
+    const mute = x.mute && kvMuted(x.mute) ? { why:x.mute.why, text:x.mute.text || null, until:+x.mute.until.slice(5), at:kvDemoAt(today) } : null;
+    const base = { rid:i + 1, action:x.action, weight:x.weight, value:x.progress, expected:e, why:x.why || null, mute };
+    if(i < 2) return { ...base, kind:'reg', target:null, unit:'', actual:null, pct:null, months:Object.fromEntries([...Array(12)].map((_, k)=>{
+      const m = k + 1, start = `${Y}-${kvDemoMm(m)}-01`, end = m===12 ? `${Y}-12-31` : `${Y}-${kvDemoMm(m + 1)}-07`;   // 그 달 기록은 다음 달 7일까지
+      const c = m > now ? { state:'NA' } : last < start ? { state:today > end ? 'MISSED' : 'OPEN' }
+        : { state:'DONE', text:`${m}월 ${x.action} 진행분 정리`, at:kvDemoAt(m===now ? last : `${Y}-${kvDemoMm(m)}-28`) };
+      return [String(m), { text:null, link:null, at:null, ...c }];
+    })) };
+    return { ...base, kind:'irr', scheds:[3, 6, 9, 12].map((m, k)=>{
+      const due = `${Y}-${kvDemoMm(m)}-${m===12 ? 15 : 28}`, done = due < today && x.progress >= (k + 1)*25 - 15;
+      return { sid:uid*10 + k + 1, name:`${k + 1}분기`, task:'KPI- '+x.action, due, origDue:due, state:done ? 'DONE' : due < today ? 'OVERDUE' : 'UPCOMING',
+        result:done ? { text:`${k + 1}분기 ${x.action} 결과 정리`, link:null, at:kvDemoAt(due) } : null, pending:null, returned:null };
+    }) };
+  });
+  const checks = {};   // 지난달까지는 확인을 받았고, 이번 달은 셋 중 한 명꼴 + 시연에서 누른 것
+  for(let m = 1; m <= now; m++) if(w && (m < now || uid % 3===0 || kvDemoChecked.has(`${uid}:${m}`))) checks[m] = kvDemoAt(m < now ? `${Y}-${kvDemoMm(m + 1)}-08` : today, 2);
+  const total = kvPct(p);
+  return { year:Y, gap:kpiAlarm.gap, checkStep:!!w, checks, total, totalExpected:e, alarm:{ slow:kvIsSlow(p), pct:kvAlarmPct(it) ?? total, expected:e }, items };
+}
+function kvDemoMonth(prog, M){   // 그 달 요약 + 확인 상태 — 서버 month_summary · check_state 와 같은 규칙
+  const ym = `${prog.year}-${kvDemoMm(M)}`, reg = [0, 0], irr = [0, 0];
+  let hasIrr = false;
+  prog.items.forEach(it=>{
+    if(it.kind==='reg'){ const st = it.months[M].state; if(st!=='NA'){ reg[1]++; if(st==='DONE') reg[0]++; } }
+    else { hasIrr = true; it.scheds.forEach(sc=>{ if(sc.due.startsWith(ym)){ irr[1]++; if(sc.result) irr[0]++; } }); }
+  });
+  const records = reg[0] + irr[0], at = prog.checks[M] || null;
+  const check = !prog.checkStep ? 'NOSTEP' : !(records || reg[1] || irr[1]) ? 'NA' : !records ? 'NONE' : at ? 'DONE' : 'TODO';
+  return { reg, irr, records, noSched:hasIrr && !irr[1], check, checkedAt:check==='DONE' ? at : null };
+}
+function kvDemoBoard(M){   // GET /api/kpi/board 모양 — 현장직 · 나는 빠지고, 순서는 부서 → 본부장 · 팀장 · 그 밖 → 이름 (서버와 같게)
+  const mine = kvMe(), role = kpiRole, hr = kpiIsHr(), ceo = role==='ceo';
+  const row = p=>{
+    const w = kvMemoWriter(p), pr = kvItems(p) && kvDemoProg(p);
+    return { userId:kvPeople.indexOf(p), name:p.name, title:p.title || '', deptId:kvDemoDept(p), position:p.kind==='head' ? 'DIVISION_HEAD' : p.kind==='lead' ? 'TEAM_LEADER' : null,
+      status:kvDemoStatus(p), direct:ceo ? !w : !!mine && w===mine, checkStep:!!w,   // 바로 위 관리자 — 쓸 사람(kvMemoWriter)이 없으면 대표이사
+      total:pr ? pr.total : null, totalExpected:pr ? pr.totalExpected : null, alarm:pr ? pr.alarm : null,
+      items:pr ? pr.items.map(({ rid, action, kind, weight, value, expected, why, mute })=>({ rid, action, kind, weight, value, expected, why, mute })) : [],
+      month:pr ? kvDemoMonth(pr, M) : null,
+      memo:{ count:p.memos.length, open:p.memos.filter(m=>!m.ack).length, fresh:!!mine && w===mine ? p.memos.reduce((a, m)=>a + Math.max(0, kvMemoUnread(m)), 0) : 0 } };
+  };
+  const rank = { DIVISION_HEAD:0, TEAM_LEADER:1 };
+  const people = kvPeople.filter(p=>!kvIsLine(p) && p!==mine && (hr || kvCanView(role, mine, p))).map(row)
+    .sort((a, b)=>a.deptId - b.deptId || (rank[a.position] ?? 2) - (rank[b.position] ?? 2) || a.name.localeCompare(b.name, 'ko'));
+  const teams = !ceo ? [] : kvTeams.map(t=>{   // 대표이사: 줄로 못 받는 팀원을 팀마다 숫자로만
+    const ms = t.members.filter(p=>!kvIsLine(p)), got = ms.filter(p=>kvItems(p));
+    return { deptId:kvDemoDept(t.lead), count:ms.length, confirmed:got.length, avg:got.length ? got.reduce((a, p)=>a + kvPct(p), 0)/got.length : null, slow:got.filter(kvIsSlow).length };
+  }).filter(t=>t.count);
+  const depts = KV_ORG.flatMap((d, di)=>[{ id:100 + di, name:d.div, parentId:null }, ...d.teams.map(t=>({ id:200 + kvTeams.indexOf(t), name:t.team, parentId:100 + di }))]);
+  const scope = mine && mine.kind!=='member' ? { deptId:kvDemoDept(mine), name:mine.kind==='head' ? mine.div : mine.team } : null;
+  return { year:KPI_YEAR, month:M, gap:kpiAlarm.gap, scope, depts, people, teams, todo:{ check:people.filter(x=>x.direct && x.month?.check==='TODO').length } };
+}
+function kvDemoMemos(p){   // GET /api/kpi/memos/<uid> 모양 — role: 본인 owner · 바로 위 관리자 writer · 그 밖 ''(보기만)
+  const role = kvMemoRole(kvMe(), p), w = kvMemoWriter(p), wid = w ? kvPeople.indexOf(w) : null;
+  return { role, canWrite:role==='writer' && kvPct(p)!==null,
+    writer:w ? { id:wid, name:w.name, title:w.title, lead:w.kind==='head' ? '본부장' : '팀장', also:w.kind==='head' ? '대표이사' : kvDiv(w.div)?.head ? '본부장' : '' } : null,
+    memos:p.memos.map(m=>({ id:m.id, at:kvDemoAt(m.at), authorId:wid, by:m.by, text:m.text, edited:!!m.edited, ack:m.ack ? kvDemoAt(m.ack, 2) : null,
+      fresh:role==='writer' ? Math.max(0, kvMemoUnread(m)) : 0, canEdit:kvMemoCanEdit(m, role),
+      replies:m.replies.map((r, i)=>({ id:m.id*100 + i, at:kvDemoAt(r.at, 3), who:r.who, by:r.by, text:r.text, canDelete:kvReplyCanDel(r, role) })) })) };
+}
+function kvDemoPlan(p){   // GET /api/kpi/plans/<uid> 모양 (계획서 보기) — 시연 역할은 목표설정 시연 계획서, 그 밖은 시연 KPI 셋
+  const s = p.key && kpiSheets[p.key], pr = kvItems(p) && kvDemoProg(p);
+  let k = 0;
+  const kind = ()=>{ const x = pr && pr.items[k++]; return !x ? {} : x.kind==='reg' ? { kind:'reg', target:null, unit:'' } : { kind:'irr', scheds:x.scheds.map(({ sid, due, name })=>({ sid, due, name })) }; };
+  const goals = s ? (s.confirmed || s.draft).map(g=>({ ...g, items:g.items.map(i=>({ ...i, ...kind() })) }))
+    : (kvItems(p) || []).map(x=>({ team:x.goal, personal:x.goal, items:[{ action:x.action, formula:x.formula, weight:x.weight, owner:p.name, S:'', A:'', B:'', C:'', D:'', progress:x.progress, why:x.why, ...kind() }] }));
+  return { status:kvDemoStatus(p), owner:{ dept:p.team || p.div, name:p.name }, draft:goals, confirmed:{ content:goals }, changeReason:s?.pending?.reason || null };
+}
+async function kvDemoFetch(u, o={}){   // 시연의 서버 — 실제 서버와 같은 주소 · 같은 응답 모양. 아래 말고는 404
+  const res = (j, status=200)=>new Response(JSON.stringify(j), { status, headers:{ 'Content-Type':'application/json' } });
+  const no = (s, e)=>res({ error:e }, s), done = ok=>ok ? res({}) : no(403, '시연에서는 할 수 없는 일이에요.');
+  const [path, qs] = u.split('?'), q = new URLSearchParams(qs || ''), b = o.body ? JSON.parse(o.body) : {}, seg = path.split('/').slice(3);   // /api/kpi/… → […]
+  const me = kvMe(), who = me ? `${me.name} ${me.title}` : '', P = id=>kvPeople[+id];
+  const memo = id=>{ for(const p of kvPeople){ const m = p.memos.find(x=>x.id===+id); if(m) return [p, m, kvMemoRole(me, p)]; } return []; };
+  if((o.method || 'GET')==='GET'){
+    const p = P(seg[1]);
+    if(seg[0]==='board') return res(kvDemoBoard(+q.get('month') || kvLiveNow()));
+    if(p && seg[0]==='progress' && kvItems(p)) return res(kvDemoProg(p));
+    if(p && seg[0]==='memos') return res(kvDemoMemos(p));
+    if(p && seg[0]==='plans') return res(kvDemoPlan(p));
+    return no(404, '시연에는 없는 자료예요.');
+  }
+  const p = P(seg[1]);
+  if(p && seg[0]==='plans' && seg[2]==='check') return done(kvMemoRole(me, p)==='writer' && (kvDemoChecked.add(`${+seg[1]}:${+b.month}`), true));
+  if(p && seg[0]==='plans' && seg[2]==='unmute') return done(!!kvMemoRole(me, p) && (kvMuteSet(p, b.rid - 1, null), true));
+  if(p && seg[0]==='memos' && seg[2]==='seen'){ kvSeeReplies(me, p); return res({}); }
+  if(p && seg[0]==='memos' && seg.length===2) return done(kvCanMemo(me, p) && (p.memos.unshift(kvMemoNew(kpiDay(0), who, String(b.text || '').slice(0, 200))), true));
+  if(seg[0]==='memo'){
+    const [mp, m, role] = memo(seg[1]), a = seg[2];
+    if(a==='delete') return done(!!m && kvMemoCanEdit(m, role) && (mp.memos.splice(mp.memos.indexOf(m), 1), true));
+    return done(!!m && (a==='edit' ? kvMemoEdit(m, role, b.text) : a==='ack' ? kvMemoAck(m, role) : a==='reply' && kvMemoReply(m, role, who, b.text)));
+  }
+  if(seg[0]==='memo-reply'){ const [, m, role] = memo(Math.floor(+seg[1]/100)); return done(!!m && kvReplyDel(m, +seg[1] % 100, role)); }
+  return no(404, '시연에서는 쓰지 않는 기능이에요.');
 }
 async function kvLiveSelfCheck(){   // 브라우저 콘솔에서 await kvLiveSelfCheck() — 실제 로그인 KPI 현황(시안 4)의 그리기와 보내는 모양만 본다. fetch · 내려받기는 가짜(서버에 보내지 않는다), 끝나면 화면을 되돌린다
   const ok = (c, m)=>{ if(!c) throw new Error('kvLiveSelfCheck 실패: '+m); };
@@ -12694,24 +12621,16 @@ const TOURS = {   // 단계: el = 가리킬 곳(여러 개면 묶어서, 배열�
       : { el:'#kvMyMemo', title:'확인 메모', body:'팀장(팀장은 본부장)이 KPI 진행을 확인하고 남긴 메모입니다. <b>확인했습니다</b>를 누르거나 <b>답글</b>을 달아 주세요. 서로 확인했다는 기록으로 남습니다.' },
   ]},
   kv:{ label:'KPI 현황 사용법', tab:'e4', steps:()=>{
-    if(AUTH.live) return [   // 실제 로그인 (시안 4) — 지금 화면에 없는 칸의 단계는 건너뛴다 (tourSteps)
+    return [   // 실제 로그인 · 시연 같은 화면 (시안 4) — 지금 화면에 없는 칸의 단계는 건너뛴다 (tourSteps)
       { el:'#kvlInbox', title:'처리할 요청', body:'제출 · 수정 요청한 KPI와 일정 변경 요청이에요. 여기서 바로 <b>확정</b> · <b>확인</b>하거나 이유를 적어 <b>돌려보내기</b>해요.' },
       { el:'#kvlTable', title:'월간 점검 표', body:'사람마다 <b>종합 진행률</b>(세로선은 오늘 기준 기대) · 그 달에 적을 것 · 확인 상태가 한 줄씩 나와요. <b>빨간 종</b>은 기대보다 많이 늦은 사람, <b>말풍선</b>은 확인 메모가 있는 사람이에요(붉으면 새 답글). <b>이름을 누르면</b> 그 사람의 그 달 기록이 아래에 펼쳐지고, 바로 위 관리자는 거기서 <b>확인</b> · <b>확인 메모</b>를 남겨요.' },
       { el:'#kvlMonth button', title:'달 고르기', body:'<b>달 단추</b>를 누르면 1월부터 이번 달까지 그 달의 기록과 확인을 봐요. 고른 달은 검게, 앞으로 올 달은 흐리게 보여요.' },
       { el:'#kvlPerson', title:'펼친 기록', body:'사람을 누르면 아래에 그 달 기록이 실행목표마다 나와요. 정기는 그 달 한 줄, 비정기는 그 달에 기한이 있는 일정의 결과예요. <b>계획서 보기</b>로 확정된 KPI도 봐요.' },
-      { el:'#kvlCheck', title:`${KV_LIVE.board?.month || ''}월 확인`, body:`그 달 기록을 읽었으면 눌러요. 본인 화면에 <b>✓ ${AUTH.me?.position==='DIVISION_HEAD' ? '본부장' : '팀장'} 확인</b>이 붙어요. 본인이 그 달 기록을 고치면 확인이 풀려 다시 "확인 전"이 돼요.` },
+      { el:'#kvlCheck', title:`${KV_LIVE.board?.month || ''}월 확인`, body:`그 달 기록을 읽었으면 눌러요. 본인 화면에 <b>✓ ${kvWho()?.position==='DIVISION_HEAD' ? '본부장' : '팀장'} 확인</b>이 붙어요. 본인이 그 달 기록을 고치면 확인이 풀려 다시 "확인 전"이 돼요.` },
       { el:'#kvMemo', title:'확인 메모', body:'하고 싶은 말은 <b>확인 메모</b>로 남겨요(200자). 본인이 <b>확인했습니다</b>를 누르거나 답글을 달아요. 쓴 날에는 고치거나 지울 수 있어요.' },
       { el:'#kvlTools', title:'찾기 · 부진만 보기 · 엑셀', body:'이름으로 찾거나 <b>부진만 보기</b>로 골라 보고, <b>엑셀 내려받기</b>로 지금 보는 달의 전 직원 표를 파일로 받아요.' },
     ];
-    const me = kvMe(), writer = !kpiIsHr() && !!me && me.kind!=='member'; return [
-    { el:'#kvList', title:'명단에서 누르기', body:'이름이나 부서를 누르면 오른쪽에 <b>KPI 항목과 진행률</b>이 나옵니다. 막대 위 세로선은 오늘 기준 기대 진행률입니다.' },
-    { el:'.kv-legend', title:'알람 표시 읽기', body:'<b>빨간 종</b>은 진행이 기대보다 많이 늦은 사람, <b>시계</b>는 오랫동안 진행률을 고치지 않은 사람, <b>말풍선</b>은 확인 메모가 있는 사람입니다.' },
-    { el:['.kv-memo-in', '.kv-cols > .card:last-child'], title:writer ? '확인 메모 남기기' : '확인 메모 보기',
-      body:writer ? '사람을 고르면 이 칸에 KPI가 나오고, 아래에 <b>확인 메모</b>를 남길 수 있습니다. 팀원에게는 팀장이, 팀장에게는 본부장이 씁니다. <b>본인도 보고</b> 확인을 누르거나 답글을 답니다. 쓴 당일에는 고칠 수 있습니다.'
-        : '사람을 고르면 이 칸에 KPI가 나오고, 팀장·본부장이 남긴 <b>확인 메모</b>를 함께 볼 수 있습니다.' },
-    { el:'.kv-tools', title:'보기 바꾸기 · 부진만 보기', body:'<b>본부별 · 부서별 · 개인별</b>로 바꿔 보고, 이름으로 찾거나 <b>부진만</b> 골라 볼 수 있습니다.' },
-    { el:'[onclick="kvExport()"]', title:'엑셀 내려받기', body:'전 직원의 진행률 표를 파일로 받습니다. 보고 자료를 만들 때 씁니다.' },
-  ]; }},
+  }},
   ev:{ label:'자기평가 방법', tab:'e2', steps:()=>[
     { el:'#evSelf .ev-steps', title:'평가 순서', body:'자기평가부터 확정까지의 순서입니다. 지금 어느 단계인지 색으로 표시됩니다.' },
     { el:'#evSelf .ev-table thead th:nth-child(1), #evSelf .ev-table tbody tr:first-child td:nth-child(1)', title:'확정 KPI · 달성 기준', body:'목표설정에서 확정한 KPI와 <b>S~D 기준</b>이 그대로 나옵니다. 이 기준에 비춰 평가합니다.' },
