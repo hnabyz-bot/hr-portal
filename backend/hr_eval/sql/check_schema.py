@@ -119,6 +119,7 @@ def apply_schema(path: str) -> sqlite3.Connection | None:
         "game_hours",
         "push_subscriptions",
         "push_morning",
+        "pay_pins",
     }
     missing = expected - tables
     _report(not missing, f"테이블 {len(expected)}개 생성", f"누락: {sorted(missing)}")
@@ -1346,6 +1347,57 @@ def check_push_tables(conn: sqlite3.Connection) -> None:
         _report(ok, f"아침 묶음 {why} 거부", msg)
 
 
+def check_pay_pin_tables(conn: sqlite3.Connection) -> None:
+    """급여·계약 비밀번호 표 (018 — 판 18). 해시 · 소금 값은 전부 가상. 번호 규칙 · 해시 계산은 표가 아니라 backend/paypin.py 가 하고 `python -m paypin check` 가 본다."""
+    print("30. 급여 비밀번호 (018)")
+    ver = conn.execute("PRAGMA user_version").fetchone()[0]
+    _report(ver >= 18, f"판 번호가 18 이상 — {ver}", f"실제 {ver}")
+
+    def person(no: str, name: str) -> int:
+        return conn.execute(
+            "INSERT INTO users (employee_no, name, email, department_id)"
+            f" VALUES ('{no}', '{name}', '{no.lower()}@example.invalid', (SELECT id FROM departments WHERE code='DIV1')) RETURNING id"
+        ).fetchone()[0]
+
+    emp, emp2 = person("T035", "가상비밀번호직원"), person("T036", "가상비밀번호직원2")
+    ins = "INSERT INTO pay_pins (user_id, pin_hash, salt, set_at, fails, locked_at) VALUES (?, ?, ?, '2027-03-02T09:00:00Z', ?, ?)"
+    h, salt, at = "a" * 64, "b" * 32, "2027-03-02T09:05:00Z"
+    conn.execute(ins, (emp, h, salt, 0, None))
+    _report(True, "비밀번호 줄 저장 (틀린 횟수 0 · 잠긴 시각 없음)")
+
+    def rej(sql: str, params: tuple, word: str) -> tuple[bool, str]:
+        ok, msg = _rejects(conn, sql, params)
+        return ok and word in msg, msg
+
+    # emp2 는 줄이 없는 실제 직원 — 아래 CHECK 거부가 중복 · 외래키 때문이 아니라 정말 CHECK 때문인지 본다.
+    for args, why, word in (((emp, h, salt, 0, None), "같은 직원의 두 번째 줄(다시 정하기는 줄을 지운 뒤에)", "UNIQUE"),
+                            ((9999, h, salt, 0, None), "없는 직원", "FOREIGN KEY"),
+                            ((None, h, salt, 0, None), "직원 번호 비어 있음", "NOT NULL"),
+                            ((emp2, None, salt, 0, None), "해시 비어 있음", "NOT NULL"),
+                            ((emp2, h, None, 0, None), "소금 비어 있음", "NOT NULL"),
+                            ((emp2, h, salt, 6, at), "틀린 횟수 6", "CHECK"),
+                            ((emp2, h, salt, -1, None), "틀린 횟수 -1", "CHECK"),
+                            ((emp2, h, salt, 5, None), "5번 틀렸는데 잠긴 시각 없음", "CHECK"),
+                            ((emp2, h, salt, 2, at), "5번 안 틀렸는데 잠긴 시각 있음", "CHECK")):
+        ok, msg = rej(ins, args, word)
+        _report(ok, f"비밀번호 {why} 거부", msg)
+    conn.execute(ins, (emp2, h, salt, 5, at))
+    _report(True, "5번 틀려 잠긴 줄 저장 (잠긴 시각 있음)")
+
+    conn.execute("DELETE FROM users WHERE id IN (?, ?)", (emp, emp2))
+    left = conn.execute("SELECT COUNT(*) FROM pay_pins WHERE user_id IN (?, ?)", (emp, emp2)).fetchone()[0]
+    _report(left == 0, "직원이 지워지면 비밀번호 줄도 함께 지워짐", f"남은 줄 {left}")
+
+    col = conn.execute("SELECT type, \"notnull\", dflt_value FROM pragma_table_info('sessions') WHERE name = 'pay_used_at'").fetchone()
+    _report(col is not None and col[0] == "TEXT" and col[1] == 0 and col[2] is None, "sessions.pay_used_at 칸이 있고 비어 있어도 됨(기본 NULL)", f"실제 {col}")
+    emp3 = person("T037", "가상비밀번호직원3")
+    conn.execute("INSERT INTO sessions (token_hash, user_id, created_at, last_seen_at, expires_at)"
+                 " VALUES (?, ?, '2027-03-02T09:00:00Z', '2027-03-02T09:00:00Z', '2027-03-02T21:00:00Z')", ("f" * 64, emp3))
+    used = conn.execute("SELECT pay_used_at FROM sessions WHERE token_hash = ?", ("f" * 64,)).fetchone()[0]
+    _report(used is None, "새 세션의 pay_used_at 은 NULL (잠긴 상태)", f"실제 {used}")
+    conn.execute("DELETE FROM users WHERE id = ?", (emp3,))
+
+
 def main() -> int:
     print("=" * 62)
     print("SQLite 스키마 적용 + 제약조건 동작 검사")
@@ -1373,6 +1425,7 @@ def main() -> int:
             check_game_hours_table(conn)
             check_contract_live_tables(conn)
             check_push_tables(conn)
+            check_pay_pin_tables(conn)
         finally:
             conn.close()
 
