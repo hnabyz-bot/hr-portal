@@ -3315,8 +3315,8 @@ def check_pay_pin(hr) -> None:
         finally:
             conn.close()
 
-        cli = lambda *a: subprocess.run([sys.executable, "-m", "paypin", *a], cwd=HERE, capture_output=True, text=True, encoding="utf-8",  # noqa: E731
-                                         env={**os.environ, "PYTHONIOENCODING": "utf-8"})
+        cli = lambda *a, db=None: subprocess.run([sys.executable, "-m", "paypin", *a], cwd=HERE, capture_output=True, text=True, encoding="utf-8",  # noqa: E731
+                                                 env={**os.environ, "PYTHONIOENCODING": "utf-8", **({"HR_DB_PATH": db} if db else {})})
         ok(put_pin(d, PIN).status_code == 200, "(검사용) 다시 정함")
         r = cli("reset", "U3@example.invalid")
         ok(r.returncode == 0 and r.stdout.strip() == "초기화했습니다 (직원 번호 3)" and not q("SELECT 1 FROM pay_pins WHERE user_id = 3") and n_reset() == 6
@@ -3324,6 +3324,10 @@ def check_pay_pin(hr) -> None:
         r = cli("reset", "nobody@example.invalid")
         ok(r.returncode == 1 and "그 메일 주소의 직원이 없습니다" in r.stdout + r.stderr and n_reset() == 6, "없는 메일 주소 → 그 메일 주소의 직원이 없습니다 · 종료 코드 1")
         ok(cli("reset").returncode != 0 and cli().returncode != 0 and n_reset() == 6, "메일 주소가 없거나 명령이 없으면 사용법 · 종료 코드 0 아님")
+        with tempfile.TemporaryDirectory() as td:
+            r = cli("reset", "u3@example.invalid", db=str(Path(td) / "nope.db"))
+            ok(r.returncode == 1 and "DB 파일이 없습니다" in r.stdout + r.stderr and "Traceback" not in r.stderr and list(Path(td).iterdir()) == [],
+               f"없는 DB 파일(HR_DB_PATH) → 깔끔한 안내 · 종료 코드 1 · 빈 DB 와 WAL 파일을 만들지 않음 ({(r.stdout + r.stderr).strip()[-120:]!r})")
 
         os.environ.pop("HR_PAY_KEY")
         got = pend()

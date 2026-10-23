@@ -12,6 +12,7 @@ app.py 가 bp 를 붙인다. 세션 검사 · 같은 출처 검사는 auth._guar
   POST /api/pay/alive   화면이 쓰는 중이면 부른다 — 풀려 있을 때만 6분을 다시 센다 {"open": bool}
   GET  /api/pay/counts  {"p1", "p2", "p3", "due"} 왼쪽 메뉴 숫자 — 비밀번호를 풀지 않고 본다(잠긴 창도 200). 개수와 가장 이른 서명 마감일뿐, 금액 · 달 · 본문은 없다
   POST /api/members/<id>/pay-pin/reset  HR 가 그 사람의 번호를 지운다 (PAY_PIN_RESET) — 풀려 있던 그 사람의 모든 창도 다시 잠긴다. HR 본인 것은 다른 HR 이 한다
+  state_of()            이 사람 · 이 창의 상태 — set(아직 안 정함) · locked(5번 틀림, 풀림보다 먼저 본다) · open(마지막 사용부터 6분 안) · ask(물어야 함)
   counts()              p1(안 본 명세서) · p2(서명할 계약서) · p3(안 본 영수증) — push.pending 도 같은 셈을 쓴다
   reset_by_email()      서버 명령용: 메일 주소로 한 사람을 초기화 (HR 이 한 명뿐일 때 그 HR 본인용)
   PREFIXES              잠그는 길의 앞머리 — 이 목록은 이 한 곳에만 둔다
@@ -21,7 +22,7 @@ app.py 가 bp 를 붙인다. 세션 검사 · 같은 출처 검사는 auth._guar
   python -m paypin reset <메일 주소>  서버(HR_DB_PATH 의 DB)에서 그 사람의 번호를 초기화 — 감사로그 PAY_PIN_RESET 에 부른 사람은 없다
 
 HR_PAY_KEY 가 없으면 잠금도 없다(gate 통과 · 정하기 · 확인 503) — 그때는 명세서 등도 빈 목록이다.
-감사로그에는 정함 · 잠김만 남긴다. 번호 · 틀린 숫자 · 한 번 한 번의 맞힘 · 틀림은 적지 않는다.
+감사로그에는 정함(PAY_PIN_SET) · 잠김(PAY_PIN_LOCKED) · 초기화(PAY_PIN_RESET)만 남긴다. 번호 · 틀린 숫자 · 한 번 한 번의 맞힘 · 틀림은 적지 않는다.
 
 해시: pin_hash = HMAC-SHA256(k, salt + pin).hexdigest(), k = HMAC-SHA256(HR_PAY_KEY 32바이트, b"hr-pay-pin").digest().
 열쇠가 DB 밖(서버 .env)에 있어서 DB 파일만 새어 나가도 6자리(100만 가지)를 맞혀 볼 수 없다. 비교는 시간차 없이(hmac.compare_digest).
@@ -301,7 +302,9 @@ if __name__ == "__main__":
         check()
         print("paypin 검사 통과")
     elif sys.argv[1:2] == ["reset"] and len(sys.argv) == 3:
-        db = connect(os.environ.get("HR_DB_PATH") or sys.exit("HR_DB_PATH 가 없습니다 — 서버 컨테이너 안에서 불러 주세요"))  # 거기서는 서버와 같은 DB
+        path = os.environ.get("HR_DB_PATH") or sys.exit("HR_DB_PATH 가 없습니다 — 서버 컨테이너 안에서 불러 주세요")  # 거기서는 서버와 같은 DB
+        os.path.isfile(path) or sys.exit(f"DB 파일이 없습니다 ({path}) — 서버 컨테이너 안에서 불러 주세요")  # connect() 는 없는 파일을 새로 만든다
+        db = connect(path)
         try:
             uid = reset_by_email(db, sys.argv[2])
         finally:
