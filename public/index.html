@@ -9211,8 +9211,8 @@ function pinBand(){   // 풀린 뒤 탭 내용 맨 위 한 줄 (설계 4.3, 그�
 function pinBandPaint(){ const b = document.getElementById('pinBand'); if(b) b.outerHTML = pinBand(); }   // 띠만 바꿔 그린다 (탭 내용은 그대로)
 function pinTouch(){   // 움직임(포털 어디서든) — 5분을 다시 센다. 풀려 있으면 서버에도 1분에 한 번까지 "아직 있어요" (기다리지 않는다)
   PIN.last = Date.now();
-  if(pinUnlocked() && PIN.last - PIN.sent>=PIN_ALIVE_MS){ PIN.sent = PIN.last;   // 답이 open:false면 서버가 이 세션을 다른 곳에서 잠갔다(다른 창의 지금 잠그기 · 다른 기기에서 5번 틀림 · HR 초기화) — 이 창도 잠금 창으로. 실제로 5번 틀림 · 초기화면 다음 확인의 423이 그 창으로 고친다
-    fetch('/api/pay/alive', { method:'POST' }).then(r=>r.json()).then(j=>{ if(j.open===false && pinUnlocked()) pinRefused('ask'); }).catch(()=>{}); }
+  if(pinUnlocked() && PIN.last - PIN.sent>=PIN_ALIVE_MS){ PIN.sent = PIN.last;   // 답이 open:false면 서버가 이 세션을 다른 곳에서 잠갔다(다른 창의 지금 잠그기 · 다른 기기에서 5번 틀림 · HR 초기화) — 이 창도 잠금 창으로
+    fetch('/api/pay/alive', { method:'POST' }).then(r=>r.json()).then(j=>{ if(j.open===false && pinUnlocked()){ pinRefused('ask'); pinLoad().then(()=>PIN.state==='open' ? pinOpened() : currentNav.id==='pay' && renderContent()); } }).catch(()=>{}); }   // 받아 둔 것을 먼저 지우고, 지금 상태(5번 틀림 · 초기화돼 처음 정하기 · 입력)를 물어 맞는 창을 바로 그린다. 그 사이 같은 브라우저의 다른 탭에서 다시 풀었으면 풀린 그대로
 }
 ['pointermove', 'pointerdown', 'keydown', 'wheel', 'touchstart'].forEach(e=>document.addEventListener(e, pinTouch, { passive:true }));
 document.addEventListener('scroll', ()=>{ if(!PIN.veiled) pinTouch(); }, { capture:true, passive:true });   // 안쪽 칸의 스크롤은 문서로 올라오지 않는다 — capture로 받는다. 가린 동안은 뺀다: 가림이 다시 그려 짧아진 화면을 브라우저가 스크롤해도(사람 없음) 움직임이 아니다 — 사람의 스크롤은 휠 · 터치 · 키 · 누르기로 온다
@@ -9240,7 +9240,7 @@ async function pinOpened(){   // 풀렸다 (맞는 비밀번호 · 처음 정함
   Object.assign(PIN, { state:'open', err:'', typed:'', first:'', row:0, forgot:false, veiled:false, last:Date.now() });
   payShow = true;
   await Promise.all([payLoadMine(), whFetchMine(), ctLoadMine()]);
-  renderContent();
+  renderContent(); tourAuto();   // 풀린 화면에 처음이면 사용법(지금 잠그기 단계까지)을 바로 띄운다
 }
 function pinRefused(lock){   // 쓰던 중 잠김 응답(423 — 서버 재시작 · 6분 쉼 · 다른 창에서 5번 틀림 · HR 초기화) · 5분 잠금 · 지금 잠그기 — 받아 둔 것을 버리고 잠금 창으로. 다시 보내지 않는다(잠긴 동안 그 길을 부르지 않는다)
   if(!pinGated()) Object.assign(PAY_COUNTS, { p1:TODO.p1(), p2:TODO.p2(), p3:TODO.p3(), due:ctFirstDue() });   // 풀린 동안의 숫자(받아 둔 목록)로 먼저 — 로그인 때 받은 옛 숫자가 잠금 창에 보이지 않게. 지우기 전에 센다
@@ -9258,7 +9258,8 @@ async function pinSelfCheck(){   // 브라우저 콘솔에서 await pinSelfCheck
   const ok = (c, m)=>{ if(!c) throw new Error('pinSelfCheck 실패: '+m); };
   const keep = { fetch:window.fetch, open:window.open, clip:Object.getOwnPropertyDescriptor(navigator, 'clipboard'), phone:isPhone, live:AUTH.live, me:AUTH.me, locked:AUTH.locked, role:kpiRole, nav:currentNav, tab:currentTab,
     pin:{ ...PIN }, cnt:{ ...PAY_COUNTS }, pay:{ ...PAY_LIVE }, wh:{ ...WH_LIVE }, ct:{ ...CT_LIVE }, show:payShow, po:payOpen, ps:[ps.state, ps.view], whs:[wh.state, wh.view],
-    rz:{ ...rz }, msg:kpiMsg, pad:ctPadDirty, wo:whOrig, wsPull, pushInit, progAt:kpiProgAt, chr:PAY_CHAR_MEM, wy:whYear };
+    rz:{ ...rz }, msg:kpiMsg, pad:ctPadDirty, wo:whOrig, wsPull, pushInit, progAt:kpiProgAt, chr:PAY_CHAR_MEM, wy:whYear, tourAuto };
+  tourAuto = ()=>{};   // 풀 때마다 사용법이 떠 검사 화면을 가리지 않게 — 아래 처음 사용법 묶음에서만 진짜를 쓴다
   const calls = [], order = [], opened = [], copied = [], reply = {}, wait = async (n = 5)=>{ for(let i = 0; i<n; i++) await new Promise(r=>setTimeout(r, 0)); };
   const json = (b, status = 200)=>new Response(JSON.stringify(b), { status, headers:{ 'Content-Type':'application/json' } });
   const box = ()=>document.getElementById('pinBox'), txt = ()=>(box()?.textContent || '').replace(/\s+/g, ' '), toast = ()=>document.getElementById('wsToast')?.textContent || '';
@@ -9479,9 +9480,20 @@ async function pinSelfCheck(){   // 브라우저 콘솔에서 await pinSelfCheck
     Object.assign(PIN, { state:'open', last:Date.now(), veiled:false }); payShow = true; renderContent(); await wait(10);
     calls.length = 0; PIN.sent = Date.now() - 61e3; pinTouch(); await wait();
     ok(posts('/api/pay/alive')===1 && PIN.state==='open' && !box() && PAY_LIVE.mine.length>0 && payShow===true, '아직 있어요 답이 open:true면 풀린 그대로');
-    reply['/api/pay/alive'] = ()=>json({ open:false }); calls.length = 0; PIN.sent = Date.now() - 61e3; pinTouch(); await wait();
+    const lockWas = reply['/api/pay/lock'], lockAs = st=>{ reply['/api/pay/lock'] = o=>o.method==='POST' ? json({ ok:true }) : json({ state:st, left:st==='locked' ? 0 : 5, hr:[] }); };
+    const elsewhere = async st=>{ lockAs(st); Object.assign(PIN, { state:'open', last:Date.now(), veiled:false }); payShow = true; await payLoadMine(); renderContent(); await wait(10);
+      calls.length = 0; PIN.sent = Date.now() - 61e3; pinTouch(); await wait(20); };
+    reply['/api/pay/alive'] = ()=>json({ open:false });
+    await elsewhere('ask');
     ok(posts('/api/pay/alive')===1 && PIN.state==='ask' && PAY_LIVE.mine.length===0 && payShow===false && box() && txt().includes('비밀번호를 입력해 주세요') && !barred().length, '아직 있어요 답이 open:false면 받아 둔 것을 지우고 잠금 창 (잠긴 길을 다시 부르지 않는다)');
-    reply['/api/pay/alive'] = ()=>json({ open:true });
+    ok(sent('/api/pay/lock').some(c=>c.m==='GET'), '다른 곳에서 잠갔으면 지금 상태를 서버에 묻는다');
+    await elsewhere('locked');
+    ok(PIN.state==='locked' && txt().includes('5번 틀려서 잠겼어요') && PAY_LIVE.mine.length===0 && !barred().length, '다른 기기에서 5번 틀렸으면 처음부터 "5번 틀려서 잠겼어요" 창 (한 번 입력해 볼 필요 없이)');
+    await elsewhere('set');
+    ok(PIN.state==='set' && txt().includes('급여 비밀번호를 정해 주세요') && !barred().length, 'HR이 초기화했으면 처음부터 "정해 주세요" 창');
+    lockAs('open'); await elsewhere('open');
+    ok(PIN.state==='open' && !box() && sent('/api/payslips').length>0, '그 사이 같은 브라우저 다른 탭에서 다시 풀었으면 풀린 그대로 (다시 받는다)');
+    reply['/api/pay/lock'] = lockWas; reply['/api/pay/alive'] = ()=>json({ open:true });
 
     // ----- 다른 창 · 탭 · 앱으로 가면 바로 가림, 돌아오면 쉰 시간으로 -----
     const vis = v=>{ Object.defineProperty(document, 'visibilityState', { configurable:true, get:()=>v }); document.dispatchEvent(new Event('visibilitychange')); };
@@ -9564,15 +9576,17 @@ async function pinSelfCheck(){   // 브라우저 콘솔에서 await pinSelfCheck
       currentNav = NAV.find(n=>n.id==='pay'); currentTab = currentNav.tabs[0]; kpiRole = 'emp'; ps.view = 'me';
       Object.assign(PIN, { state:'ask', typed:'', err:'', forgot:false }); renderContent(); tourAuto(); await sleep(400);
       ok(!tour.steps && !tourSeen().includes('pay'), '잠긴 급여·계약: 처음 사용법을 자동으로 띄우지 않고 본 것으로 치지 않는다');
-      Object.assign(PIN, { state:'open', last:Date.now() }); renderContent(); tourAuto(); await sleep(400);
-      ok(tour.key==='pay' && tour.steps.some(s=>s.el==='#pinBand') && tourSeen().includes('pay'), '풀린 뒤 처음: 사용법(지금 잠그기 단계까지)을 띄운다');
+      tourAuto = keep.tourAuto; await pinOpened(); await sleep(400);
+      ok(tour.key==='pay' && tour.steps.some(s=>s.el==='#pinBand') && tourSeen().includes('pay'), '비밀번호를 푼 순간 처음 사용법(지금 잠그기 단계까지)을 띄운다 — 탭을 다시 누르지 않아도');
+      tourEnd(); await pinOpened(); await sleep(400);
+      ok(!tour.steps, '한 번 본 사용법은 다시 풀어도 띄우지 않는다');
     } finally { tourEnd(); try { localStorage.setItem('tourSeen', seenWas.join(',')); } catch(e){} document.documentElement.classList.toggle('wc-on', wcWas); }
   } finally {
     window.fetch = keep.fetch; window.open = keep.open; if(keep.clip) Object.defineProperty(navigator, 'clipboard', keep.clip); else delete navigator.clipboard; isPhone = keep.phone;
     AUTH.live = keep.live; AUTH.me = keep.me; AUTH.locked = keep.locked; kpiRole = keep.role; currentNav = keep.nav; currentTab = keep.tab;
     Object.assign(PIN, keep.pin); Object.assign(PAY_COUNTS, keep.cnt); Object.assign(PAY_LIVE, keep.pay); Object.assign(WH_LIVE, keep.wh); Object.assign(CT_LIVE, keep.ct);
     payShow = keep.show; payOpen = keep.po; [ps.state, ps.view] = keep.ps; [wh.state, wh.view] = keep.whs;
-    Object.assign(rz, keep.rz); kpiMsg = keep.msg; ctPadDirty = keep.pad; whOrig = keep.wo; wsPull = keep.wsPull; pushInit = keep.pushInit; kpiProgAt = keep.progAt; PAY_CHAR_MEM = keep.chr; whYear = keep.wy; delete document.visibilityState;
+    Object.assign(rz, keep.rz); kpiMsg = keep.msg; ctPadDirty = keep.pad; whOrig = keep.wo; wsPull = keep.wsPull; pushInit = keep.pushInit; kpiProgAt = keep.progAt; PAY_CHAR_MEM = keep.chr; whYear = keep.wy; tourAuto = keep.tourAuto; delete document.visibilityState;
     if(keep.confirm) window.confirm = keep.confirm; if(keep.ms){ MS_LIVE.list = keep.ms.list; MS_LIVE.state = keep.ms.state; }
     document.getElementById('pinVeil')?.remove(); document.getElementById('authLock')?.remove(); orgCloseModal(true);
     document.getElementById('wsToast')?.remove(); renderContent();
