@@ -10,7 +10,8 @@
   POST /api/push/unsubscribe  이 세션의 구독 줄 삭제
   세션 검사 · 같은 출처 검사는 auth._guard 가 모든 /api/* 에 한다. app.py 가 bp 를 붙인다.
 
-일이 생길 때 보내기: 급여명세서 · 원천징수영수증 공개, KPI 제출 · 수정 요청 · 일정 변경 요청 · 돌려보냄, 확인 메모 · 답글, 연봉계약서 발송 · 다시 보내기 · 문의, 인사평가 시작 · 자기평가 없이 진행(evaluation.py)이 그 일을 저장(commit)한 뒤
+일이 생길 때 보내기: 급여명세서 · 원천징수영수증 공개, KPI 제출 · 수정 요청 · 일정 변경 요청 · 돌려보냄, 확인 메모 · 답글, 연봉계약서 발송 · 다시 보내기 · 문의,
+인사평가 시작 · 자기평가 없이 진행 · 자기평가 제출 · 평가자 제출 · 본부장 마감(evaluation.py)이 그 일을 저장(commit)한 뒤
 notify() 를 부른다 — 보내는 쪽(pending)이 DB 를 새로 잡으므로 commit 전에 부르면 잠김 오류가 난다. 키가 없거나 근무시간(평일 9~18시 KST) 밖이면 아무것도 안 한다 (다음 근무일 9시 묶음에 들어감).
 보내기는 요청을 붙잡지 않게 데몬 스레드에서, 실패해도 원래 일은 그대로 (예외를 밖으로 내지 않고 로그에는 상태 코드 · 예외 종류만).
 알림 문구에는 금액 · 다른 사람 이름 · 평가 등급이 없다 — 잠금 화면에 그대로 보이므로. 문구는 MESSAGES 한 곳에만 둔다.
@@ -74,6 +75,7 @@ LABELS: dict[str, str] = {
     "memos": "확인 메모 확인",
     "check": "KPI 월간 확인",
     "replies": "확인 메모에 새 답글",
+    "e2": "평가 진행",
 }
 
 
@@ -325,9 +327,10 @@ def _deliver_one(conn: Connection, found: list[tuple[str, dict]], payload: dict,
 
 def pending(flask_app: Flask, uid: int) -> list[tuple[str, int]]:
     """그 사람이 처리할 일 [(종류, 개수)] — 0 인 종류는 빼고 LABELS 순서. 합은 그 사람 화면의 왼쪽 메뉴 숫자 합(homePortalTasks · TODO)과 같다:
-    화면이 부르는 서버 함수를 그 사람으로 세워 그대로 쓴다 (kpi.inbox · plan_json · progress_json). 평가 · 이의 신청은 서버 기능이 없어 0,
+    화면이 부르는 서버 함수를 그 사람으로 세워 그대로 쓴다 (kpi.inbox · plan_json · progress_json · evaluation.eval_todo — 화면 TODO.e2 = 평가 진행). 이의 신청은 서버 기능이 없어 0,
     연봉계약서 문의는 알림만 보내고 세지 않는다 (설계 7장). 열쇠(HR_PAY_KEY)가 없으면 급여명세서 · 영수증 · 계약서는 0 — 화면의 목록도 비어 있다.
     새 앱 컨텍스트를 먼저 연다: 요청 안에서 불러도(inline 보내기) 그 요청의 g.actor · g.db 를 덮어쓰지 않고, 여기서 연 DB 연결은 컨텍스트가 닫힐 때 닫힌다."""
+    import evaluation  # 쓰는 자리에서 — evaluation 도 이 파일을 불러온다
     import kpi  # 쓰는 자리에서 — kpi 가 이 파일을 불러와도 순환하지 않게
     import paypin
 
@@ -350,6 +353,8 @@ def pending(flask_app: Flask, uid: int) -> list[tuple[str, int]]:
         n["memos"] = box["review"]["memos"]
         if actor.is_hr or actor.position in (Role.TEAM_LEADER, Role.DIVISION_HEAD, Role.CEO):  # 월간 확인 · 새 답글은 이 사람들만 (화면 kvCanUse)
             n["check"], n["replies"] = box["review"]["check"], box["review"]["replies"]
+        with kpi._txn(conn):  # 평가도 표 여럿을 읽는다 — 화면이 부르는 곳(/api/eval/state)과 같이 한 트랜잭션 안에서
+            n["e2"] = sum(evaluation.eval_todo(conn, actor).values())  # 내 일 + HR 관리 (화면 evTodo 의 합)
     return [(k, n[k]) for k in LABELS if n.get(k)]
 
 
@@ -560,7 +565,7 @@ def check() -> None:
     assert list(MESSAGES) == ["payslip", "withholding", "contract_sign", "contract_ask", "kpi_inbox", "kpi_back", "kpi_memo",
                               "kpi_reply_to_author", "kpi_reply_to_owner", "eval_turn"]
     assert message("eval_turn") == {"title": "인사평가에서 처리할 일이 있어요", "body": "PC에서 확인해 주세요", "url": "/?go=perf.e2"}  # 평가 진행 탭 — 등급 · 이름 없음
-    assert list(LABELS) == ["p1", "p2", "p3", "inbox", "back", "prev", "memos", "check", "replies"]
+    assert list(LABELS) == ["p1", "p2", "p3", "inbox", "back", "prev", "memos", "check", "replies", "e2"]  # 화면 homePortalTasks 차례 — 평가 진행은 KPI 다음
     assert {k: MESSAGES[k][1] for k in MESSAGES if k.startswith("kpi_")} == {  # KPI 알림은 PC 에서 열라는 안내 — 평가·성과는 휴대폰에서 안 열린다
         "kpi_inbox": "PC에서 확인해 주세요", "kpi_back": "PC에서 사유를 확인하고 다시 작성해 주세요", "kpi_memo": "PC에서 확인해 주세요",
         "kpi_reply_to_author": "PC에서 확인해 주세요", "kpi_reply_to_owner": "PC에서 확인해 주세요"}
