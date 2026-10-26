@@ -331,3 +331,10 @@ docker compose logs api --tail 50    # "DB 준비 완료 (판 20)" 가 보이면
 ## 13. 축하 · 칭찬 카드
 
 직원끼리 주고받는 카드(설계: `docs/superpowers/specs/2026-10-26-praise-cards-design.md`). **배포할 때 서버에서 할 일은 없다 — ssh 없이 merge만으로 반영된다.** 새 표(DB 판 21)는 서버가 뜰 때 저절로 만들고(반영 뒤 서버 로그에 `DB 준비 완료 (판 21)`), 카드 글은 이미 있는 `HR_PAY_KEY`로 잠그니 `.env`에 새로 넣을 값도 새 타이머도 없다. 카드 알림은 10장의 열쇠와 9시 타이머를 그대로 쓴다. `HR_PAY_KEY`가 없는 서버는 카드 보내기가 막힌다(3장).
+
+- **`HR_PAY_KEY`를 바꾸면 그 전에 보낸 카드 글은 풀리지 않는다** — 카드함 목록에서 빠지고(서버 로그 `카드 글을 풀 수 없어 N장을 목록에서 뺐음`), 그중 안 읽은 카드는 메뉴 · 9시 묶음 · 앱 아이콘의 "새 카드" 숫자에 계속 남는다. 바꾼 `.env`로 서버를 다시 켜기(`docker compose up -d`) **바로 전에** 아래를 한 번 돌려 안 읽은 카드를 모두 읽음으로 돌린다(다시 켠 뒤에 돌리면 새 열쇠로 온 카드까지 읽음이 된다):
+
+```bash
+cd ~/workspace/github-hnabyz-bot/hr-portal
+docker compose exec -T api python -c "import os,sqlite3; c=sqlite3.connect(os.environ['HR_DB_PATH'], timeout=5); n=c.execute(\"UPDATE cards SET read_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE read_at IS NULL\").rowcount; c.commit(); print(f'{n}장을 읽음으로 바꿨습니다')"
+```

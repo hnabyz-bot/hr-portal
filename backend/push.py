@@ -64,7 +64,7 @@ MESSAGES: dict[str, tuple[str, str, str]] = {
     "kpi_reply_to_owner": ("확인 메모에 새 답글이 달렸어요", "PC에서 확인해 주세요", "perf.e1"),
     "eval_turn": ("인사평가에서 처리할 일이 있어요", "PC에서 확인해 주세요", "perf.e2"),
     "card": ("카드가 왔어요", "눌러서 확인해 주세요", "ws.w3"),  # 보낸 사람 이름 · 카드 글은 잠금 화면에 안 보이게 넣지 않는다
-    "card_thanks": ("보낸 카드에 고마워요가 왔어요", "눌러서 확인해 주세요", "ws.w3"),
+    "card_thanks": ("보낸 카드에 고마워요가 왔어요", "눌러서 확인해 주세요", "ws.w3.out"),  # 받은 카드 › 보낸 카드 (화면 pushGoParse 가 셋째 값 out 을 안다)
 }
 
 # 처리할 일 종류 → 9시 묶음에 쓰는 이름 (화면 homePortalTasks 제목과 같은 말, 순서도 같게)
@@ -572,7 +572,7 @@ def check() -> None:
                               "kpi_reply_to_author", "kpi_reply_to_owner", "eval_turn", "card", "card_thanks"]
     assert message("eval_turn") == {"title": "인사평가에서 처리할 일이 있어요", "body": "PC에서 확인해 주세요", "url": "/?go=perf.e2"}  # 평가 진행 탭 — 등급 · 이름 없음
     assert message("card") == {"title": "카드가 왔어요", "body": "눌러서 확인해 주세요", "url": "/?go=ws.w3"}  # 이름 · 글 자리 없음
-    assert message("card_thanks") == {"title": "보낸 카드에 고마워요가 왔어요", "body": "눌러서 확인해 주세요", "url": "/?go=ws.w3"}
+    assert message("card_thanks") == {"title": "보낸 카드에 고마워요가 왔어요", "body": "눌러서 확인해 주세요", "url": "/?go=ws.w3.out"}  # 받은 카드 › 보낸 카드
     assert list(LABELS) == ["p1", "p2", "p3", "inbox", "back", "prev", "memos", "check", "replies", "e2", "cards"]  # 화면 homePortalTasks 차례 — 평가 진행은 KPI 다음, 새 카드는 맨 끝
     assert {k: MESSAGES[k][1] for k in MESSAGES if k.startswith("kpi_")} == {  # KPI 알림은 PC 에서 열라는 안내 — 평가·성과는 휴대폰에서 안 열린다
         "kpi_inbox": "PC에서 확인해 주세요", "kpi_back": "PC에서 사유를 확인하고 다시 작성해 주세요", "kpi_memo": "PC에서 확인해 주세요",

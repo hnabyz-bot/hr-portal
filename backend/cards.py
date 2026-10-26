@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import sqlite3
 import sys
 from datetime import date
@@ -48,6 +49,11 @@ LINES_MAX = 3  # 카드 글 줄 수 (줄바꿈은 2번까지)
 LIST_MAX = 500  # 상자에 한 번에 담는 받은 카드 · 보낸 카드 각각의 장 수 (최근 것부터)
 
 _NEWS_REASON = {"birthday": "birthday", "welcome": "welcome", "anniversary": "anniv"}  # auth.news_items 의 kind → 축하 사유
+# 카드 글 다듬기 — 화면 cardText 와 같은 판정이어야 한다(cardSelfCheck 에 cards.check 와 같은 표). 화면은 JS trim · \s 로 같은 목록을 쓴다
+_NEWLINE = re.compile("\r\n?|[\u2028\u2029\x85]")  # 줄 나눔 글자는 모두 \n 으로 바꿔 센다
+_SPACE = " \t\xa0\u1680\u2000-\u200a\u202f\u205f\u3000\ufeff"  # 줄 앞뒤에서 떼는 빈칸 (정규식 [] 안) — str.strip 의 목록(제어문자 · 줄 나눔 글자는 위에서 막거나 바꿈)에 BOM 을 더한 것 = JS trim
+_EDGE = re.compile(f"^[{_SPACE}]+|[{_SPACE}]+$")
+_UNSEEN = re.compile(f"[\n{_SPACE}\u200b-\u200f\u2060\u3164]")  # 보이지 않는 글자: 빈칸 · 줄바꿈 · 폭 없는 글자 · 한글 채움 문자 — 이것뿐이면 빈 글
 
 
 class CardError(Exception):
@@ -79,7 +85,8 @@ def options(reasons: list[str], condol: bool) -> list[dict]:
 
 
 def clean_text(v: object) -> str:
-    """카드 글: 글자만, 줄마다 앞뒤 빈칸을 뗀 1~TEXT_MAX자, LINES_MAX줄까지 — 아니면 CardError(400). \\r\\n · 혼자 있는 \\r 은 \\n 으로 바꿔 센다.
+    """카드 글: 글자만, 줄마다 앞뒤 빈칸(_SPACE)을 뗀 1~TEXT_MAX자, LINES_MAX줄까지 — 아니면 CardError(400). \\r\\n · 혼자 있는 \\r · U+2028 · U+2029 · U+0085 는 \\n 으로 바꿔 센다.
+    보이는 글자가 없으면(빈칸 · 폭 없는 글자뿐 — _UNSEEN) 빈 글로 본다.
     글자 규칙은 kpi._chars 와 같다: UTF-8 로 쓸 수 있어야 하고(짝 없는 서로게이트 없음) 탭 · 줄바꿈 · CR 밖의 제어문자(DEL 포함)가 없어야 한다.
     특히 NUL 은 SQLite length() 가 거기서 멈춘다. 빈칸을 떼기 전의 글로 본다 — 제어문자가 가장자리에 있어도 똑같이 막는다."""
     if not isinstance(v, str):
@@ -90,8 +97,8 @@ def clean_text(v: object) -> str:
         raise CardError("글에 쓸 수 없는 글자가 있어요.") from None
     if any(ord(ch) == 127 or (ord(ch) < 32 and ch not in "\t\n\r") for ch in v):
         raise CardError("글에 쓸 수 없는 글자가 있어요.")
-    t = "\n".join(ln.strip() for ln in v.replace("\r\n", "\n").replace("\r", "\n").split("\n")).strip()
-    if not t:
+    t = "\n".join(_EDGE.sub("", ln) for ln in _NEWLINE.sub("\n", v).split("\n")).strip("\n")
+    if not _UNSEEN.sub("", t):
         raise CardError("글을 적어 주세요.")
     if len(t) > TEXT_MAX:
         raise CardError(f"글은 {TEXT_MAX}자까지 쓸 수 있어요.")
@@ -317,6 +324,16 @@ def check() -> None:
         else:
             raise AssertionError(f"통과하면 안 됨: {bad!r}")
     assert clean_text("가" * 150) and clean_text("a\nb\nc") == "a\nb\nc" and clean_text("a\tb") == "a\tb"
+
+    def verdict(v: str) -> str:  # 다듬은 글, 안 되면 그 문구
+        try:
+            return clean_text(v)
+        except CardError as e:
+            return e.msg
+    for v, want in (("가\u2028나", "가\n나"), ("\ufeff 가 \ufeff", "가"), ("\x85가\x85", "가"), ("가\u200b나", "가\u200b나"),
+                    ("가\u2028나\u2029다\x85라", "글은 세 줄까지 쓸 수 있어요."), ("\u200b\u200c\u200d\u2060\ufeff", "글을 적어 주세요."),
+                    (" \u200b \n \u3164 ", "글을 적어 주세요.")):  # 화면 cardSelfCheck 의 같은 표 — 두 쪽 판정이 같아야 한다
+        assert verdict(v) == want, (v, verdict(v), want)
     k = bytes(range(32))
     b = seal_text(k, 1, 2, "2027-03-02", "고마워요")
     assert unseal_text(k, 1, 2, "2027-03-02", b) == "고마워요" and "고마워요".encode() not in b

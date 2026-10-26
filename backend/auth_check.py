@@ -7696,10 +7696,10 @@ def check_cards(hr) -> None:
             calls.clear()
             return rows
 
-        def pushed(uid: int, title: str, badge: int) -> bool:
+        def pushed(uid: int, title: str, badge: int, url: str = "/?go=ws.w3") -> bool:
             """방금 보낸 것이 정확히 uid 에게 한 통이고, 제목 · 내용 · 열 화면 · TTL · 앱 아이콘 숫자가 맞고, 내용에 이름 · 카드 글이 없는가."""
             rows = take()
-            return (len(rows) == 1 and rows[0][0] == uid and rows[0][1] == {"title": title, "body": "눌러서 확인해 주세요", "url": "/?go=ws.w3", "badge": badge}
+            return (len(rows) == 1 and rows[0][0] == uid and rows[0][1] == {"title": title, "body": "눌러서 확인해 주세요", "url": url, "badge": badge}
                     and rows[0][2] == push.TTL_EVENT and not any(w in json.dumps(rows[0][1], ensure_ascii=False) for w in ("가상카드", "카드글")))
 
         def phone(uid: int) -> None:  # 가상 휴대폰 세션 + 구독 한 줄 (고정한 시각 기준) — 세션을 지우면 구독도 함께 지워진다
@@ -7734,8 +7734,8 @@ def check_cards(hr) -> None:
             ok(r.status_code == 200 and push.pending(app, B) == [] and not take(), "카드를 읽으면 처리할 일에서 빠지고, 읽음은 알림을 보내지 않음")
 
             print("  - 고마워요_알림")
-            ok(post(cb, f"/api/cards/{first}/thanks").status_code == 200 and pushed(A, "보낸 카드에 고마워요가 왔어요", 0),
-               "B 의 고마워요 → 보낸 A 의 휴대폰에만 한 통 (B 는 조용) · 내용은 안내뿐 (이름 · 글 없음)")
+            ok(post(cb, f"/api/cards/{first}/thanks").status_code == 200 and pushed(A, "보낸 카드에 고마워요가 왔어요", 0, "/?go=ws.w3.out"),
+               "B 의 고마워요 → 보낸 A 의 휴대폰에만 한 통 (B 는 조용) · 누르면 받은 카드 › 보낸 카드 · 내용은 안내뿐 (이름 · 글 없음)")
             ok(post(cb, f"/api/cards/{first}/thanks").status_code == 200 and not take(), "두 번째 고마워요는 아무것도 안 바꾸고 알림도 없음")
 
             print("  - 알림이_고장나도")
