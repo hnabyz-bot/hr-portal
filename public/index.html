@@ -13892,6 +13892,7 @@ const cardOpt = ()=>CARD_S.opts && CARD_S.opts[CARD_S.sel] || CARD_BASE[0];   //
 function cardSendOrg(id, reason=null){ const m = orgFind(id); return cardCan(m) ? cardSend({ to:cardTo(m), reason }) : undefined; }   // 이번 주 소식 · 조직도 단추 — 화면 번호만 받는다(이름 없음)
 function cardPick(id){ const m = orgFind(id); return cardCan(m) ? cardFor(cardTo(m)) : undefined; }   // 이름 찾기에서 고름 — 고른 종류 · 쓴 글은 그대로
 function cardText(v){   // 서버 cards.clean_text 와 같은 규칙 → [다듬은 글, 안 되는 까닭('' = 됨)]. 글자 수는 코드 포인트로 센다 (그림 글자도 한 자)
+  if([...v].length > 600) return [v, '글은 150자까지 쓸 수 있어요.'];   // 다듬기 전 600자(서버 RAW_MAX = 4 × 150)를 넘으면 바로 — 서버와 같은 순서
   if(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]|[\ud800-\udbff](?![\udc00-\udfff])|(^|[^\ud800-\udbff])[\udc00-\udfff]/.test(v)) return [v, '글에 쓸 수 없는 글자가 있어요.'];
   const t = v.replace(/\r\n?|[\u2028\u2029\x85]/g, '\n').split('\n').map(x=>x.trim()).join('\n').trim();   // 줄 나눔 글자는 모두 \n (서버 _NEWLINE) · 줄마다 앞뒤 빈칸 — 여기까지 남는 글자에서 trim 은 서버 _SPACE 와 같은 목록(BOM 포함)
   if(!t.replace(/[\s\u200b-\u200f\u2060\u3164]/g, '')) return ['', '글을 적어 주세요.'];   // 보이는 글자가 없다 (빈칸 · 폭 없는 글자 · 한글 채움 문자뿐 — 서버 _UNSEEN)
@@ -14131,7 +14132,8 @@ async function cardSelfCheck(){   // 브라우저 콘솔에서 await cardSelfChe
     }
     const verdict = v=>{ const [t, bad] = cardText(v); return bad || t; };
     for(const [v, want] of [['가\u2028나', '가\n나'], ['\ufeff 가 \ufeff', '가'], ['\x85가\x85', '가'], ['가\u200b나', '가\u200b나'],
-      ['가\u2028나\u2029다\x85라', '글은 세 줄까지 쓸 수 있어요.'], ['\u200b\u200c\u200d\u2060\ufeff', '글을 적어 주세요.'], [' \u200b \n \u3164 ', '글을 적어 주세요.']])   // 서버 cards.check 의 같은 표
+      ['가\u2028나\u2029다\x85라', '글은 세 줄까지 쓸 수 있어요.'], ['\u200b\u200c\u200d\u2060\ufeff', '글을 적어 주세요.'], [' \u200b \n \u3164 ', '글을 적어 주세요.'],
+      [' '.repeat(590) + '가' + ' '.repeat(9), '가'], [' '.repeat(591) + '가' + ' '.repeat(9), '글은 150자까지 쓸 수 있어요.']])   // 서버 cards.check 의 같은 표
       ok(verdict(v)===want, `글 규칙이 서버와 같다: ${JSON.stringify(v)} → ${JSON.stringify(want)} (화면 ${JSON.stringify(verdict(v))})`);
     type('\u200b\u2060\ufeff'); ok(btn().disabled && red()==='' && M().querySelector('#cmLen').textContent==='0/150', '보이는 글자가 없으면 빈 글 — 붉은 줄 없이 [보내기] 막힘 · 0/150');
     type('😀'.repeat(150)); ok(!btn().disabled && M().querySelector('#cmLen').textContent==='150/150', '150자 (그림 글자도 한 자로 센다)');

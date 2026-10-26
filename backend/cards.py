@@ -28,6 +28,7 @@ import os
 import re
 import sqlite3
 import sys
+import time
 from datetime import date
 from sqlite3 import Connection
 
@@ -51,9 +52,9 @@ LIST_MAX = 500  # 상자에 한 번에 담는 받은 카드 · 보낸 카드 각
 _NEWS_REASON = {"birthday": "birthday", "welcome": "welcome", "anniversary": "anniv"}  # auth.news_items 의 kind → 축하 사유
 # 카드 글 다듬기 — 화면 cardText 와 같은 판정이어야 한다(cardSelfCheck 에 cards.check 와 같은 표). 화면은 JS trim · \s 로 같은 목록을 쓴다
 _NEWLINE = re.compile("\r\n?|[\u2028\u2029\x85]")  # 줄 나눔 글자는 모두 \n 으로 바꿔 센다
-_SPACE = " \t\xa0\u1680\u2000-\u200a\u202f\u205f\u3000\ufeff"  # 줄 앞뒤에서 떼는 빈칸 (정규식 [] 안) — str.strip 의 목록(제어문자 · 줄 나눔 글자는 위에서 막거나 바꿈)에 BOM 을 더한 것 = JS trim
-_EDGE = re.compile(f"^[{_SPACE}]+|[{_SPACE}]+$")
-_UNSEEN = re.compile(f"[\n{_SPACE}\u200b-\u200f\u2060\u3164]")  # 보이지 않는 글자: 빈칸 · 줄바꿈 · 폭 없는 글자 · 한글 채움 문자 — 이것뿐이면 빈 글
+_SPACE = " \t\xa0\u1680" + "".join(map(chr, range(0x2000, 0x200B))) + "\u202f\u205f\u3000\ufeff"  # 줄 앞뒤에서 떼는 빈칸 (str.strip 인자 — 정규식은 "x + 빈칸 n개 + x" 에서 n² 이라 쓰지 않는다) — str.strip 의 목록(제어문자 · 줄 나눔 글자는 위에서 막거나 바꿈)에 BOM 을 더한 것 = JS trim
+_UNSEEN = frozenset("\n" + _SPACE + "".join(map(chr, range(0x200B, 0x2010))) + "\u2060\u3164")  # 보이지 않는 글자: 빈칸 · 줄바꿈 · 폭 없는 글자(U+200B~U+200F · U+2060) · 한글 채움 문자 — 이것뿐이면 빈 글
+RAW_MAX = 4 * TEXT_MAX  # 다듬기 전 글자 수 상한 — 넘으면 줄마다 다듬지 않고 바로 "150자까지"(화면 cardText 도 같은 순서)
 
 
 class CardError(Exception):
@@ -91,14 +92,16 @@ def clean_text(v: object) -> str:
     특히 NUL 은 SQLite length() 가 거기서 멈춘다. 빈칸을 떼기 전의 글로 본다 — 제어문자가 가장자리에 있어도 똑같이 막는다."""
     if not isinstance(v, str):
         raise CardError("글을 적어 주세요.")
+    if len(v) > RAW_MAX:
+        raise CardError(f"글은 {TEXT_MAX}자까지 쓸 수 있어요.")
     try:
         v.encode("utf-8")
     except UnicodeEncodeError:
         raise CardError("글에 쓸 수 없는 글자가 있어요.") from None
     if any(ord(ch) == 127 or (ord(ch) < 32 and ch not in "\t\n\r") for ch in v):
         raise CardError("글에 쓸 수 없는 글자가 있어요.")
-    t = "\n".join(_EDGE.sub("", ln) for ln in _NEWLINE.sub("\n", v).split("\n")).strip("\n")
-    if not _UNSEEN.sub("", t):
+    t = "\n".join(ln.strip(_SPACE) for ln in _NEWLINE.sub("\n", v).split("\n")).strip("\n")
+    if all(ch in _UNSEEN for ch in t):
         raise CardError("글을 적어 주세요.")
     if len(t) > TEXT_MAX:
         raise CardError(f"글은 {TEXT_MAX}자까지 쓸 수 있어요.")
@@ -332,8 +335,13 @@ def check() -> None:
             return e.msg
     for v, want in (("가\u2028나", "가\n나"), ("\ufeff 가 \ufeff", "가"), ("\x85가\x85", "가"), ("가\u200b나", "가\u200b나"),
                     ("가\u2028나\u2029다\x85라", "글은 세 줄까지 쓸 수 있어요."), ("\u200b\u200c\u200d\u2060\ufeff", "글을 적어 주세요."),
-                    (" \u200b \n \u3164 ", "글을 적어 주세요.")):  # 화면 cardSelfCheck 의 같은 표 — 두 쪽 판정이 같아야 한다
+                    (" \u200b \n \u3164 ", "글을 적어 주세요."),
+                    (" " * 590 + "가" + " " * 9, "가"), (" " * 591 + "가" + " " * 9, "글은 150자까지 쓸 수 있어요.")):  # 화면 cardSelfCheck 의 같은 표 — 두 쪽 판정이 같아야 한다 (끝 둘: 다듬기 전 600자까지 · 601자부터 바로 거절)
         assert verdict(v) == want, (v, verdict(v), want)
+    assert set(_SPACE) == {ch for ch in map(chr, range(0x10000)) if ch.isspace()} - set("\n\x0b\x0c\r\x1c\x1d\x1e\x1f\x85\u2028\u2029") | {"\ufeff"}  # = str.strip 목록 - 막거나 바꾼 글자 + BOM
+    t0 = time.perf_counter()
+    assert verdict("x" + " " * 200000 + "x") == "글은 150자까지 쓸 수 있어요." and verdict("x" + " " * 598 + "x") == "글은 150자까지 쓸 수 있어요."
+    assert verdict("x\n" + " " * 597 + "y") == "x\ny" and time.perf_counter() - t0 < 0.5, time.perf_counter() - t0  # 긴 빈칸도 금방 (전에는 8만 자에 30초 넘게)
     k = bytes(range(32))
     b = seal_text(k, 1, 2, "2027-03-02", "고마워요")
     assert unseal_text(k, 1, 2, "2027-03-02", b) == "고마워요" and "고마워요".encode() not in b
