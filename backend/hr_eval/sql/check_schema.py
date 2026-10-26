@@ -120,6 +120,12 @@ def apply_schema(path: str) -> sqlite3.Connection | None:
         "push_subscriptions",
         "push_morning",
         "pay_pins",
+        "ev_rounds",
+        "ev_targets",
+        "ev_items",
+        "ev_files",
+        "ev_pools",
+        "ev_appeals",
     }
     missing = expected - tables
     _report(not missing, f"테이블 {len(expected)}개 생성", f"누락: {sorted(missing)}")
@@ -1435,6 +1441,230 @@ def check_pay_ask_table(conn: sqlite3.Connection) -> None:
     conn.execute("DELETE FROM users WHERE id = ?", (hr,))
 
 
+def check_eval_tables(conn: sqlite3.Connection) -> None:
+    """인사평가 표 (020 — 판 20): 회차 · 평가 대상 · 실행목표 · 증빙 · 묶음 기록 · 이의 신청. 이름 · 글은 전부 가상.
+    막혀야 할 것은 "막혔는가"만 보지 않고 어느 규칙이 막았는지(메시지의 CHECK 식 · UNIQUE · FOREIGN KEY …)까지 본다 — 표가 없어서 막힌 것이 통과로 세어지지 않게.
+    평가 대상 · 실행목표 줄은 지울 수 없어서(트리거) 이 절은 줄을 남긴다 — 그래서 맨 뒤 절이다. 다음 절이 필요하면 이 줄들(2027 · 2029)을 그대로 쓴다."""
+    print("32. 인사평가 (020)")
+    ver = conn.execute("PRAGMA user_version").fetchone()[0]
+    _report(ver >= 20, f"판 번호가 20 이상 — {ver}", f"실제 {ver}")
+    up = conn.execute("SELECT id FROM users WHERE employee_no='T001'").fetchone()[0]    # 2027 확정본 판 1 · 2 가 있는 사람 (22 절)
+    boss = conn.execute("SELECT id FROM users WHERE employee_no='T020'").fetchone()[0]
+
+    def person(no: str, name: str) -> int:
+        return conn.execute(
+            "INSERT INTO users (employee_no, name, email, department_id)"
+            f" VALUES ('{no}', '{name}', '{no.lower()}@example.invalid', (SELECT id FROM departments WHERE code='DIV1')) RETURNING id"
+        ).fetchone()[0]
+
+    p2, spare = person("T039", "가상평가대상2"), person("T040", "가상평가대상3")
+    T, ln = "2027-03-02T09:00:00Z", (lambda n: "가" * n)  # 글자 수 맞춘 가상 문장
+
+    def row(table: str, base: dict, over: dict) -> tuple[str, tuple]:
+        cols = {**base, **over}
+        return f"INSERT INTO {table} ({', '.join(cols)}) VALUES ({', '.join('?' * len(cols))})", tuple(cols.values())
+
+    def put(table: str, base: dict, **over) -> None:
+        conn.execute(*row(table, base, over))
+
+    def bad(table: str, base: dict, word: str, why: str, **over) -> None:
+        """over 로 바꾼 줄이 거부되고, 거부 메시지에 word(CHECK 식의 한 토막 · UNIQUE · FOREIGN KEY …)가 들어 있나."""
+        ok, msg = _rejects(conn, *row(table, base, over))
+        _report(ok and word in msg, f"{table} {why} 거부", msg)
+
+    # --- 회차 (해마다 한 줄) ------------------------------------------------------------------------------------------
+    RD = dict(year=2027, self_to="2027-02-14", evid_due="2027-02-20", score_to="2027-02-28", grade_to="2027-03-07",
+              ceo_to="2027-03-14", final_to="2027-03-21", updated_at=T)
+    RD32 = {**RD, "year": 2032}   # 평가 시작일 줄(kpi_years)은 있고 회차는 없는 해 — 거부 시험의 바탕 (26 절이 만든다)
+    put("ev_rounds", RD)
+    got = conn.execute("SELECT band_a, band_b, band_c, started_at, started_by, att_done_at, released_at, released_by, updated_by"
+                       " FROM ev_rounds WHERE year = 2027").fetchone()
+    _report(got == (90, 80, 70, None, None, None, None, None, None), "회차 기본값: 등급 기준 90 · 80 · 70 · 시작 · 근태 마침 · 공개 · 고친 사람 비어 있음", f"실제 {got}")
+    put("ev_rounds", RD, year=2029, started_at=T, started_by=boss, att_done_at=T, released_at=T, released_by=boss, band_a=100, band_b=2, band_c=1, updated_by=boss)
+    _report(True, "시작 · 근태 마침 · 공개까지 한 회차 저장 (등급 기준 경계 100 · 2 · 1)")
+    for kw, word, why in ((dict(self_to="2027-03-01"), "self_to <= score_to", "자기평가 마감이 평가 마감보다 뒤"),
+                          (dict(score_to="2027-03-08"), "self_to <= score_to", "평가 마감이 등급 확정 마감보다 뒤"),
+                          (dict(grade_to="2027-03-15"), "self_to <= score_to", "등급 확정 마감이 대표이사 마감보다 뒤"),
+                          (dict(ceo_to="2027-03-22"), "self_to <= score_to", "대표이사 마감이 최종 마감보다 뒤"),
+                          (dict(evid_due="2027-03-01"), "evid_due <= score_to", "증빙 기한이 평가 마감보다 뒤"),
+                          (dict(band_a=101), "band_a <= 100", "A 기준 101"),
+                          (dict(band_b=90), "band_a > band_b", "B 기준이 A 기준과 같음"),
+                          (dict(band_b=95), "band_a > band_b", "B 기준이 A 기준보다 큼"),
+                          (dict(band_c=80), "band_b > band_c", "C 기준이 B 기준과 같음"),
+                          (dict(band_c=0), "band_c >= 1", "C 기준 0"),
+                          (dict(band_a=None), "NOT NULL", "A 기준 비어 있음"),
+                          (dict(released_at=T), "released_at IS NULL", "공개했는데 시작 안 함"),
+                          (dict(year=2099), "FOREIGN KEY", "평가 시작일 줄(kpi_years)이 없는 해"),
+                          (dict(year=2025), "year BETWEEN", "2026 이전 해"), (dict(year=2101), "year BETWEEN", "2100 이후 해"),
+                          (dict(year=2027), "UNIQUE", "같은 해 두 줄"),
+                          (dict(started_by=9999, started_at=T), "FOREIGN KEY", "없는 사람이 시작한 것으로 적기"),
+                          (dict(updated_by=9999), "FOREIGN KEY", "없는 사람이 고친 것으로 적기"),
+                          (dict(updated_at=None), "NOT NULL", "고친 때 비어 있음")):
+        bad("ev_rounds", RD32, word, why, **kw)
+    for col in ("self_to", "evid_due", "score_to", "grade_to", "ceo_to", "final_to"):
+        bad("ev_rounds", RD32, f"date({col}) IS {col}", f"없는 날짜 2027-02-30 ({col})", **{col: "2027-02-30"})
+        bad("ev_rounds", RD32, f"date({col}) IS {col}", f"날짜 모양이 아닌 글 ({col})", **{col: "2027-2-5"})
+        bad("ev_rounds", RD32, "NOT NULL", f"비어 있는 마감일 ({col})", **{col: None})
+    ok, msg = _rejects(conn, "DELETE FROM kpi_years WHERE year = 2027")
+    _report(ok and "FOREIGN KEY" in msg, "회차가 있는 해의 기간 줄(kpi_years)은 지울 수 없음", msg)
+
+    # --- 평가 대상 (한 사람 한 해 한 줄 · 시작 때 떠 둔다) ----------------------------------------------------------------
+    TG = dict(year=2027, user_id=up, pool="DIV:1", div_name="가상본부", team_name="본부 직속", is_leader=0, writes_kpi=1, kpi_version=2, stage="SELF")
+    put("ev_targets", TG, division_id=1, team_id=None, title="사원", rater_id=boss, assigner_id=boss)
+    put("ev_targets", TG, user_id=p2, pool="DIRECT", writes_kpi=0, kpi_version=None, stage="SCORE")
+    got = conn.execute("SELECT late, leave_x2, bonus_x2, bonus_reason, comment, head_comment, grade, proposed, sub_score_x10, sub_marks, out_at, rater_id, assigner_id, kpi_version"
+                       " FROM ev_targets WHERE user_id = ?", (p2,)).fetchone()
+    _report(got == (0, 0, 0, "", "", "", None, None, None, None, None, None, None, None), "대상 기본값: 근태 · 가점 0 · 글 비어 있음 · 등급 · 제안 · 점수 · 제외 · 평가자 · 배정자 · KPI 판 비어 있음", f"실제 {got}")
+    TB = {**TG, "user_id": spare, "kpi_version": None, "writes_kpi": 0}   # 거부 시험의 바탕 — spare 는 아직 줄이 없다
+    for kw, word, why in ((dict(pool="DIV:0"), "pool IN", "묶음 'DIV:0'"), (dict(pool="TEAM"), "pool IN", "묶음 'TEAM'"),
+                          (dict(pool="DIV:"), "pool IN", "묶음 'DIV:'(번호 없음)"), (dict(pool="div:1"), "pool IN", "소문자 묶음 'div:1'"),
+                          (dict(pool=None), "NOT NULL", "묶음 비어 있음"),
+                          (dict(stage="X"), "stage IN", "단계 'X'"), (dict(stage=None), "NOT NULL", "단계 비어 있음"),
+                          (dict(leave_x2=731), "leave_x2 BETWEEN", "연차 초과 731(365.5일을 넘음)"), (dict(leave_x2=-1), "leave_x2 BETWEEN", "연차 초과 -1"),
+                          (dict(late=1000), "late BETWEEN", "지각 1000"), (dict(late=-1), "late BETWEEN", "지각 -1"),
+                          (dict(bonus_x2=21, bonus_reason="가상"), "bonus_x2 BETWEEN", "가점 21(0.5점 단위, 10점 초과)"),
+                          (dict(bonus_x2=-1, bonus_reason="가상"), "bonus_x2 BETWEEN", "가점 -1"),
+                          (dict(bonus_x2=2), "bonus_reason", "가점이 있는데 사유가 빈칸"),
+                          (dict(bonus_x2=2, bonus_reason="   "), "bonus_reason", "가점이 있는데 사유가 공백뿐"),
+                          (dict(bonus_x2=2, bonus_reason=ln(101)), "bonus_reason", "가점 사유 101자"),
+                          (dict(stage="HR", proposed="A"), "stage NOT IN", "'HR' 단계인데 등급 없음"),
+                          (dict(stage="DONE", proposed="A"), "stage NOT IN", "'DONE' 단계인데 등급 없음"),
+                          (dict(stage="GRADE"), "proposed IS NOT NULL", "'GRADE' 단계인데 평가자 제안 없음"),
+                          (dict(stage="CEO"), "proposed IS NOT NULL", "'CEO' 단계인데 평가자 제안 없음"),
+                          (dict(stage="HR", grade="A"), "proposed IS NOT NULL", "'HR' 단계인데 평가자 제안 없음"),
+                          (dict(user_id=up, year=2029, kpi_version=1, writes_kpi=0), "writes_kpi = 1", "KPI 판이 있는데 KPI 작성 대상이 아님"),
+                          (dict(user_id=up, year=2029, kpi_version=9, writes_kpi=1), "FOREIGN KEY", "없는 확정본 판 번호(판 9)"),
+                          (dict(year=2031), "FOREIGN KEY", "회차가 없는 해"),
+                          (dict(user_id=9999), "FOREIGN KEY", "없는 직원"),
+                          (dict(rater_id=9999), "FOREIGN KEY", "없는 평가자"), (dict(assigner_id=9999), "FOREIGN KEY", "없는 배정자"),
+                          (dict(out_by=9999), "FOREIGN KEY", "없는 사람이 제외한 것으로 적기"), (dict(no_self_by=9999), "FOREIGN KEY", "없는 사람이 자기평가 없이로 적기"),
+                          (dict(scored_by=9999), "FOREIGN KEY", "없는 사람이 평가한 것으로 적기"), (dict(proxy_by=9999), "FOREIGN KEY", "없는 사람이 대신 넣은 것으로 적기"),
+                          (dict(out_at=T), "out_at IS NULL", "제외 날짜만 있고 이유 없음"), (dict(out_reason="가상"), "out_at IS NULL", "제외 이유만 있고 날짜 없음"),
+                          (dict(out_at=T, out_reason=""), "length(out_reason)", "제외 이유 빈칸"),
+                          (dict(out_at=T, out_reason=ln(101)), "length(out_reason)", "제외 이유 101자"),
+                          (dict(comment=ln(501)), "length(comment)", "평가자 코멘트 501자"),
+                          (dict(head_comment=ln(501)), "length(head_comment)", "본부장 코멘트 501자"),
+                          (dict(comment=None), "NOT NULL", "코멘트 비어 있음(NULL)"),
+                          (dict(grade="E"), "grade IN", "등급 'E'"), (dict(proposed="X"), "proposed IN", "평가자 제안 'X'"),
+                          (dict(sub_score_x10=1101), "sub_score_x10 BETWEEN", "KPI 점수 110.1"), (dict(sub_score_x10=-1), "sub_score_x10 BETWEEN", "KPI 점수 -0.1"),
+                          (dict(sub_marks="[]"), "json_type(sub_marks)", "객체가 아닌 JSON 항목 등급"), (dict(sub_marks="{"), "json_valid(sub_marks)", "깨진 JSON 항목 등급"),
+                          (dict(is_leader=2), "is_leader IN", "팀장 칸 2"), (dict(writes_kpi=2, kpi_version=None), "writes_kpi IN", "KPI 작성 칸 2"),
+                          (dict(div_name=None), "NOT NULL", "본부 이름 비어 있음"), (dict(team_name=None), "NOT NULL", "팀 이름 비어 있음"),
+                          (dict(user_id=up), "UNIQUE", "같은 해 같은 사람 두 줄")):
+        bad("ev_targets", TB, word, why, **kw)
+    put("ev_targets", TG, year=2029, kpi_version=None, writes_kpi=0, stage="SCORE")   # 같은 사람 다른 해 — KPI 없이 등급만 (확정본은 2027 만 있다)
+    _report(True, "같은 사람의 다른 해 대상 저장 (KPI 없이 등급만)")
+    idx = [r[0] for r in conn.execute("SELECT name FROM pragma_index_info('ev_targets_pool') ORDER BY seqno").fetchall()]
+    _report(idx == ["year", "pool"], "묶음별 찾기 색인 (ev_targets_pool)", f"실제 {idx}")
+    # 경계값 한 줄 — 가장 큰 값들을 한꺼번에 넣어 본다
+    put("ev_targets", TG, user_id=spare, pool="DIV:12", kpi_version=None, writes_kpi=0, stage="DONE", grade="S", proposed="A",
+        late=999, leave_x2=730, bonus_x2=20, bonus_reason=ln(100), comment=ln(500), head_comment=ln(500), out_at=T, out_reason=ln(100),
+        sub_score_x10=1100, sub_marks='{"1": "A"}', edit_seen="가상 고친 내용")
+    put("ev_targets", TG, year=2029, user_id=spare, pool="LEADERS", kpi_version=None, writes_kpi=0, stage="CEO", proposed="B", sub_score_x10=0, sub_marks="{}")
+    _report(True, "경계값 대상 저장 (근태 999 · 730, 가점 10점, 글 500 · 100자, KPI 점수 110.0 · 0, 묶음 'DIV:12' · 'LEADERS')")
+    ok, msg = _rejects(conn, "DELETE FROM ev_targets WHERE user_id = ?", (p2,))
+    left = conn.execute("SELECT COUNT(*) FROM ev_targets WHERE user_id = ?", (p2,)).fetchone()[0]
+    _report(ok and "삭제할 수 없습니다" in msg and left == 1, "평가 대상 줄 지우기 거부 (평가 기록 보존)", f"{msg} · 남은 줄 {left}")
+    ok, msg = _rejects(conn, "DELETE FROM users WHERE id = ?", (p2,))
+    _report(ok and "FOREIGN KEY" in msg, "평가 대상인 직원은 지울 수 없음 (퇴직자는 비활성으로)", msg)
+    ok, msg = _rejects(conn, "DELETE FROM ev_rounds WHERE year = 2027")
+    _report(ok and "FOREIGN KEY" in msg, "대상이 있는 회차는 지울 수 없음", msg)
+
+    # --- 실행목표 (떠 둔 KPI 의 실행목표마다 한 줄) ----------------------------------------------------------------------
+    IT = dict(year=2027, user_id=up, rid=1)
+    put("ev_items", IT)
+    put("ev_items", IT, rid=2, note=ln(500), self_grade="S", grade="D")
+    got = conn.execute("SELECT note, self_grade, grade FROM ev_items WHERE rid = 1").fetchone()
+    _report(got == ("", None, None), "실행목표 기본값: 실적 글 비어 있음 · 등급 둘 다 비어 있음", f"실제 {got}")
+    for kw, word, why in ((dict(rid=1), "UNIQUE", "같은 실행목표 두 줄"), (dict(rid=0), "rid >= 1", "실행목표 번호 0"),
+                          (dict(rid=3, note=ln(501)), "length(note)", "실적 501자"), (dict(rid=3, note=None), "NOT NULL", "실적 비어 있음(NULL)"),
+                          (dict(rid=3, self_grade="X"), "self_grade IN", "자기평가 등급 'X'"), (dict(rid=3, grade="E"), "grade IN", "평가자 등급 'E'"),
+                          (dict(rid=None), "NOT NULL", "번호 비어 있음"),
+                          (dict(user_id=9999, rid=3), "FOREIGN KEY", "없는 직원"),
+                          (dict(year=2031, rid=3), "FOREIGN KEY", "회차가 없는 해")):
+        bad("ev_items", IT, word, why, **kw)
+    ok, msg = _rejects(conn, "INSERT INTO ev_items (year, user_id, rid) VALUES (2029, ?, 1)", (p2,))
+    _report(ok and "FOREIGN KEY" in msg, "ev_items 같은 사람이어도 대상 줄이 없는 해(2029)는 거부", msg)
+    ok, msg = _rejects(conn, "DELETE FROM ev_items WHERE user_id = ? AND rid = 1", (up,))
+    left = conn.execute("SELECT COUNT(*) FROM ev_items WHERE user_id = ?", (up,)).fetchone()[0]
+    _report(ok and "삭제할 수 없습니다" in msg and left == 2, "실행목표 줄 지우기 거부 (평가 기록 보존)", f"{msg} · 남은 줄 {left}")
+
+    # --- 증빙 (파일 내용은 서버 폴더에 있고 표에는 이름 · 종류 · 크기 · 지문만) ------------------------------------------------
+    FL = dict(year=2027, user_id=up, rid=1, name="가상 증빙.pdf", kind="pdf", size=1024, sha256="a" * 64, at=T)
+    put("ev_files", FL)
+    for k in ("pdf", "png", "jpg", "xlsx", "xls", "docx", "doc", "hwp", "hwpx"):
+        put("ev_files", FL, kind=k, name=ln(120), size=10485760)
+    put("ev_files", FL, rid=2, size=1)
+    _report(True, "증빙 저장 (종류 아홉 가지 · 이름 120자 · 크기 1 · 10485760 바이트 · 같은 파일 두 번)")
+    for kw, word, why in ((dict(rid=9), "FOREIGN KEY", "없는 실행목표"), (dict(user_id=p2), "FOREIGN KEY", "실행목표가 없는 사람"),
+                          (dict(size=10485761), "size BETWEEN", "크기 10MB + 1"), (dict(size=0), "size BETWEEN", "크기 0"),
+                          (dict(kind="exe"), "kind IN", "종류 'exe'"), (dict(kind="jpeg"), "kind IN", "종류 'jpeg'(jpg 로 줄여 적는다)"),
+                          (dict(kind="PDF"), "kind IN", "종류 'PDF'(소문자만)"),
+                          (dict(name=""), "length(name)", "이름 빈칸"), (dict(name=ln(121)), "length(name)", "이름 121자"),
+                          (dict(sha256=None), "NOT NULL", "지문 비어 있음"), (dict(at=None), "NOT NULL", "올린 때 비어 있음")):
+        bad("ev_files", FL, word, why, **kw)
+    n = conn.execute("SELECT COUNT(*) FROM ev_files WHERE user_id = ? AND rid = 1", (up,)).fetchone()[0]
+    conn.execute("DELETE FROM ev_files WHERE id = (SELECT MIN(id) FROM ev_files)")
+    gone = conn.execute("SELECT COUNT(*) FROM ev_files WHERE user_id = ? AND rid = 1", (up,)).fetchone()[0]
+    _report(n - gone == 1, "증빙 줄은 지울 수 있음 (본인이 마감 전에 지운다)", f"{n} → {gone}")
+
+    # --- 묶음 기록 (상태는 사람들의 단계로 센다 — 여기엔 마감 · 확인 · 돌려보냄 · 되돌림 기록만) -----------------------------------
+    PL = dict(year=2027, pool="DIV:1")
+    put("ev_pools", PL)
+    got = conn.execute("SELECT closed_at, closed_by, hr_seen, ceo_at, back_at, back_reason, undo_at, undo_from FROM ev_pools").fetchone()
+    _report(got == (None, None, "[]", None, None, None, None, None), "묶음 기록 기본값: 마감 · 확인 · 돌려보냄 · 되돌림 비어 있음 · HR 확인 목록 []", f"실제 {got}")
+    put("ev_pools", PL, pool="LEADERS", closed_at=T, closed_by=boss, hr_seen="[3, 5]", ceo_at=T, ceo_by=up, ceo_behalf=boss,
+        back_at=T, back_by=up, back_behalf=boss, back_reason=ln(200), undo_at=T, undo_by=boss, undo_from="CEO")
+    put("ev_pools", PL, pool="DIRECT", undo_at=T, undo_by=boss, undo_from="HR")
+    _report(True, "모든 칸이 찬 묶음 기록 저장 (돌려보낸 이유 200자 · 되돌린 단계 'CEO' · 'HR')")
+    for kw, word, why in ((dict(pool="DIV:1"), "UNIQUE", "같은 해 같은 묶음 두 줄"), (dict(pool="TEAM"), "pool IN", "묶음 'TEAM'"),
+                          (dict(pool="DIV:0"), "pool IN", "묶음 'DIV:0'"),
+                          (dict(pool="DIV:2", back_at=T), "back_at IS NULL", "돌려보낸 날짜만 있고 이유 없음"),
+                          (dict(pool="DIV:2", back_reason="가상"), "back_at IS NULL", "돌려보낸 이유만 있고 날짜 없음"),
+                          (dict(pool="DIV:2", back_at=T, back_reason=""), "length(back_reason)", "돌려보낸 이유 빈칸"),
+                          (dict(pool="DIV:2", back_at=T, back_reason=ln(201)), "length(back_reason)", "돌려보낸 이유 201자"),
+                          (dict(pool="DIV:2", undo_from="X"), "undo_from IN", "되돌린 단계 'X'"),
+                          (dict(pool="DIV:2", hr_seen="{}"), "json_type(hr_seen)", "목록이 아닌 JSON HR 확인"),
+                          (dict(pool="DIV:2", hr_seen="["), "json_valid(hr_seen)", "깨진 JSON HR 확인"),
+                          (dict(pool="DIV:2", hr_seen=None), "NOT NULL", "HR 확인 목록 비어 있음(NULL)"),
+                          (dict(pool="DIV:2", year=2031), "FOREIGN KEY", "회차가 없는 해"),
+                          (dict(pool="DIV:2", closed_by=9999), "FOREIGN KEY", "없는 사람이 마감한 것으로 적기"),
+                          (dict(pool="DIV:2", ceo_by=9999), "FOREIGN KEY", "없는 사람이 확인한 것으로 적기"),
+                          (dict(pool="DIV:2", ceo_behalf=9999), "FOREIGN KEY", "없는 사람의 몫을 대신 확인한 것으로 적기"),
+                          (dict(pool="DIV:2", back_by=9999), "FOREIGN KEY", "없는 사람이 돌려보낸 것으로 적기"),
+                          (dict(pool="DIV:2", back_behalf=9999), "FOREIGN KEY", "없는 사람의 몫을 대신 돌려보낸 것으로 적기"),
+                          (dict(pool="DIV:2", undo_by=9999), "FOREIGN KEY", "없는 사람이 되돌린 것으로 적기")):
+        bad("ev_pools", PL, word, why, **kw)
+
+    # --- 이의 신청 (한 사람 한 해 한 번 — 쓰는 곳은 평가 3단계 ②) ---------------------------------------------------------
+    AP = dict(year=2027, user_id=up, reason="가상 이의 이유", at=T, status="OPEN", before="B")
+    put("ev_appeals", AP)
+    put("ev_appeals", AP, user_id=p2, reason=ln(500), status="CEO", before="D", after="C", marks='{"1": "B"}', answer=ln(500),
+        answered_at=T, answered_by=boss, decided_at=T, decided_by=boss, decided_behalf=up)
+    put("ev_appeals", AP, user_id=spare, status="DONE", before="S", after="S", answer="가상 답변")
+    got = conn.execute("SELECT after, marks, answer, answered_at, answered_by, decided_at, decided_by, decided_behalf FROM ev_appeals WHERE user_id = ?", (up,)).fetchone()
+    _report(got == (None,) * 8, "이의 신청 처음엔 답변 · 바뀐 등급 · 점수 · 결정이 모두 비어 있음", f"실제 {got}")
+    for kw, word, why in ((dict(year=2027, user_id=up), "UNIQUE", "같은 사람 같은 해 두 번째 이의"),
+                          (dict(year=2029, user_id=p2), "FOREIGN KEY", "대상 줄이 없는 해"),
+                          (dict(user_id=9999), "FOREIGN KEY", "없는 직원"),
+                          (dict(status="DONE"), "answer IS NOT NULL", "'DONE' 인데 답변 · 바뀐 등급 없음"),
+                          (dict(status="DONE", answer="가상 답변"), "answer IS NOT NULL", "'DONE' 인데 바뀐 등급 없음"),
+                          (dict(status="DONE", after="B"), "answer IS NOT NULL", "'DONE' 인데 답변 없음"),
+                          (dict(status="CEO", after="B"), "answer IS NOT NULL", "'CEO' 인데 답변 없음"),
+                          (dict(status="X"), "status IN", "상태 'X'"), (dict(status=None), "NOT NULL", "상태 비어 있음"),
+                          (dict(reason=""), "length(reason)", "이유 빈칸"), (dict(reason=ln(501)), "length(reason)", "이유 501자"),
+                          (dict(before="X"), "before IN", "이의 전 등급 'X'"), (dict(before=None), "NOT NULL", "이의 전 등급 비어 있음"),
+                          (dict(at=None), "NOT NULL", "이의 낸 때 비어 있음"),
+                          (dict(after="X", answer="가상", status="DONE"), "after IN", "바뀐 등급 'X'"),
+                          (dict(marks="[]"), "json_type(marks)", "객체가 아닌 JSON 점수"), (dict(marks="{"), "json_valid(marks)", "깨진 JSON 점수"),
+                          (dict(answer=ln(501), after="B", status="DONE"), "length(answer)", "답변 501자"),
+                          (dict(answered_by=9999), "FOREIGN KEY", "없는 사람이 답한 것으로 적기"),
+                          (dict(decided_by=9999), "FOREIGN KEY", "없는 사람이 결정한 것으로 적기"),
+                          (dict(decided_behalf=9999), "FOREIGN KEY", "없는 사람의 몫을 대신 결정한 것으로 적기")):
+        # 바탕은 (2029, spare) — 대상 줄은 있고 이의는 아직 없는 자리라서, 거부는 바꾼 칸의 규칙 때문이다
+        bad("ev_appeals", {**AP, "year": 2029, "user_id": spare}, word, why, **kw)
+
+
 def main() -> int:
     print("=" * 62)
     print("SQLite 스키마 적용 + 제약조건 동작 검사")
@@ -1464,6 +1694,7 @@ def main() -> int:
             check_push_tables(conn)
             check_pay_pin_tables(conn)
             check_pay_ask_table(conn)
+            check_eval_tables(conn)
         finally:
             conn.close()
 
