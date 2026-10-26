@@ -67,6 +67,10 @@ from hr_eval.domain.kpi_review import (
     BIZ_DETAIL_MAX, BIZ_GOAL_MAX, BIZ_MAX, GAP_DEFAULT, KST, MEMO_MAX, MUTE_TEXT_MAX, MUTE_WHY,
     alarm, check_state, clean_biz_plan, is_muted, js_round, month_summary, mute_until, same_kst_day,
 )
+from hr_eval.domain.eval_rules import (
+    APPEAL_DAYS, BANDS, BONUS_MAX_X2, FILE_MAX, FILES_PER_ITEM, GRADES, LEAVE_LIMIT_X2, ORDER, PCT, TEXT_MAX, TOTAL_MAX,
+    Member as EvMember, above, after_score, assign_stage, at, band, cap, check_pool, edited, level, pool_key, pool_ref, pool_state, ready_stage, total,
+)
 from hr_eval.domain.access import Act, Delegation, Pool, PoolRef, Target, can
 from hr_eval.domain.roster import (
     PortalDept,
@@ -2294,6 +2298,120 @@ def 보는_대상_모양():
     assert can(Actor(20, Role.DIVISION_HEAD, led_division_id=1), Act.VIEW_KPI, target_of(P[21], D))
     assert not can(Actor(20, Role.DIVISION_HEAD, led_division_id=1), Act.VIEW_KPI, target_of(P[42], D))  # 다른 본부(직속 팀)는 못 본다
     assert not can(Actor(21, Role.TEAM_LEADER, led_team_id=11), Act.VIEW_KPI, target_of(P[42], D))
+
+
+# ---- 평가 규칙 (eval_rules.py) ----
+
+
+@check
+def 총점은_가중치와_가점():
+    rows = [(40, "S"), (30, "A"), (30, "B")]
+    assert total(rows, 0) == Decimal("101.0") and total(rows, 40) == Decimal("110") and total([(100, None)], 0) == 0
+    assert total([(33.3, "A"), (33.3, "B"), (33.4, "C")], 1) == Decimal("90.5")  # 33.3 + 29.97 + 26.72 + 0.5 = 90.49 → 90.5 (둘째 자리에서 사사오입)
+
+
+@check
+def 점수_기준은_초과():
+    b = BANDS
+    assert [band(Decimal(x), b) for x in ("100.5", "100", "90.5", "90", "80.5", "80", "70.5", "70")] == ["S", "A", "A", "B", "B", "C", "C", "D"]
+    assert above("A", "B") and not above("B", "B") and not above("C", "B")
+
+
+@check
+def 연차는_5일부터():
+    assert cap(Decimal("105"), 10, BANDS) == "C" and cap(Decimal("105"), 9, BANDS) == "S" and cap(None, 10, BANDS) == "C" and cap(None, 0, BANDS) == "S"
+    assert cap(Decimal("85"), 0, BANDS) == "B" and cap(Decimal("65"), 10, BANDS) == "D"  # 점수 기준과 연차 규칙 중 낮은 쪽
+
+
+@check
+def 정원_검사는_화면과_같다():  # evSelfCheck 의 R (101 · 99 · 96 · 92 · 88 · 80) — 6명이라 A·B·D 각 1명
+    R = [EvMember(i, f"p{i}", Decimal(s), None, 0) for i, s in zip(range(1, 7), ("101", "99", "96", "92", "88", "80"))]
+    g = lambda a, rows=R: [replace(m, grade=a.get(m.uid)) for m in rows]  # noqa: E731
+    assert check_pool(g({1: "S", 3: "B", 6: "D", 2: "C", 4: "C", 5: "C"}), BANDS, True)[0] == []  # S 1명이면 A 0명으로 통과
+    assert len(check_pool(g({1: "S", 2: "A"}), BANDS, False)[0]) == 1  # S가 있는데 A까지 주면 초과
+    assert any("100점" in e for e in check_pool(g({2: "S"}), BANDS, False)[0])  # 총점 100 이하 S 불가
+    assert any("최대" in e for e in check_pool(g({1: "S", 2: "S"}), BANDS, False)[0])  # S 상한
+    assert check_pool(g({2: "A"}), BANDS, False)[:2] == ([], [])  # 배정 중에는 누락 · 미달을 안 막음
+    e, w, _ = check_pool(g({i: "C" for i in range(1, 7)}), BANDS, True); assert e == [] and len(w) == 3  # 미달은 경고만
+    assert any("등급이 없" in e for e in check_pool(g({1: "A"}), BANDS, True)[0])  # 마감 · 확정은 누락을 막음
+    assert len(check_pool(g({2: "A", 3: "B"}, R[:3]), BANDS, False)[0]) == 1  # N ≤ 4 는 A·B 합계
+    assert any("연차" in e for e in check_pool([EvMember(1, "가", Decimal("95"), "A", 10)], BANDS, False)[0])
+    kpi_없음 = [EvMember(1, "가", None, "S", 0), *R[1:]]  # 1명짜리 묶음은 S 정원이 0이라 6명 묶음에서 본다
+    assert check_pool(kpi_없음, BANDS, False)[0] == []  # KPI 없는 사람은 점수 기준 없음
+    assert any("100점" in e for e in check_pool([replace(kpi_없음[0], score=Decimal("50")), *R[1:]], BANDS, False)[0])  # 점수가 있으면 따진다
+
+
+@check
+def 정원_검사_문구와_순서는_화면_그대로():  # evValidate 의 문구 · 순서 — 이름 · 총점 · 정원 숫자가 든다
+    R = [EvMember(i, f"p{i}", Decimal(s), None, 0) for i, s in zip(range(1, 7), ("101", "99", "96.5", "92", "88", "80"))]
+    e, w, n = check_pool([replace(m, grade={1: "S", 2: "A", 6: "A"}.get(m.uid)) for m in R], BANDS, True)
+    assert e == [
+        "p3 님의 등급이 없습니다.", "p4 님의 등급이 없습니다.", "p5 님의 등급이 없습니다.",
+        "p6 님은 총점 80점이라 A를 줄 수 없습니다. (A는 90점 초과)",
+        "A는 0명까지입니다 (S 1명만큼 줄어듦). 현재 2명",
+    ]
+    assert w == ["B가 정원보다 1명 적습니다.", "D가 정원보다 1명 적습니다."] and n == {"S": 1, "A": 2, "B": 0, "C": 0, "D": 0}
+    e = check_pool([EvMember(1, "가", Decimal("88.5"), "S", 0)], BANDS, False)[0]
+    assert e[0] == "가 님은 총점 88.5점이라 S를 줄 수 없습니다. (100점 초과만)" and e[1] == "S는 최대 0명입니다. (현재 1명)"
+    e = check_pool([EvMember(1, "가", Decimal("95"), "A", 10), EvMember(2, "나", Decimal("85"), "B", 12)], BANDS, False)[0]
+    assert e == ["가 님은 연차 초과 5일 이상이라 S·A·B를 줄 수 없습니다.", "나 님은 연차 초과 5일 이상이라 S·A·B를 줄 수 없습니다.", "A·B 합계는 1명까지입니다. 현재 2명"]
+    R5 = [EvMember(i, f"q{i}", Decimal("75"), "B" if i < 4 else "C", 0) for i in range(1, 6)]  # 75점은 C 기준(70 초과)까지 → B는 못 준다
+    e, w, _ = check_pool(R5, BANDS, True)
+    assert e[:3] == [f"q{i} 님은 총점 75점이라 B를 줄 수 없습니다. (B는 80점 초과)" for i in (1, 2, 3)] and e[3] == "B는 1명까지입니다. 현재 3명"
+    assert w == ["A가 정원보다 1명 적습니다.", "D가 정원보다 1명 적습니다."]
+
+
+@check
+def 묶음_상태():
+    assert pool_state([], "DIRECT", False) == "WAIT"
+    assert pool_state(["GRADE", "GRADE"], "DIRECT", False) == "CEO" and pool_state(["GRADE", "GRADE"], "DIV:3", False) == "WAIT"
+    assert pool_state(["CEO", "CEO"], "DIV:3", True) == "FIX" and pool_state(["HR", "HR"], "LEADERS", False) == "HR" and pool_state(["DONE"], "LEADERS", False) == "DONE"
+
+
+@check
+def 묶음_열쇠():  # 팀장 · 직속 팀 · '임원'(본부 없음) · 본부 팀원 · 본부 바로 아래
+    assert pool_key(Target(1, 11, 1, Role.TEAM_LEADER)) == "LEADERS" and pool_key(Target(2, 9, None, direct=True)) == "DIRECT"
+    assert pool_key(Target(3, None, None)) == "DIRECT" and pool_key(Target(4, 11, 1)) == "DIV:1" and pool_key(Target(5, None, 1)) == "DIV:1"
+
+
+@check
+def 묶음_참조와_단계():
+    ids = frozenset({4, 5})
+    assert pool_ref("DIV:12", ids) == PoolRef(Pool.DIVISION, ids, division_id=12) and pool_ref("LEADERS", ids) == PoolRef(Pool.LEADERS, ids)
+    assert pool_ref("DIRECT", ids) == PoolRef(Pool.DIRECT, ids) and pool_ref("DIRECT", ids).division_id is None
+    assert [after_score(k) for k in ("LEADERS", "DIRECT", "DIV:1")] == ["CEO", "GRADE", "GRADE"] and assign_stage("LEADERS") == "CEO" and assign_stage("DIV:1") == "GRADE"
+    assert [ready_stage(k) for k in ("LEADERS", "DIRECT", "DIV:1")] == ["CEO", "GRADE", "CEO"]
+    assert at("SCORE", "CEO") < 0 and at("CEO", "CEO") == 0 and at("HR", "CEO") > 0 and at("DONE", "GRADE") > 0  # 대표이사 확인 다음이 HR 확정
+    assert (ORDER, GRADES, BANDS, LEAVE_LIMIT_X2, BONUS_MAX_X2, TOTAL_MAX) == (("SELF", "SCORE", "GRADE", "CEO", "HR", "DONE"), ("S", "A", "B", "C", "D"), (90, 80, 70), 10, 20, Decimal("110"))
+    assert (PCT, APPEAL_DAYS, FILE_MAX, FILES_PER_ITEM) == ({"S": 110, "A": 100, "B": 90, "C": 80, "D": 70}, 7, 10 * 1024 * 1024, 5)
+    assert TEXT_MAX == {"note": 500, "comment": 500, "head": 500, "bonusReason": 100, "out": 100, "back": 200, "appeal": 500, "answer": 500}
+
+
+@check
+def 보는_수준():  # 팀장 21(팀 11) · 팀원 22 · 본부장 20(본부 1) · 대표 6 · HR 7 · 다른 팀장 31(팀 12)
+    T = Target(22, 11, 1)
+    assert level(Actor(7, None, True), T, rater=21, assigner=20, stage="GRADE", released=False) == "full"
+    assert level(Actor(20, Role.DIVISION_HEAD, led_division_id=1), T, rater=21, assigner=20, stage="GRADE", released=False) == "full"
+    assert level(Actor(21, Role.TEAM_LEADER, led_team_id=11), T, rater=21, assigner=20, stage="SCORE", released=False) == "full"
+    assert level(Actor(21, Role.TEAM_LEADER, led_team_id=11), T, rater=21, assigner=20, stage="GRADE", released=False) == "mine"
+    assert level(Actor(22, None), T, rater=21, assigner=20, stage="DONE", released=False) == "self"
+    assert level(Actor(22, None), T, rater=21, assigner=20, stage="DONE", released=True) == "full"
+    assert level(Actor(31, Role.TEAM_LEADER, led_team_id=12), T, rater=21, assigner=20, stage="DONE", released=True) == "none"
+    # 팀장을 평가한 본부장: 전사 팀장 묶음이라 배정자가 아니다 → 공개 전 "mine"
+    L = Target(21, 11, 1, Role.TEAM_LEADER)
+    assert level(Actor(20, Role.DIVISION_HEAD, led_division_id=1), L, rater=20, assigner=6, stage="HR", released=False) == "mine"
+    # 대표이사는 늘 full · 평가자가 아닌 같은 팀 팀장은 공개된 뒤에만 본다
+    assert level(Actor(6, Role.CEO), T, rater=21, assigner=20, stage="SCORE", released=False) == "full"
+    assert level(Actor(21, Role.TEAM_LEADER, led_team_id=11), T, rater=None, assigner=None, stage="DONE", released=False) == "none"
+    assert level(Actor(21, Role.TEAM_LEADER, led_team_id=11), T, rater=None, assigner=None, stage="DONE", released=True) == "full"
+
+
+@check
+def 고친_내용():
+    assert edited("B", 880, "C", Decimal("90.0"), past=True) == "총점 88.0 → 90.0 · 등급 B → C"
+    assert edited("B", 880, "B", Decimal("88.0"), past=True) == "" and edited("B", 880, "C", Decimal("88.0"), past=False) == ""
+    assert edited("B", 880, "B", Decimal("90.5"), past=True) == "총점 88.0 → 90.5" and edited("B", None, "A", None, past=True) == "등급 B → A"
+    assert edited(None, 880, "C", Decimal("90.0"), past=True) == ""  # 평가자가 낸 것이 없으면 비교할 게 없다
 
 
 def main() -> int:
