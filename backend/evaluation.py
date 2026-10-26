@@ -46,10 +46,10 @@ app.py 가 bp 를 붙인다. 세션 검사 · 같은 출처 검사는 auth._guar
   자기평가 없이: 제외됨 409 → SELF 가 아님 409 → KPI 없음 409 (저장한 뒤 떠 둔 평가자에게 알림) ·
   평가자 바꾸기: SELF · SCORE 가 아님 409 → 본인이 아니고 활성이며 포털을 쓰는(로그인해 점수를 낼 수 있는) 직원이 아님 400.
 자기평가 저장 · 제출 (본인): 해 400 → 그해 평가 대상 아님 404 → 쓸 수 없음 403 (can.self 거짓 — 자기평가 마감일이 지났으면 그 날짜를 알리는 문구, 그 밖은 "지금은 쓸 수 없습니다") →
-  저장은 모양 400 (목록 · 없는 실행목표 · 같은 줄 두 번 · 실적 500자 · 쓸 수 없는 글자 · 등급 SABCD 또는 null, 하나라도 틀리면 아무것도 저장 안 함) /
+  저장은 모양 400 (목록 · 없는 실행목표 · 같은 줄 두 번 · 실적 500자 · 쓸 수 없는 글자 · 등급 SABCD 또는 null, 실적은 앞뒤 공백을 떼고 센다 · 뗀 글을 저장, 하나라도 틀리면 아무것도 저장 안 함) /
   제출은 실행목표마다 실적(공백 뺀 1자 이상)과 자기 등급이 다 있어야 400. 저장은 감사로그가 없고 제출은 EVAL_SELF_SUBMITTED (해만 — 글 없음). 알림은 저장(COMMIT)한 뒤.
 증빙 올리기: 몸통이 10MB + 64KB 를 넘음 400 (읽기 전에) → 해 400 → 평가 대상 아님 404 → can.upload 거짓 403 → 떠 둔 실행목표 아님 400 → 그 실행목표에 이미 5개 400 →
-  빈 파일 · 10MB 넘음 400 → 형식(_kind — 확장자 + 첫 바이트) 400. 이름은 경로를 떼고 제어문자를 빼고 120자 (비면 "증빙.<종류>"), 파일은 DB 옆 eval_files/<ev_files.id> —
+  빈 파일 · 10MB 넘음 400 → 형식(_kind — 확장자 + 첫 바이트) 400. 이름은 경로를 떼고 제어 · 서식(Cf) 문자와 앞뒤 공백을 빼고 120자로 줄이며 (줄일 때 확장자는 쓴 그대로 남기고 이름 쪽을 자른다. 비면 "증빙.<종류>"), 파일은 DB 옆 eval_files/<ev_files.id> —
   줄을 넣어 번호를 받고 임시 이름으로 써서 바꿔 단다 (쓰다 실패하면 줄도 되돌린다 — 같은 트랜잭션). 번호는 지운 뒤 다시 쓰일 수 있어 줄과 파일은 늘 함께 지운다.
 증빙 지우기: 없는 번호 404 → 올린 본인 아님 403 → can.upload 거짓 403 → 줄과 파일을 한 트랜잭션에서 지움 (파일이 이미 없어도 200). 올리기 · 지우기는 감사로그가 없다.
 감사로그(R10): EVAL_ROUND_SET · EVAL_STARTED · EVAL_ATT_DONE · EVAL_ATTENDANCE(저장한 사람이 있을 때만) · EVAL_EXCLUDED · EVAL_INCLUDED · EVAL_SKIP_SELF · EVAL_RATER_SET · EVAL_SELF_SUBMITTED —
@@ -740,11 +740,13 @@ def _self_open(ctx: _Ctx, row: sqlite3.Row) -> None:
 
 
 def _note(v: object) -> str:
+    """실적 글 — 앞뒤 공백을 뗀 글이 500자 안이어야 하고, 뗀 글을 저장한다 (kpi._text · 제외 사유와 같게)."""
     if not isinstance(v, str):
         raise _Refuse("실적은 글로 써 주세요.", 400)
-    if len(_chars(v, "실적")) > TEXT_MAX["note"]:
+    t = _chars(v.strip(), "실적")
+    if len(t) > TEXT_MAX["note"]:
         raise _Refuse(f"실적은 {TEXT_MAX['note']}자 안으로 써 주세요.", 400)
-    return v
+    return t
 
 
 def _grade(v: object) -> str | None:
@@ -810,9 +812,17 @@ def _kind(head: bytes, name: str) -> str | None:
 
 
 def _clean_name(raw: str) -> str:
-    """올린 이름 → 보여 줄 이름: 경로(/ · \\ 앞)를 떼고 제어 · 서식 문자(방향 바꾸기 등)를 빼고 앞뒤 공백을 뗀다. 저장 경로에는 쓰지 않는다 (파일 이름은 번호 하나)."""
+    """올린 이름 → 보여 줄 이름(120자 줄이기 전): 경로(/ · \\ 앞)를 떼고 제어 · 서식 문자(방향 바꾸기 등)를 빼고 앞뒤 공백을 뗀다. 저장 경로에는 쓰지 않는다 (파일 이름은 번호 하나)."""
     t = raw.replace("\\", "/").rsplit("/", 1)[-1]
     return "".join(ch for ch in t if unicodedata.category(ch) not in ("Cc", "Cf")).strip()
+
+
+def _short(name: str) -> str:
+    """이름이 120자를 넘으면 확장자(쓴 그대로)는 남기고 이름 쪽을 잘라 120자로 맞춘다."""
+    if len(name) <= 120:
+        return name
+    stem, _, ext = name.rpartition(".")
+    return f"{stem[:120 - len(ext) - 1]}.{ext}"
 
 
 def _digits(v: str | None) -> int | None:
@@ -846,7 +856,7 @@ def file_put() -> Response:
         if kind is None:
             raise _Refuse("PDF · 그림(PNG·JPG) · 엑셀 · 워드 · 한글 파일만 올릴 수 있습니다.", 400)
         fid = conn.execute("INSERT INTO ev_files (year, user_id, rid, name, kind, size, sha256, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                           (year, uid, rid, name[:120] or f"증빙.{kind}", kind, len(data), hashlib.sha256(data).hexdigest(), auth._iso(auth._now()))).lastrowid
+                           (year, uid, rid, _short(name) or f"증빙.{kind}", kind, len(data), hashlib.sha256(data).hexdigest(), auth._iso(auth._now()))).lastrowid
         d = _files_dir()
         tmp = d / f"{fid}.part"
         try:

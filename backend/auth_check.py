@@ -6700,6 +6700,10 @@ def check_eval_self(hr) -> None:
            and save(DIVD, [{"rid": 1, "selfGrade": None}]).status_code == 200 and items(DIVD)[0] == (1, "가상 고친 실적", None)
            and save(DIVD, []).status_code == 200 and items(DIVD)[2] == (3, "가" * 500, "D"),
            "자기평가_모양: 보낸 칸만 바뀜(실적만 · 등급만) · 등급을 null 로 비움 · 빈 목록 200")
+        ok(save(DIVD, [{"rid": 2, "note": "  " + "가" * 500 + " \n\t "}]).status_code == 200 and items(DIVD)[1] == (2, "가" * 500, None)
+           and hit(save(DIVD, [{"rid": 2, "note": " \n" + "가" * 501 + "  "}]), 400, NOTE_LEN) and items(DIVD)[1] == (2, "가" * 500, None)
+           and save(DIVD, [{"rid": 2, "note": "  \n"}]).status_code == 200 and items(DIVD)[1] == (2, "", None),
+           "자기평가_모양: 실적은 앞뒤 공백을 떼고 센다 — 500자 + 뒤쪽 줄바꿈 · 공백은 200 · 떼고 저장 / 떼고 501자는 400 / 공백만이면 빈 글로 저장")
         ok(n_audit() == n0 and not took(), "임시 저장은 감사로그도 알림도 없음")
 
         # ---- 제출은 다 채워야 ----
@@ -6780,11 +6784,11 @@ def check_eval_self(hr) -> None:
         # ---- 이름 · 저장 위치 ----
         outside = lambda: sorted(p.name for p in dbdir.iterdir() if not p.name.startswith("auth.db"))  # noqa: E731  (DB 자신의 -wal · -shm 은 오가므로 뺀다)
         before_dir = outside()
-        names = {"../../x.pdf": "x.pdf", "C:\\fakepath\\y.pdf": "y.pdf", "a\x07b.pdf": "ab.pdf", "가" * 200 + ".pdf": "가" * 120, "a\u202efdp.pdf": "afdp.pdf"}
+        names = {"../../x.pdf": "x.pdf", "C:\\fakepath\\y.pdf": "y.pdf", "a\x07b.pdf": "ab.pdf", "가" * 200 + ".pdf": "가" * 116 + ".pdf", "a\u202efdp.pdf": "afdp.pdf"}
         for raw, want in names.items():
             r = up(EMPC, 3, PDF, raw)
             fids.append(r.json.get("id"))
-            ok(r.status_code == 200 and files_of(EMPC)[-1][2] == want, f"증빙_형식은_첫_바이트로: 이름 {raw[:20]!r} → 저장 이름 {want[:20]!r} (경로를 떼고 · 제어문자를 빼고 · 120자로 자름)")
+            ok(r.status_code == 200 and files_of(EMPC)[-1][2] == want, f"증빙_형식은_첫_바이트로: 이름 {raw[:20]!r} → 저장 이름 {want[:20]!r} (경로를 떼고 · 제어문자를 빼고 · 120자로 줄이되 확장자는 남김)")
         ok(outside() == before_dir and not (dbdir.parent / "x.pdf").exists() and not (fdir / "x.pdf").exists() and not (fdir / "y.pdf").exists()
            and all(n.isdigit() for n in ls()), "증빙_형식은_첫_바이트로: 폴더 밖에 아무것도 없고 폴더 안은 번호 이름뿐 (사람이 준 이름을 경로에 쓰지 않음)")
         for f in files_of(EMPC):  # 이름을 본 파일은 지운다 (실행목표 3번을 다시 비움)
@@ -6807,6 +6811,11 @@ def check_eval_self(hr) -> None:
         r = up(EMPC, 2, ZIP, "덮어쓰기.docx")
         fids.append(r.json["id"])
         ok(r.json["id"] == stale and (fdir / str(stale)).read_bytes() == ZIP, "증빙은_줄과_파일이_같이: 같은 번호의 옛 파일이 남아 있어도 새 파일로 덮어씀")
+        r = up(EMPC, 3, JPG, "나" * 130 + ".JPEG")
+        fids.append(r.json["id"])
+        last = files_of(EMPC)[-1]
+        ok(r.status_code == 200 and len(last[2]) == 120 and last[2] == "나" * 115 + ".JPEG" and last[3] == "jpg",
+           "증빙_형식은_첫_바이트로: 긴 이름은 확장자를 쓴 그대로(.JPEG) 남기고 이름 쪽을 잘라 120자 · 종류는 jpg")
 
         # ---- 올릴 수 있는 때 ----
         put(EMPC, stage="GRADE", proposed="B")
