@@ -13611,10 +13611,15 @@ function msSee(id, err){   // err = 맡은 부서를 고르다 막힌 이유 (�
 const CARD_K = { cheer:{label:'축하', fg:'#B4232F', bg:'#FDECEC'}, praise:{label:'칭찬', fg:'#985A00', bg:'#FFF1D6'}, thanks:{label:'감사', fg:'#11734D', bg:'#E3F4EC'}, comfort:{label:'위로', fg:'#4D5566', bg:'#EEF0F4'} };   // 종류 색 (꼬리표 · 봉투)
 const CARD_WHY = { birthday:'생일', welcome:'새 식구', anniv:'입사 기념', joy:'경사' };   // 축하의 소식 — 꼬리표 "축하 · 생일"
 const CARD_HEART = '<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8l1 1.1L12 21l7.8-7.5 1-1.1a5.5 5.5 0 0 0 0-7.8z"/></svg>', CARD_HEART_SM = CARD_HEART.replace('<svg', '<svg width="11" height="11"');
-const cardSet = (kind, reason)=>({ comfort:'condol', praise:'praise', thanks:'thanks' })[kind] || reason;   // 그림 묶음 — 축하는 소식 종류(birthday · welcome · anniv · joy)가 곧 묶음
-const cardKv = k=>`--k-fg:${CARD_K[k].fg};--k-bg:${CARD_K[k].bg};`;
-const cardTag = c=>CARD_K[c.kind].label + (c.kind==='cheer' ? ' · '+CARD_WHY[c.reason] : '');
-function cardArt(kind, reason, n){ return `<div class="cm-art"><img src="img/cards/${cardSet(kind, reason)}-${n}.jpg?v=1" alt="" loading="lazy"></div>`; }   // 그림을 바꾸면 ?v= 를 올린다 (설계 5장)
+const CARD_SETS = ['birthday', 'welcome', 'anniv', 'joy', 'condol', 'praise', 'thanks'];   // 그림 묶음 (img/cards/{묶음}-{1~4}.jpg)
+function cardSet(kind, reason){   // 그림 묶음 — 축하는 소식 종류(birthday · welcome · anniv · joy)가 곧 묶음. 모르는 값이면 칭찬 묶음 (주소에 그대로 넣지 않는다)
+  const s = { comfort:'condol', praise:'praise', thanks:'thanks', cheer:reason }[kind];
+  return CARD_SETS.includes(s) ? s : 'praise';
+}
+const cardK = k=>Object.hasOwn(CARD_K, k) ? CARD_K[k] : { label:'카드', fg:'#4D5566', bg:'#EEF0F4' };   // 모르는 종류는 회색 "카드" — 한 장 때문에 탭이 비지 않게
+const cardKv = k=>`--k-fg:${cardK(k).fg};--k-bg:${cardK(k).bg};`;
+const cardTag = c=>cardK(c.kind).label + (c.kind==='cheer' && Object.hasOwn(CARD_WHY, c.reason) ? ' · '+CARD_WHY[c.reason] : '');
+function cardArt(kind, reason, n){ return `<div class="cm-art"><img src="img/cards/${cardSet(kind, reason)}-${[1, 2, 3, 4].includes(n) ? n : 1}.jpg?v=1" alt="" loading="lazy"></div>`; }   // 그림을 바꾸면 ?v= 를 올린다 (설계 5장)
 function cardFace(c){   // 카드 한 장 (시안 face): 그림 · 꼬리표 / To. 받는 사람님 · 글 · From. 보낸 사람 · 날짜(M/D) — 손글씨
   return `<div class="cm-face" style="${cardKv(c.kind)}">${cardArt(c.kind, c.reason, c.art)}<div class="cm-face-body">
     <span class="cm-tag">${cardTag(c)}</span>
@@ -13623,11 +13628,11 @@ function cardFace(c){   // 카드 한 장 (시안 face): 그림 · 꼬리표 / T
     <div class="cm-hand cm-from">From. ${escapeHtml(c.fromName)} · ${/^\d{4}-/.test(c.date) ? kpiMd(c.date) : escapeHtml(c.date)}</div></div></div>`;
 }
 const CARD_LIVE = { state:'', ready:false, unread:0, received:[], sent:[], opened:false };   // 실제 로그인 카드 상자 (최근이 위). state '' 아직 · ok · err / ready: 서버 열쇠(HR_PAY_KEY)가 있어 주고받을 수 있다 / opened: 이번 창에서 카드함을 열었나(도착 창)
-const CARD_DEMO = (()=>{   // 시연(서버 없음): 시안 IN · OUT 과 같은 가상 카드 — 사람은 시연 조직도에서 시연 역할(KPI_USERS)이 아닌 사람만(내가 나에게 보낸 카드가 없게). 누르는 일은 이 브라우저에서만
+function cardDemoData(){   // 시연(서버 없음): 시안 IN · OUT 과 같은 가상 카드 { received, sent } — 사람은 시연 조직도에서 시연 역할(KPI_USERS)이 아닌 사람만(내가 나에게 보낸 카드가 없게). cardSelfCheck 도 이 처음 상태로 본다
   const ppl = orgMembers.filter(m=>!Object.values(KPI_USERS).some(u=>u.name===m.name)).slice(0, 8).map(m=>({ id:m.id, name:m.name, title:m.title, dept:m.team || m.division }));
   const got = (id, kind, reason, art, i, ago, text, x)=>({ id, kind, reason, art, text, date:kpiDay(-ago), from:ppl[i], read:true, thanked:false, hidden:false, ...x });
   const gave = (id, kind, reason, i, ago, text, x)=>({ id, kind, reason, art:1, text, date:kpiDay(-ago), to:ppl[i], read:false, thanked:false, ...x });
-  return { ready:true, get unread(){ return this.received.filter(c=>!c.read).length; },
+  return {
     received:[
       got(1, 'cheer', 'birthday', 1, 0, 0, '생일 축하해요! 오늘은 일 생각 말고 맛있는 거 많이 드세요.', { read:false }),
       got(2, 'praise', null, 2, 1, 2, '지난주 전시회 준비 정말 꼼꼼했어요. 덕분에 고객 반응이 좋았어요.', { read:false }),
@@ -13643,7 +13648,8 @@ const CARD_DEMO = (()=>{   // 시연(서버 없음): 시안 IN · OUT 과 같은
       gave(104, 'comfort', null, 7, 17, '마음 깊이 위로를 전합니다.'),
       gave(105, 'thanks', null, 3, 26, '덕분에 마감 맞췄어요.', { read:true, thanked:true }),
     ] };
-})();
+}
+const CARD_DEMO = { ready:true, get unread(){ return this.received.filter(c=>!c.read).length; }, ...cardDemoData() };   // 누르는 일은 이 브라우저에서만
 const CARD_UI = { tab:'in', f:'', hid:false };   // 받은 카드 탭: 받은(in) · 보낸(out) / 종류 걸러 보기('' 전체) / 숨긴 카드 펼침
 const cardList = ()=>AUTH.live ? CARD_LIVE : CARD_DEMO;
 const cardFind = id=>cardList().received.find(c=>c.id===id);
@@ -13689,26 +13695,33 @@ function cardOpen(id){   // 카드함에서 크게 보기 (시안 cardOpen — �
     <div class="list-sub" style="margin:0;"><button type="button" class="cm-link" onclick="orgCloseModal(); cardHide(${id}, ${!c.hidden})">${c.hidden ? '다시 보이기' : '이 카드 숨기기'}</button>${c.hidden ? '' : ' — 숨긴 카드는 카드함 아래 "숨긴 카드 보기"에서 다시 볼 수 있어요.'}</div></div>`);
   return c.read ? undefined : cardMark(c, 'read');
 }
-async function cardMark(c, what, body={}){   // 받은 카드에 읽음(read) · 고마워요(thanks) · 숨김(hide {hidden})을 적는다. 실제 로그인은 서버에 — 안 읽은 수는 서버 답. 시연은 이 브라우저에서만. 안 되면 오류 문구, 되면 ''
-  if(AUTH.live){
-    const fail = '지금은 할 수 없어요. 잠시 뒤 다시 해 주세요.';
-    try {
-      const r = await fetch(`/api/cards/${c.id}/${what}`, { method:'POST', headers:{ 'Content-Type':'application/json' }, body:JSON.stringify(body) }), j = await r.json().catch(()=>({}));
-      if(!r.ok) return j.error || fail;
-      CARD_LIVE.unread = j.unread;
-    } catch(e){ return fail; }
-  }
-  if(what==='thanks') c.thanked = true;
-  if(what==='hide') c.hidden = body.hidden;
-  if(what!=='hide' || body.hidden) c.read = true;   // 고마워요 · 숨기기도 읽음 (서버와 같게 — 다시 보이기는 읽음 그대로)
-  renderContent();   // NEW 표시 · 메뉴 숫자
-  return '';
+const CARD_BUSY = new Set();   // 보내는 중인 '카드 번호/일' — 두 번 눌러도 요청은 한 번
+async function cardMark(c, what, body={}){   // 받은 카드에 읽음(read) · 고마워요(thanks) · 숨김(hide {hidden})을 적는다. 실제 로그인은 서버에 — 안 읽은 수는 서버 답. 시연은 이 브라우저에서만. 안 되면 오류 문구, 되면 '', 같은 일을 보내는 중이면 null
+  const key = c.id+'/'+what;
+  if(CARD_BUSY.has(key)) return null;
+  CARD_BUSY.add(key);
+  try {
+    if(AUTH.live){
+      const fail = '지금은 할 수 없어요. 잠시 뒤 다시 해 주세요.';
+      try {
+        const r = await fetch(`/api/cards/${c.id}/${what}`, { method:'POST', headers:{ 'Content-Type':'application/json' }, body:JSON.stringify(body) }), j = await r.json().catch(()=>({}));
+        if(!r.ok) return j.error || fail;
+        if(typeof j.unread==='number') CARD_LIVE.unread = j.unread;   // 숫자가 없는 답이면 전 숫자 그대로
+      } catch(e){ return fail; }
+    }
+    if(what==='thanks') c.thanked = true;
+    if(what==='hide') c.hidden = body.hidden;
+    if(what!=='hide' || body.hidden) c.read = true;   // 고마워요 · 숨기기도 읽음 (서버와 같게 — 다시 보이기는 읽음 그대로)
+    renderContent();   // NEW 표시 · 메뉴 숫자
+    return '';
+  } finally { CARD_BUSY.delete(key); }
 }
 async function cardThanks(btn, c){   // [고마워요] 한 번 — 이미 보냈거나 보내는 중이면 아무것도 안 한다. 보낸 사람 알림은 서버가
   if(!c || c.thanked || btn.disabled) return;
   btn.disabled = true;
   const err = await cardMark(c, 'thanks');
   btn.disabled = false;
+  if(err===null) return;   // 다른 곳에서 보내는 중
   if(err) return kpiFlash(escapeHtml(err), 'danger');
   btn.classList.add('done'); btn.innerHTML = `${CARD_HEART} 고마워요 보냄`;
   kpiFlash(`${escapeHtml(c.from.name)} 님께 고마워요를 보냈어요.`);
@@ -13722,15 +13735,15 @@ async function cardSelfCheck(){   // 브라우저 콘솔에서 await cardSelfChe
   const dom = html=>{ const t = document.createElement('template'); t.innerHTML = html; return t.content; };
   ok(['cheer birthday', 'cheer welcome', 'cheer anniv', 'cheer joy', 'comfort', 'praise', 'thanks'].map(s=>cardSet(...s.split(' '))).join()==='birthday,welcome,anniv,joy,condol,praise,thanks', '그림 묶음 7가지 (cardSet)');
   ok(String(pushGoParse('?go=ws.w3'))==='ws,w3', '알림 주소 ?go=ws.w3 = 워크스페이스 › 받은 카드');
-  const demo0 = JSON.stringify(CARD_DEMO), keep = { live:AUTH.live, me:AUTH.me, box:{ ...CARD_LIVE }, ui:{ ...CARD_UI }, msg:kpiMsg, fetch:window.fetch, render:renderContent, recv:kpiClone(CARD_DEMO.received), sent:kpiClone(CARD_DEMO.sent) };
+  const demo0 = JSON.stringify(CARD_DEMO), keep = { live:AUTH.live, me:AUTH.me, box:{ ...CARD_LIVE }, ui:{ ...CARD_UI }, msg:kpiMsg, fetch:window.fetch, render:renderContent, recv:CARD_DEMO.received, sent:CARD_DEMO.sent };
   const calls = [], row = ()=>homePortalTasks().find(p=>p.tab==='w3');
   let reply = { ok:true, status:200, j:{ unread:0 } }, renders = 0;
   try {
     renderContent = ()=>{ renders++; };   // 검사하는 동안 화면은 그대로
     window.fetch = async (url, o={})=>(calls.push([url, o.method, o.body]), { ok:reply.ok, status:reply.status, json:async()=>reply.j });
     kpiMsg = null;
-    // 시연: 시안처럼 새 카드 3장 — 메뉴 숫자 · 홈 "새 카드 확인"이 같은 셈, 누르는 일은 이 브라우저에서만
-    AUTH.live = false;
+    // 시연: 시안처럼 새 카드 3장 — 메뉴 숫자 · 홈 "새 카드 확인"이 같은 셈, 누르는 일은 이 브라우저에서만 (앞서 누른 것과 상관없이 처음 상태로 본다)
+    AUTH.live = false; Object.assign(CARD_DEMO, cardDemoData());
     ok(TODO.w3()===3 && TODO.w3()===CARD_DEMO.received.filter(c=>!c.read).length, '시연: TODO.w3 = 안 읽은 카드 3장');
     ok(homePortalTasks().at(-1).tab==='w3' && row().title==='새 카드 확인 3건' && row().nav==='ws' && row().badge==='새 카드', '홈 오늘의 업무 맨 끝 "새 카드 확인 3건" → 워크스페이스 › 받은 카드');
     const d0 = CARD_DEMO.received.find(c=>!c.read);
@@ -13750,21 +13763,28 @@ async function cardSelfCheck(){   // 브라우저 콘솔에서 await cardSelfChe
     ok(w.querySelectorAll('.cm-new').length===1 && w.querySelector('.cm-sum .coral b').textContent==='1' && !w.querySelector('.placeholder-note'), 'NEW 표시 · 새 카드 숫자 · 열쇠가 있으면 안내 없음');
     ok(!w.querySelector('.cm-mini-meta i, .cm-msg b') && w.textContent.includes('<i>가상'), '이름 · 글은 글자 그대로');
     ok(w.querySelector('.cm-ktag').textContent==='축하 · 생일' && w.querySelector('.cm-mini img').getAttribute('src')==='img/cards/birthday-1.jpg?v=1', '꼬리표 "축하 · 생일" · 그림 주소');
+    const src = html=>dom(html).querySelector('img').getAttribute('src');
+    ok(src(cardArt('cheer', null, 9))==='img/cards/praise-1.jpg?v=1' && src(cardArt('cheer', '../x"', '1"'))==='img/cards/praise-1.jpg?v=1' && src(cardArt('constructor', 'joy', 0))==='img/cards/praise-1.jpg?v=1' && src(cardArt('comfort', 'joy', 4))==='img/cards/condol-4.jpg?v=1', '모르는 묶음 · 번호는 알려진 그림(칭찬 1번)으로');
+    const bad = card(15, '2026-10-22', { kind:'nope', reason:'x', art:7 });
+    CARD_LIVE.received.push(bad); w = dom(cardContent()); CARD_LIVE.received.pop();
+    ok(w.querySelectorAll('.cm-wall .cm-mini').length===4 && [...w.querySelectorAll('.cm-ktag')].some(t=>t.textContent==='카드') && dom(cardFace({ ...bad, toName:'가', fromName:'나' })).querySelector('.cm-tag').textContent==='카드', '모르는 종류의 카드도 탭을 비우지 않고 회색 "카드"로');
     CARD_UI.hid = true; w = dom(cardContent()); CARD_UI.hid = false;
     ok(w.querySelector('.cm-hid-wall .cm-msg').textContent==='가상 글 13' && w.querySelector('.cm-hid-wall .cm-more button').textContent==='다시 보이기', '숨긴 카드 보기 → 다시 보이기');
     // 열기 · 고마워요 · 숨기기 — 서버에 한 번씩, 안 읽은 수는 서버 답으로
     reply.j = { unread:0 };
-    await cardOpen(12);
+    await Promise.all([cardOpen(12), cardOpen(12)]);
     const m = document.getElementById('orgModal');
     ok(m && m.querySelector('.cm-face') && m.textContent.includes('To. 가상나님') && m.querySelector('[onclick^="cardSend({ to:"]'), '크게 보기: 카드 · [답장 쓰기]');
     orgCloseModal();
-    ok(calls.length===1 && calls[0][0]==='/api/cards/12/read' && calls[0][1]==='POST' && CARD_LIVE.unread===0 && TODO.w3()===0 && !row() && renders>0, '열면 읽음 요청 한 번 → 메뉴 숫자는 서버 답');
+    ok(calls.length===1 && calls[0][0]==='/api/cards/12/read' && calls[0][1]==='POST' && CARD_LIVE.unread===0 && TODO.w3()===0 && !row() && renders>0, '열면 읽음 요청 한 번 (두 번 열어도) → 메뉴 숫자는 서버 답');
     await cardOpen(12); orgCloseModal(); ok(calls.length===1, '이미 읽은 카드는 다시 보내지 않는다');
     const b = document.createElement('button'), c11 = cardFind(11);
     await Promise.all([cardThanks(b, c11), cardThanks(b, c11)]); await cardThanks(b, c11);
     ok(calls.length===2 && calls[1][0]==='/api/cards/11/thanks' && c11.thanked && b.textContent.includes('고마워요 보냄') && kpiMsg.msg==='가상보낸이 님께 고마워요를 보냈어요.', '고마워요: 여러 번 눌러도 요청 한 번 · 알림 줄');
-    await cardHide(14, true);
-    ok(calls.length===3 && calls[2][0]==='/api/cards/14/hide' && calls[2][2]==='{"hidden":true}' && cardFind(14).hidden && !dom(cardContent()).querySelector('.cm-wall').textContent.includes('축하'), '숨기기: 요청 한 번 · 모음에서 빠짐');
+    reply.j = {};   // 숫자가 없는 답 — 전 숫자 그대로
+    await Promise.all([cardHide(14, true), cardHide(14, true)]);
+    ok(CARD_LIVE.unread===0, '안 읽은 수가 없는 답이면 전 숫자 그대로');
+    ok(calls.length===3 && calls[2][0]==='/api/cards/14/hide' && calls[2][2]==='{"hidden":true}' && cardFind(14).hidden && !dom(cardContent()).querySelector('.cm-wall').textContent.includes('축하'), '숨기기: 두 번 눌러도 요청 한 번 · 모음에서 빠짐');
     reply = { ok:false, status:404, j:{ error:'카드를 찾을 수 없어요.' } };
     const c12 = cardFind(12), b2 = document.createElement('button');
     await cardThanks(b2, c12);
