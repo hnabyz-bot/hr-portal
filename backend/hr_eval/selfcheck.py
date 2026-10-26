@@ -2412,6 +2412,7 @@ def 고친_내용():
     assert edited("B", 880, "B", Decimal("88.0"), past=True) == "" and edited("B", 880, "C", Decimal("88.0"), past=False) == ""
     assert edited("B", 880, "B", Decimal("90.5"), past=True) == "총점 88.0 → 90.5" and edited("B", None, "A", None, past=True) == "등급 B → A"
     assert edited(None, 880, "C", Decimal("90.0"), past=True) == ""  # 평가자가 낸 것이 없으면 비교할 게 없다
+    assert edited("B", None, None, None, past=True) == "등급 B → 없음"  # 지금 등급이 없으면 'None' 이 아니라 '없음'
 
 
 def main() -> int:

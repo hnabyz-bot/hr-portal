@@ -12,7 +12,7 @@ app.py 가 bp 를 붙인다. 세션 검사 · 같은 출처 검사는 auth._guar
   POST /api/eval/admin/<uid>/skip-self    {"year"} 자기평가 없이 평가자에게 넘긴다 (HR) — 평가자에게 알림
   POST /api/eval/admin/<uid>/rater        {"year", "raterId"} 평가자를 바꾼다 (HR)
   GET  /api/eval/state?year=              보는 사람에 맞춘 그해 평가 (year 가 없으면 cur_year) → {"year", "offline", "round", "deleg", "ceoId", "me", "people", "pools", "todo"}
-  GET  /api/eval/files/<fid>              증빙 내려받기 (본인 · 평가자 · 배정자 · 그 본부의 본부장 · 대표이사 · HR)
+  GET  /api/eval/files/<fid>              증빙 내려받기 (본인 · HR — 자기평가를 낸 뒤에는 평가자 · 배정자 · 그 본부의 본부장 · 대표이사도)
   POST /api/eval/me/self                  {"year", "entries": [{"rid", "note"?, "selfGrade"?}]} 자기평가 임시 저장 — 보낸 줄 · 칸만 바꾼다 → {"ok", "me"} (본인 — 사람 번호는 세션에서만)
   POST /api/eval/me/submit                {"year"} 자기평가 제출 — 단계 SCORE · 평가자에게 알림 (대표이사가 평가자이고 맡겼으면 제출한 사람 뺀 HR 전원)
   POST /api/eval/files                    multipart year · rid · file — 증빙 올리기 → {"ok", "id"} (nginx 는 이 길만 본문 11MB)
@@ -27,9 +27,10 @@ app.py 가 bp 를 붙인다. 세션 검사 · 같은 출처 검사는 auth._guar
 보는 수준 (공개 전 등급은 어디에도 새지 않는다 — 사람 줄을 응답에 넣는 길은 모두 _row_json 하나를 지난다. 수준은 eval_rules.level):
   full 전부 (HR · 대표이사 · 배정자 · 점수를 내기 전의 평가자 · 공개 뒤) / mine 평가자가 낸 뒤 · 공개 전 — 자기가 낸 등급 · 항목 등급 · 총점만, 고쳤으면 edited 참(내용 글자 없음) /
   self 본인 · 공개 전 — 자기평가(실적 · 자기 등급 · 증빙)만, 평가 칸은 열쇠째 뺀다 / none 줄이 없다.
+  자기평가를 내기 전(SELF)의 초안은 본인 · HR 만 본다 — 그 밖 사람(평가자 · 배정자 · 대표이사 · 본부장)의 줄에서는 ev[] 의 note · selfGrade · files 를 뺀다 (증빙 내려받기도 403).
   people = HR · 대표이사는 전원, 그 밖은 자기가 평가자이거나 배정자인 사람 (본인 줄은 me) · pools = HR · 대표이사는 전부, 그 밖은 자기가 배정자인 묶음만.
   배정자(R6) = 본부 팀원 묶음은 떠 둔 본부장이 활성이면 그 사람, 아니면 대표이사 · 그 밖 묶음은 대표이사. 판단 칸(can)은 _can — 쓰기 길도 같은 함수로 막는다.
-  맡김(R11)이면 HR 이 대표이사 몫을 대신하되 점수 · 배정은 자기 줄만, 묶음 마감은 자기가 든 묶음을 못 한다 (can.behalf — 화면의 "대리 입력" 표시).
+  맡김(R11)이면 HR 이 대표이사 몫을 대신하되 자기 줄과 자기가 든 묶음의 사람은 대신 못 한다 — 점수 · 배정 · 묶음 마감 모두 (can.behalf — 화면의 "대리 입력" 표시).
   todo = 처리할 일 숫자 (화면 evTodo — eval_todo 로 휴대폰 숫자도 같은 셈). 상태: 해(2026~2100 정수) 400 · FIRST_YEAR 전 해는 offline 참에 빈 명단.
   증빙: 없는 번호 404 → 볼 권한(can.evidence) 아님 403 → 폴더에 파일이 없음 404. 내려받기는 attachment · nosniff · no-store, 감사로그는 남기지 않는다.
 
@@ -49,18 +50,20 @@ app.py 가 bp 를 붙인다. 세션 검사 · 같은 출처 검사는 auth._guar
   연차 초과가 5일 이상이 되면 이미 준 S·A·B 등급을 지운다 (화면 evSetAttendance).
 명단 한 사람 (HR 403 → 본인 403 → 해 400 → 그해 평가 대상 404 → 아래). 본인 평가는 다른 HR 이 처리한다:
   제외: 이미 제외 409 → 평가자가 점수를 냄(SCORE 지남) 409 → 사유 1~100자 400 · 되돌림: 제외가 아님 409 → 그 묶음이 WAIT · FIX 가 아님 409 ·
-  자기평가 없이: 제외됨 409 → SELF 가 아님 409 → KPI 없음 409 (저장한 뒤 떠 둔 평가자에게 알림) ·
+  자기평가 없이: 제외됨 409 → SELF 가 아님 409 → KPI 없음 409 (저장한 뒤 떠 둔 평가자에게 알림 — 받는 사람은 자기평가 제출과 같다) ·
   평가자 바꾸기: SELF · SCORE 가 아님 409 → 본인이 아니고 활성이며 포털을 쓰는(로그인해 점수를 낼 수 있는) 직원이 아님 400.
 자기평가 저장 · 제출 (본인): 해 400 → 그해 평가 대상 아님 404 → 쓸 수 없음 403 (can.self 거짓 — 자기평가 마감일이 지났으면 그 날짜를 알리는 문구, 그 밖은 "지금은 쓸 수 없습니다") →
   저장은 모양 400 (목록 · 없는 실행목표 · 같은 줄 두 번 · 실적 500자 · 쓸 수 없는 글자 · 등급 SABCD 또는 null, 실적은 앞뒤 공백을 떼고 센다 · 뗀 글을 저장, 하나라도 틀리면 아무것도 저장 안 함) /
   제출은 실행목표마다 실적(공백 뺀 1자 이상)과 자기 등급이 다 있어야 400. 저장은 감사로그가 없고 제출은 EVAL_SELF_SUBMITTED (해만 — 글 없음). 알림은 저장(COMMIT)한 뒤.
 증빙 올리기: 몸통이 10MB + 64KB 를 넘음 400 (읽기 전에) → 해 400 → 평가 대상 아님 404 → can.upload 거짓 403 → 떠 둔 실행목표 아님 400 → 그 실행목표에 이미 5개 400 →
   빈 파일 · 10MB 넘음 400 → 형식(_kind — 확장자 + 첫 바이트) 400. 이름은 경로를 떼고 제어 · 서식(Cf) 문자와 앞뒤 공백을 빼고 120자로 줄이며 (줄일 때 확장자는 쓴 그대로 남기고 이름 쪽을 자른다. 비면 "증빙.<종류>"), 파일은 DB 옆 eval_files/<ev_files.id> —
-  줄을 넣어 번호를 받고 임시 이름으로 써서 바꿔 단다 (쓰다 실패하면 줄도 되돌린다 — 같은 트랜잭션). 번호는 지운 뒤 다시 쓰일 수 있어 줄과 파일은 늘 함께 지운다.
+  줄을 넣어 번호를 받고 임시 이름으로 써서 바꿔 단다 (쓰다 실패하면 줄도 되돌린다 — 같은 트랜잭션). 번호는 지워도 다시 쓰지 않는다(AUTOINCREMENT) — 옛 번호로 남의 새 파일을 받지 못하게.
+  줄과 파일은 늘 함께 지운다.
 증빙 지우기: 없는 번호 404 → 올린 본인 아님 403 → can.upload 거짓 403 → 줄과 파일을 한 트랜잭션에서 지움 (파일이 이미 없어도 200). 올리기 · 지우기는 감사로그가 없다.
 평가자 · 배정자 (사람 한 명): 해 400 → 그해 평가 대상 404 → 아래. 판단은 모두 잠근 뒤 다시 읽은 _ctx 의 _can (화면의 can 과 같은 함수):
   고치기: can.score 도 can.assign 도 아님 403 → 칸 권한 403 (평가자 코멘트 can.score — 낸 뒤에는 아무도 못 고친다(평가자의 숨긴 줄이 낸 코멘트를 그대로 보인다) ·
-    윗사람 코멘트 can.head · 가점 · 사유 can.bonus) → 모양 400 (KPI 없는 사람의 항목 등급 · 가점 · 없는 실행목표 · 등급 아님 · 가점 0~10 · 0.5 단위 · 가점이 있는데 사유 없음 ·
+    윗사람 코멘트 can.head · 가점 · 사유 can.bonus) → 모양 400 (KPI 없는 사람의 항목 등급 · 가점 · 없는 실행목표 · 등급 아님 · 배정 단계에서 항목 등급 비움(null — 점수 단계 초안만 된다) ·
+    가점 0~10 · 0.5 단위 · 가점이 있는데 사유 없음 ·
     글자 한도 — 앞뒤 공백을 떼고 세고 뗀 글을 저장 · _chars) → 줄 수 있는 가장 높은 등급(cap)보다 높음 400 (문구는 화면 evSubmitScore). 하나라도 틀리면 아무것도 저장 안 함.
     자동 등급(화면 evFit — KPI 있는 사람만): 점수 단계에서 항목 등급이 다 찼고 이번 요청이 점수(항목 등급 · 가점)를 바꿨으면 등급 = cap, 그 밖에는 지금 등급이 cap 보다 높아졌을 때만
     cap 으로 내린다. grade 를 보내면 그 값이 이긴다. 대표이사 대신(can.behalf)이면 proxy_by = 나. 감사로그 없음(임시 단계).
@@ -68,7 +71,7 @@ app.py 가 bp 를 붙인다. 세션 검사 · 같은 출처 검사는 auth._guar
     떠 두기: proposed = 등급 · sub_score_x10(KPI 있을 때) · sub_marks · scored_at/by · 단계 = after_score(묶음). EVAL_SCORED (대신이면 on_behalf_of = 대표이사).
     알림(저장한 뒤): 배정자(팀장 묶음은 대표이사) — 그가 대표이사이고 맡겼으면 평가받는 사람 뺀 HR 전원. 낸 사람 본인에게는 보내지 않는다.
   확인(seen): 평가자 본인 아님 403 → edit_seen = 지금 고친 내용 글자 (응답은 editSeen 참/거짓만 — 글자는 공개 전 평가자에게 가지 않는다).
-묶음 마감: 해 400 → 본부 팀원 묶음(DIV:) 아님 400 → 묶음 없음 404 → 권한(_pool_can.close — 공개 여부는 빼고) 403 → 공개 뒤 409 → 제외 안 된 사람 중 배정 단계(GRADE) 전인 사람 409 →
+묶음 마감: 해 400 → 본부 팀원 묶음(DIV:) 아님 400 → 묶음 없음 404 → 권한(_pool_can.close — 공개 여부는 빼고) 403 → 제외 안 된 사람이 없음 409 → 공개 뒤 409 → 제외 안 된 사람 중 배정 단계(GRADE) 전인 사람 409 →
   이미 넘어감 409 → 전원 검사(check_pool full — 등급 누락 · 정원 · 점수 기준 · 연차) 오류 409 {"error": 첫 오류, "errors"}. 모두 CEO · closed_at/by · 돌려보낸 기록(back_*) 비움 · hr_seen [] ·
   EVAL_POOL_CLOSED (HR 이 대신이면 on_behalf_of). 알림: 대표이사(맡겼으면 빼고) + HR 전원 — 마감한 사람 본인은 빼고.
 마감 확인: HR 403 → 해 400 → 묶음 없음 404 → hr_seen 에 나를 더함 (이미 있으면 그대로).
@@ -207,9 +210,11 @@ def _pool_who(ctx: _Ctx, key: str) -> int | None:
     return next((_assigner(ctx, r) for r in ctx.rows.values() if r["pool"] == key), ctx.ceo)
 
 
-def _behalf_ok(ctx: _Ctx, me: Actor, *uids: int) -> bool:
-    """대표이사 몫을 이 HR 이 대신할 수 있나 (R11): 맡겼고 · HR 이고 · 대상(그 사람 · 그 묶음 사람들)에 자기가 없다."""
-    return me.is_hr and ctx.deleg and me.user_id not in uids
+def _behalf_ok(ctx: _Ctx, me: Actor, key: str) -> bool:
+    """대표이사 몫을 이 HR 이 대신할 수 있나 (R11): 맡겼고 · HR 이고 · 그 묶음(key)에 자기가 들지 않았다 — 자기 줄도, 같은 묶음 사람의 점수 · 등급도 대신 못 한다
+    (같은 정원을 나눠 쓰는 동료의 등급이 자기 등급에 닿는다). 그해 떠 둔 줄로 본다 (제외된 줄도)."""
+    mine = ctx.rows.get(me.user_id)
+    return me.is_hr and ctx.deleg and (mine is None or mine["pool"] != key)
 
 
 def _bands_of(ctx: _Ctx) -> tuple[int, int, int]:
@@ -516,7 +521,8 @@ def skip_self(uid: int) -> Response:
         conn.execute("UPDATE ev_targets SET stage = 'SCORE', no_self_at = ?, no_self_by = ? WHERE year = ? AND user_id = ?",
                      (auth._iso(auth._now()), g.actor.user_id, year, uid))
         _log(conn, "EVAL_SKIP_SELF", "ev_target", uid, year=year)
-    push.notify([rater], "eval_turn")  # 저장한 뒤 — 떠 둔 평가자에게 (평가자가 없으면 아무도)
+        to = _turn_to(_ctx(conn, year), uid, rater)  # 자기평가 제출과 같다 — 대표이사가 평가자이고 맡겼으면 그 사람 뺀 HR 전원
+    push.notify(to, "eval_turn")  # 저장한 뒤 (평가자가 없으면 아무도)
     return jsonify(ok=True)
 
 
@@ -566,11 +572,12 @@ def _can(ctx: _Ctx, me: Actor, row: sqlite3.Row) -> dict[str, bool]:
     """화면이 쓰는 판단 — 서버의 쓰기 길도 이 함수로 막는다 (같은 판단을 두 벌 두지 않는다). 대상 줄은 평가를 시작해야 생긴다.
     self 자기평가(본인 · SELF · 오늘 ≤ 자기평가 마감) · upload 증빙(본인 · 평가 시작일 ≤ 오늘 ≤ 증빙 마감 · SELF/SCORE) — 둘 다 제외 안 됨 · KPI 있음 /
     score 점수(SCORE · 평가자가 나, 또는 평가자가 대표이사이고 맡은 HR) / assign 등급 배정(공개 전 · 배정 단계 · 배정자가 나, 또는 배정자가 대표이사이고 맡은 HR) /
-    bonus 가점(팀장 묶음은 평가자도, 그 밖은 배정자만) · head 윗사람 코멘트(배정자 — 팀장 묶음 빼고) / evidence 증빙 보기(본인 · 평가자 · 배정자 · 그 본부의 본부장 · 대표이사 · HR) /
+    bonus 가점(팀장 묶음은 평가자도, 그 밖은 배정자만) · head 윗사람 코멘트(배정자 — 팀장 묶음 빼고) /
+    evidence 증빙 보기(본인 · HR — 자기평가를 낸 뒤(SELF 가 아님)에는 평가자 · 배정자 · 그 본부의 본부장 · 대표이사도) /
     behalf = score · assign 이 '대표이사 대신'으로 참이 됐나 (화면의 대리 입력 표시)."""
     rnd, uid, key, stage = ctx.round, row["user_id"], row["pool"], row["stage"]
     today, mine, on = auth._today().isoformat(), uid == me.user_id, row["out_at"] is None and not rnd["released"]
-    ok, rater, who = _behalf_ok(ctx, me, uid), row["rater_id"], _assigner(ctx, row)
+    ok, rater, who = _behalf_ok(ctx, me, key), row["rater_id"], _assigner(ctx, row)
     score = on and stage == "SCORE"
     s_own = score and rater == me.user_id
     s_behalf = score and not s_own and _is_ceo(ctx, rater) and ok
@@ -584,27 +591,32 @@ def _can(ctx: _Ctx, me: Actor, row: sqlite3.Row) -> dict[str, bool]:
             "assign": a_own or a_behalf,
             "bonus": ((s_own or s_behalf) and key == "LEADERS") or a_own or a_behalf,
             "head": (a_own or a_behalf) and key != "LEADERS",
-            "evidence": mine or me.is_hr or me.position is Role.CEO or me.user_id in (rater, who)
-                        or (me.led_division_id is not None and me.led_division_id == row["division_id"]),
+            "evidence": mine or me.is_hr or (stage != "SELF" and (me.position is Role.CEO or me.user_id in (rater, who)
+                                                                 or (me.led_division_id is not None and me.led_division_id == row["division_id"]))),
             "behalf": s_behalf or a_behalf}
 
 
 def _row_json(ctx: _Ctx, me: Actor, row: sqlite3.Row) -> dict | None:
     """보는 사람에 맞춰 깎은 한 사람 줄 (칸 이름은 화면 evPeople) — 사람 줄을 응답에 넣는 길은 모두 이 함수를 지난다. 못 보면(level none) None.
     full = 전부 (edited 는 고친 내용 글자) / mine = 평가자가 낸 뒤 · 공개 전: 자기가 낸 등급 · 항목 등급 · 총점만 — 지금 등급 · 항목 등급 · 가점 · 윗사람 코멘트 ·
-    대리 입력 · 고친 내용 글자는 어디에도 없고 고쳤으면 edited 참 / self = 본인 · 공개 전: 자기평가(실적 · 자기 등급 · 증빙)만 — 평가 칸은 null 이 아니라 열쇠째 뺀다."""
+    대리 입력 · 고친 내용 글자는 어디에도 없고 고쳤으면 edited 참 / self = 본인 · 공개 전: 자기평가(실적 · 자기 등급 · 증빙)만 — 평가 칸은 null 이 아니라 열쇠째 뺀다.
+    자기평가를 내기 전(SELF)에는 본인 · HR 이 아니면 ev[] 에서 실적 · 자기 등급 · 증빙을 열쇠째 뺀다 (초안 — 번호 · 평가자 등급 칸만).
+    assignerIsCeo = 등급을 배정하는 사람이 대표이사인가 (화면의 '본부장' · '대표이사' 글자 — 등급 · 점수와 상관없다)."""
     uid, key = row["user_id"], row["pool"]
     t = Target(uid, row["team_id"], row["division_id"], Role.TEAM_LEADER if row["is_leader"] else None, direct=key == "DIRECT")
-    lv = level(me, t, rater=row["rater_id"], assigner=_assigner(ctx, row), stage=row["stage"], released=bool(ctx.round["released"]))
+    who = _assigner(ctx, row)
+    lv = level(me, t, rater=row["rater_id"], assigner=who, stage=row["stage"], released=bool(ctx.round["released"]))
     if lv == "none":
         return None
     can, score, ed, rater, bands = _can(ctx, me, row), _total(ctx, row), _edited(ctx, row), row["rater_id"], _bands_of(ctx)
+    draft = row["stage"] == "SELF" and uid != me.user_id and not me.is_hr  # 내기 전 자기평가 — 본인 · HR 만 본다
     sub = None if row["sub_score_x10"] is None else Decimal(row["sub_score_x10"]) / 10
     marks = json.loads(row["sub_marks"]) if row["sub_marks"] else None
     ev = []
     for it in ctx.items[uid]:
         e = ctx.entries[(uid, it["rid"])]
-        ev.append({"rid": it["rid"], "note": e["note"], "selfGrade": e["self_grade"], "grade": e["grade"],
+        ev.append({"rid": it["rid"], "grade": e["grade"]} if draft else
+                  {"rid": it["rid"], "note": e["note"], "selfGrade": e["self_grade"], "grade": e["grade"],
                    "files": [{"id": f["id"], "name": f["name"], "size": f["size"]} for f in ctx.files.get((uid, it["rid"]), [])] if can["evidence"] else []})
     out = {"pid": uid, "name": ctx.names[uid][0], "title": row["title"] or "", "team": row["team_name"], "div": row["div_name"],
            "poolKey": key, "poolName": _pool_name(key, row["div_name"]), "kpi": row["kpi_version"] is not None, "stage": row["stage"],
@@ -616,7 +628,7 @@ def _row_json(ctx: _Ctx, me: Actor, row: sqlite3.Row) -> dict | None:
            "total": _num(score), "cap": cap(score, row["leave_x2"], bands), "proxy": _who(ctx, row["proxy_by"]),
            "edited": ed, "editSeen": bool(ed) and row["edit_seen"] == ed,
            "rater": None if rater is None else {"id": rater, "name": ctx.names[rater][0], "title": ctx.names[rater][1], "canLogin": rater in ctx.login},
-           "raterIsCeo": _is_ceo(ctx, rater), "can": can, "hidden": lv == "mine", "appeal": None}  # appeal 은 평가 3단계 ②가 채운다
+           "raterIsCeo": _is_ceo(ctx, rater), "assignerIsCeo": _is_ceo(ctx, who), "can": can, "hidden": lv == "mine", "appeal": None}  # appeal 은 평가 3단계 ②가 채운다
     if lv == "mine":
         out.update(grade=row["proposed"], total=_num(sub), cap=cap(sub, row["leave_x2"], bands), bonus=0, bonusReason="", headComment="", proxy="",
                    edited=True if ed else "")
@@ -628,13 +640,19 @@ def _row_json(ctx: _Ctx, me: Actor, row: sqlite3.Row) -> dict | None:
     return out
 
 
+def _turn_to(ctx: _Ctx, uid: int, who: int | None) -> list[int | None]:
+    """uid 의 다음 차례(who — 평가자 · 배정자)가 됐다는 알림의 받는 사람: who 가 대표이사이고 맡겼으면 uid 뺀 HR 전원, 아니면 who (없으면 아무도 — push.notify 가 None 을 뺀다).
+    자기평가 제출 · 자기평가 없이 진행 · 평가자 제출이 함께 쓴다."""
+    return [h for h in push.hr_admins(ctx.conn) if h != uid] if _is_ceo(ctx, who) and ctx.deleg else [who]
+
+
 def _pool_can(ctx: _Ctx, me: Actor, key: str) -> dict[str, bool]:
     """묶음 단추 — 권한만 본다 (단계 · 정원은 state · errors 로 화면이 막고 쓰기 길이 409 로 다시 본다).
     close 마감 = 본부 팀원 묶음 · 공개 전 · 배정자가 나, 또는 배정자가 대표이사이고 그 묶음에 들지 않은 맡은 HR.
     confirm · back · finalize · undo 는 평가 3단계 ②가 채운다 (지금은 늘 거짓)."""
     who = _pool_who(ctx, key)
     close = (key.startswith("DIV:") and not ctx.round["released"]
-             and (who == me.user_id or (_is_ceo(ctx, who) and _behalf_ok(ctx, me, *(r["user_id"] for r in ctx.rows.values() if r["pool"] == key)))))
+             and (who == me.user_id or (_is_ceo(ctx, who) and _behalf_ok(ctx, me, key))))
     return {"close": close, "confirm": False, "back": False, "finalize": False, "undo": False}
 
 
@@ -676,7 +694,7 @@ def _todo(ctx: _Ctx, me: Actor) -> dict[str, int]:
     if me.is_hr:
         admin = (n("HR") + sum(p["closed_at"] is not None and me.user_id not in json.loads(p["hr_seen"]) and state[k] == "CEO" for k, p in ctx.pools.items())
                  + (0 if rnd["attDone"] else 1)
-                 + ((n("CEO", "FIX") + sum(r["stage"] == "SCORE" and _is_ceo(ctx, r["rater_id"]) and _behalf_ok(ctx, me, r["user_id"]) for r in live)) if ctx.deleg else 0))
+                 + ((n("CEO", "FIX") + sum(r["stage"] == "SCORE" and _is_ceo(ctx, r["rater_id"]) and _behalf_ok(ctx, me, r["pool"]) for r in live)) if ctx.deleg else 0))
     return {"me": todo_me, "admin": admin}
 
 
@@ -817,7 +835,7 @@ def self_submit() -> Response:
             raise _Refuse("모든 KPI에 실적과 달성 등급을 넣어 주세요.", 400)
         conn.execute("UPDATE ev_targets SET stage = 'SCORE', self_at = ? WHERE year = ? AND user_id = ?", (auth._iso(auth._now()), year, uid))
         _log(conn, "EVAL_SELF_SUBMITTED", "ev_target", uid, year=year)
-        to = [h for h in push.hr_admins(conn) if h != uid] if _is_ceo(ctx, rater) and ctx.deleg else [rater]  # 맡겼으면 HR 전원 (제출한 사람이 HR 이면 본인은 빼고)
+        to = _turn_to(ctx, uid, rater)  # 맡겼으면 HR 전원 (제출한 사람이 HR 이면 본인은 빼고)
     push.notify(to, "eval_turn")  # 저장(COMMIT)한 뒤 — 평가자가 없으면 아무도
     return jsonify(ok=True)
 
@@ -886,7 +904,7 @@ def file_put() -> Response:
         tmp = d / f"{fid}.part"
         try:
             tmp.write_bytes(data)
-            os.replace(tmp, d / str(fid))  # 같은 번호의 옛 파일(지운 줄이 남긴 것)이 있어도 덮어쓴다
+            os.replace(tmp, d / str(fid))  # 같은 번호의 옛 파일이 있어도 덮어쓴다 (번호는 다시 쓰지 않지만, 파일을 쓴 뒤 되돌려진 줄의 번호는 다시 받는다)
         except BaseException:  # 줄은 _txn 이 되돌린다 — 임시 파일만 치운다
             tmp.unlink(missing_ok=True)
             raise
@@ -960,6 +978,8 @@ def person_edit(uid: int) -> Response:
                 rid = int(k) if k.isascii() and k.isdigit() and len(k) <= 10 else None
                 if rid not in marks:
                     raise _Refuse("실행목표를 찾을 수 없습니다.", 400)
+                if v is None and row["stage"] != "SCORE":  # 비우는 것은 평가자의 점수 단계 초안만 — 배정 단계에서 비우면 낸 점수가 빈 채로 넘어간다
+                    raise _Refuse("달성 등급을 골라 주세요.", 400)
                 marks[rid] = _grade(v)
         if "bonus" in b:
             v = b["bonus"]
@@ -1015,7 +1035,7 @@ def person_submit(uid: int) -> Response:
             (after_score(row["pool"]), None if score is None else int(score * 10), json.dumps(marks), auth._iso(auth._now()), me,
              me if can["behalf"] else row["proxy_by"], ctx.year, uid))
         _log(ctx.conn, "EVAL_SCORED", "ev_target", uid, behalf=ctx.ceo if can["behalf"] else None, year=ctx.year)
-        to = [h for h in push.hr_admins(ctx.conn) if h != uid] if _is_ceo(ctx, who) and ctx.deleg else [who]  # 다음 차례 = 배정자(팀장 묶음은 대표이사), 맡겼으면 평가받는 사람 뺀 HR 전원
+        to = _turn_to(ctx, uid, who)  # 다음 차례 = 배정자(팀장 묶음은 대표이사), 맡겼으면 평가받는 사람 뺀 HR 전원
     push.notify([u for u in to if u != me], "eval_turn")  # 저장(COMMIT)한 뒤 — 낸 사람 본인에게는 보내지 않는다
     return jsonify(ok=True)
 
@@ -1044,9 +1064,11 @@ def pool_close() -> Response:
             raise _Refuse("묶음을 찾을 수 없습니다.", 404)
         if not _pool_can(ctx._replace(round={**ctx.round, "released": None}), g.actor, key)["close"]:  # 권한만 본다 — 공개는 다음 줄이 409 로 따로 알린다
             raise _Refuse("이 묶음을 마감할 권한이 없습니다.", 403)
+        _, errors, _, _, rows = _pool(ctx, key)
+        if not rows:  # 모두 제외됐다 — 마감할 등급이 없다
+            raise _Refuse("평가할 분이 없는 묶음입니다.", 409)
         if ctx.round["released"]:
             raise _Refuse("결과를 공개한 평가는 바꿀 수 없습니다.", 409)
-        _, errors, _, _, rows = _pool(ctx, key)
         if any(at(r["stage"], "GRADE") < 0 for r in rows):
             raise _Refuse("아직 이전 단계에 있는 분이 있습니다.", 409)
         if any(r["stage"] != "GRADE" for r in rows):

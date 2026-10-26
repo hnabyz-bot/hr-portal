@@ -133,8 +133,9 @@ END;
 
 -- 증빙 — 실행목표에 붙인 파일의 이름 · 종류 · 크기 · 지문(sha256) · 올린 때. 파일 내용은 DB 에 넣지 않고 서버 폴더에 둔다.
 -- 본인이 마감 전에 지울 수 있다 (그래서 지우기를 막지 않는다). 종류는 소문자 확장자 — jpeg 도 jpg 로 적는다. 크기는 1바이트 ~ 10MB.
+-- id 는 AUTOINCREMENT — 지운 번호를 다시 쓰지 않는다. 서버 폴더의 파일 이름이 이 번호라, 지운 증빙의 번호를 들고 있던 화면이 같은 번호로 남의 새 파일을 받지 못하게.
 CREATE TABLE ev_files (
-    id       INTEGER PRIMARY KEY,
+    id       INTEGER PRIMARY KEY AUTOINCREMENT,
     year     INTEGER NOT NULL,
     user_id  INTEGER NOT NULL,
     rid      INTEGER NOT NULL,

@@ -199,7 +199,7 @@ def level(me: Actor, t: Target, *, rater: int | None, assigner: int | None, stag
 
 
 def edited(proposed: str | None, sub_score_x10: int | None, grade: str | None, score: Decimal | None, *, past: bool) -> str:
-    """평가자가 낸 것과 지금이 다르면 "총점 88.0 → 90.0 · 등급 B → C". 같거나 아직 배정 단계를 안 지났으면(past 거짓) 빈 글자.
+    """평가자가 낸 것과 지금이 다르면 "총점 88.0 → 90.0 · 등급 B → C" (지금 등급이 없으면 "등급 B → 없음"). 같거나 아직 배정 단계를 안 지났으면(past 거짓) 빈 글자.
 
     proposed 는 평가자가 낸 등급 의견, sub_score_x10 은 낸 점수의 10배(880 = 88.0)."""
     if not past or not proposed:
@@ -208,5 +208,5 @@ def edited(proposed: str | None, sub_score_x10: int | None, grade: str | None, s
     if sub_score_x10 is not None and score is not None and score * 10 != sub_score_x10:
         parts.append(f"총점 {Decimal(sub_score_x10) / 10:.1f} → {score:.1f}")
     if grade != proposed:
-        parts.append(f"등급 {proposed} → {grade}")
+        parts.append(f"등급 {proposed} → {grade or '없음'}")  # 등급을 지웠으면(연차 초과 등) 'None' 이 아니라 '없음'
     return " · ".join(parts)

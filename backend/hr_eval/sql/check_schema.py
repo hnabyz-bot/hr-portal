@@ -1607,6 +1607,11 @@ def check_eval_tables(conn: sqlite3.Connection) -> None:
     conn.execute("DELETE FROM ev_files WHERE id = (SELECT MIN(id) FROM ev_files)")
     gone = conn.execute("SELECT COUNT(*) FROM ev_files WHERE user_id = ? AND rid = 1", (up,)).fetchone()[0]
     _report(n - gone == 1, "증빙 줄은 지울 수 있음 (본인이 마감 전에 지운다)", f"{n} → {gone}")
+    top = conn.execute("SELECT MAX(id) FROM ev_files").fetchone()[0]
+    conn.execute("DELETE FROM ev_files WHERE id = ?", (top,))
+    put("ev_files", FL)
+    new = conn.execute("SELECT MAX(id) FROM ev_files").fetchone()[0]
+    _report(new == top + 1, "증빙 번호는 다시 쓰지 않음 (AUTOINCREMENT — 맨 끝 번호를 지워도 다음 줄은 그다음 번호, 파일 이름이 번호라서)", f"지운 {top} → 새 {new}")
 
     # --- 묶음 기록 (상태는 사람들의 단계로 센다 — 여기엔 마감 · 확인 · 돌려보냄 · 되돌림 기록만) -----------------------------------
     PL = dict(year=2027, pool="DIV:1")
