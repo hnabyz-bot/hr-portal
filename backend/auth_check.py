@@ -3038,6 +3038,187 @@ def check_push_events(hr) -> None:
        "끝나면 구독 · 세션 · 메모 · 위임 · 명세서 · 영수증 · 계약서(파기)를 정리하고 기간 · 대표이사 · 환경 값 · 보내기 함수 · 시각을 되돌림")
 
 
+def check_push_deadlines(hr) -> None:
+    """휴대폰 9시 마감 알림 (2026-10-26): 처리할 일 묶음과 따로 업무 마감(서버에 저장된 나의 업무) · KPI 마감(실제로 확정한 계획서의 비정기 일정 · 지난달 한 줄)이 한 통씩.
+    끝낸 업무 · 결과를 적은 일정은 빠지고, 금요일은 주말(· 월요일) 몫까지, 지난달 한 줄은 7일(토 · 일이면 그 앞 금요일)에. 누르면 나의 업무, 아이콘 숫자는 처리할 일 합.
+    알림에는 개수만 — 업무 · 일정 제목(가상…)은 없다. 마감을 못 세도 묶음은, 묶음을 못 세도 마감 알림은 (숫자 없이) 간다.
+    시각은 auth._now 를 고정해 옮기고(진행 기록의 '오늘'도 같이) 보내기 함수는 가짜. 가상 사람 · 부서(63xx) · 가상 구독 주소(example.invalid).
+    확정본 · 감사로그 때문에 지울 수 없는 것(가상 사람 · 확정된 계획서)은 비활성으로 두고, 그 밖의 자료와 환경 값 · 시각 · 보내기 함수는 되돌린다."""
+    import unittest
+
+    import push
+
+    print("휴대폰 9시 마감 알림")
+    TL, EMP, EMP2, IDLE = cast = tuple(range(6301, 6305))  # 팀장 · KPI 쓰는 직원 · 나의 업무만 쓰는 직원 · 일 없음
+    mine = ",".join(map(str, cast))
+    utc, KST, year = timezone.utc, auth.KST, 2026
+    clock = [datetime(2026, 10, 5, 10, 0, tzinfo=KST)]  # 10월 첫 주에 확정 — 10월부터 월 한 줄이 해당 있다
+    MON, TUE, FRI, D7 = (datetime(2026, m, d, 9, 0, tzinfo=KST) for m, d in ((11, 2), (11, 3), (11, 6), (12, 7)))  # 11/6 금요일은 7일이 토요일
+    days = [d.date().isoformat() for d in (MON, TUE, FRI, D7)]
+    env = {k: os.environ.get(k) for k in ("HR_PUSH_PUBLIC", "HR_PUSH_PRIVATE")}
+    real_now, real_send, real_pending, real_deadlines = auth._now, push.SEND, push.pending, push.deadlines
+    kyear = q("SELECT edit_from, edit_to, eval_start FROM kpi_years WHERE year = ?", year)
+    had = {r[0] for r in q("SELECT token_hash FROM sessions")}  # 시작 때 있던 세션 — 끝나면 이 검사가 만든 세션(로그인 · 가상)만 지운다
+    calls: list[tuple[str, dict, int]] = []
+    owner: dict[str, int] = {}  # 구독 주소 → 받는 사람
+    phones: list[str] = []  # 가상 휴대폰 세션 번호
+
+    def fake_send(info, payload, ks, ttl):
+        calls.append((info["endpoint"], payload, ttl))
+        return 201
+
+    def client(uid: int):  # 지금(고정한) 시각의 PC 로그인
+        c = app.test_client()
+        login(c, new_token(f"HW-{uid}"))
+        return c
+
+    post = lambda c, p, body=None: c.post(p, base_url=BASE, headers=ORIGIN, json=body or {})  # noqa: E731
+
+    def run(when) -> tuple[int, dict[int, list[dict]]]:
+        """그날 9시 묶음을 돌린다 (가상 휴대폰은 그 시각에 막 쓴 것으로) — (보낸 사람 수, {받은 사람: [보낸 순서대로 내용]}). 모든 통의 TTL 은 9시간."""
+        clock[0] = when
+        t = when.astimezone(utc)
+        x(f"UPDATE sessions SET last_seen_at = ?, expires_at = ? WHERE token_hash IN ({','.join('?' * len(phones))})", auth._iso(t), auth._iso(t + timedelta(days=30)), *phones)
+        calls.clear()
+        n, got = push.morning(app, when), {}
+        for ep, p, ttl in calls:
+            got.setdefault(owner[ep], []).append(p if ttl == push.TTL_MORNING else {"ttl": ttl})
+        return n, got
+
+    def msg(tag: str, title: str, body: str, badge: int | None) -> dict:
+        return {"title": title, "body": body, "url": "/" if tag == "morning" else "/?go=ws.w1", "tag": tag, **({} if badge is None else {"badge": badge})}
+
+    seen: list[dict] = []
+    try:
+        auth._now = lambda: clock[0].astimezone(utc)
+        push.SEND = fake_send
+        now_iso = auth._iso(auth._now())
+        x("INSERT INTO departments (id, code, name, level, parent_id) VALUES (6301, 'Q81', '가상S본부', 'DIVISION', NULL)")
+        x("INSERT INTO departments (id, code, name, level, parent_id) VALUES (6302, 'Q82', '가상S팀', 'TEAM', 6301)")
+        for uid, kpi_on in ((TL, 1), (EMP, 1), (EMP2, 0), (IDLE, 0)):
+            x("INSERT INTO users (id, name, email, department_id, hiworks_user_no, portal_enabled, is_active, writes_kpi) VALUES (?, ?, ?, 6302, ?, 1, 1, ?)",
+              uid, f"가상S{uid}", f"s{uid}@example.invalid", f"HW-{uid}", kpi_on)
+        x("INSERT INTO user_roles (user_id, role) VALUES (?, 'TEAM_LEADER')", TL)
+        x("INSERT INTO kpi_years (year, edit_from, edit_to, eval_start, updated_at, updated_by) VALUES (?, ?, ?, NULL, ?, 1)"
+          " ON CONFLICT (year) DO UPDATE SET edit_from = excluded.edit_from, edit_to = excluded.edit_to, eval_start = NULL", year, f"{year}-01-01", f"{year}-12-31", now_iso)
+        for uid in (EMP, EMP2, IDLE):  # 휴대폰 하나씩 (팀장은 없음 — 월간 확인 묶음이 섞이지 않게)
+            h, ep = f"{len(phones):02d}" + "6" * 62, f"https://push.example.invalid/dl-{uid}"
+            x("INSERT INTO sessions (token_hash, user_id, created_at, last_seen_at, expires_at, kind) VALUES (?, ?, ?, ?, ?, 'phone')",
+              h, uid, now_iso, now_iso, auth._iso(auth._now() + timedelta(days=30)))
+            x("INSERT INTO push_subscriptions (token_hash, user_id, endpoint, p256dh, auth, created_at) VALUES (?, ?, ?, 'k', 'a', ?)", h, uid, ep, now_iso)
+            phones.append(h)
+            owner[ep] = uid
+
+        # ---- 10/5 직원이 KPI 를 쓰고 팀장이 확정 (정기 2 · 비정기 일정 넷) · 다른 직원은 나의 업무를 저장 ----
+        item = lambda name, w, kind, **more: {  # noqa: E731
+            "action": name, "formula": "가상 측정식", "weight": w, "owner": "가상", "S": "가상 s", "A": "가상 a", "B": "가상 b", "C": "가상 c",
+            "D": "가상 d", "kind": kind, "target": None, "unit": "", "scheds": [], **more}
+        scheds = [{"due": "2026-10-30", "name": "가상 초안"}, {"due": "2026-11-03", "name": "가상 보고"}, {"due": "2026-11-07", "name": "가상 행사"},
+                  {"due": "2026-11-09", "name": "가상 점검"}]  # 금 · 화 · 토 · 월
+        draft = [{"team": "가상S 팀목표", "personal": "가상S 개인목표", "items": [item("가상S 정기 1", 40, "reg"), item("가상S 정기 2", 30, "reg"),
+                                                                       item("가상S 비정기", 30, "irr", scheds=scheds)]}]
+        c_emp, c_tl, c_emp2 = client(EMP), client(TL), client(EMP2)
+        ok(post(c_emp, "/api/kpi/me/draft", {"draft": draft}).status_code == 200 and post(c_emp, "/api/kpi/me/submit").status_code == 200
+           and post(c_tl, f"/api/kpi/plans/{EMP}/confirm").status_code == 200, "(검사용) 직원 KPI 를 10월 5일에 제출 · 팀장이 확정")
+        content = c_emp.get("/api/kpi/me", base_url=BASE).json["plan"]["confirmed"]["content"]
+        sid = {s["name"]: s["sid"] for g in content for it in g["items"] for s in it["scheds"]}
+        rid = next(it["rid"] for g in content for it in g["items"] if it["kind"] == "reg")
+        tasks = [{"id": 1, "title": "가상 보고 정리", "due": "2026-11-02"}, {"id": 2, "title": "가상 끝낸 일", "due": "2026-11-02", "state": "완료", "doneAt": "2026-11-02"},
+                 {"id": 3, "title": "가상 진행 중", "due": "2026-10-30", "state": "진행 중"}, {"id": 4, "title": "가상 날짜 없음", "due": ""},
+                 {"id": 5, "title": "가상 주말 행사", "due": "2026-11-07"}]
+        ok(post(c_emp2, "/api/workspace/tasks", {"data": tasks, "version": 0}).json == {"version": 1}, "(검사용) 다른 직원이 나의 업무 다섯 줄을 저장")
+        pub, priv = push.keygen()  # 알림 키는 준비가 끝난 뒤에 — 위의 제출이 승인 요청 알림을 보내지 않게
+        os.environ.update(HR_PUSH_PUBLIC=pub, HR_PUSH_PRIVATE=priv)
+        bundle = lambda n, body: msg("morning", f"처리할 일이 {n}건 있어요", body, n)  # noqa: E731
+
+        # ---- 11/2 월: 내일 마감 · 지난 일정 / 오늘 마감 업무 · 지난 업무 ----
+        n, got = run(MON)
+        seen.extend(p for ps in got.values() for p in ps)
+        ok(n == 2 and set(got) == {EMP, EMP2}, "월요일: 셀 것이 있는 두 사람에게만 (일 없는 직원은 안 받음)")
+        ok(got[EMP] == [bundle(2, "KPI 지난달 한 줄 쓰기 2건"),
+                        msg("morning-kpi", "내일 KPI 업무 마감일이에요", "1건 · 마감 지난 일정 1건 · PC에서 결과를 적어 주세요", 2)],
+           "KPI 쓰는 직원: 처리할 일 묶음 다음에 KPI 마감 한 통 — 내일(11/3) 마감 1 · 결과 안 적은 지난 일정(10/30) 1, 아이콘 숫자는 묶음과 같은 2 · 나의 업무를 저장한 적 없으니 업무 마감은 없음")
+        ok(got[EMP2] == [msg("morning-tasks", "오늘 마감인 업무가 1건 있어요", "마감 지난 업무 1건 · 나의 업무에서 확인해 주세요", 0)],
+           "나의 업무만 쓰는 직원: 업무 마감 한 통 — 오늘 마감 1(끝낸 일 · 날짜 없음은 빠짐) · 진행 중인 지난 업무 1, 처리할 일이 없으니 묶음 없이 아이콘 숫자 0")
+        ok(run(MON)[0] == 0 and not calls, "같은 날 다시 돌려도 0 — 마감 알림도 한 번만")
+        ok(post(client(EMP), "/api/kpi/me/result", {"year": year, "sid": sid["가상 초안"], "text": "가상 결과"}).status_code == 200, "(검사용) 직원이 지난 일정의 결과를 적음")
+
+        # ---- 11/3 화: 오늘 마감 ----
+        n, got = run(TUE)
+        seen.extend(p for ps in got.values() for p in ps)
+        ok(got[EMP][1:] == [msg("morning-kpi", "오늘 KPI 업무 마감일이에요", "1건 · PC에서 결과를 적어 주세요", 2)], "화요일: 오늘(11/3) 마감 1 — 결과를 적은 지난 일정은 빠짐")
+        ok(got[EMP2] == [msg("morning-tasks", "마감 지난 업무가 2건 있어요", "나의 업무에서 확인해 주세요", 0)], "어제 마감인 업무도 끝내지 않으면 지난 업무 (2)")
+        tasks[0] = {**tasks[0], "state": "완료", "doneAt": "2026-11-03"}
+        ok(post(client(EMP2), "/api/workspace/tasks", {"data": tasks, "version": 1}).json == {"version": 2}, "(검사용) 업무 하나를 끝냄 (휴대폰 · PC 어디서든 같은 서버 목록)")
+        ok(post(client(EMP), "/api/kpi/me/month", {"year": year, "rid": rid, "month": 10, "text": "가상 10월 한 줄"}).status_code == 200, "(검사용) 직원이 정기 하나의 10월 한 줄을 씀")
+
+        # ---- 11/6 금 (7일이 토요일): 주말 · 월요일 몫과 지난달 한 줄 마감을 미리 ----
+        n, got = run(FRI)
+        seen.extend(p for ps in got.values() for p in ps)
+        ok(got[EMP] == [bundle(1, "KPI 지난달 한 줄 쓰기"),
+                        msg("morning-kpi", "7일까지 KPI 지난달 한 줄을 써 주세요", "1건 · 주말·월요일 마감 2건 · 마감 지난 일정 1건 · PC에서 결과를 적어 주세요", 1)],
+           "금요일: 7일(토) 마감인 지난달 한 줄 1이 제목 · 토요일(11/7) · 월요일(11/9) 마감 2 · 결과 안 적은 화요일 일정 1")
+        ok(got[EMP2] == [msg("morning-tasks", "주말 마감인 업무가 1건 있어요", "마감 지난 업무 1건 · 나의 업무에서 확인해 주세요", 0)],
+           "금요일: 토요일 마감 업무 1 · 끝낸 업무는 빠지고 지난 업무 1")
+
+        # ---- 12/7 월: 오늘까지 지난달 한 줄 ----
+        n, got = run(D7)
+        seen.extend(p for ps in got.values() for p in ps)
+        ok(got[EMP] == [bundle(2, "KPI 지난달 한 줄 쓰기 2건"),
+                        msg("morning-kpi", "오늘까지 KPI 지난달 한 줄을 써 주세요", "2건 · 마감 지난 일정 3건 · PC에서 결과를 적어 주세요", 2)],
+           "12월 7일: 11월 한 줄 2건이 오늘까지 · 결과 안 적은 지난 일정 3 (7일 처리할 일 묶음에도 그대로 — 인사담당자 결정)")
+        ok(got[EMP2] == [msg("morning-tasks", "마감 지난 업무가 2건 있어요", "나의 업무에서 확인해 주세요", 0)], "주말이 지난 업무도 지난 업무로")
+
+        # ---- 한쪽을 못 세도 다른 쪽은 간다 ----
+        def boom_deadlines(flask_app, uid, now):
+            if uid == EMP:
+                raise RuntimeError("검사용 고장")
+            return real_deadlines(flask_app, uid, now)
+
+        def boom_pending(flask_app, uid):
+            if uid == EMP2:
+                raise RuntimeError("검사용 고장")
+            return real_pending(flask_app, uid)
+
+        x("DELETE FROM push_morning WHERE day = ?", days[-1])
+        push.deadlines, push.pending = boom_deadlines, boom_pending
+        try:
+            with unittest.TestCase().assertLogs("push", "WARNING") as cm:
+                n, got = run(D7)
+        finally:
+            push.deadlines, push.pending = real_deadlines, real_pending
+        seen.extend(p for ps in got.values() for p in ps)
+        ok(n == 2 and got[EMP] == [bundle(2, "KPI 지난달 한 줄 쓰기 2건")]
+           and got[EMP2] == [msg("morning-tasks", "마감 지난 업무가 2건 있어요", "나의 업무에서 확인해 주세요", None)]
+           and sorted(cm.output) == ["WARNING:push:morning deadlines failed: RuntimeError", "WARNING:push:morning pending failed: RuntimeError"],
+           "마감을 못 센 사람에게도 묶음은 · 처리할 일을 못 센 사람에게도 마감 알림은 아이콘 숫자 없이 감 — 로그에는 예외 종류만")
+        ok(len(seen) == 14 and all("가상" not in json.dumps(p, ensure_ascii=False) for p in seen),
+           "보낸 알림(열네 통) 어디에도 업무 · 일정 · 사람 이름(가상…)이 없음 — 개수만")
+    finally:
+        auth._now, push.SEND, push.pending, push.deadlines = real_now, real_send, real_pending, real_deadlines
+        for k, v in env.items():
+            os.environ.pop(k, None)
+            if v is not None:
+                os.environ[k] = v
+        x(f"DELETE FROM push_morning WHERE day IN ({','.join('?' * len(days))})", *days)
+        for h in {r[0] for r in q("SELECT token_hash FROM sessions")} - had:  # 이 검사의 로그인 · 가상 세션 (구독 줄도 함께)
+            x("DELETE FROM sessions WHERE token_hash = ?", h)
+        x(f"DELETE FROM workspace_data WHERE user_id IN ({mine})")
+        x(f"DELETE FROM kpi_results WHERE user_id IN ({mine})")
+        x(f"DELETE FROM kpi_month_notes WHERE user_id IN ({mine})")
+        x(f"DELETE FROM kpi_plans WHERE user_id IN ({mine}) AND NOT EXISTS (SELECT 1 FROM kpi_versions v WHERE v.user_id = kpi_plans.user_id AND v.year = kpi_plans.year)")  # 확정된 계획서는 지울 수 없다
+        if kyear:
+            x("UPDATE kpi_years SET edit_from = ?, edit_to = ?, eval_start = ? WHERE year = ?", *kyear[0], year)
+        else:
+            x("DELETE FROM kpi_years WHERE year = ?", year)
+        x(f"UPDATE users SET is_active = 0, deactivated_at = ?, portal_enabled = 0 WHERE id IN ({mine})", auth._iso(real_now()))  # 감사로그가 가리켜 지울 수 없는 가상 사람은 비활성으로
+    ok(not q(f"SELECT 1 FROM push_subscriptions WHERE user_id IN ({mine})") and not q(f"SELECT 1 FROM sessions WHERE user_id IN ({mine})")
+       and not q(f"SELECT 1 FROM push_morning WHERE day IN ({','.join('?' * len(days))})", *days) and not q(f"SELECT 1 FROM workspace_data WHERE user_id IN ({mine})")
+       and q("SELECT edit_from, edit_to, eval_start FROM kpi_years WHERE year = ?", year) == kyear
+       and all(os.environ.get(k) == v for k, v in env.items()) and push.SEND is real_send and push.pending is real_pending and push.deadlines is real_deadlines
+       and auth._now is real_now, "끝나면 구독 · 세션 · 아침 기록 · 나의 업무를 정리하고 기간 · 환경 값 · 보내기 함수 · 시각을 되돌림")
+
+
 @contextmanager
 def pay_gate_off():
     """급여·계약 비밀번호 검문(paypin.gate)을 잠시 끈다 — 잠금 이전 동작을 보는 검사(명세서 · 영수증 · 계약서 · 알림)용. 끝나면 되돌린다."""
@@ -5854,6 +6035,7 @@ def main() -> int:
         check_push_api(hr)
         check_push_pending(hr)
         check_push_events(hr)
+        check_push_deadlines(hr)
     check_pay_pin(hr)
 
     acts = {r[0] for r in q("SELECT action FROM audit_logs")}

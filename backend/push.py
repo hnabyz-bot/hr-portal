@@ -3,7 +3,7 @@
 
   python -m push check    자체 검증 (CI) — 문구 · 근무시간 · 키 모양 · 진짜 pywebpush 로 가짜 푸시 서버에 보내 보기
   python -m push keygen   서버에서 한 번 — HR_PUSH_PUBLIC · HR_PUSH_PRIVATE 두 줄을 출력만 한다 (.env 에는 사람이 붙인다)
-  python -m push morning  평일 9시(KST) 묶음 — 서버 예약 작업이 부른다. 보낸 사람 수만 출력. 같은 날 두 번 돌지 않고, 근무시간(평일 9~18시) 밖에는 아무것도 안 한다
+  python -m push morning  평일 9시(KST) 묶음 · 업무 마감 · KPI 마감 — 서버 예약 작업이 부른다. 보낸 사람 수만 출력. 같은 날 두 번 돌지 않고, 근무시간(평일 9~18시) 밖에는 아무것도 안 한다
 
   GET  /api/push/key          공개키 {"key"} — 키가 없으면 404 (화면이 알림 켜기 안내를 하지 않는다)
   POST /api/push/subscribe    휴대폰 세션만. {"endpoint": https 푸시 서버 주소, "keys": {"p256dh", "auth"}} → 이 세션의 구독 1줄(덮어씀)
@@ -28,7 +28,7 @@ import re
 import sys
 import threading
 from collections.abc import Callable, Iterable
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from sqlite3 import Connection
 from urllib.parse import urlsplit
 
@@ -93,6 +93,64 @@ def morning_text(items: list[tuple[str, int]]) -> dict:
     items = [(k, n) for k, n in items if n > 0]
     names = [LABELS[k] + (f" {n}건" if n >= 2 else "") for k, n in items]
     return {"title": f"처리할 일이 {sum(n for _, n in items)}건 있어요", "body": " · ".join(names), "url": "/"}
+
+
+# ---- 9시 마감 알림 (2026-10-26 인사담당자 — "오늘 마감인 업무가 있습니다 · 오늘 KPI 업무 마감일입니다") ----
+# 처리할 일 묶음과 따로 한 통씩: 업무 마감(나의 업무) · KPI 마감(비정기 일정 · 지난달 한 줄). 잠금 화면에 보이므로 개수만 — 업무 제목은 넣지 않는다.
+WS_GO = "/?go=ws.w1"  # 누르면 나의 업무 (휴대폰에서도 열리고 처음 목록이 '오늘' — KPI- 업무도 여기 있다. 평가·성과는 휴대폰에서 안 열림)
+_YMD = re.compile(r"\d{4}-\d{2}-\d{2}")
+
+
+def deadline_days(today: date) -> dict:
+    """마감 알림이 보는 날 (today = 9시 묶음이 도는 평일의 한국 날짜). 주말에는 9시 묶음이 없어서 금요일이 주말 몫까지 미리 알린다:
+    soon = 전날 미리 알릴 KPI 마감일 — 다음 평일까지 (월~목은 내일, 금요일은 토 · 일 · 월), weekend = 금요일에만 토 · 일 (나의 업무의 주말 마감),
+    prev = 지난달 한 줄 마감(7일)을 알릴 날인가 — 7일, 7일이 토 · 일이면 그 앞 금요일(6일 · 5일)."""
+    fri = today.weekday() == 4
+    soon = [(today + timedelta(days=i)).isoformat() for i in range(1, 4 if fri else 2)]
+    return {"soon": soon, "weekend": soon[:2] if fri else [], "prev": today.day == 7 or (fri and today.day in (5, 6))}
+
+
+def task_counts(tasks: object, today: str, weekend: list[str]) -> tuple[int, int, int]:
+    """나의 업무 목록(workspace_data tasks — 화면 wsTasks 모양)의 (오늘 마감, 주말 마감, 마감 지난) 개수. 끝낸 일(state '완료') · 마감 없는 일은 안 센다 (진행 중은 셈).
+    모양이 틀린 줄은 건너뛴다 — 제목이 글자가 아니면 화면(wsNorm)에도 없고, 마감은 "YYYY-MM-DD" 만 읽는다."""
+    t = w = late = 0
+    for x in tasks if isinstance(tasks, list) else []:
+        due = x.get("due") if isinstance(x, dict) and isinstance(x.get("title"), str) and x.get("state") != "완료" else None
+        if isinstance(due, str) and _YMD.fullmatch(due):
+            t, w, late = t + (due == today), w + (due in weekend), late + (due < today)
+    return t, w, late
+
+
+def tasks_text(n_today: int, n_weekend: int, n_late: int) -> dict | None:
+    """업무 마감 알림 한 통 (셀 것이 없으면 None) — 제목은 가장 급한 것 하나(오늘 → 주말 → 지난 것), 내용은 나머지 개수와 안내."""
+    rows = [r for r in ((n_today, "오늘 마감인 업무가", "오늘 마감 {}건"), (n_weekend, "주말 마감인 업무가", "주말 마감 {}건"),
+                        (n_late, "마감 지난 업무가", "마감 지난 업무 {}건")) if r[0] > 0]
+    if not rows:
+        return None
+    body = [part.format(n) for n, _, part in rows[1:]] + ["나의 업무에서 확인해 주세요"]
+    return {"title": f"{rows[0][1]} {rows[0][0]}건 있어요", "body": " · ".join(body), "url": WS_GO}
+
+
+def kpi_counts(prog: dict | None, today: str, soon: list[str]) -> tuple[int, list[str], int]:
+    """진행 기록(kpi.progress_json — 지금 확정본)의 비정기 일정 중 결과를 안 적은 것: (오늘 마감 수, 전날 미리 알릴 일정의 기한들, 기한이 지난 수).
+    기한은 일정 변경이 확인된 실제 기한(due) — 화면의 KPI- 업무 마감일과 같다. 확정본이 없으면(None) 0 · [] · 0."""
+    dues = [s["due"] for it in (prog or {}).get("items", []) for s in it.get("scheds") or [] if s.get("result") is None]
+    return sum(d == today for d in dues), [d for d in dues if d in soon], sum(d < today for d in dues)
+
+
+def kpi_text(n_today: int, soon: list[str], n_late: int, n_prev: int, today: date) -> dict | None:
+    """KPI 마감 알림 한 통 (셀 것이 없으면 None) — 제목은 가장 급한 것 하나(오늘 마감 → 지난달 한 줄 마감 → 곧 마감 → 지난 일정), 내용은 그 개수 · 나머지 개수 · 안내.
+    결과 · 한 줄은 PC 에서만 쓴다. n_prev(지난달 한 줄 남은 수)는 알릴 날(deadline_days 의 prev)에만 넘긴다. 금요일의 곧 마감은 월요일 · 주말 · 주말·월요일."""
+    mon = (today + timedelta(days=3)).isoformat()
+    when = "내일" if today.weekday() != 4 else "월요일" if set(soon) == {mon} else "주말" if mon not in soon else "주말·월요일"
+    until = "오늘까지" if today.day == 7 else "7일까지"
+    rows = [r for r in ((n_today, "오늘 KPI 업무 마감일이에요", "오늘 마감 {}건"), (n_prev, f"{until} KPI 지난달 한 줄을 써 주세요", f"지난달 한 줄 {{}}건({until})"),
+                        (len(soon), f"{when} KPI 업무 마감일이에요", f"{when} 마감 {{}}건"), (n_late, "마감 지난 KPI 일정이 있어요", "마감 지난 일정 {}건")) if r[0] > 0]
+    if not rows:
+        return None
+    end = "PC에서 결과를 적어 주세요" if n_today or soon or n_late else "PC에서 써 주세요"
+    body = [f"{rows[0][0]}건", *(part.format(n) for n, _, part in rows[1:]), end]
+    return {"title": rows[0][1], "body": " · ".join(body), "url": WS_GO}
 
 
 def _b64u(s: str) -> bytes | None:
@@ -294,6 +352,28 @@ def pending(flask_app: Flask, uid: int) -> list[tuple[str, int]]:
     return [(k, n[k]) for k in LABELS if n.get(k)]
 
 
+def deadlines(flask_app: Flask, uid: int, now: datetime) -> list[tuple[str, dict]]:
+    """그 사람의 9시 마감 알림 [(태그, 알림)] — 업무 마감(morning-tasks) · KPI 마감(morning-kpi) 중 셀 것이 있는 것만, 보내는 순서로 (0~2통). 날짜는 now 의 한국 날짜.
+    나의 업무는 서버에 저장된 목록(workspace_data tasks)만 센다 — 한 번도 저장하지 않았으면(화면은 예시를 보여 줌) 없다. 본인만 보는 자료라 개수만 쓰고 제목은 어디에도 남기지 않는다.
+    KPI 는 지금 확정본의 진행 기록(kpi.progress_json — 화면의 KPI- 업무 · 지난달 한 줄과 같은 자료). pending() 처럼 새 앱 컨텍스트에서 자기 DB 연결로 일한다."""
+    import kpi  # 쓰는 자리에서 — kpi 가 이 파일을 불러와도 순환하지 않게
+
+    k = now.astimezone(auth.KST).date()
+    today, days = k.isoformat(), deadline_days(k)
+    with flask_app.app_context():
+        conn = auth._db()
+        row = conn.execute("SELECT data FROM workspace_data WHERE user_id = ? AND kind = 'tasks'", (uid,)).fetchone()
+        with kpi._txn(conn):  # 진행 기록은 표 여럿을 읽는다 — pending() 과 같이 한 트랜잭션 안에서
+            prog = kpi.progress_json(conn, uid, kpi.plan_year())  # ponytail: pending() 도 같은 것을 한 번 더 읽는다 — 사람마다 두 번, 수십 명이면 문제없다
+    out = []
+    if msg := tasks_text(*task_counts(json.loads(row[0]) if row else [], today, days["weekend"])):
+        out.append(("morning-tasks", msg))
+    n_today, soon, n_late = kpi_counts(prog, today, days["soon"])
+    if msg := kpi_text(n_today, soon, n_late, prog["todo"]["prev"] if prog and days["prev"] else 0, k):
+        out.append(("morning-kpi", msg))
+    return out
+
+
 def hr_admins(conn: Connection) -> list[int]:
     """활성 HR 전원 (user_roles.role = 'HR_ADMIN' 이면서 users.is_active = 1) — HR 에게 가는 알림의 받는 사람."""
     return [r[0] for r in conn.execute(
@@ -357,12 +437,13 @@ def notify(uids: Iterable[int] | Callable[[], Iterable[int]], kind: str, **fmt: 
 
 
 def morning(flask_app: Flask, now: datetime) -> int:
-    """평일(한국 시간) 아침 묶음 — 휴대폰 구독이 있는 활성 직원 중 처리할 일이 1건 이상인 사람에게 한 통씩(제목 = 개수 합, 내용 = 종류 이름, 앱 아이콘 숫자 = 합).
-    보낸 사람 수(푸시 서버가 받아 준 사람)를 돌려준다. 근무시간(평일 9~18시) 밖 · 알림 키 없음이면 0 (기록도 쓰지 않는다 — 새벽 · 밤에 손으로 돌리거나 늦게 돌려도 울리지 않는다).
+    """평일(한국 시간) 아침 묶음 — 휴대폰 구독이 있는 활성 직원마다 따로 한 통씩, 셀 것이 있는 것만: 처리할 일 묶음(1건 이상, 제목 = 개수 합, 내용 = 종류 이름) ·
+    업무 마감 · KPI 마감(deadlines). 태그는 morning · morning-tasks · morning-kpi (서로 바꿔 치지 않게), 앱 아이콘 숫자는 세 통 모두 처리할 일 합.
+    보낸 사람 수(푸시 서버가 한 통이라도 받아 준 사람)를 돌려준다. 근무시간(평일 9~18시) 밖 · 알림 키 없음이면 0 (기록도 쓰지 않는다 — 새벽 · 밤에 손으로 돌리거나 늦게 돌려도 울리지 않는다).
     오늘을 **보내기 전에 먼저 잡는다**(push_morning 에 INSERT OR IGNORE — 이미 줄이 있으면 0): 겹쳐 도는 두 번째 실행이 같은 사람에게 또 보내 휴대폰이 두 번 울리지 않게. 값은 끝에 보낸 사람 수로 고친다.
     그 대가로 보내는 도중에 멈추면(서버 재시작 등) 그날 묶음은 일부만 가고 다시 돌지 않는다 — 두 번 울리는 것보다 낫다고 본 선택.
     푸시 서버가 구독이 없어졌다(404 · 410)고 하면 그 줄을 지운다. 세션이 끝났거나 직원이 비활성인 구독 줄은 같은 일에서 함께 정리한다.
-    한 사람의 개수 세기나 보내기가 실패해도 다음 사람으로 넘어간다. 앱 안에 예약 작업을 두지 않는다 — 서버 예약 작업이 python -m push morning 으로 부른다."""
+    한 사람의 개수 세기나 보내기가 실패해도 다음 사람으로 넘어간다 (처리할 일을 못 세면 마감 알림만 숫자 없이, 마감을 못 세면 묶음만). 앱 안에 예약 작업을 두지 않는다 — 서버 예약 작업이 python -m push morning 으로 부른다."""
     if not in_work_hours(now) or (ks := keys()) is None:
         return 0
     today, sent = now.astimezone(auth.KST).date().isoformat(), 0
@@ -377,13 +458,19 @@ def morning(flask_app: Flask, now: datetime) -> int:
             devices.setdefault(uid, []).append((th, info))
         for uid, found in devices.items():  # ponytail: 사람마다 차례로 센다 — 수십 명이면 몇 초, 느려지면 사람 여럿을 한 번에 세는 쪽으로
             try:
-                items = pending(flask_app, uid)
-            except Exception as exc:  # 한 사람의 고장이 나머지 아침 알림을 막지 않게 — 로그에는 예외 종류만
+                items: list[tuple[str, int]] | None = pending(flask_app, uid)
+            except Exception as exc:  # 한 사람의 고장이 나머지 아침 알림을 막지 않게 — 로그에는 예외 종류만. 마감 알림은 그래도 간다 (아이콘 숫자 없이)
                 logger.warning("morning pending failed: %s", type(exc).__name__)
-                continue
-            if not (total := sum(n for _, n in items)):
-                continue
-            sent += _deliver_one(conn, found, {**morning_text(items), "badge": total, "tag": "morning"}, ks, TTL_MORNING, "morning")
+                items = None
+            try:
+                extra = deadlines(flask_app, uid, now)
+            except Exception as exc:  # 마감을 못 세도 처리할 일 묶음은 간다
+                logger.warning("morning deadlines failed: %s", type(exc).__name__)
+                extra = []
+            total = None if items is None else sum(n for _, n in items)
+            msgs = ([("morning", morning_text(items))] if total else []) + extra  # 처리할 일 → 업무 마감 → KPI 마감 (휴대폰은 늦게 온 것을 위에 — KPI 가 맨 위)
+            badge = {} if total is None else {"badge": total}  # 세 통 모두 같은 아이콘 숫자 (개인 업무는 세지 않는다)
+            sent += any([_deliver_one(conn, found, {**m, **badge, "tag": tag}, ks, TTL_MORNING, "morning") for tag, m in msgs])  # 목록으로 — 한 통이 닿아도 나머지를 보낸다
         conn.execute("UPDATE push_morning SET people = ?, ran_at = ? WHERE day = ?", (sent, at, today))
     return sent
 
@@ -478,6 +565,35 @@ def check() -> None:
     assert morning_text([("p1", 1), ("inbox", 2)]) == {"title": "처리할 일이 3건 있어요", "body": "새 급여명세서 · 처리할 KPI 2건", "url": "/"}
     assert morning_text([("check", 1)]) == {"title": "처리할 일이 1건 있어요", "body": "KPI 월간 확인", "url": "/"}
     assert morning_text([("p1", 0), ("inbox", 1)])["body"] == "처리할 KPI"  # 0건인 종류는 이름도 안 나옴
+
+    # 9시 마감 알림 — 볼 날: 월~목은 내일, 금요일은 토 · 일 · 월 / 지난달 한 줄은 7일, 7일이 토 · 일이면 그 앞 금요일
+    D = date.fromisoformat
+    assert deadline_days(D("2026-11-02")) == {"soon": ["2026-11-03"], "weekend": [], "prev": False}  # 월
+    assert deadline_days(D("2026-11-06")) == {"soon": ["2026-11-07", "2026-11-08", "2026-11-09"], "weekend": ["2026-11-07", "2026-11-08"], "prev": True}  # 금, 7일이 토
+    assert deadline_days(D("2026-12-07"))["prev"] and deadline_days(D("2027-02-05"))["prev"]  # 7일(월) · 7일이 일요일인 달의 금요일 5일
+    assert not any(deadline_days(D(d))["prev"] for d in ("2026-11-05", "2026-12-04", "2026-12-08"))  # 목 5일 · 금 4일 · 8일
+    T, WKND = "2026-11-06", ["2026-11-07", "2026-11-08"]
+    tasks = [{"title": "a", "due": T}, {"title": "b", "due": T, "state": "진행 중"}, {"title": "c", "due": T, "state": "완료"},
+             {"title": "d", "due": "2026-11-07"}, {"title": "e", "due": "2026-11-08", "state": "완료"}, {"title": "f", "due": "2026-10-30"},
+             {"title": "g", "due": ""}, {"title": "h"}, {"title": 5, "due": T}, {"title": "i", "due": "내일"}, {"title": "j", "due": "2026-11-6"}, "k", None]
+    assert task_counts(tasks, T, WKND) == (2, 1, 1)  # 끝낸 일 · 마감 없음 · 모양이 틀린 줄은 안 셈, 진행 중은 셈
+    assert task_counts({"a": 1}, T, WKND) == (0, 0, 0) and task_counts(tasks, T, []) == (2, 0, 1)  # 목록이 아님 · 금요일이 아니면 주말 마감 없음
+    assert tasks_text(2, 0, 1) == {"title": "오늘 마감인 업무가 2건 있어요", "body": "마감 지난 업무 1건 · 나의 업무에서 확인해 주세요", "url": "/?go=ws.w1"}  # 시안 화요일
+    assert tasks_text(1, 1, 0)["body"] == "주말 마감 1건 · 나의 업무에서 확인해 주세요"  # 시안 금요일
+    assert tasks_text(0, 1, 2) == {"title": "주말 마감인 업무가 1건 있어요", "body": "마감 지난 업무 2건 · 나의 업무에서 확인해 주세요", "url": "/?go=ws.w1"}
+    assert tasks_text(0, 0, 3) == {"title": "마감 지난 업무가 3건 있어요", "body": "나의 업무에서 확인해 주세요", "url": "/?go=ws.w1"} and tasks_text(0, 0, 0) is None
+    prog = {"items": [{"kind": "reg"}, {"kind": "irr", "scheds": [{"due": T, "result": None}, {"due": T, "result": {"text": "x"}}, {"due": "2026-11-09", "result": None},
+                                                             {"due": "2026-10-01", "result": None}, {"due": "2026-12-01", "result": None}]}]}
+    assert kpi_counts(prog, T, ["2026-11-07", "2026-11-08", "2026-11-09"]) == (1, ["2026-11-09"], 1) and kpi_counts(None, T, [T]) == (0, [], 0)  # 결과를 적은 일정은 안 셈
+    TUE, FRI, D7 = D("2026-11-03"), D("2026-11-06"), D("2026-12-07")
+    assert kpi_text(1, [], 0, 0, TUE) == {"title": "오늘 KPI 업무 마감일이에요", "body": "1건 · PC에서 결과를 적어 주세요", "url": "/?go=ws.w1"}  # 시안 화요일
+    assert kpi_text(0, ["2026-11-04"], 0, 0, TUE)["title"] == "내일 KPI 업무 마감일이에요" and kpi_text(0, ["2026-11-09"], 0, 0, FRI)["title"] == "월요일 KPI 업무 마감일이에요"  # 시안 금요일
+    assert kpi_text(0, ["2026-11-07"], 0, 0, FRI)["title"] == "주말 KPI 업무 마감일이에요" and kpi_text(0, ["2026-11-08", "2026-11-09"], 0, 0, FRI)["title"] == "주말·월요일 KPI 업무 마감일이에요"
+    assert kpi_text(0, [], 0, 2, D7) == {"title": "오늘까지 KPI 지난달 한 줄을 써 주세요", "body": "2건 · PC에서 써 주세요", "url": "/?go=ws.w1"}  # 시안 12월 7일
+    assert kpi_text(0, ["2026-11-09"], 0, 2, FRI) == {"title": "7일까지 KPI 지난달 한 줄을 써 주세요", "body": "2건 · 월요일 마감 1건 · PC에서 결과를 적어 주세요", "url": "/?go=ws.w1"}
+    assert kpi_text(1, ["2026-11-04", "2026-11-04"], 3, 0, TUE)["body"] == "1건 · 내일 마감 2건 · 마감 지난 일정 3건 · PC에서 결과를 적어 주세요"
+    assert kpi_text(1, [], 0, 2, D7)["body"] == "1건 · 지난달 한 줄 2건(오늘까지) · PC에서 결과를 적어 주세요"
+    assert kpi_text(0, [], 1, 0, TUE) == {"title": "마감 지난 KPI 일정이 있어요", "body": "1건 · PC에서 결과를 적어 주세요", "url": "/?go=ws.w1"} and kpi_text(0, [], 0, 0, TUE) is None
 
     for k in ("HR_PUSH_PUBLIC", "HR_PUSH_PRIVATE"):
         os.environ.pop(k, None)
