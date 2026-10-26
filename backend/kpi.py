@@ -8,7 +8,7 @@ app.py 가 bp 를 붙인다. 세션 검사는 auth._guard 가 모든 /api/* 에 
   POST /api/kpi/me/cancel           제출 취소 (SUBMITTED → DRAFT)
   POST /api/kpi/me/request-change   {"reason": "..."} 확정 뒤 수정 요청 (CONFIRMED → CHANGE_REQUESTED)
   GET  /api/kpi/admin/year          ?year= 그해 작성 기간 (HR)
-  POST /api/kpi/admin/year          {"year", "editFrom", "editTo", "evalStart"} 작성 기간 정하기 · 닫기 (HR)
+  POST /api/kpi/admin/year          {"year", "editFrom", "editTo", "evalStart"} 작성 기간 정하기 · 닫기 (HR). 인사평가를 시작한 해의 평가 시작일을 바꾸면 409
 
   GET  /api/kpi/plans/<uid>         그 사람 올해 계획서 + owner — 보는 범위는 아래 (주인 · 바로 위 관리자 · HR · 본부장 · 대표이사)
   POST /api/kpi/plans/<uid>/confirm 확정 (SUBMITTED → CONFIRMED, 새 판)
@@ -383,6 +383,8 @@ def year_set() -> Response:
     conn = auth._db()
     with _txn(conn):
         before = _year_json(conn, year)
+        if ev != before["evalStart"] and conn.execute("SELECT 1 FROM ev_rounds WHERE year = ? AND started_at IS NOT NULL", (year,)).fetchone():
+            raise _Refuse("평가가 시작되어 평가 시작일을 바꿀 수 없습니다.", 409)  # 평가 대상 · 평가자를 그날로 떠 뒀다 (evaluation.py)
         conn.execute(
             "INSERT INTO kpi_years (year, edit_from, edit_to, eval_start, updated_at, updated_by) VALUES (?, ?, ?, ?, ?, ?)"
             " ON CONFLICT (year) DO UPDATE SET edit_from = excluded.edit_from, edit_to = excluded.edit_to,"
