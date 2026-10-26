@@ -1736,6 +1736,114 @@
     .wc-skip{ justify-self:center; min-height:40px; }
   }
   @media (prefers-reduced-motion:reduce){ .wc{ transition:none; } .wc-fl{ animation:none; } .wc-bubs{ display:none; } }
+  /* ---------- 축하 · 칭찬 카드 (2026-10-26 시안 cards-mock.js 의 css 그대로 — "···"는 details 메뉴, 링크는 글자 단추) ---------- */
+  .org-modal .card:has(.cm-send){ max-width:780px; }
+  .org-modal .card:has(.cm-arrive){ max-width:440px; }
+  .cm-grid{ display:grid; grid-template-columns:minmax(0,1fr) 300px; gap:22px; }
+  .cm-grid .field{ margin-bottom:14px; }
+  .cm-grid .field > label{ display:flex; justify-content:space-between; font-weight:600; font-size:var(--fs-sm); margin-bottom:6px; }
+  .cm-grid .field > label small{ font-weight:500; color:var(--text-muted); }
+  .cm-to-row{ display:flex; align-items:center; gap:10px; padding:10px 12px; border:1px solid var(--border); border-radius:var(--radius); }
+  .cm-av{ width:34px; height:34px; border-radius:50%; background:var(--accent-soft); color:var(--accent); display:grid; place-items:center; font-weight:700; flex:none; }
+  .cm-to-row small{ display:block; color:var(--text-secondary); font-size:var(--fs-xs); }
+  .cm-why{ display:inline-block; margin-top:6px; font-size:var(--fs-xs); font-weight:700; color:#B4232F; background:#FDECEC; padding:2px 8px; border-radius:999px; }
+  .cm-kinds{ display:flex; gap:6px; flex-wrap:wrap; }
+  .cm-kinds button{ border:1px solid var(--border); background:#fff; border-radius:999px; padding:6px 14px; font:inherit; font-size:var(--fs-sm); font-weight:600; color:var(--text-secondary); cursor:pointer; }
+  .cm-kinds button[aria-pressed="true"]{ border-color:var(--k-fg); background:var(--k-bg); color:var(--k-fg); }
+  .cm-arts{ display:grid; grid-template-columns:repeat(4,1fr); gap:8px; }
+  .cm-arts button{ padding:0; border:2px solid transparent; border-radius:10px; overflow:hidden; cursor:pointer; background:none; }
+  .cm-arts button[aria-pressed="true"]{ border-color:var(--k-fg); }
+  .cm-art{ position:relative; aspect-ratio:4/3; display:grid; place-items:center; color:rgba(27,36,51,.35); overflow:hidden; background:#F4F8FB; }
+  .cm-art img{ position:absolute; inset:0; width:100%; height:100%; object-fit:cover; }
+  .cm-text{ width:100%; min-height:92px; resize:vertical; border:1px solid var(--border); border-radius:var(--radius); padding:10px 12px; font:inherit; line-height:1.6; }
+  .cm-ex{ display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
+  .cm-ex button{ border:1px dashed var(--border); background:var(--bg-page); color:var(--text-secondary); border-radius:6px; padding:4px 8px; font:inherit; font-size:var(--fs-xs); cursor:pointer; }
+  .cm-pv-label{ font-size:var(--fs-xs); font-weight:600; color:var(--text-muted); margin-bottom:6px; }
+  .cm-face{ border-radius:14px; overflow:hidden; background:#fff; border:1px solid var(--border); box-shadow:0 10px 24px -14px rgba(27,36,51,.35); }
+  .cm-face .cm-art{ aspect-ratio:16/9; }
+  .cm-face-body{ position:relative; padding:14px 18px 16px; }
+  .cm-tag{ position:absolute; top:-12px; left:16px; padding:3px 10px; border-radius:999px; font-size:var(--fs-xs); font-weight:700; background:var(--k-bg); color:var(--k-fg); box-shadow:0 0 0 3px #fff; }
+  .cm-hand{ font-family:"Nanum Pen Script","hm-hand-fallback",sans-serif; }
+  .cm-to{ font-size:21px; color:var(--k-fg); margin-top:4px; }
+  .cm-msg{ font-size:25px; line-height:1.3; margin:4px 0 10px; color:var(--text-primary); white-space:pre-wrap; word-break:keep-all; min-height:2.6em; }
+  .cm-msg.empty{ color:var(--text-muted); }
+  .cm-from{ font-size:19px; color:var(--text-secondary); text-align:right; }
+  .cm-note{ display:flex; align-items:center; gap:6px; font-size:var(--fs-xs); color:var(--text-secondary); margin-top:4px; }
+  .cm-note svg{ width:13px; height:13px; }
+  .cm-btns{ display:flex; justify-content:flex-end; gap:8px; margin-top:14px; }
+  .cm-btns .btn, .cm-acts .btn{ justify-content:center; }
+  .cm-acts{ display:grid; grid-template-columns:44px 1fr 1fr 44px; gap:8px; margin:14px 0 10px; }
+  .cm-acts .btn svg{ width:15px; height:15px; }
+  .cm-thanks{ color:#B4232F; border-color:#F3C4C9; }
+  .cm-thanks.done{ background:#FDECEC; }
+  .cm-count{ font-weight:500; color:var(--text-muted); margin-left:6px; font-size:var(--fs-sm); }
+  .cm-box-head{ display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; }
+  .cm-seg{ display:inline-flex; background:var(--bg-page); border-radius:10px; padding:3px; }
+  .cm-seg button{ border:0; background:none; padding:7px 14px; border-radius:8px; font:inherit; font-size:var(--fs-sm); font-weight:600; color:var(--text-secondary); cursor:pointer; }
+  .cm-seg button[aria-pressed="true"]{ background:#fff; color:var(--text-primary); box-shadow:0 1px 3px rgba(27,36,51,.12); }
+  .cm-seg b{ color:#C23A47; margin-left:4px; }
+  .cm-sum{ display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin:14px 0; }
+  .cm-sum div{ background:var(--bg-page); border-radius:var(--radius); padding:12px 14px; }
+  .cm-sum small{ display:block; color:var(--text-secondary); font-size:var(--fs-xs); }
+  .cm-sum b{ font-size:22px; }
+  .cm-sum div.coral b{ color:#C23A47; }
+  .cm-filter{ display:flex; gap:6px; flex-wrap:wrap; margin-bottom:12px; }
+  .cm-filter button{ border:1px solid var(--border); background:#fff; border-radius:999px; padding:4px 12px; font:inherit; font-size:var(--fs-xs); font-weight:600; color:var(--text-secondary); cursor:pointer; }
+  .cm-filter button[aria-pressed="true"]{ background:#C23A47; border-color:#C23A47; color:#fff; }
+  .cm-wall{ display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:14px; }
+  .cm-cell{ position:relative; }   /* 카드 단추 + "···" 메뉴 (단추 안에 단추를 넣지 않게 나란히) */
+  .cm-mini{ position:relative; width:100%; height:100%; display:flex; flex-direction:column; text-align:left; padding:0; border:1px solid var(--border); background:#fff; border-radius:12px; overflow:hidden; cursor:pointer; font:inherit; }
+  .cm-mini .cm-art{ aspect-ratio:16/8; }
+  .cm-mini-body{ padding:10px 12px 12px; }
+  .cm-mini .cm-msg{ font-size:20px; min-height:0; margin:2px 0 6px; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+  .cm-mini-meta{ display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:0 6px; font-size:var(--fs-xs); color:var(--text-secondary); }
+  .cm-mini-meta span{ white-space:nowrap; }   /* 좁으면 "고마워요"가 통째로 다음 줄로 */
+  .cm-ktag{ font-size:11px; font-weight:700; padding:1px 7px; border-radius:999px; background:var(--k-bg); color:var(--k-fg); }
+  .cm-new{ position:absolute; top:8px; right:8px; font-size:10px; font-weight:800; color:#fff; background:#C23A47; border-radius:999px; padding:2px 7px; }
+  .cm-more{ position:absolute; top:6px; left:6px; }
+  .cm-more summary{ width:26px; height:26px; border-radius:8px; background:rgba(255,255,255,.85); display:grid; place-items:center; color:var(--text-secondary); font-weight:800; letter-spacing:1px; font-size:12px; cursor:pointer; list-style:none; }
+  .cm-more summary::-webkit-details-marker{ display:none; }
+  .cm-more button{ position:absolute; top:30px; left:0; white-space:nowrap; border:1px solid var(--border); background:#fff; border-radius:8px; padding:6px 12px; font:inherit; font-size:var(--fs-xs); font-weight:600; color:var(--text-primary); cursor:pointer; box-shadow:0 6px 16px -8px rgba(27,36,51,.35); }
+  .cm-ty{ color:#B4232F; font-weight:600; }
+  .cm-sent{ display:grid; grid-template-columns:auto minmax(0,1fr) auto; gap:4px 12px; align-items:center; padding:12px 4px; border-bottom:1px solid var(--border); }
+  .cm-sent:last-child{ border-bottom:none; }
+  .cm-sent .cm-msg{ font-size:19px; min-height:0; margin:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .cm-sent small{ color:var(--text-secondary); font-size:var(--fs-xs); }
+  .cm-foot{ display:flex; justify-content:space-between; gap:10px; flex-wrap:wrap; margin-top:14px; font-size:var(--fs-xs); color:var(--text-secondary); }
+  .cm-foot button, .cm-link{ border:0; background:none; padding:0; font:inherit; color:var(--accent); cursor:pointer; }
+  .cm-link{ color:var(--text-secondary); }
+  .cm-hid-wall{ margin-top:12px; }
+  .cm-err{ margin-top:10px; font-size:var(--fs-sm); font-weight:700; color:var(--danger); }   /* 보내기 창 붉은 줄 (글 규칙 · 서버 문구) */
+  .cm-err:empty{ display:none; }
+  .cm-found{ display:flex; flex-direction:column; gap:4px; margin-top:6px; }   /* 이름 찾기 결과 */
+  .cm-found:empty{ display:none; }
+  .cm-found button{ display:flex; align-items:center; gap:10px; padding:8px 12px; border:1px solid var(--border); border-radius:var(--radius); background:#fff; font:inherit; text-align:left; cursor:pointer; }
+  .cm-found button:hover{ border-color:var(--accent); }
+  .cm-found small{ display:block; color:var(--text-secondary); font-size:var(--fs-xs); }
+  /* 보내기 움직임 (시안 cardSent) — 봉투 뒤 · 앞 · 덮개 사이로 카드가 들어가 날아간다 */
+  .cm-ep{ position:absolute; left:7%; right:7%; bottom:0; height:52%; border-radius:10px; pointer-events:none; display:block; }
+  .cm-ep.back{ z-index:1; background:color-mix(in srgb, var(--k-fg) 22%, white); }
+  .cm-ep.front{ z-index:3; background:color-mix(in srgb, var(--k-fg) 12%, white); clip-path:polygon(0 18%, 50% 62%, 100% 18%, 100% 100%, 0 100%); }
+  .cm-ep.flap{ z-index:4; background:color-mix(in srgb, var(--k-fg) 30%, white); clip-path:polygon(0 0, 100% 0, 50% 62%); transform-origin:50% 0; }
+  .cm-fly{ position:fixed; z-index:300; perspective:900px; pointer-events:none; }
+  .cm-fly .cm-fly-card{ position:absolute; inset:0; z-index:2; }
+  .cm-fly .cm-face{ height:100%; }
+  /* 카드가 왔어요 움직임 (시안 cmFxCss) — 봉투가 열리고 카드가 올라온 뒤 종류별 효과 한 번 · 고마워요 하트 */
+  .cm-stage{ position:relative; perspective:900px; overflow:hidden; border-radius:14px; }
+  .cm-stage > .cm-face{ position:relative; z-index:2; }
+  .cm-fx{ position:absolute; inset:0; pointer-events:none; overflow:hidden; z-index:5; }
+  .cm-p{ position:absolute; display:block; will-change:transform, opacity; }
+  .cm-p svg{ width:100%; height:100%; display:block; }
+  .cm-pop{ position:fixed; z-index:300; width:18px; height:18px; color:#E8577A; pointer-events:none; }
+  .cm-pop svg{ width:100%; height:100%; fill:currentColor; stroke:none; }
+  @media (max-width:768px){
+    .cm-grid{ grid-template-columns:minmax(0,1fr); }
+    .cm-pv{ display:none; }
+    .cm-wall{ grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
+    .cm-sum{ grid-template-columns:repeat(3,1fr); gap:6px; }
+    .cm-sum b{ font-size:18px; }
+    .cm-mini .cm-msg{ font-size:18px; }
+  }
 </style>
 </head>
 <body>
@@ -1792,7 +1900,7 @@ function wcEnter(skip){   // 들어간다: 서서히 사라지고 이 창(탭)�
   const el = document.getElementById('welcome'); if(el.classList.contains('out')) return;
   try{ sessionStorage.setItem('wcSeen', '1'); if(skip) localStorage.setItem('wcSkipUntil', wcDay(7)); }catch(_){}
   el.classList.add('out'); setTimeout(()=>{ document.documentElement.classList.remove('wc-on'); el.classList.remove('out'); }, matchMedia('(prefers-reduced-motion:reduce)').matches ? 0 : 500);
-  setTimeout(()=>{ if(typeof tourFirst==='function' && tourFirst()) return; if(typeof todayPopAuto==='function') todayPopAuto(); });   // 처음 온 브라우저에는 사이트 둘러보기를, 그 뒤로는 오늘 할 일을 보여 준다. 한 박자 늦추는 것은 Esc로 들어올 때 같은 키 입력에 창이 닫히지 않게
+  setTimeout(()=>{ if(typeof tourFirst==='function' && tourFirst()) return void authReady.then(cardArriveWhenFree); if(typeof todayPopAuto==='function') todayPopAuto(); });   // 처음 온 브라우저에는 사이트 둘러보기를(끝나면 안 읽은 카드 도착 창 — 처음 들어온 날), 그 뒤로는 오늘 할 일을 보여 준다. 한 박자 늦추는 것은 Esc로 들어올 때 같은 키 입력에 창이 닫히지 않게
 }
 (function(){
   const el = document.getElementById('welcome'), skip = document.getElementById('wcSkip');
@@ -1907,6 +2015,7 @@ function homePortalTasks(){   // 인사포털이 만든 일. n의 합 = 왼쪽 �
   add(AUTH.live ? (kvCanUse() ? kpiRev('replies') : 0) : TODO.e4(), '확인 메모에 새 답글', 'perf', 'e4', '새 답글');
   add(TODO.e2(), '평가 진행', 'perf', 'e2', '평가 중');
   add(TODO.e3(), '이의 신청 처리', 'perf', 'e3', '처리 대기');
+  add(TODO.w3(), '새 카드 확인', 'ws', 'w3', '새 카드');   // 맨 끝 — 서버 push.pending 의 LABELS 차례와 같게
   return out;
 }
 function homeDue(){   // 마감 임박 [오늘, 이번 주(7일 안)] — 끝내지 않은 개인 업무 + 열려 있는 KPI·평가 기간의 마지막 날
@@ -1981,10 +2090,11 @@ let authReady = Promise.resolve();   // 로그인 확인(authBoot)이 끝나면 
 async function todayPopAuto(){   // 들어올 때 자동으로: 내 업무 · KPI가 다 온 뒤에(시연 목록이 잠깐 뜨지 않게), 로그인 안내 · 둘러보기 · 다른 창이 없을 때만
   await authReady; await Promise.race([PUSH.ready, new Promise(r=>setTimeout(r, 3000))]);   // 휴대폰 알림 상태까지 본다 — 네트워크가 느려도 3초 넘게 붙잡지 않는다(그때는 이번엔 묻지 않음)
   if(AUTH.locked || PUSH.go || tour.steps || document.getElementById('orgModal')) return;   // PUSH.go: 알림을 눌러 그 화면으로 들어왔으면 창이 덮이지 않게
-  if(phoneSelf()) return phoneSelfAsk(true);   // 휴대폰 브라우저로 하이웍스에서 들어온 창: 이 휴대폰을 등록할까 먼저 묻는다(등록할 때까지 들어올 때마다) — 닫으면 오늘 할 일
-  if(PUSH.state==='ask'){ if(pushIos()) return pushAsk(); pushEnable(); }   // 아직 안 켠 홈 화면 앱: 새로 열 때마다 묻는다(켤 때까지, 인사담당자 2026-10-23). 갤럭시는 휴대폰 허용 창을 바로, 아이폰은 누른 순간에만 물을 수 있어 안내 창 — 닫으면 오늘 할 일
-  homeTodayPop();
+  if(phoneSelf()) return phoneSelfAsk(true);   // 휴대폰 브라우저로 하이웍스에서 들어온 창: 이 휴대폰을 등록할까 먼저 묻는다(등록할 때까지 들어올 때마다) — 닫으면 homeNextPop
+  if(PUSH.state==='ask'){ if(pushIos()) return pushAsk(); pushEnable(); }   // 아직 안 켠 홈 화면 앱: 새로 열 때마다 묻는다(켤 때까지, 인사담당자 2026-10-23). 갤럭시는 휴대폰 허용 창을 바로, 아이폰은 누른 순간에만 물을 수 있어 안내 창 — 닫으면 homeNextPop
+  homeNextPop();
 }
+function homeNextPop(){ return cardList().unread ? cardArrive(0, null, true) : homeTodayPop(); }   // 들어올 때 자동 창의 다음 차례: 안 읽은 카드가 있으면 카드가 왔어요(닫으면 오늘 할 일), 없으면 오늘 할 일 — 휴대폰 등록 · 알림 묻기 창을 닫을 때도 여기로
 function homeTodayPop(){
   const today = kpiDay(0), t = celebParse(today), [left, done] = wsTodayCount(), close = 'orgCloseModal(); ';
   const rows = [...homePortalRows(close), ...wsSorted(wsAll().filter(x=>wsIn(x, 'today', today))).map(x=>{ const fin = x.state==='완료', [when, late] = wsWhen(x, today);
@@ -3516,16 +3626,20 @@ const orgLive = ()=>AUTH.live && ORG_LIVE.state==='ok';
 const orgTree = ()=>orgLive() ? ORG_LIVE.tree : ORG_TREE;
 const orgPeople = ()=>orgLive() ? ORG_LIVE.people : orgMembers;
 function orgFind(id){ return (id>=ORG_ID ? ORG_LIVE.people : orgMembers).find(m=>m.id===id); }
-async function orgLoad(){
-  ORG_LIVE.state = 'loading';
-  try {
-    const r = await fetch('/api/org'); if(!r.ok) throw new Error(r.status);
-    const j = await r.json();
-    ORG_LIVE.people = j.members.map(m=>({ ...m, uid:m.id, id:ORG_ID+m.id, hideMobile:m.mobile===null }));
-    ORG_LIVE.tree = j.divisions.map(d=>({ division:d.name, teams:d.teams, noHead:!j.members.some(m=>m.division===d.name && m.lead==='DIVISION') }));
-    ORG_LIVE.state = 'ok';
-  } catch(e){ ORG_LIVE.state = 'err'; }
-  renderContent();
+let orgLoading = null;   // 불러오는 중인 약속 — 그사이 또 부르면 새로 받지 않고 같은 것을 돌려준다 (카드 이름 찾기가 기다린다)
+function orgLoad(){
+  if(!orgLoading) orgLoading = (async ()=>{
+    ORG_LIVE.state = 'loading';
+    try {
+      const r = await fetch('/api/org'); if(!r.ok) throw new Error(r.status);
+      const j = await r.json();
+      ORG_LIVE.people = j.members.map(m=>({ ...m, uid:m.id, id:ORG_ID+m.id, hideMobile:m.mobile===null }));
+      ORG_LIVE.tree = j.divisions.map(d=>({ division:d.name, teams:d.teams, noHead:!j.members.some(m=>m.division===d.name && m.lead==='DIVISION') }));
+      ORG_LIVE.state = 'ok';
+    } catch(e){ ORG_LIVE.state = 'err'; }
+    renderContent();
+  })().finally(()=>{ orgLoading = null; });
+  return orgLoading;
 }
 function orgGate(){   // 실제 로그인인데 명단이 아직이면 안내 (불러오기 시작)
   if(!AUTH.live || ORG_LIVE.state==='ok') return '';
@@ -3707,6 +3821,7 @@ function orgShow(id){
       <a class="btn" href="sms:${c.mobile||''}" ${c.mobile?'':off}>${icon('message')} 문자</a>
       ${hwMailLink(`${icon('mail')} 메일`, 'btn', m)}
     </div>
+    ${cardCan(m) ? `<button type="button" class="btn primary" style="width:100%; justify-content:center; margin-top:8px;" onclick="cardSendOrg(${m.id})">${CARD_HEART.replace('<svg', '<svg width="14" height="14"')} ${cardMourn(m) ? '위로 카드 보내기' : '칭찬 · 감사 카드 보내기'}</button>` : ''}
     <div class="list-sub" style="margin-top:10px;">${m.mailNo ? '메일은 받는 사람이 채워진 하이웍스 메일 쓰기 화면이 새 창으로 열립니다.' : '메일을 누르면 메일 주소가 복사되고 하이웍스 메일 쓰기 화면이 새 창으로 열립니다 — 받는 사람 칸에 붙여넣기(Ctrl+V) 하세요.'} 스마트폰에서는 전화·문자 앱이 바로 열리고, PC에서는 "복사"를 쓰세요.</div>
     ${AUTH.live && m.me ? `<div class="org-priv"><b>내 정보 공개</b><div class="org-priv-row"><div>휴대폰 번호 공개<small>끄면 다른 직원에게 "본인 요청으로 비공개"로 보여요. 비상연락망을 관리하는 HR에게는 보여요.</small></div><label class="ms-sw"><input type="checkbox" aria-label="휴대폰 번호 공개" ${m.mobilePublic ? 'checked' : ''} onchange="orgPrivacy(this.checked, this)"><span></span></label></div>
       <div class="org-priv-row"><div>생일 알림<small>켜 두면 생일 7일 전부터 홈 "이번 주 소식"에 이름이 나와요. ${m.birthday ? `등록된 생일: ${+m.birthday.slice(0,2)}월 ${+m.birthday.slice(3)}일 (연도는 저장하지 않아요)` : '아직 생일이 등록되지 않았어요 — HR이 넣어요.'}</small></div><label class="ms-sw"><input type="checkbox" aria-label="생일 알림" ${m.birthdayPublic ? 'checked' : ''} onchange="orgPrivacy(this.checked, this, 'birthday_public')"><span></span></label></div></div>` : ''}
@@ -6326,7 +6441,7 @@ function celebShow(key){
     return `<div class="celeb-person"><div class="celeb-av">${escapeHtml(m.name.slice(0,1))}</div><div>
       <div><span class="org-name" onclick="orgShow(${m.id})">${escapeHtml(m.name)}</span> ${escapeHtml(m.title)} <span class="list-sub" style="display:inline;">· ${escapeHtml(m.team || m.division)}</span></div>
       <div class="list-sub">${[note, ct.ext && '내선 '+ct.ext, ct.email].filter(Boolean).map(escapeHtml).join(' · ')}</div>
-      <div class="celeb-acts">${ct.mobile ? `<a class="btn sm" href="tel:${escapeHtml(ct.mobile)}">${icon('phone')} 전화</a>` : ''}${hwMailLink(`${icon('mail')} 메일`, 'btn sm', m)}${gift}
+      <div class="celeb-acts">${cardCan(m) ? (key==='condol' || cardMourn(m) ? `<button type="button" class="btn sm primary" onclick="cardSendOrg(${m.id}, null)">위로 카드</button>` : `<button type="button" class="btn sm primary" onclick="cardSendOrg(${m.id}, '${CARD_NEWS[key]}')">축하 카드</button>`) : ''}${ct.mobile ? `<a class="btn sm" href="tel:${escapeHtml(ct.mobile)}">${icon('phone')} 전화</a>` : ''}${hwMailLink(`${icon('mail')} 메일`, 'btn sm', m)}${gift}
         ${hr && ev ? `<button class="btn sm" onclick="celebDelete(${ev.id})">게시 내리기</button>` : ''}</div>
     </div></div>`;
   }).join('');
@@ -12601,8 +12716,8 @@ function phoneDraw(){
 function phoneSelf(live = AUTH.live, kind = AUTH.me?.kind, ua = navigator.userAgent){   // 휴대폰 브라우저로 하이웍스 메뉴를 눌러 들어온 창 (2026-10-26 인사담당자 — PC 가 없는 현장 근무자). 휴대폰 기준은 서버 MOBILE_RE 와 같다
   return !!live && kind==='pc' && /iPhone|Android|Mobile/.test(ua);
 }
-async function phoneSelfAsk(auto){   // 이 휴대폰을 바로 등록할까 묻는다 — 홈 배너 단추 · 들어올 때 자동(auto: 닫으면 오늘 할 일 창). 본인 확인은 방금 거친 하이웍스 로그인(PC 의 QR 과 같음)
-  const cur = await phoneGet(), next = `orgCloseModal();${auto ? ' homeTodayPop();' : ''}`;
+async function phoneSelfAsk(auto){   // 이 휴대폰을 바로 등록할까 묻는다 — 홈 배너 단추 · 들어올 때 자동(auto: 닫으면 안 읽은 카드 · 오늘 할 일 창). 본인 확인은 방금 거친 하이웍스 로그인(PC 의 QR 과 같음)
+  const cur = await phoneGet(), next = `orgCloseModal();${auto ? ' homeNextPop();' : ''}`;
   orgModal(`<div class="inst preg"><div class="card-title"><span>이 휴대폰 등록</span><button type="button" class="x-btn" onclick="${next}" aria-label="닫기">${icon('x')}</button></div>
     <div class="preg-who" style="background:var(--accent-soft);"><i style="background:var(--accent);">${icon('mobile')}</i><div><b>${escapeHtml(AUTH.me.name)}</b> · ${escapeHtml(AUTH.me.department)}<small>등록하면 30일 동안 로그인이 유지됩니다 (쓸 때마다 연장)</small></div></div>
     <ol class="inst-steps">${['<b>이 휴대폰 등록</b>을 누르면 바로 등록됩니다.', '이어서 나오는 안내대로 <b>홈 화면에 추가</b>합니다.', '다음부터는 하이웍스를 거치지 않고 <b>아이콘</b>으로 바로 열리고, 알림도 받을 수 있습니다.'].map((t, i)=>`<li><i>${i+1}</i><span>${t}</span></li>`).join('')}</ol>
@@ -12708,8 +12823,8 @@ function pushHeroBtn(s = PUSH.state){   // 홈 배너 오른쪽 위 단추 (home
   return s==='app' ? b('installNotice()', 'mobile', '휴대폰에 설치', 1) : s==='ask' ? b('pushEnable()', 'bell', '알림 켜기', 1) : s==='denied' ? b('pushHelp()', 'bell', '알림 켜는 방법', 1)
     : (isPhone() || AUTH.me?.kind==='phone') && pushApp() ? '' : b('installNotice()', 'mobile', '휴대폰에 설치');   // 홈 화면 앱 안이면 이미 설치했다 — 켠 뒤에는 단추 없음
 }
-function pushAsk(){   // 아이폰 홈 화면 앱을 열 때(todayPopAuto) — 허용 창은 사람이 누른 순간에만 뜬다. [확인]이 그 자리에서 묻고, 닫으면(나중에 · X) 오늘 할 일 창
-  const next = 'orgCloseModal(); homeTodayPop();';
+function pushAsk(){   // 아이폰 홈 화면 앱을 열 때(todayPopAuto) — 허용 창은 사람이 누른 순간에만 뜬다. [확인]이 그 자리에서 묻고, 닫으면(나중에 · X) 안 읽은 카드 · 오늘 할 일 창
+  const next = 'orgCloseModal(); homeNextPop();';
   orgModal(`<div class="inst"><div class="card-title"><span>휴대폰 알림 받기</span><button type="button" class="x-btn" onclick="${next}" aria-label="닫기">${icon('x')}</button></div>
     <div class="push-ask"><i class="push-ic">${icon('bell')}</i><span>처리할 일이 생기면<br>휴대폰으로 알려 드려요.</span></div>
     <div class="list-sub" style="margin-top:10px;">[확인]을 누르면 아이폰이 묻는 창이 떠요. <b>허용</b>을 눌러 주세요.</div>
@@ -12726,11 +12841,12 @@ function pushBadgeSync(){   // 아이콘 숫자를 지원하는 휴대폰(아이
   const n = pushBadgeCount();
   (n>0 ? navigator.setAppBadge(n) : navigator.clearAppBadge()).catch(()=>{});
 }
-function pushGoParse(q){   // '?go=pay.p1' → ['pay','p1']. NAV 에 있는 메뉴 · 탭이 아니면 ['home'], go 가 없으면 null
+function pushGoParse(q){   // '?go=pay.p1' → ['pay','p1'] · '?go=ws.w3.out' → ['ws','w3','out'] (받은 카드 › 보낸 카드 — 고마워요 알림, 그 밖의 셋째 값은 버린다). NAV 에 있는 메뉴 · 탭이 아니면 ['home'], go 가 없으면 null
   const v = new URLSearchParams(q).get('go');
   if(v===null) return null;
-  const [n, t] = v.split('.');
-  return NAV.find(x=>x.id===n)?.tabs.some(x=>x.id===t) ? [n, t] : ['home'];
+  const [n, t, s] = v.split('.');
+  if(!NAV.find(x=>x.id===n)?.tabs.some(x=>x.id===t)) return ['home'];
+  return n==='ws' && t==='w3' && s==='out' ? [n, t, s] : [n, t];
 }
 async function pushSelfCheck(){   // 브라우저 콘솔에서 await pushSelfCheck() 실행 (화면 상태 · 실제 로그인 흉내는 끝나면 되돌린다)
   const ok = (c,m)=>{ if(!c) throw new Error('pushSelfCheck 실패: '+m); };
@@ -12743,7 +12859,7 @@ async function pushSelfCheck(){   // 브라우저 콘솔에서 await pushSelfChe
   ok(st({ standalone:false, key:'' })==='off' && st({ standalone:false, live:false })==='off' && st({ standalone:false, phone:false })==='off', '브라우저 탭이어도 서버에 키가 없으면 · 시연 · PC 세션이면 안내 없음');
   ok(st({ perm:'granted', key:'' })==='off', '이미 허용했어도 서버에 키가 없으면 구독하지 않는다');
   const keep = [AUTH.live, AUTH.me, KPI_LIVE.inbox, KPI_LIVE.deleg, PUSH.state, homePortalTasks, PUSH.key, PUSH.sw, currentNav, PIN.state], calls = [], realFetch0 = window.fetch;
-  const keep2 = [pushEnable, pushAsk, homeTodayPop, pushIos, PUSH.ready, PUSH.go];
+  const keep2 = [pushEnable, pushAsk, homeNextPop, pushIos, PUSH.ready, PUSH.go];
   try {
     const hb = pushHeroBtn;
     ok(hb('app').includes('installNotice()') && hb('app').includes(icon('mobile')) && hb('ask').includes('pushEnable()') && hb('denied').includes('pushHelp()') && !hb('denied').includes('pushEnable') && ['ask', 'denied'].every(s=>hb(s).includes(icon('bell'))), '배너 단추: 브라우저 탭 → 설치 안내 · 안 켬 → 켜기 · 거부 → 설정 안내');
@@ -12755,14 +12871,14 @@ async function pushSelfCheck(){   // 브라우저 콘솔에서 await pushSelfChe
     ok(phoneSelf(true, 'pc', IPH) && phoneSelf(true, 'pc', GAL) && !phoneSelf(true, 'pc', WIN) && !phoneSelf(true, 'phone', IPH) && !phoneSelf(false, 'pc', IPH),
       '휴대폰 브라우저로 하이웍스에서 들어온 창만 "이 휴대폰 등록" (PC 창 · 이미 등록한 휴대폰 · 시연은 아님)');
     pushAsk(); const am = document.getElementById('orgModal'), ab = [...am.querySelectorAll('button')].map(x=>[x.textContent.trim(), x.getAttribute('onclick')]), at = am.textContent; orgCloseModal();
-    ok(at.includes('휴대폰 알림 받기') && ab.some(([t, f])=>t==='확인' && f.startsWith('pushEnable()') && f.includes('homeTodayPop()')) && ab.some(([t, f])=>t==='나중에' && !f.includes('pushEnable') && f.includes('homeTodayPop()')), '아이폰 안내 창: [확인]은 누른 그 자리에서 먼저 묻고 · [나중에]는 묻지 않고 · 둘 다 이어서 오늘 할 일');
+    ok(at.includes('휴대폰 알림 받기') && ab.some(([t, f])=>t==='확인' && f.startsWith('pushEnable()') && f.includes('homeNextPop()')) && ab.some(([t, f])=>t==='나중에' && !f.includes('pushEnable') && f.includes('homeNextPop()')), '아이폰 안내 창: [확인]은 누른 그 자리에서 먼저 묻고 · [나중에]는 묻지 않고 · 둘 다 이어서 (새 카드 ·) 오늘 할 일');
     // 앱을 새로 열 때(todayPopAuto): 아직 안 켠 앱이면 묻는다 — 갤럭시는 바로 + 오늘 할 일, 아이폰은 안내 창(닫으면 오늘 할 일)
     const seen = [], run = async (state, ios)=>{ seen.length = 0; PUSH.state = state; pushIos = ()=>ios; await todayPopAuto(); return seen.join(); };
-    pushEnable = ()=>seen.push('ask'); pushAsk = ()=>seen.push('ios'); homeTodayPop = ()=>seen.push('today'); PUSH.ready = Promise.resolve(); PUSH.go = false;
+    pushEnable = ()=>seen.push('ask'); pushAsk = ()=>seen.push('ios'); homeNextPop = ()=>seen.push('today'); PUSH.ready = Promise.resolve(); PUSH.go = false;
     ok(await run('ask', false)==='ask,today' && await run('ask', true)==='ios', '아직 안 켠 앱: 갤럭시는 휴대폰 허용 창을 바로 띄우고 오늘 할 일 · 아이폰은 안내 창만(오늘 할 일은 닫은 뒤)');
     ok(await run('on', true)==='today' && await run('denied', false)==='today' && await run('app', true)==='today' && await run('off', false)==='today', '켠 뒤 · 거부 · 브라우저 탭 · 못 함: 묻지 않고 오늘 할 일만');
     PUSH.go = true; ok(await run('ask', false)==='', '알림을 눌러 들어오면 묻지도 오늘 할 일을 띄우지도 않는다');
-    [pushEnable, pushAsk, homeTodayPop, pushIos, PUSH.ready, PUSH.go] = keep2;
+    [pushEnable, pushAsk, homeNextPop, pushIos, PUSH.ready, PUSH.go] = keep2;
     const go = q=>String(pushGoParse(q));
     ok(go('?go=pay.p1')==='pay,p1' && go('?x=1&go=perf.e1')==='perf,e1' && go('?go=pay.p4')==='pay,p4' && go('?go=home.dash')==='home,dash', '?go= : NAV 에 있는 메뉴 · 탭이면 그 화면으로');
     ok(go('?go=nope.p1')==='home' && go('?go=pay.nope')==='home' && go('?go=pay')==='home' && go('?go=')==='home' && go('?go=..%2F..%2Fx')==='home', '?go= : 모르는 값은 홈');
@@ -12821,7 +12937,7 @@ async function pushSelfCheck(){   // 브라우저 콘솔에서 await pushSelfChe
     calls.length = 0; AUTH.locked = false; authLock('login'); ok(calls.join()==='0' && AUTH.locked, '세션이 끝나 authLock 만 불려도(401) 아이콘 숫자를 지운다');
   } finally {
     [AUTH.live, AUTH.me, KPI_LIVE.inbox, KPI_LIVE.deleg, PUSH.state, homePortalTasks, PUSH.key, PUSH.sw, currentNav, PIN.state] = keep; window.fetch = realFetch0;   // PIN.state: 로그아웃 검사(authLock)가 비운 비밀번호 상태
-    [pushEnable, pushAsk, homeTodayPop, pushIos, PUSH.ready, PUSH.go] = keep2;   // 중간에 실패해도 바꿔 끼운 함수를 되돌린다
+    [pushEnable, pushAsk, homeNextPop, pushIos, PUSH.ready, PUSH.go] = keep2;   // 중간에 실패해도 바꿔 끼운 함수를 되돌린다
     delete navigator.setAppBadge; delete navigator.clearAppBadge; delete navigator.serviceWorker;
     if(AUTH.locked || document.getElementById('authLock')){ AUTH.locked = false; document.getElementById('authLock')?.remove(); renderContent(); }   // 로그아웃 검사가 가린 화면을 되돌린다
   }
@@ -13519,12 +13635,737 @@ function msSee(id, err){   // err = 맡은 부서를 고르다 막힌 이유 (�
       : `<div style="display:flex; align-items:center; justify-content:space-between; gap:10px;"><span class="list-sub" style="margin:0;">직급 ${escapeHtml(m.title.trim() || '없음')} · 입사일 ${m.hireDate || '없음'}</span><button type="button" class="btn sm" onclick="orgEdit(${id})">직급·입사일 수정</button></div>`}`);
 }
 
+/* ---------------- 축하 · 칭찬 카드 — 워크스페이스 › 받은 카드 (2026-10-26, 설계 docs/superpowers/specs/2026-10-26-praise-cards-design.md · 시안 cards-mock.js 그대로) ----------------
+   카드는 받은 사람 · 보낸 사람만 본다(서버가 본인 것만 준다 — HR 도 같다). 실제 로그인은 GET /api/cards, 시연은 브라우저 안 가상 카드(CARD_DEMO).
+   안 읽은 카드 수는 메뉴 · 홈 "새 카드 확인" · 앱 아이콘 숫자에 센다 — 서버 push.pending 의 cards 와 같은 셈. 사람이 쓴 글 · 이름은 모두 escapeHtml. */
+const CARD_K = { cheer:{label:'축하', fg:'#B4232F', bg:'#FDECEC'}, praise:{label:'칭찬', fg:'#985A00', bg:'#FFF1D6'}, thanks:{label:'감사', fg:'#11734D', bg:'#E3F4EC'}, comfort:{label:'위로', fg:'#4D5566', bg:'#EEF0F4'} };   // 종류 색 (꼬리표 · 봉투)
+const CARD_WHY = { birthday:'생일', welcome:'새 식구', anniv:'입사 기념', joy:'경사' };   // 축하의 소식 — 꼬리표 "축하 · 생일"
+const CARD_HEART = '<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8l1 1.1L12 21l7.8-7.5 1-1.1a5.5 5.5 0 0 0 0-7.8z"/></svg>', CARD_HEART_SM = CARD_HEART.replace('<svg', '<svg width="11" height="11"');
+const CARD_SETS = ['birthday', 'welcome', 'anniv', 'joy', 'condol', 'praise', 'thanks'];   // 그림 묶음 (img/cards/{묶음}-{1~4}.jpg)
+function cardSet(kind, reason){   // 그림 묶음 — 축하는 소식 종류(birthday · welcome · anniv · joy)가 곧 묶음. 모르는 값이면 칭찬 묶음 (주소에 그대로 넣지 않는다)
+  const s = { comfort:'condol', praise:'praise', thanks:'thanks', cheer:reason }[kind];
+  return CARD_SETS.includes(s) ? s : 'praise';
+}
+const cardK = k=>Object.hasOwn(CARD_K, k) ? CARD_K[k] : { label:'카드', fg:'#4D5566', bg:'#EEF0F4' };   // 모르는 종류는 회색 "카드" — 한 장 때문에 탭이 비지 않게
+const cardKv = k=>`--k-fg:${cardK(k).fg};--k-bg:${cardK(k).bg};`;
+const cardTag = c=>cardK(c.kind).label + (c.kind==='cheer' && Object.hasOwn(CARD_WHY, c.reason) ? ' · '+CARD_WHY[c.reason] : '');
+function cardArt(kind, reason, n){ return `<div class="cm-art"><img src="img/cards/${cardSet(kind, reason)}-${[1, 2, 3, 4].includes(n) ? n : 1}.jpg?v=1" alt="" loading="lazy"></div>`; }   // 그림을 바꾸면 ?v= 를 올린다 (설계 5장)
+function cardFace(c){   // 카드 한 장 (시안 face): 그림 · 꼬리표 / To. 받는 사람님 · 글 · From. 보낸 사람 · 날짜(M/D) — 손글씨
+  return `<div class="cm-face" style="${cardKv(c.kind)}">${cardArt(c.kind, c.reason, c.art)}<div class="cm-face-body">
+    <span class="cm-tag">${cardTag(c)}</span>
+    <div class="cm-hand cm-to">To. ${escapeHtml(c.toName)}님</div>
+    <p class="cm-hand cm-msg${c.text ? '' : ' empty'}">${escapeHtml(c.text || '여기에 글이 들어가요')}</p>
+    <div class="cm-hand cm-from">From. ${escapeHtml(c.fromName)} · ${/^\d{4}-/.test(c.date) ? kpiMd(c.date) : escapeHtml(c.date)}</div></div></div>`;
+}
+const CARD_LIVE = { state:'', ready:false, unread:0, received:[], sent:[], opened:false, pending:false };   // 실제 로그인 카드 상자 (최근이 위). state '' 아직 · ok · err / ready: 서버 열쇠(HR_PAY_KEY)가 있어 주고받을 수 있다 / opened: 이번 창에서 도착 창을 띄웠나 (받은 카드 탭을 처음 열 때 한 번 — 시연도 이 표시) / pending: 탭이 도착 창을 띄우려고 기다리는 중
+function cardDemoData(){   // 시연(서버 없음): 시안 IN · OUT 과 같은 가상 카드 { received, sent } — 사람은 시연 조직도에서 시연 역할(KPI_USERS)이 아닌 사람만(내가 나에게 보낸 카드가 없게). cardSelfCheck 도 이 처음 상태로 본다
+  const ppl = orgMembers.filter(m=>!Object.values(KPI_USERS).some(u=>u.name===m.name)).slice(0, 8).map(m=>({ id:m.id, name:m.name, title:m.title, dept:m.team || m.division }));
+  const got = (id, kind, reason, art, i, ago, text, x)=>({ id, kind, reason, art, text, date:kpiDay(-ago), from:ppl[i], read:true, thanked:false, hidden:false, ...x });
+  const gave = (id, kind, reason, i, ago, text, x)=>({ id, kind, reason, art:1, text, date:kpiDay(-ago), to:ppl[i], read:false, thanked:false, ...x });
+  return {
+    received:[
+      got(1, 'cheer', 'birthday', 1, 0, 0, '생일 축하해요! 오늘은 일 생각 말고 맛있는 거 많이 드세요.', { read:false }),
+      got(2, 'praise', null, 2, 1, 2, '지난주 전시회 준비 정말 꼼꼼했어요. 덕분에 고객 반응이 좋았어요.', { read:false }),
+      got(3, 'thanks', null, 3, 2, 4, '급하게 부탁한 자료 바로 챙겨 줘서 고마워요.', { read:false }),
+      got(4, 'thanks', null, 1, 3, 11, '회의 자료 정리해 준 거 덕분에 보고가 금방 끝났어요.', { thanked:true }),
+      got(5, 'praise', null, 4, 4, 24, '새로 온 분들 적응 도와주는 모습 보기 좋아요.', { thanked:true }),
+      got(6, 'cheer', 'anniv', 2, 5, 167, '벌써 6년이네요. 앞으로도 잘 부탁해요!'),
+    ],
+    sent:[
+      gave(101, 'praise', null, 2, 1, '발표 정말 좋았어요.', { read:true, thanked:true }),
+      gave(102, 'cheer', 'welcome', 4, 6, '입사 환영해요! 궁금한 거 있으면 물어보세요.'),
+      gave(103, 'thanks', null, 1, 9, '주말 출장 대신 가 줘서 고마워요.', { read:true, thanked:true }),
+      gave(104, 'comfort', null, 7, 17, '마음 깊이 위로를 전합니다.'),
+      gave(105, 'thanks', null, 3, 26, '덕분에 마감 맞췄어요.', { read:true, thanked:true }),
+    ] };
+}
+const CARD_DEMO = { ready:true, get unread(){ return this.received.filter(c=>!c.read).length; }, ...cardDemoData() };   // 누르는 일은 이 브라우저에서만
+const CARD_UI = { tab:'in', f:'', hid:false };   // 받은 카드 탭: 받은(in) · 보낸(out) / 종류 걸러 보기('' 전체) / 숨긴 카드 펼침
+const cardList = ()=>AUTH.live ? CARD_LIVE : CARD_DEMO;
+const cardFind = id=>cardList().received.find(c=>c.id===id);
+async function cardLoad(){   // 실제 로그인: 내 카드 상자 (GET /api/cards). 끝나면 메뉴 숫자 · 화면을 다시 그린다
+  try {
+    const r = await fetch('/api/cards'); if(!r.ok) throw new Error(r.status);
+    const { ready, unread, received, sent } = await r.json();
+    Object.assign(CARD_LIVE, { state:'ok', ready, unread, received, sent });
+  } catch(e){ if(CARD_LIVE.state!=='ok') CARD_LIVE.state = 'err'; }   // 다시 불러오다 못 받으면 받아 둔 것 그대로
+  renderContent();
+}
+function cardContent(){   // 워크스페이스 › 받은 카드 (시안 cardBox): 받은 · 보낸 바꾸기, 요약 세 칸, 종류 걸러 보기, 카드 모음(받은 날 순), "···" 숨기기 · 숨긴 카드 보기, 보낸 카드 줄
+  const L = cardList(), U = CARD_UI, off = cardNoKey(), year = kpiDay(0).slice(0, 4);
+  if(AUTH.live && L.state!=='ok') return L.state==='err' ? kpiNote('카드를 불러오지 못했어요. 잠시 뒤 새로 고쳐 주세요.', 'danger') : kpiNote('카드를 불러오는 중이에요…');
+  if(L.unread) cardArriveWhenFree();   // 처음 그릴 때(알림 ?go=ws.w3 으로 들어와도) 안 읽은 카드가 있으면 도착 창 한 번 — 그리는 중에는 열지 않고 다음 틱에
+  const byDay = list=>[...list].sort((a, b)=>b.date.localeCompare(a.date));   // 받은 날 순 — 같은 날은 서버 순서(나중 것이 위) 그대로
+  const shown = byDay(L.received.filter(c=>!c.hidden && (!U.f || c.kind===U.f))), hid = byDay(L.received.filter(c=>c.hidden));
+  const thisYear = list=>list.filter(c=>c.date.startsWith(year)).length;
+  const seg = (k, label, n)=>`<button type="button" aria-pressed="${U.tab===k}" onclick="CARD_UI.tab='${k}'; renderContent()">${label}<b>${n}</b></button>`;
+  const head = `<div class="cm-box-head"><div class="cm-seg">${seg('in', '받은 카드', L.received.length)}${seg('out', '보낸 카드', L.sent.length)}</div>
+    <button type="button" class="btn primary" onclick="cardSend({})"${off ? ' disabled' : ''}>＋ 카드 쓰기</button></div>`;
+  const sum = `<div class="cm-sum"><div class="coral"><small>새 카드</small><b>${L.unread}</b>장</div><div><small>올해 받은 카드</small><b>${thisYear(L.received)}</b>장</div><div><small>올해 보낸 카드</small><b>${thisYear(L.sent)}</b>장</div></div>`;
+  const mini = c=>`<div class="cm-cell"><button type="button" class="cm-mini" style="${cardKv(c.kind)}" onclick="cardOpen(${c.id})">${cardArt(c.kind, c.reason, c.art)}${c.read ? '' : '<span class="cm-new">NEW</span>'}
+      <div class="cm-mini-body"><span class="cm-ktag">${cardTag(c)}</span><p class="cm-hand cm-msg">${escapeHtml(c.text)}</p>
+      <div class="cm-mini-meta"><span>${escapeHtml(c.from.name)} · ${kpiMd(c.date)}</span>${c.thanked ? `<span class="cm-ty">${CARD_HEART_SM} 고마워요</span>` : ''}</div></div></button>
+    <details class="cm-more"><summary aria-label="카드 메뉴">···</summary><button type="button" onclick="cardHide(${c.id}, ${!c.hidden})">${c.hidden ? '다시 보이기' : '숨기기'}</button></details></div>`;
+  const body = U.tab==='in'
+    ? `<div class="cm-filter">${[['', '전체'], ...Object.entries(CARD_K).map(([k, v])=>[k, v.label])].map(([k, l])=>`<button type="button" aria-pressed="${U.f===k}" onclick="CARD_UI.f='${k}'; renderContent()">${l}</button>`).join('')}</div>
+       ${shown.length ? `<div class="cm-wall">${shown.map(mini).join('')}</div>` : `<div class="hm-empty">${U.f ? '이 종류의 카드가 없어요.' : '아직 받은 카드가 없어요.'}</div>`}
+       <div class="cm-foot"><span>카드는 받은 분과 보낸 분만 볼 수 있어요.</span>${hid.length ? `<button type="button" onclick="CARD_UI.hid=!CARD_UI.hid; renderContent()">${U.hid ? '숨긴 카드 접기' : `숨긴 카드 ${hid.length}장 보기`}</button>` : ''}</div>
+       ${U.hid && hid.length ? `<div class="cm-wall cm-hid-wall">${hid.map(mini).join('')}</div>` : ''}`
+    : `${L.sent.length ? `<div>${byDay(L.sent).map(c=>`<div class="cm-sent" style="${cardKv(c.kind)}"><span class="cm-ktag">${cardTag(c)}</span>
+         <div style="min-width:0;"><b>${escapeHtml(c.to.name)}</b> <small>${escapeHtml(c.to.dept)} · ${kpiMd(c.date)}</small><p class="cm-hand cm-msg">${escapeHtml(c.text)}</p></div>
+         ${c.thanked ? `<span class="cm-ty" style="font-size:var(--fs-xs);">${CARD_HEART_SM} 고마워요 받음</span>` : c.read ? '<span></span>' : '<small>읽기 전</small>'}</div>`).join('')}</div>` : '<div class="hm-empty">아직 보낸 카드가 없어요.</div>'}
+       <div class="cm-foot"><span>보낸 카드는 지우거나 고칠 수 없어요.</span></div>`;
+  return `${off ? kpiNote('서버 설정이 아직 끝나지 않아 카드를 보내고 받을 수 없어요.', 'info') : ''}${kpiMsg ? kpiNote(kpiMsg.msg, kpiMsg.type) : ''}<div class="card">${head}${sum}${body}</div>`;
+}
+function cardArriveWhenFree(){   // 안 읽은 카드가 있으면 도착 창 한 번 — 받은 카드 탭을 처음 그릴 때, 처음 들어온 날 사이트 둘러보기 뒤(tourFirst → wcEnter · 맨 아래). 이번 창에서 이미 띄웠거나 기다리는 중이면 그만(기다리는 줄은 하나)
+  if(CARD_LIVE.opened || CARD_LIVE.pending) return;
+  const go = ()=>{
+    if(AUTH.locked || CARD_LIVE.opened || !cardList().unread) return void (CARD_LIVE.pending = false);   // 로그아웃 · 세션 끝(잠금)이거나, 그사이 띄웠거나(들어올 때 자동) 다 읽었다 — 그만
+    if(tourBusy()) return void setTimeout(go, 300);   // ponytail: 환영 페이지 · 다른 창 · 둘러보기가 닫힐 때까지 0.3초마다 본다 (그 뒤에 가려 움직이지 않게 — 표시는 띄울 때 cardArrive 가 켠다)
+    CARD_LIVE.pending = false; cardArrive(0);
+  };
+  CARD_LIVE.pending = true; setTimeout(go);
+}
+function cardBig(c, ref, nav){   // 크게 보기 · 도착 창이 같이 쓰는 무대(카드 + 효과 칸)와 [고마워요] [답장 쓰기]. ref = 단추가 이 카드를 다시 찾는 식, nav = 도착 창의 [‹ · ›] 단추 — 있으면 봉투도 (처음 여는 카드는 봉투째)
+  const [prev, next] = nav || ['', ''];
+  return `<div class="cm-stage" style="${cardKv(c.kind)}">${nav ? '<i class="cm-ep back"></i><i class="cm-ep front"></i><i class="cm-ep flap"></i>' : ''}${cardFace({ ...c, toName:kpiOwner(), fromName:`${c.from.name} ${c.from.title || ''}`.trim() })}<div class="cm-fx"></div></div>
+    <div class="cm-acts"${nav ? '' : ' style="grid-template-columns:1fr 1fr;"'}>${prev}<button type="button" class="btn cm-thanks${c.thanked ? ' done' : ''}" onclick="cardThanks(this, ${ref})">${CARD_HEART} ${c.thanked ? '고마워요 보냄' : '고마워요'}</button>
+      <button type="button" class="btn primary" onclick="cardSend({ to:${ref}.from })">${icon('edit')} 답장 쓰기</button>${next}</div>`;
+}
+function cardOpen(id){   // 카드함에서 크게 보기 (시안 cardOpen — 살짝 떠오르기 + 종류별 효과 한 번). 열면 읽음 — 돌려주는 약속은 읽음 요청이 끝날 때
+  const c = cardFind(id); if(!c) return;
+  orgModal(`<div class="cm-arrive"><div class="card-title"><span>받은 카드</span><button type="button" class="x-btn" onclick="orgCloseModal()" aria-label="닫기">${icon('x')}</button></div>
+    ${cardBig(c, `cardFind(${id})`)}
+    <div class="list-sub" style="margin:0;"><button type="button" class="cm-link" onclick="orgCloseModal(); cardHide(${id}, ${!c.hidden})">${c.hidden ? '다시 보이기' : '이 카드 숨기기'}</button>${c.hidden ? '' : ' — 숨긴 카드는 카드함 아래 "숨긴 카드 보기"에서 다시 볼 수 있어요.'}</div></div>`);
+  openFx(document.querySelector('#orgModal .cm-stage'), c, false);
+  return c.read ? undefined : cardMark(c, 'read');
+}
+const CARD_BUSY = new Set();   // 보내는 중인 '카드 번호/일' — 두 번 눌러도 요청은 한 번
+async function cardMark(c, what, body={}){   // 받은 카드에 읽음(read) · 고마워요(thanks) · 숨김(hide {hidden})을 적는다. 실제 로그인은 서버에 — 안 읽은 수는 서버 답. 시연은 이 브라우저에서만. 안 되면 오류 문구, 되면 '', 같은 일을 보내는 중이면 null
+  const key = c.id+'/'+what;
+  if(CARD_BUSY.has(key)) return null;
+  CARD_BUSY.add(key);
+  try {
+    if(AUTH.live){
+      const fail = '지금은 할 수 없어요. 잠시 뒤 다시 해 주세요.';
+      try {
+        const r = await fetch(`/api/cards/${c.id}/${what}`, { method:'POST', headers:{ 'Content-Type':'application/json' }, body:JSON.stringify(body) }), j = await r.json().catch(()=>({}));
+        if(!r.ok) return j.error || fail;
+        if(typeof j.unread==='number') CARD_LIVE.unread = j.unread;   // 숫자가 없는 답이면 전 숫자 그대로
+      } catch(e){ return fail; }
+    }
+    if(what==='thanks') c.thanked = true;
+    if(what==='hide') c.hidden = body.hidden;
+    if(what!=='hide' || body.hidden) c.read = true;   // 고마워요 · 숨기기도 읽음 (서버와 같게 — 다시 보이기는 읽음 그대로)
+    renderContent();   // NEW 표시 · 메뉴 숫자
+    return '';
+  } finally { CARD_BUSY.delete(key); }
+}
+async function cardThanks(btn, c){   // [고마워요] 한 번 — 이미 보냈거나 보내는 중이면(창을 다시 그려 새 단추여도) 하트도 없이 아무것도 안 한다. 보낸 사람 알림은 서버가
+  if(!c || c.thanked || btn.disabled || CARD_BUSY.has(c.id+'/thanks')) return;
+  heartPop(btn);
+  btn.disabled = true;
+  const err = await cardMark(c, 'thanks');
+  btn.disabled = false;
+  if(err===null) return;   // 다른 곳에서 보내는 중
+  if(err) return kpiFlash(escapeHtml(err), 'danger');
+  btn.classList.add('done'); btn.innerHTML = `${CARD_HEART} 고마워요 보냄`;
+  kpiFlash(`${escapeHtml(c.from.name)} 님께 고마워요를 보냈어요.`);
+}
+async function cardHide(id, hidden){   // 숨기기 · 다시 보이기 (받은 사람만 — 지우는 길은 없다)
+  const c = cardFind(id), err = c && await cardMark(c, 'hide', { hidden });
+  if(err) kpiFlash(escapeHtml(err), 'danger');
+}
+/* ----- 카드가 왔어요 · 움직임 (시안 cardArrive · openFx · burst · heartPop 그대로, 설계 4-4 · 4-6) — 모두 한 번만 움직이고 '움직임 줄이기'(cardStill)면 움직이지 않는다.
+   조각(.cm-ep 봉투 · .cm-p 효과 · .cm-pop 하트)은 모두 창(#orgModal) 안에 붙인다 — 움직이는 중에 닫거나 넘기면 창과 함께 사라지고, 남은 움직임은 떼어 낸 창에서 멈춘다 ----- */
+const CARD_AR = { list:[], seen:new Set(), auto:false };   // 도착 창 하나: 보여 줄 카드(오래된 것부터 — 넘겨 보는 동안 그대로) · 이미 펼친 카드 번호 · 들어올 때 자동으로 떴나(닫으면 오늘 할 일)
+function cardArrive(i=0, list, auto){   // "카드가 왔어요 1 / 3" · 카드 한 장 · [‹] [고마워요] [답장 쓰기] [›]. list 가 없으면 안 읽은 받은 카드 — [‹] [›] 는 떠 있는 창의 목록을 넘긴다. 보이는 카드는 바로 읽음(안 돼도 창은 그대로) — 돌려주는 약속은 그 요청이 끝날 때
+  const A = CARD_AR;
+  if(list || !document.getElementById('cmArrive')) Object.assign(A, { list:list || cardList().received.filter(c=>!c.read).reverse(), seen:new Set(), auto:!!auto });   // 서버 · 시연 목록은 최근이 위 — 도착 창은 오래된 것부터
+  const c = A.list[i];
+  if(!c) return A.auto ? homeTodayPop() : undefined;   // 보여 줄 카드가 없다 (숫자만 남은 경우)
+  CARD_LIVE.opened = true;   // 이번 창에서 띄웠다 — 받은 카드 탭을 열어도 다시 띄우지 않는다
+  const n = A.list.length, nav = (d, ic, label, on)=>`<button type="button" class="btn"${on ? '' : ' disabled'} onclick="cardArrive(${i+d})" aria-label="${label}">${icon(ic)}</button>`;
+  orgModal(`<div class="cm-arrive" id="cmArrive"><div class="card-title"><span>카드가 왔어요<span class="cm-count">${i+1} / ${n}</span></span><button type="button" class="x-btn" onclick="orgCloseModal();${A.auto ? ' homeTodayPop();' : ''}" aria-label="닫기">${icon('x')}</button></div>
+    ${cardBig(c, `CARD_AR.list[${i}]`, [nav(-1, 'chevL', '앞 카드', i > 0), nav(1, 'chevR', '다음 카드', i < n-1)])}
+    <div class="list-sub" style="margin:0;">받은 카드는 <b>워크스페이스 › 받은 카드</b>에 모여요.</div></div>`);
+  openFx(document.querySelector('#orgModal .cm-stage'), c, !A.seen.has(c.id));   // 처음 여는 카드만 봉투째, 넘겨 본 뒤 돌아오면 가볍게
+  A.seen.add(c.id);
+  return c.read ? undefined : cardMark(c, 'read');
+}
+const CARD_SV = {   // 효과 그림 (시안 SV)
+  heart:'<svg viewBox="0 0 24 24"><path fill="#F28BA8" d="M12 21s-7.5-4.6-9.6-9.2C.9 8.3 3.1 4.6 6.6 4.6c2.1 0 3.6 1.2 4.4 2.6.8-1.4 2.3-2.6 4.4-2.6 3.5 0 5.7 3.7 4.2 7.2C19.5 16.4 12 21 12 21z"/></svg>',
+  sparkle:'<svg viewBox="0 0 24 24"><path fill="#F7C948" d="M12 0c.7 6.5 4.6 10.4 12 12-7.4 1.6-11.3 5.5-12 12-.7-6.5-4.6-10.4-12-12 7.4-1.6 11.3-5.5 12-12z"/></svg>',
+};
+const cardR = (a, b)=>a + Math.random() * (b - a);
+const cardFxOf = c=>c.kind==='comfort' ? 'whitepetal' : c.kind==='praise' ? 'sparkle' : c.kind==='thanks' ? 'heart' : ['welcome', 'anniv'].includes(c.reason) ? 'petal' : 'confetti';   // 생일 · 경사 색종이 / 새 식구 · 입사 기념 분홍 꽃잎 / 칭찬 반짝이 / 감사 하트 / 위로 흰 꽃잎
+function burst(stage, c){   // 시안 burst — 펼쳐진 뒤 한 번 (1~4초): 색종이 30 · 꽃잎 12 · 반짝이 9 · 하트 8 · 흰 꽃잎 3(천천히)
+  if(cardStill()) return;
+  const fx = stage.querySelector('.cm-fx'); if(!fx) return;
+  const R = cardR, t = cardFxOf(c), W = fx.clientWidth, H = fx.clientHeight, COL = ['#F7A8B8', '#9FD3F0', '#FFD978', '#A9E2C2', '#C9B6F4', '#FFBF94'];
+  const n = { confetti:30, petal:12, sparkle:9, heart:8, whitepetal:3 }[t];
+  for(let i = 0; i < n; i++){
+    const el = document.createElement('i'); el.className = 'cm-p';
+    let kf, dur, delay, ease = 'linear';
+    if(t==='confetti'){   // 생일 · 경사: 위에서 흩날리는 색종이
+      el.style.cssText = `left:${R(.04, .96) * W}px; top:-14px; width:${R(5, 8)}px; height:${R(8, 13)}px; background:${COL[i % 6]}; border-radius:2px;`;
+      const dx = R(-70, 70), dy = H * R(.7, 1.05), rot = R(-600, 600);
+      kf = [{ transform:'translate(0,0) rotate(0)', opacity:1 }, { transform:`translate(${dx * .6}px,${dy * .6}px) rotate(${rot * .6}deg)`, opacity:1, offset:.6 }, { transform:`translate(${dx}px,${dy}px) rotate(${rot}deg)`, opacity:0 }];
+      dur = R(1500, 2200); delay = R(0, 350);
+    } else if(t==='petal' || t==='whitepetal'){   // 입사: 분홍 꽃잎 / 조사: 흰 꽃잎 세 장, 천천히
+      const white = t==='whitepetal', s = white ? R(12, 16) : R(9, 13);
+      el.style.cssText = `left:${R(.08, .92) * W}px; top:-18px; width:${s}px; height:${s * .72}px; border-radius:80% 0 80% 0; background:${white ? '#FFFFFF' : ['#F9C3D2', '#FBD7E1', '#F6B2C6'][i % 3]}; box-shadow:${white ? '0 1px 3px rgba(60,60,70,.25)' : 'none'};`;
+      const sway = R(18, 34), dy = H * R(.75, 1.0);
+      kf = [0, .25, .5, .75, 1].map((o, k)=>({ offset:o, transform:`translate(${Math.sin(k * 1.6) * sway}px,${dy * o}px) rotate(${k * R(50, 90)}deg)`, opacity:o > .85 ? 0 : 1 }));
+      dur = white ? R(3600, 4400) : R(2400, 3200); delay = white ? i * 600 + R(0, 200) : R(0, 600); ease = 'ease-in-out';
+    } else if(t==='sparkle'){   // 칭찬: 그림 둘레에 반짝
+      const s = R(14, 24); el.style.cssText = `left:${R(.1, .9) * W}px; top:${R(.06, .55) * H}px; width:${s}px; height:${s}px;`; el.innerHTML = CARD_SV.sparkle;
+      kf = [{ transform:'scale(0) rotate(0)', opacity:0 }, { transform:'scale(1.15) rotate(45deg)', opacity:1, offset:.45 }, { transform:'scale(0) rotate(90deg)', opacity:0 }];
+      dur = R(700, 1000); delay = R(0, 900); ease = 'ease-out';
+    } else {   // 감사: 하트가 떠오름
+      const s = R(14, 22); el.style.cssText = `left:${R(.12, .88) * W}px; top:${H * R(.55, .8)}px; width:${s}px; height:${s}px;`; el.innerHTML = CARD_SV.heart;
+      kf = [{ transform:'translateY(0) scale(.4)', opacity:0 }, { transform:`translate(${R(-12, 12)}px,-30px) scale(1)`, opacity:1, offset:.3 }, { transform:`translate(${R(-20, 20)}px,-${H * R(.45, .6)}px) scale(.9)`, opacity:0 }];
+      dur = R(1500, 2000); delay = R(0, 600); ease = 'ease-out';
+    }
+    fx.appendChild(el);
+    el.animate(kf, { duration:dur, delay, easing:ease, fill:'both' }).finished.then(()=>el.remove(), ()=>el.remove());
+  }
+}
+async function openFx(stage, c, full){   // 시안 openFx — full: 종류 색 봉투가 나타남 → 덮개가 열림 → 카드가 올라와 자리 잡음(약 2초) / 아니면 살짝 떠오르기만(0.3초). 그다음 burst 한 번
+  const f = stage.querySelector('.cm-face'), parts = [...stage.querySelectorAll('.cm-ep')], flap = stage.querySelector('.cm-ep.flap'), acts = stage.parentElement.querySelector('.cm-acts');
+  if(cardStill() || !full){
+    parts.forEach(p=>p.remove());
+    if(!cardStill()) f.animate([{ transform:'translateY(14px)', opacity:0 }, { transform:'none', opacity:1 }], { duration:340, easing:'cubic-bezier(.2,.8,.2,1)' });
+    return burst(stage, c);
+  }
+  const anim = (el, kf, o)=>el.animate(kf, { fill:'forwards', ...o }).finished, gone = ()=>!stage.isConnected;   // 그사이 창을 닫았거나 넘겼다 — 떼어 낸 창에 효과를 뿌리지 않는다
+  if(acts){ Object.assign(acts.style, { opacity:0, pointerEvents:'none' }); acts.inert = true; }   // 봉투가 열리는 동안 단추 줄은 보이지도 눌리지도 키보드로 닿지도 않게 (X 는 된다)
+  f.style.opacity = 0;
+  await Promise.all(parts.map(p=>anim(p, [{ transform:'translateY(18px) scale(.94)', opacity:0 }, { transform:'none', opacity:1 }], { duration:320, easing:'ease-out' })));
+  if(gone()) return;
+  await anim(flap, [{ transform:'rotateX(0deg)' }, { transform:'rotateX(180deg)' }], { duration:420, easing:'ease-in-out' });
+  if(gone()) return;
+  flap.style.zIndex = 0; f.style.opacity = 1;
+  await anim(f, [{ transform:'translateY(46%) scale(.8)' }, { transform:'translateY(-7%) scale(.93)' }], { duration:640, easing:'cubic-bezier(.2,.8,.2,1)' });
+  if(gone()) return;
+  parts.forEach(p=>anim(p, [{ transform:'none', opacity:1 }, { transform:'translateY(46px)', opacity:0 }], { duration:360, easing:'ease-in' }));
+  await anim(f, [{ transform:'translateY(-7%) scale(.93)' }, { transform:'none' }], { duration:420, easing:'cubic-bezier(.3,1.5,.5,1)' });
+  parts.forEach(p=>p.remove()); f.getAnimations().forEach(a=>a.cancel());
+  if(gone()) return;
+  if(acts){ acts.style.pointerEvents = ''; acts.inert = false; acts.animate([{ opacity:0, transform:'translateY(6px)' }, { opacity:1, transform:'none' }], { duration:260 }).finished.then(()=>{ acts.style.opacity = ''; }); }
+  burst(stage, c);
+}
+function heartPop(btn){   // 시안 heartPop — [고마워요] 단추가 살짝 커졌다 돌아오고 하트 6개가 퐁(0.8초). 하트는 단추가 있는 창 안에
+  if(cardStill() || !btn.isConnected) return;
+  btn.animate([{ transform:'scale(1)' }, { transform:'scale(1.08)' }, { transform:'scale(1)' }], { duration:300 });
+  const R = cardR, r = btn.getBoundingClientRect(), host = btn.closest('#orgModal') || document.body;
+  for(let i = 0; i < 6; i++){
+    const el = document.createElement('i'); el.className = 'cm-pop'; el.innerHTML = CARD_SV.heart.replace('fill="#F28BA8"', 'fill="currentColor"');
+    el.style.left = `${r.left + r.width / 2 - 9}px`; el.style.top = `${r.top + r.height / 2 - 9}px`;
+    host.appendChild(el);
+    const a = (i / 6) * Math.PI * 2 + R(-.3, .3), d = R(28, 46);
+    el.animate([{ transform:'scale(.3)', opacity:1 }, { transform:`translate(${Math.cos(a) * d}px,${Math.sin(a) * d - 26}px) scale(${i ? R(.6, .9) : 1.3})`, opacity:1, offset:.6 }, { transform:`translate(${Math.cos(a) * d}px,${Math.sin(a) * d - 44}px) scale(.5)`, opacity:0 }],
+      { duration:R(650, 850), easing:'cubic-bezier(.2,.8,.2,1)' }).finished.then(()=>el.remove(), ()=>el.remove());
+  }
+}
+/* ----- 카드 보내기 (시안 draw · cardSent) — 보내는 곳: 이번 주 소식 [축하 카드]·[위로 카드] · 조직도 이름 창 · 카드함 [＋ 카드 쓰기] · 받은 카드 [답장 쓰기] ----- */
+const CARD_EX = {   // 예시 문구 칩 (누르면 글 칸에) — 축하는 소식 종류에 맞춘 문구
+  birthday:['생일 축하해요! 오늘은 맛있는 거 많이 드세요.', '생일 축하해요. 늘 고마워요.', '행복한 생일 보내세요!'],
+  welcome:['입사 환영해요! 궁금한 거 있으면 언제든 물어보세요.', '함께하게 되어 반가워요.', '첫 주 잘 보내세요. 응원할게요!'],
+  anniv:['입사 기념일 축하해요. 늘 든든해요.', '함께해 줘서 고마워요.', '앞으로도 잘 부탁해요!'],
+  joy:['진심으로 축하드려요!', '좋은 소식 축하해요. 행복하세요.', '결혼 축하드려요. 두 분 행복하세요.'],
+  praise:['이번 일 정말 멋지게 해냈어요.', '꼼꼼하게 챙겨 줘서 큰 도움이 됐어요.', '늘 먼저 나서 줘서 든든해요.'],
+  thanks:['바쁜데도 도와줘서 고마워요.', '덕분에 일이 잘 끝났어요.', '오늘도 수고 많았어요.'],
+  comfort:['마음 깊이 위로를 전합니다.', '힘든 시간 잘 이겨 내시길 바랍니다.', '필요한 일 있으면 언제든 말씀해 주세요.'],
+};
+const CARD_NEWS = { birthday:'birthday', welcome:'welcome', anniversary:'anniv', joy:'joy' };   // 이번 주 소식 배너 → 축하 사유 (조사는 위로 카드). 서버 cards.reasons_for 와 같은 짝 — 생일 · 새 식구 · 입사 기념은 news_items(_NEWS_REASON), 경사는 celeb_events
+const CARD_BASE = [{ kind:'praise', reason:null }, { kind:'thanks', reason:null }];   // 받는 분을 고르기 전 칩 (시안처럼 칭찬 · 감사)
+const CARD_FAIL = '지금은 할 수 없어요. 잠시 뒤 다시 해 주세요.';
+const CARD_NO_KEY = '서버 설정이 아직 끝나지 않아 카드를 보낼 수 없어요.';   // 서버 503 과 같은 문구
+const cardNoKey = ()=>AUTH.live && CARD_LIVE.state==='ok' && !CARD_LIVE.ready;   // 카드 상자가 서버 열쇠(HR_PAY_KEY)가 없다고 답했다 — 소식 · 조직도 · 답장 단추는 막힌 [카드 쓰기]를 거치지 않으므로 창에서 막는다. 아직 모르면(불러오기 전 · 실패) 막지 않는다 — 보내면 서버가 503
+const CARD_S = { seq:0, to:null, reason:null, opts:CARD_BASE, sel:0, art:1, text:'', q:'', sentToday:false, err:'', busy:false };   // 보내기 창 하나. to { id: 서버 직원 번호(시연은 시연 번호), name, title, dept } · opts null = 종류를 묻는 중 · seq 는 창을 열 때마다 올라 늦게 온 답이 새 창을 덮지 않게
+const cardStill = ()=>matchMedia('(prefers-reduced-motion: reduce)').matches;   // 기기의 "움직임 줄이기"
+const cardCan = m=>!!m && !m.me && m.active!==false && (AUTH.live ? Number.isInteger(m.uid) : m.name!==kpiOwner());   // 이 조직도 사람에게 카드 단추를 보이나 — 나 · 비활성은 아니다. 실제 로그인은 서버 번호(uid)가 있어야
+const cardTo = m=>({ id:AUTH.live ? m.uid : m.id, name:m.name, title:m.title || '', dept:m.team || m.division || '' });
+const cardMourn = m=>celebItems('condol').some(x=>x.m.id===m.id);   // 지금 조사가 게시 중인 분 — 소식 · 조직도 단추도 위로 카드로 (창은 서버가 위로만 준다 — reasons_for)
+const cardOpt = ()=>CARD_S.opts && CARD_S.opts[CARD_S.sel] || CARD_BASE[0];   // 고른 종류 칩 { kind, reason }
+function cardSendOrg(id, reason=null){ const m = orgFind(id); return cardCan(m) ? cardSend({ to:cardTo(m), reason }) : undefined; }   // 이번 주 소식 · 조직도 단추 — 화면 번호만 받는다(이름 없음)
+function cardPick(id){ const m = orgFind(id); return cardCan(m) ? cardFor(cardTo(m)) : undefined; }   // 이름 찾기에서 고름 — 고른 종류 · 쓴 글은 그대로
+function cardText(v){   // 서버 cards.clean_text 와 같은 규칙 → [다듬은 글, 안 되는 까닭('' = 됨)]. 글자 수는 코드 포인트로 센다 (그림 글자도 한 자)
+  if([...v].length > 600) return [v, '글은 150자까지 쓸 수 있어요.'];   // 다듬기 전 600자(서버 RAW_MAX = 4 × 150)를 넘으면 바로 — 서버와 같은 순서
+  if(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]|[\ud800-\udbff](?![\udc00-\udfff])|(^|[^\ud800-\udbff])[\udc00-\udfff]/.test(v)) return [v, '글에 쓸 수 없는 글자가 있어요.'];
+  const t = v.replace(/\r\n?|[\u2028\u2029\x85]/g, '\n').split('\n').map(x=>x.trim()).join('\n').trim();   // 줄 나눔 글자는 모두 \n (서버 _NEWLINE) · 줄마다 앞뒤 빈칸 — 여기까지 남는 글자에서 trim 은 서버 _SPACE 와 같은 목록(BOM 포함)
+  if(!t.replace(/[\s\u200b-\u200f\u2060\u3164]/g, '')) return ['', '글을 적어 주세요.'];   // 보이는 글자가 없다 (빈칸 · 폭 없는 글자 · 한글 채움 문자뿐 — 서버 _UNSEEN)
+  return [t, [...t].length > 150 ? '글은 150자까지 쓸 수 있어요.' : t.split('\n').length > 3 ? '글은 세 줄까지 쓸 수 있어요.' : ''];
+}
+function cardDemoOpts(id){   // 시연: 그 사람의 이번 주 소식(시연 명단) → [보낼 수 있는 카드, 오류, 오늘 보냈나] — 서버 cards.options 와 같은 규칙 (조사면 위로만)
+  const m = orgMembers.find(x=>x.id===id);
+  if(!cardCan(m)) return [[], '카드를 받을 수 없는 분이에요.', false];
+  const has = key=>celebList(key, orgMembers, celebEvents, new Date()).some(x=>x.m===m);
+  const opts = has('condol') ? [{ kind:'comfort', reason:null }] : [...Object.entries(CARD_NEWS).filter(([k])=>has(k)).map(([, r])=>({ kind:'cheer', reason:r })), ...CARD_BASE];
+  return [opts, '', CARD_DEMO.sent.some(c=>c.to.id===id && c.date===kpiDay(0))];
+}
+async function cardSend({ to=null, reason=null }={}){   // 카드 보내기 창. to 가 없으면 이름 찾기부터 · reason(birthday · welcome · anniv · joy)을 주면 그 축하 칩이 처음 골라진다
+  Object.assign(CARD_S, { to:null, reason, opts:CARD_BASE, sel:0, art:1, text:'', q:'', sentToday:false, err:'', busy:false });
+  if(to) return cardFor(to);
+  const my = ++CARD_S.seq;
+  cardDraw(); document.getElementById('cmFindIn').focus();
+  if(AUTH.live && !orgLive()){ await orgLoad(); if(my===CARD_S.seq) cardSeek(); }   // 조직도 탭을 안 열었으면 명단부터 (불러오는 중이면 그것을 기다린다)
+}
+async function cardFor(to){   // 받는 분이 정해짐 → 보낼 수 있는 종류 · 오늘 보냈나를 받아 칩을 그린다 (실제 로그인 GET /api/cards/options — 시연은 시연 소식으로)
+  const S = CARD_S, my = ++S.seq, was = cardOpt();
+  Object.assign(S, { to, opts:null, sentToday:false, err:'' });
+  cardDraw();
+  let opts = [], sentToday = false, err = '';
+  if(AUTH.live){
+    try {
+      const r = await fetch('/api/cards/options?to='+encodeURIComponent(to.id)), j = await r.json().catch(()=>({}));
+      if(r.ok && Array.isArray(j.options)) [opts, sentToday] = [j.options, j.sentToday===true]; else err = j.error || CARD_FAIL;
+    } catch(e){ err = CARD_FAIL; }
+  } else [opts, err, sentToday] = cardDemoOpts(to.id);
+  if(my!==S.seq || !document.querySelector('#orgModal .cm-send')) return;   // 그사이 창을 닫았거나 다른 분을 골랐다
+  opts = opts.filter(o=>o && Object.hasOwn(CARD_K, o.kind) && (o.kind==='cheer' ? Object.hasOwn(CARD_WHY, o.reason) : !o.reason));   // 아는 종류만 (예시 문구 · 그림이 있는 것)
+  const at = f=>opts.findIndex(f), i = [at(o=>S.reason && o.reason===S.reason), at(o=>o.kind===was.kind && o.reason===was.reason), at(o=>o.kind!=='cheer')].find(n=>n>=0);   // 준 사유 → 고르던 칩 → 칭찬(조사면 위로)
+  Object.assign(S, { opts, sel:i ?? 0, sentToday, err });
+  cardDraw();
+}
+function cardPv(){   // 미리 보기 카드 — 받는 분이 보는 모양 그대로: From. 내 이름 직급 · 오늘(M/D). 직급은 실제 로그인이면 조직도의 내 줄(아직 안 불렀으면 이름만), 시연은 시연 역할
+  const S = CARD_S, o = cardOpt(), title = AUTH.live ? ORG_LIVE.people.find(m=>m.me)?.title : KPI_USERS[kpiRole]?.title;
+  return cardFace({ kind:o.kind, reason:o.reason, art:S.art, text:S.text, toName:S.to ? S.to.name : '받는 분', fromName:`${kpiOwner()} ${title || ''}`.trim(), date:kpiDay(0) });
+}
+function cardFound(){   // 이름 찾기 결과 (이름 · 부서) — 나 · 비활성은 빠진다
+  const q = CARD_S.q.trim().toLowerCase();
+  if(!q) return '';
+  if(AUTH.live && !orgLive()) return `<div class="list-sub" style="margin:0;">${ORG_LIVE.state==='err' ? '명단을 불러오지 못했어요. 잠시 뒤 다시 해 주세요.' : '명단을 불러오는 중이에요…'}</div>`;
+  return orgPeople().filter(m=>cardCan(m) && [m.name, m.team, m.division].join(' ').toLowerCase().includes(q)).slice(0, 6)
+    .map(m=>`<button type="button" onclick="cardPick(${m.id})"><span class="cm-av">${escapeHtml(m.name.slice(0, 1))}</span><span><b>${escapeHtml(m.name)}</b> ${escapeHtml(m.title || '')}<small>${escapeHtml(m.team || m.division || '')}</small></span></button>`).join('')
+    || '<div class="list-sub" style="margin:0;">찾는 분이 없어요.</div>';
+}
+function cardSeek(){ const el = document.getElementById('cmFound'); if(el) el.innerHTML = cardFound(); }   // 결과만 다시 그린다 — 입력칸까지 그리면 한글 조합이 끊긴다
+function cardDraw(){   // 시안 draw 그대로 — 미리 보기는 PC만 (휴대폰은 한 줄로 쌓임)
+  const S = CARD_S, to = S.to, o = cardOpt(), why = (S.opts || []).filter(x=>x.kind==='cheer').map(x=>CARD_WHY[x.reason]).join(' · ');
+  const kinds = !S.opts ? '<span class="list-sub" style="margin:0;">불러오는 중이에요…</span>'
+    : S.opts.map((x, i)=>`<button type="button" style="${cardKv(x.kind)}" aria-pressed="${i===S.sel}" onclick="cardKindPick(${i})">${cardTag(x)}</button>`).join('');
+  orgModal(`<div class="cm-send" style="${cardKv(o.kind)}"><div class="card-title"><span>카드 보내기</span><button type="button" class="x-btn" onclick="orgCloseModal()" aria-label="닫기">${icon('x')}</button></div>
+    <div class="cm-grid"><div>
+      <div class="field"><label>받는 사람</label>${to
+        ? `<div class="cm-to-row"><span class="cm-av">${escapeHtml(to.name.slice(0, 1))}</span><div><b>${escapeHtml(to.name)}</b> ${escapeHtml(to.title || '')}<small>${escapeHtml(to.dept || '')}</small></div></div>${why ? `<span class="cm-why">${escapeHtml(why)} 소식이 있어요</span>` : ''}`
+        : `<input class="cm-text" id="cmFindIn" style="min-height:0;" placeholder="이름으로 찾기" aria-label="받는 사람 이름으로 찾기" autocomplete="off" value="${escapeHtml(S.q)}" oninput="CARD_S.q=this.value; cardSeek()"><div class="cm-found" id="cmFound">${cardFound()}</div>`}</div>
+      <div class="field"><label>카드 종류</label><div class="cm-kinds">${kinds}</div></div>
+      <div class="field"><label>그림</label><div class="cm-arts">${[1, 2, 3, 4].map(n=>`<button type="button" aria-pressed="${n===S.art}" onclick="cardArtPick(${n})" aria-label="그림 ${n}">${cardArt(o.kind, o.reason, n)}</button>`).join('')}</div></div>
+      <div class="field"><label for="cmText">글 <small id="cmLen"></small></label><textarea class="cm-text" id="cmText" placeholder="${o.kind==='comfort' ? '위로의 마음을 적어 주세요' : '전하고 싶은 마음을 적어 주세요'}" oninput="cardTyped(this.value)">${escapeHtml(S.text)}</textarea>
+        <div class="cm-ex">${!S.opts || !S.opts.length ? '' : CARD_EX[o.kind==='cheer' ? o.reason : o.kind].map((t, i)=>`<button type="button" onclick="cardExPick(${i})">${t}</button>`).join('')}</div></div>
+    </div>
+    <div class="cm-pv"><div class="cm-pv-label">받는 분에게 이렇게 보여요</div><div id="cmPv">${cardPv()}</div></div></div>
+    <div class="cm-note">${icon('lock')} 받는 분만 볼 수 있어요 · 같은 분께는 하루 한 장 · 보내면 휴대폰으로 알려 드려요</div>
+    <div class="cm-err" id="cmErr" role="alert"></div>
+    <div class="cm-btns"><button type="button" class="btn" onclick="orgCloseModal()">취소</button><button type="button" class="btn primary" id="cmSend" onclick="cardSent()" disabled>${icon('mail')} 보내기</button></div></div>`);
+  cardFoot();
+}
+function cardFoot(){   // 글자 수 · 붉은 줄 · [보내기] 켜기 — 창을 다시 그리지 않는다 (글 칸 한글 조합이 끊기지 않게)
+  const S = CARD_S, b = document.getElementById('cmSend'); if(!b) return;
+  const [t, bad] = cardText(S.text);
+  document.getElementById('cmLen').textContent = `${[...t].length}/150`;
+  const red = document.getElementById('cmErr'), msg = (cardNoKey() && CARD_NO_KEY) || S.err || (S.sentToday ? `오늘은 이미 ${S.to.name} 님께 카드를 보냈어요` : t && bad) || '';   // 빈 글은 붉은 줄 없이 단추만 막는다
+  if(red.textContent!==msg) red.textContent = msg;   // role=alert — 같은 안내를 글자마다 다시 읽지 않게 바뀔 때만
+  b.disabled = S.busy || cardNoKey() || !S.to || !S.opts || !S.opts.length || S.sentToday || !!bad;
+}
+function cardKindPick(i){ Object.assign(CARD_S, { sel:i, err:'' }); cardDraw(); }
+function cardArtPick(n){ CARD_S.art = n; cardDraw(); }
+function cardExPick(i){ const o = cardOpt(); CARD_S.text = CARD_EX[o.kind==='cheer' ? o.reason : o.kind][i]; cardDraw(); }
+function cardTyped(v){ CARD_S.text = v; cardFoot(); const pv = document.getElementById('cmPv'); if(pv) pv.innerHTML = cardPv(); }
+async function cardSent(){   // [보내기] — 글 규칙을 먼저 보고, 단추를 막은 채 보낸다(두 번 눌러도 한 번). 되면(201) 봉투에 넣어 날려 보낸 뒤 창을 닫는다. 안 되면 움직임 없이 창 안 붉은 줄에 서버 문구 · 단추 다시 켬
+  const S = CARD_S, o = cardOpt(), to = S.to, my = S.seq, [text, bad] = cardText(S.text);
+  if(S.busy || cardNoKey() || !to || !S.opts || !S.opts.length || S.sentToday || bad) return;
+  Object.assign(S, { busy:true, err:'' }); cardFoot();
+  let err = '', once = false;
+  if(AUTH.live){
+    try {
+      const r = await fetch('/api/cards', { method:'POST', headers:{ 'Content-Type':'application/json' }, body:JSON.stringify({ to:to.id, kind:o.kind, reason:o.reason, art:S.art, text }) });
+      if(r.status!==201) err = (await r.json().catch(()=>({}))).error || CARD_FAIL;
+      once = r.status===409;   // 오늘 이미 보냈다 — 단추를 다시 켜지 않고 "오늘은 이미 …" 안내
+    } catch(e){ err = CARD_FAIL; }
+  } else CARD_DEMO.sent = [{ id:Math.max(0, ...CARD_DEMO.sent.map(c=>c.id)) + 1, kind:o.kind, reason:o.reason, art:S.art, text, date:kpiDay(0), to:{ ...to }, read:false, thanked:false }, ...CARD_DEMO.sent];   // 시연: 이 브라우저에서만
+  const open = ()=>my===S.seq && !!document.querySelector('#orgModal .cm-send');
+  if(err){
+    if(my===S.seq) Object.assign(S, once ? { busy:false, err:'', sentToday:true } : { busy:false, err });
+    return open() ? cardFoot() : kpiFlash(escapeHtml(err), 'danger');   // 그사이 창을 닫았으면 알림 줄로
+  }
+  if(open() && !cardStill()) await cardFly(o).catch(()=>{});   // 움직임이 안 돼도 보낸 것은 그대로
+  if(open()) orgCloseModal();   // 날아가는 중에 닫았거나 다른 창을 열었으면 그대로 둔다
+  kpiFlash(`${escapeHtml(to.name)} 님께 카드를 보냈어요.`);
+  if(AUTH.live) await cardLoad();   // 보낸 카드 · 숫자
+}
+async function cardFly(o){   // 시안 cardSent 움직임(약 1.7초): 미리 보기 카드가 봉투에 들어가 덮개가 닫히고 오른쪽 위로 날아간다 (휴대폰은 창 가운데에서). 봉투는 창(#orgModal) 안에 붙여 — 도중에 창을 닫으면 함께 사라진다
+  const d = document.getElementById('orgModal'), pv = d.querySelector('#cmPv .cm-face'), shown = pv && pv.offsetParent, m = d.querySelector('.card').getBoundingClientRect();
+  const w = Math.min(240, m.width * .66), rc = shown ? pv.getBoundingClientRect() : { left:m.left + (m.width - w) / 2, top:m.top + m.height * .25, width:w, height:w * 1.05 };
+  const fly = document.createElement('div'); fly.className = 'cm-fly';
+  fly.style.cssText = `left:${rc.left}px; top:${rc.top}px; width:${rc.width}px; height:${rc.height}px; ${cardKv(o.kind)}`;
+  fly.innerHTML = `<i class="cm-ep back"></i><div class="cm-fly-card">${cardPv()}</div><i class="cm-ep front"></i><i class="cm-ep flap" style="z-index:0; transform:rotateX(180deg);"></i>`;
+  d.querySelector('.cm-btns').style.pointerEvents = 'none';
+  d.appendChild(fly);
+  if(shown) pv.style.visibility = 'hidden';
+  try {
+    const card = fly.querySelector('.cm-fly-card'), parts = [...fly.querySelectorAll('.cm-ep')], flap = fly.querySelector('.cm-ep.flap');
+    const anim = (el, kf, opt)=>el.animate(kf, { fill:'forwards', ...opt }).finished;
+    parts.forEach(p=>anim(p, [{ opacity:0, transform:(p===flap ? 'rotateX(180deg) ' : '') + 'translateY(20px)' }, { opacity:1, transform:p===flap ? 'rotateX(180deg)' : 'none' }], { duration:260, easing:'ease-out' }));
+    await anim(card, [{ transform:'none' }, { transform:'translateY(50%) scale(.8)' }], { duration:560, easing:'cubic-bezier(.5,0,.6,1)', delay:120 });
+    flap.style.zIndex = 4;
+    await anim(flap, [{ transform:'rotateX(180deg)' }, { transform:'rotateX(0deg)' }], { duration:320, easing:'ease-in-out' });
+    await anim(fly, [{ transform:'none', opacity:1 }, { transform:'translate(14px,6px) rotate(3deg)', opacity:1, offset:.2 }, { transform:'translate(300px,-360px) rotate(-16deg) scale(.45)', opacity:0 }], { duration:760, easing:'cubic-bezier(.45,0,.8,.45)' });
+  } finally { fly.remove(); }
+}
+async function cardSelfCheck(){   // 브라우저 콘솔에서 await cardSelfCheck() 실행 — 시연 카드 · 실제 로그인 흉내 · 화면 상태는 끝나면 되돌린다 (fetch 는 가짜 — 서버에 보내지 않는다)
+  const ok = (c,m)=>{ if(!c) throw new Error('cardSelfCheck 실패: '+m); };
+  const dom = html=>{ const t = document.createElement('template'); t.innerHTML = html; return t.content; };
+  ok(['cheer birthday', 'cheer welcome', 'cheer anniv', 'cheer joy', 'comfort', 'praise', 'thanks'].map(s=>cardSet(...s.split(' '))).join()==='birthday,welcome,anniv,joy,condol,praise,thanks', '그림 묶음 7가지 (cardSet)');
+  ok(String(pushGoParse('?go=ws.w3'))==='ws,w3', '알림 주소 ?go=ws.w3 = 워크스페이스 › 받은 카드');
+  ok(String(pushGoParse('?go=ws.w3.out'))==='ws,w3,out' && String(pushGoParse('?go=ws.w3.x'))==='ws,w3' && String(pushGoParse('?go=pay.p1.out'))==='pay,p1', '고마워요 알림 ?go=ws.w3.out = 받은 카드 › 보낸 카드 (다른 셋째 값은 버린다)');
+  { const nav0 = [selectNav, selectTab, CARD_UI.tab], went = [];
+    try {
+      selectNav = n=>{ went.push(n); }; selectTab = t=>{ went.push(t); };   // 화면은 옮기지 않고 어디로 가나만 본다
+      goTo(...pushGoParse('?go=ws.w3.out')); const out = CARD_UI.tab; goTo(...pushGoParse('?go=ws.w3'));
+      ok(went.join()==='ws,w3,ws,w3' && out==='out' && CARD_UI.tab==='in', '알림을 누르면: 고마워요(card_thanks)는 받은 카드 › 보낸 카드, 새 카드(card)는 받은 카드');
+    } finally { [selectNav, selectTab, CARD_UI.tab] = nav0; }
+  }
+  const demo0 = JSON.stringify(CARD_DEMO), keep = { live:AUTH.live, me:AUTH.me, box:{ ...CARD_LIVE }, ui:{ ...CARD_UI }, msg:kpiMsg, fetch:window.fetch, render:renderContent, recv:CARD_DEMO.received, sent:CARD_DEMO.sent,
+    mm:window.matchMedia, animate:Element.prototype.animate, org:{ ...ORG_LIVE }, role:kpiRole, push:{ state:PUSH.state, go:PUSH.go, ready:PUSH.ready },
+    arrive:cardArrive, tourSteps:tour.steps, wc:document.documentElement.classList.contains('wc-on'), locked:AUTH.locked };
+  const calls = [], row = ()=>homePortalTasks().find(p=>p.tab==='w3');
+  let reply = { ok:true, status:200, j:{ unread:0 } }, renders = 0;
+  try {
+    renderContent = ()=>{ renders++; };   // 검사하는 동안 화면은 그대로
+    window.fetch = async (url, o={})=>{ calls.push([url, o.method, o.body]); const x = typeof reply==='function' ? reply(url, o) : reply; if(x.wait) await x.wait; return { ok:x.ok ?? x.status<300, status:x.status, json:async()=>x.j }; };
+    kpiMsg = null; CARD_LIVE.opened = true;   // 검사 중에 카드함을 그려도 도착 창이 뜨지 않게 (처음 열기는 맨 아래에서 따로 본다)
+    // 시연: 시안처럼 새 카드 3장 — 메뉴 숫자 · 홈 "새 카드 확인"이 같은 셈, 누르는 일은 이 브라우저에서만 (앞서 누른 것과 상관없이 처음 상태로 본다)
+    AUTH.live = false; Object.assign(CARD_DEMO, cardDemoData());
+    ok(TODO.w3()===3 && TODO.w3()===CARD_DEMO.received.filter(c=>!c.read).length, '시연: TODO.w3 = 안 읽은 카드 3장');
+    ok(homePortalTasks().at(-1).tab==='w3' && row().title==='새 카드 확인 3건' && row().nav==='ws' && row().badge==='새 카드', '홈 오늘의 업무 맨 끝 "새 카드 확인 3건" → 워크스페이스 › 받은 카드');
+    const d0 = CARD_DEMO.received.find(c=>!c.read);
+    await cardOpen(d0.id); orgCloseModal();
+    ok(d0.read && TODO.w3()===2 && !calls.length, '시연: 열면 읽음 (서버에 보내지 않음)');
+    let w = dom(cardContent());
+    ok(!w.querySelector('[onclick="cardSend({})"]').disabled && !w.querySelector('.placeholder-note'), '시연: [카드 쓰기] 켜짐 · 안내 없음');
+    // 실제 로그인: 숫자는 서버가 센 안 읽은 수
+    AUTH.live = true; AUTH.me = { ...(keep.me || {}), name:'가상나' };
+    const card = (id, date, x)=>({ id, kind:'praise', reason:null, art:1, text:'가상 글 '+id, date, from:{ id:9, name:'가상보낸이', title:'프로', dept:'가상팀' }, read:true, thanked:false, hidden:false, ...x });
+    Object.assign(CARD_LIVE, { state:'ok', ready:true, unread:1, sent:[], received:[card(14, '2026-10-21', { kind:'cheer', reason:'birthday', from:{ id:8, name:'<i>가상', title:'', dept:'' }, text:'<b>축하</b>' }),
+      card(11, '2026-10-02'), card(12, '2026-10-20', { read:false }), card(13, '2026-10-05', { hidden:true })] });
+    ok(TODO.w3()===1 && row().title==='새 카드 확인', '실제 로그인: TODO.w3 = 서버가 센 안 읽은 수 · 1건이면 "새 카드 확인"');
+    w = dom(cardContent());
+    ok([...w.querySelectorAll('.cm-wall .cm-msg')].map(p=>p.textContent).join()==='<b>축하</b>,가상 글 12,가상 글 11', '카드 모음: 숨긴 카드는 빠지고 받은 날 순 (최근이 위)');
+    ok(w.querySelector('.cm-foot').textContent.includes('숨긴 카드 1장 보기') && w.querySelector('.cm-foot').textContent.includes('카드는 받은 분과 보낸 분만 볼 수 있어요.') && !w.textContent.includes('HR도'), '"숨긴 카드 1장 보기" · 안내 문구');
+    ok(w.querySelectorAll('.cm-new').length===1 && w.querySelector('.cm-sum .coral b').textContent==='1' && !w.querySelector('.placeholder-note'), 'NEW 표시 · 새 카드 숫자 · 열쇠가 있으면 안내 없음');
+    ok(!w.querySelector('.cm-mini-meta i, .cm-msg b') && w.textContent.includes('<i>가상'), '이름 · 글은 글자 그대로');
+    ok(w.querySelector('.cm-ktag').textContent==='축하 · 생일' && w.querySelector('.cm-mini img').getAttribute('src')==='img/cards/birthday-1.jpg?v=1', '꼬리표 "축하 · 생일" · 그림 주소');
+    const src = html=>dom(html).querySelector('img').getAttribute('src');
+    ok(src(cardArt('cheer', null, 9))==='img/cards/praise-1.jpg?v=1' && src(cardArt('cheer', '../x"', '1"'))==='img/cards/praise-1.jpg?v=1' && src(cardArt('constructor', 'joy', 0))==='img/cards/praise-1.jpg?v=1' && src(cardArt('comfort', 'joy', 4))==='img/cards/condol-4.jpg?v=1', '모르는 묶음 · 번호는 알려진 그림(칭찬 1번)으로');
+    const bad = card(15, '2026-10-22', { kind:'nope', reason:'x', art:7 });
+    CARD_LIVE.received.push(bad); w = dom(cardContent()); CARD_LIVE.received.pop();
+    ok(w.querySelectorAll('.cm-wall .cm-mini').length===4 && [...w.querySelectorAll('.cm-ktag')].some(t=>t.textContent==='카드') && dom(cardFace({ ...bad, toName:'가', fromName:'나' })).querySelector('.cm-tag').textContent==='카드', '모르는 종류의 카드도 탭을 비우지 않고 회색 "카드"로');
+    CARD_UI.hid = true; w = dom(cardContent()); CARD_UI.hid = false;
+    ok(w.querySelector('.cm-hid-wall .cm-msg').textContent==='가상 글 13' && w.querySelector('.cm-hid-wall .cm-more button').textContent==='다시 보이기', '숨긴 카드 보기 → 다시 보이기');
+    // 열기 · 고마워요 · 숨기기 — 서버에 한 번씩, 안 읽은 수는 서버 답으로
+    reply.j = { unread:0 };
+    await Promise.all([cardOpen(12), cardOpen(12)]);
+    const m = document.getElementById('orgModal');
+    ok(m && m.querySelector('.cm-face') && m.textContent.includes('To. 가상나님') && m.querySelector('[onclick^="cardSend({ to:"]'), '크게 보기: 카드 · [답장 쓰기]');
+    orgCloseModal();
+    ok(calls.length===1 && calls[0][0]==='/api/cards/12/read' && calls[0][1]==='POST' && CARD_LIVE.unread===0 && TODO.w3()===0 && !row() && renders>0, '열면 읽음 요청 한 번 (두 번 열어도) → 메뉴 숫자는 서버 답');
+    await cardOpen(12); orgCloseModal(); ok(calls.length===1, '이미 읽은 카드는 다시 보내지 않는다');
+    const b = document.createElement('button'), c11 = cardFind(11);
+    await Promise.all([cardThanks(b, c11), cardThanks(b, c11)]); await cardThanks(b, c11);
+    ok(calls.length===2 && calls[1][0]==='/api/cards/11/thanks' && c11.thanked && b.textContent.includes('고마워요 보냄') && kpiMsg.msg==='가상보낸이 님께 고마워요를 보냈어요.', '고마워요: 여러 번 눌러도 요청 한 번 · 알림 줄');
+    reply.j = {};   // 숫자가 없는 답 — 전 숫자 그대로
+    await Promise.all([cardHide(14, true), cardHide(14, true)]);
+    ok(CARD_LIVE.unread===0, '안 읽은 수가 없는 답이면 전 숫자 그대로');
+    ok(calls.length===3 && calls[2][0]==='/api/cards/14/hide' && calls[2][2]==='{"hidden":true}' && cardFind(14).hidden && !dom(cardContent()).querySelector('.cm-wall').textContent.includes('축하'), '숨기기: 두 번 눌러도 요청 한 번 · 모음에서 빠짐');
+    reply = { ok:false, status:404, j:{ error:'카드를 찾을 수 없어요.' } };
+    const c12 = cardFind(12), b2 = document.createElement('button');
+    await cardThanks(b2, c12);
+    ok(!c12.thanked && !b2.disabled && kpiMsg.type==='danger' && kpiMsg.msg==='카드를 찾을 수 없어요.', '안 되면 그대로 · 서버 문구');
+    // 보낸 카드 줄
+    const sent = (id, x)=>({ id, kind:'thanks', reason:null, art:1, text:'가상 보낸 글', date:'2026-10-20', to:{ id:7, name:'가상받은이', title:'', dept:'가상팀' }, read:false, thanked:false, ...x });
+    CARD_LIVE.sent = [sent(21), sent(22, { read:true, thanked:true }), sent(23, { read:true })]; CARD_UI.tab = 'out'; w = dom(cardContent()); CARD_UI.tab = 'in';
+    ok([...w.querySelectorAll('.cm-sent > :last-child')].map(e=>e.textContent.trim()).join()==='읽기 전,고마워요 받음,' && w.textContent.includes('보낸 카드는 지우거나 고칠 수 없어요.'), '보낸 카드: 읽기 전 · 고마워요 받음 · 읽었으면 표시 없음');
+    // 서버 열쇠가 없다 (ready:false)
+    Object.assign(CARD_LIVE, { ready:false, unread:0, received:[], sent:[] }); kpiMsg = null;
+    w = dom(cardContent());
+    ok(cardNoKey() && w.querySelectorAll('.placeholder-note').length===1 && w.querySelector('.placeholder-note').textContent==='서버 설정이 아직 끝나지 않아 카드를 보내고 받을 수 없어요.', '열쇠 없음(cardNoKey — 카드 상자가 답한 뒤): 맨 위 안내 한 줄');
+    ok(w.querySelector('[onclick="cardSend({})"]').disabled, '열쇠 없음: [카드 쓰기] 막힘');
+    AUTH.live = false; ok(!dom(cardContent()).querySelector('[onclick="cardSend({})"]').disabled, '시연은 열쇠와 상관없이 켜짐'); AUTH.live = true;
+    CARD_LIVE.state = ''; ok(dom(cardContent()).textContent.includes('불러오는 중'), '불러오기 전에는 안내만');
+    for(const [st, rd, on] of [['', false, false], ['err', false, false], ['ok', false, true], ['ok', true, false]]){
+      Object.assign(CARD_LIVE, { state:st, ready:rd }); const x = dom(cardContent()), add = x.querySelector('[onclick="cardSend({})"]');
+      ok(cardNoKey()===on && x.textContent.includes('서버 설정이 아직 끝나지 않아')===on && (!add || add.disabled===on), `열쇠 없음 안내 · [카드 쓰기] 막힘은 cardNoKey() 와 같다 (state '${st}' · ready ${rd} → ${on ? '안내' : '없음'})`);
+    }
+    // ---- 카드 보내기 (Task 6): 창 · 종류 칩 · 예시 문구 · 글 규칙 · 보내기 (fetch · 움직임 · '움직임 줄이기' 는 가짜) ----
+    let rm = true, flies = 0;
+    window.matchMedia = q=>/reduced-motion/.test(q) ? { matches:rm } : keep.mm.call(window, q);
+    Element.prototype.animate = function(){ if(this.matches('.cm-fly')) flies++; return { finished:Promise.resolve(), cancel(){} }; };   // 움직임은 바로 끝난다
+    AUTH.live = true; AUTH.me = { ...(keep.me || {}), name:'가상나' }; Object.assign(CARD_LIVE, { state:'ok', ready:true });
+    const OPT = (...ks)=>ks.map(k=>({ kind:k.split(' ')[0], reason:k.split(' ')[1] || null }));
+    let optR = { status:200, j:{ options:OPT('cheer birthday', 'cheer anniv', 'praise', 'thanks'), sentToday:false } }, postR = { status:201, j:{ id:77 } };
+    const box = { ready:true, unread:0, received:[], sent:[] }, org = { divisions:[], hr:false, members:[
+      { id:5, name:'가상받는이', title:'프로', division:'가상본부', team:'가상팀', lead:'', ext:'', email:'', mobile:null, mailNo:'', me:false },
+      { id:6, name:'가상나', title:'프로', division:'가상본부', team:'가상팀', lead:'', ext:'', email:'', mobile:null, mailNo:'', me:true }] };
+    let orgR = { status:200, j:org };
+    reply = (url, o)=>url==='/api/cards' ? (o.method==='POST' ? postR : { status:200, j:box }) : url.startsWith('/api/cards/options') ? optR : url==='/api/org' ? orgR : { status:404, j:{} };
+    const to = { id:9, name:'<i>가상받는이', title:'프로', dept:'가상팀' };
+    const M = ()=>document.querySelector('#orgModal .cm-send'), chips = ()=>[...M().querySelectorAll('.cm-kinds button')], names = ()=>chips().map(b=>b.textContent).join();
+    const ex = ()=>[...M().querySelectorAll('.cm-ex button')].map(b=>b.textContent).join('|'), ta = ()=>M().querySelector('#cmText'), btn = ()=>M().querySelector('#cmSend'), red = ()=>M().querySelector('#cmErr').textContent;
+    const type = v=>{ ta().value = v; ta().dispatchEvent(new Event('input')); };
+    calls.length = 0;
+    await cardSend({ to, reason:'anniv' });
+    ok(calls.length===1 && calls[0][0]==='/api/cards/options?to=9' && names()==='축하 · 생일,축하 · 입사 기념,칭찬,감사' && chips()[1].getAttribute('aria-pressed')==='true', '생일 + 입사 기념: 칩 넷 · 준 사유(입사 기념)가 처음 골라짐 · 받는 분은 서버 번호로 묻는다');
+    ok(M().querySelector('.cm-to-row').textContent.includes('<i>가상받는이') && !M().querySelector('.cm-to-row i') && M().querySelector('.cm-why').textContent==='생일 · 입사 기념 소식이 있어요', '받는 분 이름은 글자 그대로 · 소식 칩');
+    ok(M().querySelector('.cm-note').textContent.trim()==='받는 분만 볼 수 있어요 · 같은 분께는 하루 한 장 · 보내면 휴대폰으로 알려 드려요' && M().querySelector('.cm-pv-label').textContent==='받는 분에게 이렇게 보여요' && btn().disabled, '안내 한 줄 · 미리 보기 · 글이 없으면 [보내기] 막힘');
+    ok(ex()==='입사 기념일 축하해요. 늘 든든해요.|함께해 줘서 고마워요.|앞으로도 잘 부탁해요!', '예시 문구: 입사 기념');
+    chips()[0].click(); ok(ex()==='생일 축하해요! 오늘은 맛있는 거 많이 드세요.|생일 축하해요. 늘 고마워요.|행복한 생일 보내세요!' && chips()[0].getAttribute('aria-pressed')==='true', '예시 문구: 생일');
+    chips()[2].click(); ok(ex()==='이번 일 정말 멋지게 해냈어요.|꼼꼼하게 챙겨 줘서 큰 도움이 됐어요.|늘 먼저 나서 줘서 든든해요.', '예시 문구: 칭찬');
+    chips()[3].click(); ok(ex()==='바쁜데도 도와줘서 고마워요.|덕분에 일이 잘 끝났어요.|오늘도 수고 많았어요.', '예시 문구: 감사');
+    M().querySelectorAll('.cm-ex button')[1].click();
+    ok(ta().value==='덕분에 일이 잘 끝났어요.' && M().querySelector('#cmPv .cm-msg').textContent==='덕분에 일이 잘 끝났어요.' && M().querySelector('#cmPv .cm-tag').textContent==='감사' && !btn().disabled, '예시 칩을 누르면 글 칸 · 미리 보기에 들어감');
+    for(const [v, why] of [['가'.repeat(151), '글은 150자까지 쓸 수 있어요.'], ['😀'.repeat(151), '글은 150자까지 쓸 수 있어요.'], ['a\nb\nc\nd', '글은 세 줄까지 쓸 수 있어요.'], [' a \r\n b \r\n c \r\n d ', '글은 세 줄까지 쓸 수 있어요.'], ['  \n ', ''], ['가\u0001', '글에 쓸 수 없는 글자가 있어요.'], ['가\ud800', '글에 쓸 수 없는 글자가 있어요.']]){
+      type(v); const n = calls.length; await cardSent();
+      ok(btn().disabled && calls.length===n && red()===why, `글 규칙: [보내기] 막힘 · 요청 안 감 (${why || '빈칸'})`);
+    }
+    const verdict = v=>{ const [t, bad] = cardText(v); return bad || t; };
+    for(const [v, want] of [['가\u2028나', '가\n나'], ['\ufeff 가 \ufeff', '가'], ['\x85가\x85', '가'], ['가\u200b나', '가\u200b나'],
+      ['가\u2028나\u2029다\x85라', '글은 세 줄까지 쓸 수 있어요.'], ['\u200b\u200c\u200d\u2060\ufeff', '글을 적어 주세요.'], [' \u200b \n \u3164 ', '글을 적어 주세요.'],
+      [' '.repeat(590) + '가' + ' '.repeat(9), '가'], [' '.repeat(591) + '가' + ' '.repeat(9), '글은 150자까지 쓸 수 있어요.']])   // 서버 cards.check 의 같은 표
+      ok(verdict(v)===want, `글 규칙이 서버와 같다: ${JSON.stringify(v)} → ${JSON.stringify(want)} (화면 ${JSON.stringify(verdict(v))})`);
+    type('\u200b\u2060\ufeff'); ok(btn().disabled && red()==='' && M().querySelector('#cmLen').textContent==='0/150', '보이는 글자가 없으면 빈 글 — 붉은 줄 없이 [보내기] 막힘 · 0/150');
+    type('😀'.repeat(150)); ok(!btn().disabled && M().querySelector('#cmLen').textContent==='150/150', '150자 (그림 글자도 한 자로 센다)');
+    type(' 가 \n 나 \n 다 '); ok(!btn().disabled && M().querySelector('#cmLen').textContent==='5/150' && red()==='', '세 줄까지 · 줄마다 앞뒤 빈칸은 세지 않는다');
+    type('가'.repeat(151)); const eo = new MutationObserver(()=>{}); eo.observe(M().querySelector('#cmErr'), { childList:true, characterData:true, subtree:true });
+    type('나'.repeat(151)); type('다'.repeat(152)); const quiet = eo.takeRecords().length===0; type('가'); const moved = eo.takeRecords().length>0; eo.disconnect();
+    ok(quiet && moved && red()==='', '붉은 줄(role=alert)은 글이 바뀔 때만 다시 쓴다 — 같은 안내면 그대로');
+    // 보내는 동안 막힘 · 실패면 창이 남고 서버 문구
+    type('고마워요'); postR = { status:403, j:{ error:'지금은 이 카드를 보낼 수 없어요.' } }; rm = false; flies = 0; calls.length = 0;
+    const s1 = cardSent(), busy = btn().disabled; await Promise.all([s1, cardSent()]);
+    ok(busy && calls.filter(c=>c[1]==='POST').length===1, '보내는 동안 [보내기] 막힘 — 두 번 눌러도 POST 한 번');
+    ok(M() && red()==='지금은 이 카드를 보낼 수 없어요.' && !btn().disabled && ta().value==='고마워요' && !flies && !document.querySelector('.cm-fly'), '403: 움직임 없이 창이 남고 붉은 줄에 서버 문구 · 단추 다시 켬 · 쓴 글 그대로');
+    postR = { status:409, j:{ error:'오늘은 이미 이 분께 카드를 보냈어요. 내일 다시 보내 주세요.' } }; await cardSent();
+    ok(M() && btn().disabled && red()==='오늘은 이미 <i>가상받는이 님께 카드를 보냈어요' && !flies, '409: 오늘 이미 보낸 것으로 — [보내기] 막힌 채 안내');
+    await cardSend({ to }); chips()[3].click();
+    // 201: '움직임 줄이기'면 날아가지 않는다 → 창 닫고 알림 줄 → 카드 상자 다시 읽기
+    M().querySelectorAll('.cm-arts button')[2].click(); type('  고마워요 '); postR = { status:201, j:{ id:77 } }; rm = true; calls.length = 0;
+    const added = [], mo = new MutationObserver(rs=>rs.forEach(r=>added.push(...r.addedNodes))), isFly = n=>n.nodeType===1 && (n.matches('.cm-fly') || !!n.querySelector('.cm-fly'));
+    mo.observe(document.body, { childList:true, subtree:true });
+    await cardSent();
+    mo.takeRecords().forEach(r=>added.push(...r.addedNodes)); mo.disconnect();
+    ok(calls[0][0]==='/api/cards' && calls[0][1]==='POST' && calls[0][2]==='{"to":9,"kind":"thanks","reason":null,"art":3,"text":"고마워요"}', 'POST: 받는 분 서버 번호 · 종류 · 그림 번호 · 다듬은 글');
+    ok(!added.some(isFly) && !flies, '움직임 줄이기: .cm-fly 가 생기지 않는다');
+    ok(!M() && kpiMsg.msg==='&lt;i&gt;가상받는이 님께 카드를 보냈어요.' && calls.some(c=>c[0]==='/api/cards' && !c[1]), '201: 창 닫고 알림 줄 (이름은 글자 그대로) → 카드 상자 다시 읽기');
+    // 움직임: 봉투가 날아간 뒤 아무것도 남지 않는다 · 날아가는 중에 닫아도
+    rm = false; await cardSend({ to }); type('고마워요'); added.length = 0; mo.observe(document.body, { childList:true, subtree:true });
+    await cardSent();
+    mo.takeRecords().forEach(r=>added.push(...r.addedNodes)); mo.disconnect();
+    ok(flies===1 && added.some(isFly) && !document.querySelector('.cm-fly') && !M(), '움직임: 봉투가 생겨 날아가고 창이 닫힌 뒤 아무것도 남지 않는다 (같은 관찰자가 봉투를 본다)');
+    const hold = []; Element.prototype.animate = function(){ return { finished:new Promise(r=>hold.push(r)), cancel(){} }; };
+    await cardSend({ to }); type('고마워요'); kpiMsg = null;
+    let fin = false; const s3 = cardSent().then(()=>{ fin = true; });
+    for(let i = 0; i < 200 && !hold.length; i++) await null;
+    const flying = !!document.querySelector('#orgModal .cm-fly');
+    orgCloseModal(); const gone = !document.querySelector('.cm-fly'); orgModal('<div class="cm-test">다른 창</div>');
+    for(let i = 0; i < 500 && !fin; i++){ hold.splice(0).forEach(r=>r()); await null; }
+    await s3;
+    ok(flying && gone && document.querySelector('#orgModal .cm-test') && kpiMsg && kpiMsg.msg.endsWith('님께 카드를 보냈어요.'), '날아가는 중에 창을 닫으면 봉투도 함께 사라진다 · 그 뒤에 연 다른 창은 닫지 않는다 · 알림 줄은 그대로');
+    orgCloseModal(); Element.prototype.animate = function(){ if(this.matches('.cm-fly')) flies++; return { finished:Promise.resolve(), cancel(){} }; };
+    // 오늘 이미 보냄 · 조사 · 받을 수 없는 분
+    optR = { status:200, j:{ options:OPT('praise', 'thanks'), sentToday:true } }; await cardSend({ to }); type('고마워요');
+    ok(btn().disabled && red()==='오늘은 이미 <i>가상받는이 님께 카드를 보냈어요', 'sentToday: [보내기] 막힘 · 안내');
+    let optGo; optR = { status:200, j:{ options:OPT('comfort'), sentToday:false }, wait:new Promise(r=>optGo = r) };
+    const p0 = cardSend({ to });
+    ok(M().querySelector('.cm-kinds').textContent==='불러오는 중이에요…' && !M().querySelectorAll('.cm-ex button').length && btn().disabled, '종류를 묻는 동안: 예시 칩 없음 · [보내기] 막힘');
+    optGo(); await p0;
+    ok(names()==='위로' && chips()[0].getAttribute('aria-pressed')==='true' && ex()==='마음 깊이 위로를 전합니다.|힘든 시간 잘 이겨 내시길 바랍니다.|필요한 일 있으면 언제든 말씀해 주세요.' && ta().placeholder==='위로의 마음을 적어 주세요', '조사: 칩 "위로" 하나 · 위로 문구');
+    optR = { status:404, j:{ error:'카드를 받을 수 없는 분이에요.' } }; await cardSend({ to }); type('고마워요');
+    ok(red()==='카드를 받을 수 없는 분이에요.' && btn().disabled && !chips().length && !M().querySelectorAll('.cm-ex button').length, '받을 수 없는 분(404): 붉은 줄 · [보내기] 막힘 · 예시 칩 없음');
+    optR = { status:200, j:{ options:OPT('praise', 'thanks'), sentToday:false } };
+    Object.assign(CARD_LIVE, { state:'ok', ready:false }); await cardSend({ to }); type('고마워요'); calls.length = 0; await cardSent();
+    ok(red()==='서버 설정이 아직 끝나지 않아 카드를 보낼 수 없어요.' && btn().disabled && !calls.length, '카드 상자가 열쇠 없음이라고 답함(state ok · ready false): 창을 열 때부터 안내 · [보내기] 막힘 · 요청 안 감');
+    for(const st of ['', 'err']){
+      Object.assign(CARD_LIVE, { state:st, ready:false }); await cardSend({ to }); type('고마워요');
+      ok(red()==='' && !btn().disabled, `카드 상자를 아직 모름(state '${st}'): 막지 않는다 — 보내면 서버가 답한다`);
+    }
+    Object.assign(CARD_LIVE, { state:'ok', ready:true });
+    Object.assign(ORG_LIVE, { state:'', people:[], tree:[] }); await cardSend({ to });
+    ok(M().querySelector('#cmPv .cm-from').textContent===`From. 가상나 · ${kpiMd(kpiDay(0))}`, '미리 보기: 내 직급을 아직 모르면 이름 · 오늘 날짜(M/D)');
+    // 받는 분 없이 열면 이름 찾기 — 조직도 명단을 불러오고, 나는 빠진다. 고르면 서버 번호로 종류를 묻는다
+    optR = { status:200, j:{ options:OPT('praise', 'thanks'), sentToday:false } }; Object.assign(ORG_LIVE, { state:'', people:[], tree:[] }); calls.length = 0;
+    let orgGo; orgR = { status:200, j:org, wait:new Promise(r=>orgGo = r) };
+    const l1 = orgLoad(), l2 = cardSend({}), fi = M().querySelector('#cmFindIn'); fi.value = '가상'; fi.dispatchEvent(new Event('input'));
+    const waiting = M().querySelector('#cmFound').textContent; orgGo(); await Promise.all([l1, l2]);
+    ok(calls.filter(c=>c[0]==='/api/org').length===1 && waiting==='명단을 불러오는 중이에요…' && [...M().querySelectorAll('#cmFound b')].map(b=>b.textContent).join()==='가상받는이', '명단을 불러오는 중에 열면 그 불러오기를 기다린다 (요청 한 번) · 다 오면 결과를 다시 그린다');
+    const find = v=>{ const i = M().querySelector('#cmFindIn'); i.value = v; i.dispatchEvent(new Event('input')); return [...M().querySelectorAll('#cmFound button')]; };
+    ok(calls.some(c=>c[0]==='/api/org') && ORG_LIVE.state==='ok' && M().querySelector('#cmFindIn').placeholder==='이름으로 찾기' && btn().disabled, '받는 분 없이 열면 이름 찾기 (명단을 불러옴) · [보내기] 막힘');
+    ok(find('가상').map(b=>b.querySelector('b').textContent).join()==='가상받는이' && !find('가상나').length && find('가상팀').length===1 && find('가상')[0].getAttribute('onclick')===`cardPick(${ORG_ID + 5})`, '이름 · 부서로 찾기 — 나는 빠지고, 단추는 번호만');
+    chips()[1].click(); type('고마워요'); await cardPick(ORG_ID + 5);
+    ok(calls.at(-1)[0]==='/api/cards/options?to=5' && M().querySelector('.cm-to-row b').textContent==='가상받는이' && chips()[1].getAttribute('aria-pressed')==='true' && ta().value==='고마워요' && !btn().disabled, '고르면 서버 번호(uid)로 묻고, 고른 종류 · 쓴 글은 그대로');
+    ok(M().querySelector('#cmPv .cm-from').textContent===`From. 가상나 프로 · ${kpiMd(kpiDay(0))}`, '미리 보기 = 받는 분이 보는 모양: From. 이름 직급(조직도의 내 줄) · M/D');
+    orgCloseModal();
+    // 시연: 보내는 곳 — 이번 주 소식 · 조직도 이름 창 (사유는 배너에서, 단추에는 번호만)
+    AUTH.live = false; kpiRole = 'emp'; Object.assign(CARD_DEMO, cardDemoData()); calls.length = 0;
+    celebShow('condol');
+    let rows = [...document.querySelectorAll('#orgModal .celeb-person')];
+    ok(rows.length && rows.every(p=>p.querySelector('.celeb-acts > :first-child').textContent==='위로 카드') && !document.getElementById('orgModal').textContent.includes('축하 카드'), 'celebShow(condol): 줄마다 맨 앞 [위로 카드]만');
+    celebShow('birthday'); rows = [...document.querySelectorAll('#orgModal .celeb-person')];
+    const mine = rows.find(p=>p.querySelector('.org-name').textContent===kpiOwner()), other = rows.find(p=>p!==mine), ob = other && other.querySelector('[onclick^="cardSendOrg("]');
+    ok(mine && !mine.querySelector('[onclick^="cardSendOrg("]') && ob && other.querySelector('.celeb-acts > :first-child')===ob && ob.textContent==='축하 카드' && /^cardSendOrg\(\d+, 'birthday'\)$/.test(ob.getAttribute('onclick')), '생일: 줄마다 맨 앞 [축하 카드] (번호 · 사유만) · 내 줄에는 없다');
+    const oid = +ob.getAttribute('onclick').match(/\d+/)[0], oname = orgFind(oid).name;
+    await cardSendOrg(oid, 'birthday');
+    ok(names()==='축하 · 생일,칭찬,감사' && chips()[0].getAttribute('aria-pressed')==='true' && M().querySelector('.cm-why').textContent==='생일 소식이 있어요', '시연: 소식에서 연 창 — 사유 칩이 처음 골라짐');
+    ok(M().querySelector('#cmPv .cm-from').textContent===`From. ${kpiOwner()} ${KPI_USERS[kpiRole].title} · ${kpiMd(kpiDay(0))}`, '시연 미리 보기: From. 시연 역할 이름 직급 · M/D');
+    type('생일 축하해요'); await cardSent();
+    ok(!calls.length && CARD_DEMO.sent[0].to.id===oid && CARD_DEMO.sent[0].reason==='birthday' && !M() && kpiMsg.msg===`${escapeHtml(oname)} 님께 카드를 보냈어요.`, '시연: 서버에 보내지 않고 보낸 카드에 더함');
+    await cardSendOrg(oid); ok(btn().disabled && red()===`오늘은 이미 ${oname} 님께 카드를 보냈어요`, '시연: 같은 분께는 하루 한 장');
+    const sad = { id:-7, type:'condol', memberId:oid, label:'가상 조사', until:kpiDay(1) }; celebEvents.push(sad);
+    try {
+      celebShow('birthday'); const sb = document.querySelector(`#orgModal [onclick^="cardSendOrg(${oid},"]`);
+      orgShow(oid); const so = document.querySelector(`#orgModal [onclick="cardSendOrg(${oid})"]`);
+      ok(sb && sb.textContent==='위로 카드' && sb.getAttribute('onclick')===`cardSendOrg(${oid}, null)` && so && so.textContent.trim()==='위로 카드 보내기', '조사가 게시 중인 분: 생일 줄에서도 [위로 카드](사유 없음) · 조직도 이름 창은 [위로 카드 보내기]');
+    } finally { celebEvents.splice(celebEvents.indexOf(sad), 1); }
+    const meM = orgMembers.find(m=>m.name===kpiOwner()), oth = orgMembers.find(m=>m.name!==kpiOwner()), a0 = oth.active;
+    orgShow(oth.id); const ok1 = document.querySelector(`#orgModal [onclick="cardSendOrg(${oth.id})"]`);
+    orgShow(meM.id); const ok2 = document.querySelector('#orgModal [onclick^="cardSendOrg("]');
+    oth.active = false; orgShow(oth.id); const ok3 = document.querySelector('#orgModal [onclick^="cardSendOrg("]'); if(a0===undefined) delete oth.active; else oth.active = a0;
+    ok(ok1 && ok1.textContent.trim()==='칭찬 · 감사 카드 보내기' && !ok2 && !ok3, 'orgShow: [칭찬 · 감사 카드 보내기] — 나 · 비활성에게는 없다');
+    orgCloseModal();
+    // ---- 카드가 왔어요 (Task 7): 들어올 때 자동 창 · 넘겨 보면 읽음 · 고마워요 · 움직임 · 카드함 처음 열기 (움직임은 바로 끝나는 가짜 — 몇 번 움직였나만 센다) ----
+    const tick = ()=>new Promise(r=>setTimeout(r)), A = ()=>document.getElementById('cmArrive'), cnt = ()=>A().querySelector('.cm-count').textContent, tb = ()=>A().querySelector('.cm-thanks');
+    const bits = ()=>document.querySelectorAll('.cm-ep,.cm-p,.cm-fly,.cm-pop').length, title = ()=>document.querySelector('#orgModal .card-title')?.textContent || '';
+    let fx = {};
+    const fxAnim = function(){ for(const k of ['ep', 'p', 'pop', 'face']) if(this.matches('.cm-'+k)) fx[k] = (fx[k] || 0) + 1; return { finished:Promise.resolve(), cancel(){} }; };
+    Element.prototype.animate = fxAnim; rm = false;
+    const wait = ms=>new Promise(r=>setTimeout(r, ms)), wcOn = v=>document.documentElement.classList.toggle('wc-on', v);
+    wcOn(false); tour.steps = null;   // 검사하는 창에 환영 페이지 · 둘러보기가 떠 있어도 (끝나면 되돌린다)
+    AUTH.live = true; AUTH.me = { ...(keep.me || {}), name:'가상나', department:'가상팀', kind:'phone' }; Object.assign(PUSH, { state:'on', go:false, ready:Promise.resolve() });
+    let left = 2;
+    reply = url=>/\/read$/.test(url) ? { status:200, j:{ unread:--left } } : /\/thanks$/.test(url) ? { status:200, j:{ unread:left } } : url==='/api/phone' ? { status:200, j:{ phone:null } } : { status:404, j:{} };
+    Object.assign(CARD_LIVE, { state:'ok', ready:true, unread:2, sent:[], received:[card(32, '2026-10-24', { kind:'thanks', read:false }), card(31, '2026-10-23', { kind:'comfort', read:false }), card(30, '2026-10-01')] });
+    calls.length = 0; fx = {};
+    await todayPopAuto(); await tick();
+    ok(A() && cnt()==='1 / 2' && A().querySelector('.cm-msg').textContent==='가상 글 31' && A().textContent.includes('받은 카드는 워크스페이스 › 받은 카드에 모여요.'), '안 읽은 2장: 들어올 때 오늘 할 일보다 먼저 "카드가 왔어요 1 / 2" — 오래된 것부터 · 안내 한 줄');
+    ok(fx.ep>0 && fx.p>0 && fx.p<=3 && !bits(), '처음 여는 카드는 봉투째 · 조사(위로)는 흰 꽃잎 3장 이하 · 끝나면 조각이 남지 않는다');
+    ok(A().querySelector('.cm-acts').style.pointerEvents==='' && A().querySelector('.cm-acts').style.opacity==='' && !A().querySelector('.cm-acts').inert, '봉투가 다 열리면 단추 줄을 되돌린다 (보임 · 눌림 · 키보드)');
+    fx = {}; A().querySelector('[aria-label="다음 카드"]').click(); await tick();
+    ok(cnt()==='2 / 2' && fx.ep>0 && fx.p===8 && A().querySelector('[aria-label="다음 카드"]').disabled && !bits(), '넘기면 다음 카드도 봉투째 · 감사는 하트 8개 · 마지막 카드에서 [›] 막힘');
+    fx = {}; A().querySelector('[aria-label="앞 카드"]').click(); await tick();
+    ok(cnt()==='1 / 2' && !fx.ep && fx.face===1 && fx.p===3 && !bits(), '넘겨 본 카드로 돌아오면 봉투 없이 가볍게 떠오르기 + 효과 한 번');
+    A().querySelector('[aria-label="다음 카드"]').click(); await tick();
+    ok(calls.map(c=>c[0]).join()==='/api/cards/31/read,/api/cards/32/read' && calls.every(c=>c[1]==='POST') && CARD_LIVE.unread===0 && cardFind(31).read && cardFind(32).read,'읽음 요청은 보인 카드마다 한 번 (돌아오기 · 다시 넘기기에는 보내지 않음) → 숫자는 서버 답');
+    A().querySelector('.x-btn').click();
+    ok(!A() && title().startsWith('오늘 할 일'), '들어올 때 뜬 도착 창을 닫으면(X) 오늘 할 일 창');
+    orgCloseModal();
+    await todayPopAuto(); ok(!A() && title().startsWith('오늘 할 일'), '안 읽은 카드가 없으면 들어올 때 바로 오늘 할 일 창'); orgCloseModal();
+    // 휴대폰 등록 묻기 · 아이폰 알림 묻기가 먼저 떴어도 닫으면 카드가 이어서 (배너 단추로 연 창은 그대로)
+    CARD_LIVE.received.push(card(33, '2026-10-25'));
+    const unread1 = ()=>{ Object.assign(cardFind(33), { read:false, thanked:false }); CARD_LIVE.unread = 1; left = 1; };
+    unread1(); await phoneSelfAsk(true); document.querySelector('#orgModal .x-btn').click();
+    ok(A() && cnt()==='1 / 1', '들어올 때 뜬 휴대폰 등록 묻기를 닫으면 안 읽은 카드가 도착 창으로');
+    A().querySelector('.x-btn').click(); ok(title().startsWith('오늘 할 일'), '… 그 창도 닫으면 오늘 할 일'); orgCloseModal();
+    unread1(); pushAsk(); document.querySelector('#orgModal .x-btn').click();
+    ok(A() && cnt()==='1 / 1', '아이폰 알림 묻기를 닫으면 안 읽은 카드가 도착 창으로'); orgCloseModal();
+    unread1(); await phoneSelfAsk(); document.querySelector('#orgModal .x-btn').click();
+    ok(!document.getElementById('orgModal'), '배너 단추로 연 휴대폰 등록 창은 닫으면 그냥 닫힌다');
+    // 고마워요: 두 번 눌러도 요청 한 번 · 하트 6개
+    unread1(); calls.length = 0; fx = {};
+    cardArrive(0); await tick();
+    tb().click(); tb().click(); await tick(); tb().click(); await tick();
+    ok(calls.filter(c=>/\/thanks$/.test(c[0])).length===1 && cardFind(33).thanked && tb().textContent.includes('고마워요 보냄') && fx.pop===6 && !bits() && kpiMsg.msg==='가상보낸이 님께 고마워요를 보냈어요.', '고마워요: 두 번 눌러도 요청 한 번 · 하트 6개가 퐁 · 끝나면 남지 않음 · 알림 줄');
+    orgCloseModal();
+    const replyWas = reply; let thanksGo; reply = ()=>({ status:200, j:{ unread:0 }, wait:new Promise(r=>thanksGo = r) });
+    Object.assign(cardFind(33), { read:true, thanked:false }); calls.length = 0; fx = {};
+    cardArrive(0, [cardFind(33), cardFind(30)]); await tick();
+    tb().click(); A().querySelector('[aria-label="다음 카드"]').click(); A().querySelector('[aria-label="앞 카드"]').click(); fx.pop = 0; tb().click(); await tick();
+    const busyPops = fx.pop, busyCalls = calls.length; thanksGo(); await tick(); await tick();
+    ok(busyCalls===1 && !busyPops && calls.length===1 && cardFind(33).thanked, '고마워요를 보내는 중(넘겼다 돌아와 다시 누름)에는 하트도 요청도 없다');
+    orgCloseModal(); reply = replyWas;
+    // 종류별 효과 개수 (시안 burst) · 카드함에서 크게 보기는 가볍게
+    for(const [k, r, n] of [['cheer', 'birthday', 30], ['cheer', 'joy', 30], ['cheer', 'welcome', 12], ['cheer', 'anniv', 12], ['praise', null, 9], ['thanks', null, 8], ['comfort', null, 3]]){
+      fx = {}; cardArrive(0, [card(40, '2026-10-26', { kind:k, reason:r })]); await tick();
+      ok(fx.p===n && fx.ep>0 && !bits(), `효과 개수: ${cardTag({ kind:k, reason:r })} ${n}개`);
+    }
+    orgCloseModal(); fx = {}; await cardOpen(30); await tick();
+    ok(document.querySelector('#orgModal .cm-stage') && !A() && !fx.ep && fx.face===1 && fx.p===9 && !bits(), '카드함에서 크게 보기: 봉투 없이 가볍게 떠오르기 + 칭찬 반짝이 9개');
+    orgCloseModal();
+    // 움직임 줄이기: 봉투 · 효과 · 하트 없이 카드가 바로
+    rm = true; unread1(); fx = {};
+    cardArrive(0);
+    const still = !!A() && !bits() && A().querySelector('.cm-face').style.opacity==='' && A().querySelector('.cm-acts').style.opacity==='';
+    tb().click(); await tick(); await cardOpen(30);
+    ok(still && !Object.keys(fx).length && !bits() && cardFind(33).thanked, '움직임 줄이기: 봉투 · 효과 · 하트 없이 카드가 바로 보인다 (카드함에서 열어도)');
+    orgCloseModal(); rm = false;
+    // 움직이는 중에 X로 닫으면 조각이 남지 않는다 (움직임이 끝난 뒤에도)
+    const held = []; Element.prototype.animate = function(){ return { finished:new Promise(r=>held.push(r)), cancel(){} }; };
+    unread1(); cardArrive(0); await tick(); tb().click(); await tick();
+    const mid = A().querySelectorAll('.cm-ep').length===3 && document.querySelectorAll('#orgModal .cm-pop').length===6 && A().querySelector('.cm-acts').style.pointerEvents==='none' && A().querySelector('.cm-acts').inert;
+    A().querySelector('.x-btn').click(); const none = !bits();
+    for(let i = 0; i < 50 && held.length; i++){ held.splice(0).forEach(r=>r()); await tick(); }
+    ok(mid && none && !bits() && !document.getElementById('orgModal'), '봉투가 열리는 동안 단추 줄은 눌리지 않고(X 는 된다) · 그때 X로 닫으면 봉투 · 효과 · 하트 조각이 남지 않는다 (움직임이 끝난 뒤에도)');
+    Element.prototype.animate = fxAnim;
+    // 읽음 요청이 안 되면 창은 그대로
+    unread1(); reply = ()=>({ status:500, j:{} });
+    await cardArrive(0);
+    ok(A() && cnt()==='1 / 1' && !cardFind(33).read && CARD_LIVE.unread===1, '읽음 요청이 안 돼도 창은 그대로 (읽음 · 숫자도 그대로)');
+    orgCloseModal();
+    // 받은 카드 탭을 처음 그리면 도착 창 한 번 (알림 ?go=ws.w3 으로 들어와도 같은 길) — 두 번째는 뜨지 않는다
+    reply = url=>/\/read$/.test(url) ? { status:200, j:{ unread:0 } } : { status:404, j:{} };
+    CARD_LIVE.opened = false; unread1(); dom(cardContent()); await tick();
+    const first = !!A() && cnt()==='1 / 1'; orgCloseModal();
+    unread1(); dom(cardContent()); await tick();
+    ok(first && !document.getElementById('orgModal') && CARD_LIVE.opened, '카드함을 처음 그리면 도착 창 한 번 · 다음에는 뜨지 않는다');
+    let arrives = 0; cardArrive = ()=>{ arrives++; };   // 여는 일만 센다 (표시는 켜지 않는 가짜)
+    CARD_LIVE.opened = false; unread1(); dom(cardContent()); dom(cardContent()); await tick(); await tick(); cardArrive = keep.arrive;
+    ok(arrives===1 && !CARD_LIVE.pending, '창 없이 두 번 그려도 도착 창을 여는 일은 한 번 (기다리는 줄은 하나)');
+    for(const [who, on, off] of [['환영 페이지가', ()=>wcOn(true), ()=>wcOn(false)], ['다른 창이', ()=>orgModal('<div class="cm-test">다른 창</div>'), ()=>orgCloseModal()], ['사이트 둘러보기가', ()=>{ tour.steps = [{}]; }, ()=>{ tour.steps = null; }]]){
+      CARD_LIVE.opened = false; unread1(); on(); dom(cardContent()); await wait(350);
+      const waited = !A() && !CARD_LIVE.opened && CARD_LIVE.pending; off(); await wait(350);
+      const came = !!A() && cnt()==='1 / 1' && CARD_LIVE.opened && !CARD_LIVE.pending; orgCloseModal(); await wait(350);
+      ok(waited && came && !document.getElementById('orgModal'), `${who} 떠 있으면 표시를 쓰지 않고 기다렸다가, 닫힌 뒤에 도착 창 한 번 · 그 뒤로는 그만`);
+    }
+    ok(typeof cardArriveWhenFree==='function' && String(wcEnter).includes('tourFirst()) return void authReady.then(cardArriveWhenFree)'), '환영 페이지에서 들어와 사이트 둘러보기가 뜨면, 로그인 확인 뒤 cardArriveWhenFree (바로 들어온 길도 맨 아래에서 같은 것)');
+    CARD_LIVE.opened = false; unread1(); tour.steps = [{}]; cardArriveWhenFree(); await wait(350);
+    const tourHeld = !A() && !CARD_LIVE.opened && CARD_LIVE.pending; tour.steps = null; await wait(350);
+    const tourCame = !!A() && cnt()==='1 / 1' && CARD_LIVE.opened && !CARD_LIVE.pending; orgCloseModal(); cardArriveWhenFree(); await wait(350);
+    ok(tourHeld && tourCame && !document.getElementById('orgModal'), '처음 들어온 날: 둘러보기가 떠 있는 동안 기다렸다가 끝나면 도착 창 한 번 · 다시 불러도 안 뜸');
+    CARD_LIVE.opened = false; unread1(); tour.steps = [{}]; cardArriveWhenFree(); AUTH.locked = true; tour.steps = null; await wait(350);
+    const tourLocked = !document.getElementById('orgModal') && !CARD_LIVE.pending && !CARD_LIVE.opened; AUTH.locked = false;
+    Object.assign(cardFind(33), { read:true }); CARD_LIVE.unread = 0; cardArriveWhenFree(); await wait(350);
+    ok(tourLocked && !document.getElementById('orgModal') && !CARD_LIVE.pending && !CARD_LIVE.opened, '둘러보기 뒤: 잠기면 · 안 읽은 카드가 없으면 아무것도 안 뜬다');
+    CARD_LIVE.opened = false; unread1(); orgModal('<div class="cm-test">다른 창</div>'); dom(cardContent()); await tick();
+    Object.assign(cardFind(33), { read:true }); CARD_LIVE.unread = 0; orgCloseModal(); await wait(350);
+    ok(!document.getElementById('orgModal') && !CARD_LIVE.pending && !CARD_LIVE.opened, '기다리는 동안 다 읽었으면 띄우지 않고 그만');
+    CARD_LIVE.opened = false; unread1(); calls.length = 0; orgModal('<div class="cm-test">다른 창</div>'); dom(cardContent()); await tick();
+    AUTH.locked = true; orgCloseModal(); await wait(350); const lockedEnd = !document.getElementById('orgModal') && !CARD_LIVE.pending && !CARD_LIVE.opened && !calls.length; AUTH.locked = false;
+    ok(lockedEnd, '기다리는 동안 로그아웃 · 세션 끝(잠금)이면 띄우지 않고 그만 (가린 화면 밑에 카드 · 읽음 요청 없음)');
+    AUTH.live = false; Object.assign(CARD_DEMO, cardDemoData()); CARD_LIVE.opened = false; calls.length = 0;
+    dom(cardContent()); await tick();
+    const d1 = !!A() && cnt()==='1 / 3' && A().querySelector('.cm-msg').textContent===CARD_DEMO.received[2].text; orgCloseModal();
+    dom(cardContent()); await tick();
+    ok(d1 && !document.getElementById('orgModal') && !calls.length && CARD_DEMO.received[2].read, '시연: 카드함을 처음 열면 도착 창 한 번 (오래된 것부터 · 서버에 보내지 않음) · 두 번째는 안 뜸');
+    AUTH.live = true;
+  } finally {
+    [AUTH.live, AUTH.me, kpiMsg, window.fetch, renderContent, window.matchMedia, Element.prototype.animate, kpiRole] = [keep.live, keep.me, keep.msg, keep.fetch, keep.render, keep.mm, keep.animate, keep.role];
+    Object.assign(ORG_LIVE, keep.org); Object.assign(PUSH, keep.push);
+    cardArrive = keep.arrive; tour.steps = keep.tourSteps; document.documentElement.classList.toggle('wc-on', keep.wc); AUTH.locked = keep.locked;
+    Object.assign(CARD_LIVE, keep.box); Object.assign(CARD_UI, keep.ui); CARD_DEMO.received = keep.recv; CARD_DEMO.sent = keep.sent;
+    orgCloseModal();
+  }
+  ok(JSON.stringify(CARD_DEMO)===demo0, '시연 카드는 검사 전 그대로');
+  renderContent();
+  return 'cardSelfCheck 통과';
+}
+
 /* ---------------- NAV DATA ---------------- */
 const NAV = [
   { id:'home', label:'홈', icon:'home', tabs:[ {id:'dash', label:'대시보드', render:homeContent} ] },
   { id:'ws', label:'워크스페이스', icon:'edit', tabs:[
       {id:'w1', label:'나의 업무', render:wsContent},
       {id:'w2', label:'나의 일상', render:rtContent},
+      {id:'w3', label:'받은 카드', render:cardContent},   // 축하 · 칭찬 카드 — 휴대폰 알림은 /?go=ws.w3
   ]},
   { id:'pay', label:'급여·계약', icon:'wallet', tabs:[
       {id:'p1', label:'급여명세서', render:payContent},
@@ -13579,6 +14420,7 @@ const TODO = {
     : kpiWaiting().length + (kpiSheets[kpiRole]?.rejectNote ? 1 : 0) + kvMemoTodo(kvMe()),   // 승인할 KPI + 반려되어 다시 쓸 내 KPI + 확인할 메모
   e4: ()=>!kvCanUse() ? 0 : AUTH.live ? kpiRev('check') + kpiRev('replies') : kvReplyTodo(kvMe()),   // 실제 로그인: 그 달 기록을 확인 안 한 바로 아래 사람 + 내가 쓴 메모에 새 답글이 온 사람 (처리함 review) / 시연: 새 답글이 온 사람 수
   e2: ()=>evTodo(),
+  w3: ()=>cardList().unread,   // 안 읽은 받은 카드 (실제 로그인: 서버가 센 숫자 — 9시 묶음 · 아이콘 숫자와 같은 셈)
   e3: ()=>AUTH.live ? 0 : (kpiIsHr() ? evPeople.filter(p=>p.appeal && p.appeal.status==='OPEN').length : 0) + evPeople.filter(p=>p.appeal && p.appeal.status==='CEO' && evCeoActs(p)).length,   // HR: 답변할 이의 신청 / 대표이사(또는 맡은 HR): 확인할 등급 변경
 };
 function todoCount(tab){ return TODO[tab.id] ? TODO[tab.id]() : 0; }
@@ -13666,7 +14508,8 @@ function selectTab(id){
   renderContent();
   tourAuto();
 }
-function goTo(navId, tabId){
+function goTo(navId, tabId, view){   // view: 받은 카드의 'out'(보낸 카드) — 알림 ?go=ws.w3.out 만 준다
+  if(navId==='ws' && tabId==='w3') CARD_UI.tab = view==='out' ? 'out' : 'in';   // 받은 카드로 가는 길(홈 "새 카드 확인" · 새 카드 알림)은 받은 카드부터
   if(navId==='pay' && tabId==='p1') ps.view = 'me';   // 홈 "새 급여명세서 확인" · 빠른 서비스 · 원천징수영수증의 "급여명세서 보기"는 HR도 내 명세서 화면으로
   if(navId==='pay' && tabId==='p3'){ wh.view = 'me'; whViewKey = null; }   // 홈 "새 원천징수영수증 확인"(이 길뿐): HR도 전에 고른 직원이 아니라 내 영수증으로 — 그래야 내 숫자가 줄어든다 (시연은 null이면 내 역할)
   if(selectNav(navId) === false) return;   // 휴대폰에서 막힌 메뉴 — 안내창만 뜬다
@@ -13996,7 +14839,7 @@ async function authBoot(){
   await wsPull(true);   // 나의 업무 · 나의 일상을 서버에서 (이 기기에 적어 둔 것은 처음 한 번 합친다)
   setInterval(pinTick, 5e3);   // 쉰 시간 보기 — 1분 가림 · 5분 잠금 (풀려 있을 때만 일을 한다)
   await pinBoot();   // 급여 비밀번호 상태 + 메뉴 숫자용: 공개됐는데 아직 안 연 내 급여명세서 · 원천징수영수증 · 서명할 내 연봉계약서 (잠겨 있으면 숫자만 — /api/pay/counts)
-  const kpi = kpiLiveLoad();   // 메뉴 · 홈의 처리할 KPI 숫자 — 기다리지 않는다 (다 오면 다시 그린다)
+  const kpi = Promise.all([kpiLiveLoad(), cardLoad()]);   // 메뉴 · 홈의 처리할 KPI · 새 카드 숫자 — 기다리지 않는다 (다 오면 다시 그린다)
   evLiveLoad();   // 평가 진행 · 메뉴 숫자 — 기다리지 않는다
   renderSidebar(); renderContent();
   if(code) installNotice(null, true);   // 방금 등록한 휴대폰: 홈 화면에 추가하는 순서
@@ -14006,7 +14849,7 @@ async function authBoot(){
     const u = new URL(location.href); u.searchParams.delete('go'); history.replaceState(null, '', u.pathname + u.search + u.hash);   // 새로 고침 · 앱 다시 열기에서 또 옮기지 않게
   }
   PUSH.ready = new Promise(r=>pushInit(r));   // 휴대폰 알림 — 기다리지 않는다 (휴대폰 세션일 때만 한다). 오늘 할 일 창(todayPopAuto)만 상태가 정해질 때까지 기다려 아직 안 켠 앱이면 묻는다
-  return kpi;   // 오늘 할 일 창(todayPopAuto)은 KPI까지 온 뒤에 — 처리할 KPI 줄이 빠지지 않게
+  return kpi;   // 오늘 할 일 창(todayPopAuto)은 KPI · 카드까지 온 뒤에 — 처리할 KPI · 새 카드 줄이 빠지지 않게
 }
 // ponytail: 창을 닫았는지는 서버가 알 수 없어 화면이 판단한다. 개발자 도구로 표시를 만들면 넘어갈 수 있다 — 세션 쿠키는 브라우저를 끄면 사라지고, 서버 만료(4시간·12시간)는 그대로
 function authEntered(){   // 하이웍스 메뉴로 연 창인가. 표시는 창마다 따로(sessionStorage) — 창을 닫으면 사라지고 새로 고침에는 남는다
@@ -14024,8 +14867,9 @@ window.fetch = async (...a)=>{ const r = await authFetch(...a); if(r.status===40
 
 renderContent();
 a11yEnhance(document.body);
-if(!document.documentElement.classList.contains('wc-on')) tourFirst();   // 환영 페이지가 뜨지 않는 날에 처음 온 브라우저: 바로 사이트 둘러보기
+const tourNow = !document.documentElement.classList.contains('wc-on') && tourFirst();   // 환영 페이지가 뜨지 않는 날에 처음 온 브라우저: 바로 사이트 둘러보기
 authReady = authBoot();
+if(tourNow) authReady.then(cardArriveWhenFree);   // 둘러보기가 끝나면 안 읽은 카드 도착 창 (오늘 할 일 창은 둘러보기가 떠 있어 이번엔 뜨지 않는다 — todayPopAuto)
 const navType = performance.getEntriesByType('navigation')[0]?.type || 'navigate';   // navigate = 새로 들어옴(새 창 · 앱을 새로 열기 · 링크). reload = 새로 고침, back_forward = 뒤로 가기
 if(!document.documentElement.classList.contains('wc-on') && navType==='navigate') todayPopAuto();   // 환영 페이지가 뜨지 않을 때도 오늘 할 일 (뜰 때는 들어가는 순간 wcEnter가 부른다). 창(앱)을 닫았다 열어도 남는 표시(sessionStorage)에 기대지 않는다
 </script>

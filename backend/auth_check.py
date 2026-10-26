@@ -2462,7 +2462,8 @@ def check_push_pending(hr) -> None:
              "inbox": len(ib["items"]), "back": int(km["plan"] is not None and km["plan"]["noteKind"] == "RETURNED"),
              "prev": pr.json["todo"]["prev"] if pr is not None and pr.status_code == 200 else 0,
              "memos": ib["review"]["memos"], "check": ib["review"]["check"] if leads else 0, "replies": ib["review"]["replies"] if leads else 0,
-             "e2": sum(c.get("/api/eval/state", base_url=BASE).json["todo"].values())}  # 평가 진행 (TODO.e2 = evTodo — 서버 todo 의 me + admin)
+             "e2": sum(c.get("/api/eval/state", base_url=BASE).json["todo"].values()),  # 평가 진행 (TODO.e2 = evTodo — 서버 todo 의 me + admin)
+             "cards": c.get("/api/cards", base_url=BASE).json["unread"]}  # 새 카드 (카드 상자의 안 읽음)
         return [(k, n[k]) for k in push.LABELS if n[k]]
 
     def same(c, uid: int, label: str) -> list[tuple[str, int]]:
@@ -7413,6 +7414,379 @@ def check_eval_score(hr) -> None:
             x("UPDATE users SET is_active = 1, deactivated_at = NULL WHERE id = ?", uid)
 
 
+def check_cards(hr) -> None:
+    """축하 · 칭찬 카드 (2026-10-26): 보내기(하루 한 장 · 동시에도) · 받는 사람에 따른 종류(생일 · 새 식구 · 입사 기념 · 경사 · 조사) · 받을 수 없는 사람 · 남의 카드 404(HR 도 같다) ·
+    읽음 · 고마워요 · 숨기기 · 글 검사 · 열쇠 없음 · 알림(받으면 · 고마워요 · 9시 묶음 새 카드 · 근무시간 밖 · 푸시가 고장나도 응답 그대로) · 감사로그 없음. 글은 서버 열쇠(HR_PAY_KEY)로 잠겨 DB 에 그대로 없다. 급여 비밀번호 검문은 켠 채로 본다(카드 길은 그 앞머리가 아니다).
+    가상 사람 6명(6311~6316, 부서는 seed 의 가상팀)을 만들고, 끝나면 카드 줄 · 경사 · 조사 · 이 검사의 세션을 지우고 가상 사람은 비활성으로 둔다(로그인 감사로그가 가리켜 지울 수 없다). 열쇠 · 로그 설정은 되돌린다."""
+    import base64
+    import unittest
+
+    import cards
+    import push
+
+    print("축하 · 칭찬 카드")
+    A, B, C, D, E, F = cast = tuple(range(6311, 6317))  # 보내는 사람 · 받는 사람 · 구경꾼 · 포털 사용이 꺼진 사람 · 비활성 · 조직도에서 뺀 사람
+    mine = ",".join(map(str, cast))
+    raw_key, had = bytes(range(32)), os.environ.pop("HR_PAY_KEY", None)  # 열쇠는 글자로 적지 않고 여기서 만든다
+    key = base64.b64encode(raw_key).decode()
+    today = auth._today()
+    day, soon, ago = today.isoformat(), (today + timedelta(days=3)).isoformat(), (today - timedelta(days=1)).isoformat()
+    had_sessions = {r[0] for r in q("SELECT token_hash FROM sessions")}
+    logs: list[str] = []
+
+    class Grab(logging.Handler):  # 검사 내내 조용히 모으기만 한다(레벨은 그대로) — 끝에 이름 · 글이 새지 않았는지 본다
+        def emit(self, rec: logging.LogRecord) -> None:
+            logs.append(rec.getMessage())
+
+    grab, root = Grab(level=logging.DEBUG), logging.getLogger()
+
+    M_SHAPE, M_WHO, M_NOW = "보낸 내용의 모양이 올바르지 않아요.", "카드를 받을 수 없는 분이에요.", "지금은 이 카드를 보낼 수 없어요."
+    M_ONCE, M_KEY, M_GONE = "오늘은 이미 이 분께 카드를 보냈어요. 내일 다시 보내 주세요.", "서버 설정이 아직 끝나지 않아 카드를 보낼 수 없어요.", "카드를 찾을 수 없어요."
+    is_err = lambda r, code, msg: r.status_code == code and r.json == {"error": msg}  # noqa: E731
+    PRAISE, THANKS, COMFORT = ({"kind": k, "reason": None} for k in ("praise", "thanks", "comfort"))
+    cheer = lambda reason: {"kind": "cheer", "reason": reason}  # noqa: E731
+    get = lambda c, p="/api/cards": c.get(p, base_url=BASE)  # noqa: E731
+    post = lambda c, p, body=None, headers=ORIGIN: c.post(p, base_url=BASE, headers=headers, json=body)  # noqa: E731
+    form = lambda to=B, **kw: {"to": to, "kind": "praise", "reason": None, "art": 1, "text": "카드글 가상 칭찬이에요", **kw}  # noqa: E731
+    send = lambda c, to=B, **kw: post(c, "/api/cards", form(to, **kw))  # noqa: E731
+    opts = lambda c, to: get(c, f"/api/cards/options?to={to}")  # noqa: E731
+    total = lambda: q(f"SELECT COUNT(*) FROM cards WHERE sender_id IN ({mine}) OR recipient_id IN ({mine})")[0][0]  # noqa: E731
+    cnt = lambda s, r: q("SELECT COUNT(*) FROM cards WHERE sender_id = ? AND recipient_id = ?", s, r)[0][0]  # noqa: E731
+    row = lambda cid: q("SELECT sender_id, recipient_id, kind, reason, art, body, sent_on, created_at, read_at, thanked_at, hidden_at FROM cards WHERE id = ?", cid)  # noqa: E731
+    content = lambda cid: q("SELECT sender_id, recipient_id, kind, reason, art, body, sent_on, created_at FROM cards WHERE id = ?", cid)  # noqa: E731
+    wipe = lambda: x(f"DELETE FROM cards WHERE sender_id IN ({mine}) OR recipient_id IN ({mine})")  # noqa: E731
+    reset_b = lambda: (x("UPDATE users SET birthday = NULL, birthday_public = 1, hire_date = NULL WHERE id = ?", B), x("DELETE FROM celeb_events WHERE user_id = ?", B))  # noqa: E731
+
+    def client(uid: int):
+        c = app.test_client()
+        login(c, new_token(f"HW-{uid}"))
+        return c
+
+    def event(kind: str, until: str) -> None:
+        x("INSERT INTO celeb_events (user_id, kind, label, until_date, created_by, created_at) VALUES (?, ?, '가상', ?, 1, ?)", B, kind, until, auth._iso(auth._now()))
+
+    try:
+        os.environ["HR_PAY_KEY"] = key
+        root.addHandler(grab)
+        for uid, portal, active, hidden, title in ((A, 1, 1, 0, "프로"), (B, 1, 1, 0, None), (C, 1, 1, 0, None), (D, 0, 1, 0, None), (E, 1, 0, 0, None), (F, 1, 1, 1, None)):
+            x("INSERT INTO users (id, name, email, department_id, hiworks_user_no, portal_enabled, is_active, deactivated_at, org_hidden, title)"
+              " VALUES (?, ?, ?, 2, ?, ?, ?, ?, ?, ?)", uid, f"가상카드{'ABCDEF'[uid - A]}", f"card{uid}@example.invalid", f"HW-{uid}", portal, active,
+              None if active else "2027-01-01T00:00:00Z", hidden, title)
+        a, b, c = client(A), client(B), client(C)
+        audit0 = q("SELECT COUNT(*) FROM audit_logs WHERE action <> 'LOGIN'")
+
+        print("  - 칭찬_보내기_받기")
+        ok(get(app.test_client()).status_code == 401 and opts(app.test_client(), B).status_code == 401 and post(app.test_client(), "/api/cards", form()).status_code == 401
+           and post(a, "/api/cards", form(), headers={}).status_code == 403 and cnt(A, B) == 0, "로그인 없이는 401 · Origin 없는 보내기는 403 (카드 줄 없음)")
+        text1 = "카드글 가상 칭찬이에요\n두 줄"
+        r = send(a, art=2, text=text1)
+        cid = r.json.get("id")
+        ok(r.status_code == 201 and type(cid) is int, f"A → B 칭찬 보내기 201 ({r.status_code} {r.json})")
+        info = {"id": cid, "kind": "praise", "reason": None, "art": 2, "text": text1, "date": day}
+        who_a, who_b = {"id": A, "name": "가상카드A", "title": "프로", "dept": "가상팀"}, {"id": B, "name": "가상카드B", "title": "", "dept": "가상팀"}
+        ok(get(b).json == {"ready": True, "unread": 1, "received": [{**info, "from": who_a, "read": False, "thanked": False, "hidden": False}], "sent": []},
+           "B 의 목록: 받은 카드 1장 (글 · 보낸 사람 이름 · 직급 · 부서) · 안 읽음 1 · 보낸 카드 없음")
+        ok(get(a).json == {"ready": True, "unread": 0, "received": [], "sent": [{**info, "to": who_b, "read": False, "thanked": False}]},
+           "A 의 목록: 보낸 카드 1장 (받는 사람 title 이 없으면 빈 글) · 읽지 않음 · 받은 카드 없음")
+        s = row(cid)[0]
+        shown = [r, get(b), get(a), opts(a, B), post(b, "/api/cards/999999/read")]  # 보내기 · 상자 · options · 오류 응답 모두
+        ok(all(resp.headers.get("Cache-Control") == "no-store" and resp.headers.get("Referrer-Policy") == "no-referrer" for resp in shown),
+           "풀어서 내려 주는 글이라 카드 길의 성공 · 오류 응답 모두 Cache-Control: no-store + Referrer-Policy: no-referrer")
+        ok(s[:5] == (A, B, "praise", None, 2) and s[6] == day and len(s[7]) == 20 and s[7].endswith("Z") and s[8:] == (None, None, None)
+           and "칭찬이에요".encode() not in bytes(s[5]) and "두 줄".encode() not in bytes(s[5]) and cards.unseal_text(raw_key, A, B, day, s[5]) == text1,
+           "DB 에는 글이 그대로 없고(잠금) 열쇠 · 보낸 사람 · 받는 사람 · 날로만 풀림 · 읽음 · 고마워요 · 숨김 칸은 비어 있음")
+
+        print("  - 하루_한장_동시")
+        r = send(a, kind="thanks", art=3, text="카드글 또 보내요")
+        ok(is_err(r, 409, M_ONCE) and cnt(A, B) == 1, "같은 사람에게 같은 날 두 번째는 종류가 달라도 409 (문구)")
+        ok(opts(a, B).json["sentToday"] is True and opts(a, C).json["sentToday"] is False and opts(b, A).json["sentToday"] is False,
+           "options 의 sentToday: A → B 는 보냄 · A → C 는 아직 · B → A 는 방향이 달라 아직")
+        ok(send(a, C).status_code == 201 and send(b, A).status_code == 201 and opts(a, C).json["sentToday"] is True,
+           "다른 사람에게는 같은 날도 보낼 수 있고, 받은 사람이 거꾸로 보내는 것도 됨")
+        wipe()
+        crowd, start, codes = [app.test_client() for _ in range(6)], threading.Barrier(6), []
+        for cl in crowd:
+            cl.set_cookie(auth.COOKIE, cookie(a))  # A 창 여섯 개
+
+        def go(cl):
+            start.wait()
+            codes.append(send(cl, text="카드글 동시에").status_code)
+
+        ths = [threading.Thread(target=go, args=(cl,)) for cl in crowd]
+        for th in ths:
+            th.start()
+        for th in ths:
+            th.join()
+        ok(sorted(codes) == [201] + [409] * 5 and cnt(A, B) == 1, f"같은 사람에게 동시에 6번 보내도 1장만 201 · 나머지 409 ({sorted(codes)})")
+        real_sent, cards._sent_today = cards._sent_today, lambda *args: False  # 미리 보는 검사를 건너뛰어도 표의 UNIQUE 가 막고 409 로 답한다
+        try:
+            r = send(a, text="카드글 몰래")
+        finally:
+            cards._sent_today = real_sent
+        ok(is_err(r, 409, M_ONCE) and cnt(A, B) == 1, "미리 보는 검사를 건너뛰어 INSERT 가 표의 UNIQUE 에 걸려도 409 (500 아님)")
+
+        print("  - 생일_사유")
+        wipe()
+        x("UPDATE users SET birthday = ?, birthday_public = 1 WHERE id = ?", today.strftime("%m-%d"), B)
+        ok(opts(a, B).json == {"options": [cheer("birthday"), PRAISE, THANKS], "sentToday": False}, "B 생일이 오늘이고 알림이 켜져 있으면 options 에 cheer/birthday")
+        x("UPDATE users SET birthday_public = 0 WHERE id = ?", B)
+        ok(opts(a, B).json["options"] == [PRAISE, THANKS], "생일 알림을 끈 사람은 cheer 없음")
+        ok(is_err(send(a, kind="cheer", reason="birthday"), 403, M_NOW) and is_err(send(c, kind="cheer", reason="welcome"), 403, M_NOW)
+           and cnt(A, B) == 0 and cnt(C, B) == 0, "알림을 끈 사람에게 cheer/birthday · 사유가 없는 cheer/welcome 은 403 (문구) — 줄 없음")
+        x("UPDATE users SET birthday_public = 1 WHERE id = ?", B)
+        r = send(a, kind="cheer", reason="birthday", art=4, text="카드글 생일 축하해요")
+        ok(r.status_code == 201 and row(r.json["id"])[0][2:5] == ("cheer", "birthday", 4)
+           and get(b).json["received"][0]["kind"] == "cheer" and get(b).json["received"][0]["reason"] == "birthday", "알림을 켜면 cheer/birthday 201 — 종류 · 사유 · 그림 번호가 그대로 남음")
+        ok(is_err(send(c, kind="cheer", reason="anniv"), 403, M_NOW), "해당 없는 사유(입사 기념)는 그래도 403")
+
+        print("  - 새식구_입사기념_경사")
+        wipe()
+        reset_b()
+        x("UPDATE users SET hire_date = ? WHERE id = ?", (today - timedelta(days=10)).isoformat(), B)
+        ok(opts(a, B).json["options"] == [cheer("welcome"), PRAISE, THANKS], "입사 10일 전 → cheer/welcome")
+        x("UPDATE users SET hire_date = ? WHERE id = ?", date(today.year - 3, today.month, 1).isoformat(), B)
+        ok(opts(a, B).json["options"] == [cheer("anniv"), PRAISE, THANKS], "3년 전 이번 달 입사 → cheer/anniv")
+        x("UPDATE users SET hire_date = ? WHERE id = ?", date(today.year - 4, today.month, 1).isoformat(), B)
+        ok(opts(a, B).json["options"] == [PRAISE, THANKS], "4년 전 입사는 기념이 아님")
+        reset_b()
+        event("joy", soon)
+        ok(opts(a, B).json["options"] == [cheer("joy"), PRAISE, THANKS], "경사(celeb_events joy) 게시 중 → cheer/joy")
+        x("UPDATE celeb_events SET removed_at = ? WHERE user_id = ?", auth._iso(auth._now()), B)
+        event("joy", ago)
+        ok(opts(a, B).json["options"] == [PRAISE, THANKS], "내린 경사 · 게시가 끝난 경사는 없음")
+        x("UPDATE users SET birthday = ?, hire_date = ? WHERE id = ?", today.strftime("%m-%d"), (today - timedelta(days=10)).isoformat(), B)
+        event("joy", day)
+        ok(opts(a, B).json["options"] == [cheer("birthday"), cheer("welcome"), cheer("joy"), PRAISE, THANKS], "여럿이면 생일 · 새 식구 · 입사 기념 · 경사 순서로 모두 (게시 마지막 날까지)")
+
+        print("  - 조사_게시_뒤_축하_거부")
+        wipe()
+        event("condol", soon)
+        ok(opts(a, B).json == {"options": [COMFORT], "sentToday": False}, "조사 게시 중이면 생일 · 새 식구 · 경사가 있어도 options 는 comfort 하나")
+        ok(is_err(send(a), 403, M_NOW) and is_err(send(a, kind="thanks"), 403, M_NOW) and is_err(send(a, kind="cheer", reason="birthday"), 403, M_NOW) and cnt(A, B) == 0,
+           "조사 중에 praise · thanks · cheer 는 403 (줄 없음)")
+        r = send(a, kind="comfort", art=1, text="카드글 가상 위로예요")
+        ok(r.status_code == 201 and row(r.json["id"])[0][2:5] == ("comfort", None, 1) and get(b).json["received"][0]["kind"] == "comfort", "comfort 는 201")
+        ok(is_err(send(a, kind="comfort"), 409, M_ONCE), "위로도 하루 한 장")
+        x("UPDATE celeb_events SET removed_at = ? WHERE kind = 'condol' AND user_id = ?", auth._iso(auth._now()), B)
+        ok(is_err(send(c, kind="comfort"), 403, M_NOW) and send(c).status_code == 201, "조사를 내리면 comfort 는 403 · 칭찬은 다시 201")
+        reset_b()
+
+        print("  - 받을_수_없는_사람")
+        wipe()
+        for who, why in ((A, "본인"), (E, "비활성"), (F, "조직도에서 뺀 사람"), (999999, "없는 번호"), ("abc", "숫자가 아닌 값"), ("-1", "음수"), ("", "비어 있음")):
+            ok(is_err(opts(a, who), 404, M_WHO), f"options: {why} → 404 (문구)")
+        ok(is_err(get(a, "/api/cards/options"), 404, M_WHO), "options: ?to= 가 아예 없어도 404")
+        for who, why in ((A, "본인"), (E, "비활성"), (F, "조직도에서 뺀 사람"), (999999, "없는 번호")):
+            ok(is_err(send(a, who), 404, M_WHO) and total() == 0, f"보내기: {why} → 404 (문구) — 줄 없음")
+        dc = app.test_client()
+        login(dc, new_token(f"HW-{D}"))
+        ok(dc.get("/api/me", base_url=BASE).status_code == 401, "(전제) 포털 사용이 꺼진 D 는 로그인할 수 없음")
+        ok(opts(a, D).status_code == 200 and opts(a, D).json["options"] == [PRAISE, THANKS], "포털 사용이 꺼진 사람도 받을 수 있음 — options 200")
+        r = send(a, D, text="카드글 D 에게")
+        ok(r.status_code == 201 and cnt(A, D) == 1, "포털 사용이 꺼진 사람에게 보내기 201")
+        x("UPDATE users SET portal_enabled = 1 WHERE id = ?", D)
+        d = client(D)
+        got = get(d).json
+        ok(got["unread"] == 1 and [(k["id"], k["text"], k["from"]["id"]) for k in got["received"]] == [(r.json["id"], "카드글 D 에게", A)],
+           "포털 사용이 켜진 뒤 첫 로그인: 안 읽음 1 · 카드가 그대로 와 있음")
+
+        print("  - 남의_카드_404")
+        wipe()
+        cid = send(a, text="카드글 B 에게만").json["id"]
+        before = row(cid)
+        for who, cl in (("구경꾼 C", c), ("HR", hr), ("보낸 사람 A", a)):
+            res = [post(cl, f"/api/cards/{cid}/{path}", body) for path, body in (("read", None), ("thanks", None), ("hide", {"hidden": True}), ("hide", {"hidden": False}))]
+            ok(all(is_err(r, 404, M_GONE) for r in res) and row(cid) == before, f"{who}: 남의 카드 read · thanks · hide 는 모두 404 (문구) — DB 그대로")
+        ok(all(cid not in [k["id"] for k in get(cl).json["received"] + get(cl).json["sent"]] for cl in (c, hr)), "구경꾼 · HR 의 목록에는 남의 카드가 없음")
+        ok(all(is_err(post(b, f"/api/cards/{bad}/{path}", {"hidden": 5}), 404, M_GONE) for bad in ("999999", "abc", "-1", "0", "1.5", "99999999999999999999") for path in ("read", "thanks", "hide")),
+           "없는 번호 · 숫자가 아닌 번호 · 너무 큰 번호도 404 (모양이 틀린 본문보다 먼저)")
+
+        print("  - 읽음_고마워요_숨기기")
+        wipe()
+        ids = [send(sender, text=f"카드글 {n}").json["id"] for n, sender in enumerate((a, c, hr))]
+        c1, c2, c3 = ids
+        fixed = [content(i) for i in ids]
+        unread_of = lambda: get(b).json["unread"]  # noqa: E731
+        received = lambda cid: next(k for k in get(b).json["received"] if k["id"] == cid)  # noqa: E731
+        ok(unread_of() == 3 and [k["id"] for k in get(b).json["received"]] == ids[::-1], "받은 카드 3장 · 안 읽음 3 · 최근이 위")
+        r = post(b, f"/api/cards/{c1}/read")
+        ok(r.status_code == 200 and r.json == {"unread": 2} and unread_of() == 2 and get(a).json["sent"][0]["read"] is True and row(c1)[0][8] is not None, "읽음 → 200 {unread 2} · 보낸 사람 목록에 읽음")
+        x("UPDATE cards SET read_at = '2000-01-01T00:00:00Z' WHERE id = ?", c1)
+        r = post(b, f"/api/cards/{c1}/read")
+        ok(r.status_code == 200 and r.json == {"unread": 2} and row(c1)[0][8] == "2000-01-01T00:00:00Z", "이미 읽은 카드의 읽음은 200 · 그대로 (읽은 때가 바뀌지 않음)")
+        r = post(b, f"/api/cards/{c1}/thanks")
+        ok(r.status_code == 200 and get(a).json["sent"][0]["thanked"] is True and received(c1)["thanked"] is True and row(c1)[0][9] is not None and row(c1)[0][8] == "2000-01-01T00:00:00Z",
+           "고마워요 → 200 · A 의 보낸 목록에 thanked · 읽은 때는 그대로")
+        x("UPDATE cards SET thanked_at = '2000-01-01T00:00:01Z' WHERE id = ?", c1)
+        r = post(b, f"/api/cards/{c1}/thanks")
+        ok(r.status_code == 200 and row(c1)[0][9] == "2000-01-01T00:00:01Z" and row(c1)[0][8] == "2000-01-01T00:00:00Z", "두 번째 고마워요도 200 · thanked_at 그대로")
+        r = post(b, f"/api/cards/{c2}/thanks")
+        ok(r.status_code == 200 and r.json == {"unread": 1} and row(c2)[0][8] is not None and row(c2)[0][9] is not None and received(c2)["read"] is True,
+           "안 읽은 카드에 고마워요를 눌러도 읽음이 함께 채워짐 (안 읽음 1)")
+        r = post(b, f"/api/cards/{c3}/hide", {"hidden": True})
+        ok(r.status_code == 200 and r.json == {"unread": 0} and received(c3)["hidden"] is True and received(c3)["read"] is True and not received(c1)["hidden"]
+           and get(hr).json["sent"][0]["read"] is True and row(c3)[0][10] is not None, "숨기기 true → 200 · hidden True · 안 읽은 카드면 읽음도 채워짐 (안 읽음 0) — 다른 카드는 그대로")
+        x("UPDATE cards SET hidden_at = '2000-01-01T00:00:02Z', read_at = '2000-01-01T00:00:03Z' WHERE id = ?", c3)
+        r = post(b, f"/api/cards/{c3}/hide", {"hidden": True})
+        ok(r.status_code == 200 and row(c3)[0][10] == "2000-01-01T00:00:02Z" and row(c3)[0][8] == "2000-01-01T00:00:03Z", "이미 숨긴 카드를 또 숨겨도 200 · 그대로")
+        r = post(b, f"/api/cards/{c3}/hide", {"hidden": False})
+        ok(r.status_code == 200 and r.json == {"unread": 0} and received(c3)["hidden"] is False and row(c3)[0][10] is None and row(c3)[0][8] == "2000-01-01T00:00:03Z",
+           "숨기기 false → hidden False · 읽음은 그대로 (안 읽음 0)")
+        ok(post(b, f"/api/cards/{c3}/hide", {"hidden": False}).status_code == 200 and received(c3)["hidden"] is False, "숨기지 않은 카드의 숨기기 풀기도 200")
+        ok(all(is_err(post(b, f"/api/cards/{c2}/hide", body), 400, M_SHAPE) for body in (None, {}, {"hidden": "true"}, {"hidden": 1}, {"hidden": None}, [True])),
+           "숨기기 본문이 {hidden: true/false} 가 아니면 400")
+        ok([content(i) for i in ids] == fixed, "읽음 · 고마워요 · 숨기기를 거치고도 내용 칸(사람 · 종류 · 그림 · 잠근 글 · 날짜)은 바이트까지 그대로")
+
+        print("  - 글_검사")
+        wipe()
+        bad = (("가" * 151, "글은 150자까지 쓸 수 있어요."), ("가\n나\n다\n라", "글은 세 줄까지 쓸 수 있어요."), ("가\r\n나\r\n다\r\n라", "글은 세 줄까지 쓸 수 있어요."),
+               ("   \n  ", "글을 적어 주세요."), ("", "글을 적어 주세요."), (123, "글을 적어 주세요."), (None, "글을 적어 주세요."), (["가"], "글을 적어 주세요."),
+               ("가\x00나", "글에 쓸 수 없는 글자가 있어요."), ("가\x7f", "글에 쓸 수 없는 글자가 있어요."), ("가\ud800", "글에 쓸 수 없는 글자가 있어요."))
+        ok(all(is_err(send(a, text=t), 400, m) for t, m in bad), "글 검사: 151자 · 줄바꿈 3번(\\r\\n 도) · 빈칸만 · 글이 아님 · 쓸 수 없는 글자(NUL · DEL · 서로게이트) → 400 (각 문구)")
+        no_text = form()
+        del no_text["text"]
+        shapes = [(f"art={v!r}", form(art=v)) for v in (0, 5, "1", 1.5, True, None, [1])] + [("art 없음", {k: v for k, v in form().items() if k != "art"})]
+        shapes += [(f"kind={v!r}", form(kind=v)) for v in ("foo", None, ["praise"], 5, "")]
+        shapes += [("cheer 인데 사유 없음", form(kind="cheer")), ("praise 인데 사유 있음", form(reason="birthday")), ("없는 사유", form(kind="cheer", reason="bogus")), ("사유가 글이 아님", form(kind="cheer", reason=7))]
+        shapes += [(f"to={v!r}", form(v)) for v in (str(B), True, 0, -1, 1.5, 2**40, None, [B])] + [("to 없음", {k: v for k, v in form().items() if k != "to"})]
+        shapes += [("본문이 목록", [1]), ("본문이 글", "x")]
+        ok(all(is_err(post(a, "/api/cards", body), 400, M_SHAPE) for _, body in shapes), f"모양 검사: art 0/5/\"1\"/실수/true/없음 · 종류 이상 · cheer 와 사유가 안 맞음 · to 이상 · 본문이 객체가 아님 → 모두 400 ({len(shapes)}가지)")
+        ok(is_err(a.post("/api/cards", base_url=BASE, headers=ORIGIN, data="{", content_type="application/json"), 400, M_SHAPE) and is_err(post(a, "/api/cards", no_text), 400, "글을 적어 주세요."),
+           "깨진 JSON 은 400 · text 가 없으면 글 문구 400")
+        ok(total() == 0, "거부된 것은 한 줄도 남기지 않음")
+        t150 = "카드글" + "가" * 67 + " \r\n " + "나" * 40 + "\r\n" + "다" * 38  # 줄바꿈을 \n 으로 바꿔 세면 정확히 150자 · 세 줄
+        want = "카드글" + "가" * 67 + "\n" + "나" * 40 + "\n" + "다" * 38
+        r = send(a, text=t150)
+        ok(r.status_code == 201 and len(want) == 150 and get(b).json["received"][0]["text"] == want and get(a).json["sent"][0]["text"] == want,
+           "150자 · 세 줄(\\r\\n 은 \\n 으로 · 줄 끝 빈칸은 뗌)은 201 — 받는 사람 · 보낸 사람 모두 같은 글")
+
+        print("  - 열쇠_없음")
+        empty = {"ready": False, "unread": 0, "received": [], "sent": []}
+        ok(send(hr, text="카드글 둘째").status_code == 201, "(검사용) B 에게 카드를 한 장 더 — 열쇠가 바뀐 경우에 장 수를 세어 보려고")
+        os.environ.pop("HR_PAY_KEY")
+        ok(get(b).json == empty and get(a).json == empty, "열쇠를 빼면 GET 은 ready False · 빈 목록 · 안 읽음 0 (DB 에는 카드가 있음)")
+        ok(is_err(send(c), 503, M_KEY) and cnt(C, B) == 0, "열쇠가 없으면 보내기 503 (문구) — 줄 없음")
+        os.environ["HR_PAY_KEY"] = base64.b64encode(bytes(range(31))).decode()
+        ok(get(b).json == empty and is_err(send(c), 503, M_KEY), "32바이트가 아닌 열쇠는 없는 것과 같음")
+        os.environ["HR_PAY_KEY"] = base64.b64encode(os.urandom(32)).decode()  # 열쇠가 바뀐 경우
+        with unittest.TestCase().assertLogs("cards", "ERROR") as cm:  # 로그는 잡아 두어 검사 출력에 ERROR 가 섞이지 않게
+            rb, ra = get(b), get(a)
+        ok(rb.status_code == 200 and rb.json["ready"] is True and rb.json["received"] == [] and ra.status_code == 200 and ra.json["sent"] == []
+           and [rec.args for rec in cm.records] == [(2,), (1,)] and not any(w in line for line in cm.output for w in ("가상카드", "카드글", str(B), str(A))),
+           "열쇠가 바뀌어 풀리지 않는 카드는 목록에서 빠지고 500 이 아님 — 서버 로그에는 상자마다 한 번, 빠진 장 수(2 · 1)만 (이름 · 글 · 번호 없음)")
+        os.environ["HR_PAY_KEY"] = key
+        ok(get(b).json["unread"] == 2 and [k["text"] for k in get(b).json["received"]] == ["카드글 둘째", want], "열쇠를 되돌리면 다시 보임")
+
+        print("  - 카드_알림")
+        wipe()
+        T_FRI, T_SAT = datetime(2026, 10, 23, 10, 0, tzinfo=auth.KST), datetime(2026, 10, 24, 10, 0, tzinfo=auth.KST)  # 금 · 토 10:00 KST (근무시간 안 · 밖)
+        clock, calls, owner, mode = [T_FRI], [], {}, ["ok"]
+        real_now, real_send, real_sync = auth._now, push.SEND, push.SYNC
+        push_env = {k: os.environ.get(k) for k in ("HR_PUSH_PUBLIC", "HR_PUSH_PRIVATE")}
+
+        def fake_send(info, payload, ks, ttl):  # 보낸 것을 적어 두고, 고장 내기로 했으면 500 을 돌려주거나 던진다
+            calls.append((owner[info["endpoint"]], payload, ttl))
+            if mode[0] == "raise":
+                raise RuntimeError("검사용 고장")
+            return 500 if mode[0] == "500" else 201
+
+        def take() -> list:
+            """지금까지 보낸 것 [(받은 사람, 내용, ttl)] — 사람 순으로 돌려주고 비운다."""
+            rows = sorted(calls, key=lambda r: r[0])
+            calls.clear()
+            return rows
+
+        def pushed(uid: int, title: str, badge: int, url: str = "/?go=ws.w3") -> bool:
+            """방금 보낸 것이 정확히 uid 에게 한 통이고, 제목 · 내용 · 열 화면 · TTL · 앱 아이콘 숫자가 맞고, 내용에 이름 · 카드 글이 없는가."""
+            rows = take()
+            return (len(rows) == 1 and rows[0][0] == uid and rows[0][1] == {"title": title, "body": "눌러서 확인해 주세요", "url": url, "badge": badge}
+                    and rows[0][2] == push.TTL_EVENT and not any(w in json.dumps(rows[0][1], ensure_ascii=False) for w in ("가상카드", "카드글")))
+
+        def phone(uid: int) -> None:  # 가상 휴대폰 세션 + 구독 한 줄 (고정한 시각 기준) — 세션을 지우면 구독도 함께 지워진다
+            t, h, ep = clock[0].astimezone(timezone.utc), str(uid).ljust(64, "5"), f"https://push.example.invalid/card-{uid}"
+            x("INSERT INTO sessions (token_hash, user_id, created_at, last_seen_at, expires_at, kind) VALUES (?, ?, ?, ?, ?, 'phone')",
+              h, uid, auth._iso(t), auth._iso(t), auth._iso(t + timedelta(days=30)))
+            x("INSERT INTO push_subscriptions (token_hash, user_id, endpoint, p256dh, auth, created_at) VALUES (?, ?, ?, 'k', 'a', ?)", h, uid, ep, auth._iso(t))
+            owner[ep] = uid
+
+        try:
+            pub, priv = push.keygen()
+            os.environ.update(HR_PUSH_PUBLIC=pub, HR_PUSH_PRIVATE=priv)
+            auth._now = lambda: clock[0].astimezone(timezone.utc)
+            push.SYNC, push.SEND = True, fake_send
+            for uid in (A, B, C):
+                phone(uid)
+            ca, cb, cc = client(A), client(B), client(C)
+            r = send(ca, text="카드글 알림 시험")
+            first = r.json.get("id")
+            ok(r.status_code == 201 and pushed(B, "카드가 왔어요", 1),
+               "A → B 카드: B 의 휴대폰에만 한 통 (A · C 는 조용) — 제목 · 열 화면 · TTL · 아이콘 숫자 1 · 내용은 안내뿐 (이름 · 글 없음)")
+            x("UPDATE users SET portal_enabled = 0 WHERE id = ?", D)
+            phone(D)
+            ok(send(ca, D, text="카드글 D 에게").status_code == 201 and not take(), "포털 사용이 꺼진 사람에게 보내도 201 · 휴대폰 줄이 있어도 알림 없음")
+
+            print("  - 9시_묶음")
+            ok(push.pending(app, B) == [("cards", 1)] and push.pending(app, A) == [] and push.pending(app, C) == [],
+               f"처리할 일에 안 읽은 받은 카드가 새 카드로 셈 — 받은 B 만 1건, 보낸 A · 구경꾼 C 는 0 ({push.pending(app, B)})")
+            ok(push.morning_text([("cards", 2)]) == {"title": "처리할 일이 2건 있어요", "body": "새 카드 2건", "url": "/"}
+               and push.morning_text(push.pending(app, B))["body"] == "새 카드", "9시 묶음 문구: 2건이면 '새 카드 2건' · 1건이면 건수 없이 '새 카드'")
+            r = post(cb, f"/api/cards/{first}/read")
+            ok(r.status_code == 200 and push.pending(app, B) == [] and not take(), "카드를 읽으면 처리할 일에서 빠지고, 읽음은 알림을 보내지 않음")
+
+            print("  - 고마워요_알림")
+            ok(post(cb, f"/api/cards/{first}/thanks").status_code == 200 and pushed(A, "보낸 카드에 고마워요가 왔어요", 0, "/?go=ws.w3.out"),
+               "B 의 고마워요 → 보낸 A 의 휴대폰에만 한 통 (B 는 조용) · 누르면 받은 카드 › 보낸 카드 · 내용은 안내뿐 (이름 · 글 없음)")
+            ok(post(cb, f"/api/cards/{first}/thanks").status_code == 200 and not take(), "두 번째 고마워요는 아무것도 안 바꾸고 알림도 없음")
+
+            print("  - 알림이_고장나도")
+            mode[0] = "raise"
+            with unittest.TestCase().assertLogs("push", "WARNING") as cm:
+                r = send(ca, C, text="카드글 고장")
+            second = r.json.get("id")
+            ok(r.status_code == 201 and cnt(A, C) == 1 and len(take()) == 1 and cm.output == ["WARNING:push:event push failed: RuntimeError"],
+               "푸시 보내기가 던져도 보내기는 201 · 카드는 저장 · 로그에는 예외 종류만")
+            mode[0] = "500"
+            with unittest.TestCase().assertLogs("push", "WARNING") as cm:
+                r = post(cc, f"/api/cards/{second}/thanks")
+            ok(r.status_code == 200 and r.json == {"unread": 0} and row(second)[0][9] is not None and len(take()) == 1 and cm.output == ["WARNING:push:event push rejected: status 500"],
+               "푸시 서버가 500 이어도 고마워요는 200 · 저장 · 로그에는 상태 코드만")
+            mode[0] = "ok"
+
+            print("  - 근무시간_밖")
+            clock[0] = T_SAT
+            ca, cb = client(A), client(B)
+            r = send(ca, text="카드글 토요일")
+            weekend = r.json.get("id")
+            ok(r.status_code == 201 and cnt(A, B) == 2 and not take(), "토요일 10시에 보내기: 201 · 저장됨 · 알림 없음 (평일 9~18시만)")
+            ok(post(cb, f"/api/cards/{weekend}/thanks").status_code == 200 and row(weekend)[0][9] is not None and not take(), "토요일 10시에 고마워요: 200 · 저장됨 · 알림 없음")
+        finally:
+            push.SYNC, push.SEND, auth._now = real_sync, real_send, real_now
+            for k, v in push_env.items():
+                os.environ.pop(k, None)
+                if v is not None:
+                    os.environ[k] = v
+        ok(push.SEND is real_send and push.SYNC is real_sync and auth._now is real_now and all(os.environ.get(k) == v for k, v in push_env.items()),
+           "알림 검사가 끝나면 보내기 함수 · 시각 · 알림 키를 되돌림")
+
+        print("  - 감사로그_없음")
+        ok(q("SELECT COUNT(*) FROM audit_logs WHERE action LIKE '%CARD%' OR entity_type LIKE '%card%'") == [(0,)] and q("SELECT COUNT(*) FROM audit_logs WHERE action <> 'LOGIN'") == audit0,
+           "위 일들 뒤에 audit_logs 에 CARD 가 든 action 이 없고, 로그인 말고는 한 줄도 늘지 않음")
+        ok(not any("가상카드" in m or "카드글" in m for m in logs), "서버 로그에 이름 · 카드 글이 없음")
+    finally:
+        root.removeHandler(grab)
+        os.environ.pop("HR_PAY_KEY", None)
+        if had is not None:
+            os.environ["HR_PAY_KEY"] = had
+        x(f"DELETE FROM cards WHERE sender_id IN ({mine}) OR recipient_id IN ({mine})")
+        x(f"DELETE FROM celeb_events WHERE user_id IN ({mine})")
+        made = [h for (h,) in q(f"SELECT token_hash FROM sessions WHERE user_id IN ({mine})") if h not in had_sessions]
+        x(f"DELETE FROM sessions WHERE token_hash IN ({','.join('?' * len(made))})", *made)
+        x(f"UPDATE users SET is_active = 0, deactivated_at = '2027-01-01T00:00:00Z', portal_enabled = 0, birthday = NULL, hire_date = NULL WHERE id IN ({mine})")
+    ok(not q(f"SELECT 1 FROM cards WHERE sender_id IN ({mine}) OR recipient_id IN ({mine})") and not q(f"SELECT 1 FROM users WHERE id IN ({mine}) AND is_active = 1")
+       and not q(f"SELECT 1 FROM push_subscriptions WHERE user_id IN ({mine})") and os.environ.get("HR_PAY_KEY") == had and grab not in root.handlers,
+       "끝나면 카드 줄 · 경사 · 조사 · 세션(휴대폰 구독 포함)을 지우고 가상 사람은 비활성으로 두며 열쇠 · 로그 설정을 되돌림")
+
+
 def main() -> int:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     seed()
@@ -7670,6 +8044,7 @@ def main() -> int:
         check_push_events(hr)
         check_push_deadlines(hr)
     check_pay_pin(hr)
+    check_cards(hr)
 
     acts = {r[0] for r in q("SELECT action FROM audit_logs")}
     ok({"LOGIN", "HR_BOOTSTRAP"} <= acts, "감사로그 LOGIN 이 남음")

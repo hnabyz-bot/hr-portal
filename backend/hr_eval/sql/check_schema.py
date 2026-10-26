@@ -1670,6 +1670,105 @@ def check_eval_tables(conn: sqlite3.Connection) -> None:
         bad("ev_appeals", {**AP, "year": 2029, "user_id": spare}, word, why, **kw)
 
 
+def check_cards_table(conn: sqlite3.Connection) -> None:
+    """축하 · 칭찬 카드 표 (021 — 판 21). 한 장 = 한 줄 · 같은 사람에게 하루 한 장 · 본인에게 못 보냄 · 종류와 축하 소식의 짝 · 그림 1~4 · 글은 잠근 BLOB ·
+    날짜는 실제 있는 날 · 읽기 전엔 고마워요 없음 · 내용 칸은 보낸 뒤 못 고침(트리거), 읽음 · 고마워요 · 숨김 칸만 고침 · 카드가 있는 직원은 못 지움 · 카드 줄 DELETE 는 막지 않음.
+    사람은 전부 가상. 막힌 이유는 메시지의 규칙 토막(CHECK 식 · UNIQUE · FOREIGN KEY · READ_ONLY)까지 본다 — 표가 없어서 막힌 것이 통과로 세어지지 않게.
+    쓴 카드 · 직원(T041 · T042 — T040 은 앞 절(32)이 쓰고 남긴다)은 끝에 지운다."""
+    print("33. 축하 · 칭찬 카드 (021)")
+    ver = conn.execute("PRAGMA user_version").fetchone()[0]
+    _report(ver >= 21, f"판 번호가 21 이상 — {ver}", f"실제 {ver}")
+    got = [r[1] for r in conn.execute("PRAGMA table_info(cards)")]
+    want = ["id", "sender_id", "recipient_id", "kind", "reason", "art", "body", "sent_on", "created_at", "read_at", "thanked_at", "hidden_at"]
+    _report(got == want, "cards 표 칸 12개 (이후 작업이 이 이름을 쓴다)", f"실제 {got}")
+
+    def person(no: str, name: str) -> int:
+        return conn.execute(
+            "INSERT INTO users (employee_no, name, email, department_id)"
+            f" VALUES ('{no}', '{name}', '{no.lower()}@example.invalid', (SELECT id FROM departments WHERE code='DIV1')) RETURNING id"
+        ).fetchone()[0]
+
+    a, b = person("T041", "가상카드보냄"), person("T042", "가상카드받음")
+    T, blob = "2027-03-02T09:00:00Z", (lambda n: b"\x01" * n)   # 잠근 글 = 12바이트 nonce + 내용 + 16바이트 태그 → 29바이트 이상
+    CD = dict(sender_id=a, recipient_id=b, kind="praise", reason=None, art=1, body=blob(29), sent_on="2027-03-02", created_at=T)
+
+    def row(base: dict, over: dict) -> tuple[str, tuple]:
+        cols = {**base, **over}
+        return f"INSERT INTO cards ({', '.join(cols)}) VALUES ({', '.join('?' * len(cols))})", tuple(cols.values())
+
+    def bad(word: str, why: str, **over) -> None:
+        """over 로 바꾼 줄이 거부되고, 거부 메시지에 word(CHECK 식의 한 토막 · UNIQUE · FOREIGN KEY …)가 들어 있나."""
+        ok, msg = _rejects(conn, *row(CD, over))
+        _report(ok and word in msg, f"카드 {why} 거부", msg)
+
+    conn.execute(*row(CD, {}))
+    got = conn.execute("SELECT kind, reason, art, typeof(body), length(body), sent_on, read_at, thanked_at, hidden_at FROM cards").fetchone()
+    _report(got == ("praise", None, 1, "blob", 29, "2027-03-02", None, None, None), "정상 카드 저장: 칭찬 · 이유 없음 · 그림 1 · 글 29바이트 · 읽음 · 고마워요 · 숨김 비어 있음", f"실제 {got}")
+    conn.execute(*row(CD, {"sent_on": "2027-03-03"}))
+    conn.execute(*row(CD, {"sender_id": b, "recipient_id": a}))
+    _report(True, "같은 사람에게 다른 날 · 거꾸로(받은 사람이 보냄) 같은 날은 저장됨")
+    for kw in (dict(kind="cheer", reason="birthday"), dict(kind="thanks"), dict(kind="comfort")):   # 날짜를 안 바꾸면 하루 한 장 규칙이 걸리는 자리
+        ok, msg = _rejects(conn, *row(CD, kw))
+        _report(ok and "UNIQUE" in msg, f"같은 (보낸 · 받는 · 날짜)에 종류만 바꿔 한 장 더({kw['kind']}) 거부", msg)
+    for kind, reason in (("cheer", "birthday"), ("cheer", "welcome"), ("cheer", "anniv"), ("cheer", "joy"), ("thanks", None), ("comfort", None)):
+        conn.execute(*row(CD, dict(kind=kind, reason=reason, sent_on="2027-03-04")))
+        conn.execute("DELETE FROM cards WHERE sent_on = '2027-03-04'")
+    _report(True, "종류 4개 · 축하 소식 4개의 짝 6가지 저장됨")
+
+    bad("sender_id <> recipient_id", "본인에게 보냄", recipient_id=a)
+    bad("kind IN", "종류가 없는 값(love)", kind="love")
+    bad("NOT NULL", "종류 비어 있음", kind=None)
+    bad("(kind = 'cheer') = (reason IS NOT NULL)", "축하인데 소식 이유 없음", kind="cheer", sent_on="2027-03-05")
+    bad("(kind = 'cheer') = (reason IS NOT NULL)", "칭찬인데 소식 이유(birthday)", reason="birthday", sent_on="2027-03-05")
+    bad("(kind = 'cheer') = (reason IS NOT NULL)", "위로인데 소식 이유(joy)", kind="comfort", reason="joy", sent_on="2027-03-05")
+    bad("reason IN", "없는 소식 이유(xmas)", kind="cheer", reason="xmas", sent_on="2027-03-05")
+    for art, why in ((0, "0"), (5, "5"), ("1", "글자 '1'"), (1.5, "1.5"), (None, "비어 있음")):
+        bad("BETWEEN 1 AND 4" if art is not None else "NOT NULL", f"그림 번호 {why}", art=art, sent_on="2027-03-05")
+    for body, why in (("가" * 40, "글자(BLOB 아님)"), (blob(28), "28바이트"), (b"", "빈 BLOB"), (None, "비어 있음")):
+        bad("length(body)" if body is not None else "NOT NULL", f"글 {why}", body=body, sent_on="2027-03-05")
+    for day, why in (("2027-02-30", "2027-02-30"), ("2027-13-01", "13월"), ("2027-3-5", "0 없는 날짜"), ("20270305", "하이픈 없는 날짜"), (None, "비어 있음")):
+        bad("date(sent_on)" if day is not None else "NOT NULL", f"날짜 {why}", sent_on=day)
+    bad("FOREIGN KEY", "없는 직원이 보냄", sender_id=9999, sent_on="2027-03-05")
+    bad("FOREIGN KEY", "없는 직원에게 보냄", recipient_id=9999, sent_on="2027-03-05")
+    bad("NOT NULL", "만든 때 비어 있음", created_at=None, sent_on="2027-03-05")
+    bad("thanked_at IS NULL OR read_at IS NOT NULL", "읽지 않았는데 고마워요", thanked_at=T, sent_on="2027-03-05")
+
+    # --- 내용 칸은 못 고침 · 읽음 · 고마워요 · 숨김 칸은 고침 ----------------------------------------------------------
+    cid = conn.execute("SELECT id FROM cards WHERE sender_id = ? AND recipient_id = ? AND sent_on = '2027-03-02'", (a, b)).fetchone()[0]
+    before = conn.execute("SELECT sender_id, recipient_id, kind, reason, art, body, sent_on, created_at FROM cards WHERE id = ?", (cid,)).fetchone()
+    for col, val in (("sender_id", b), ("recipient_id", a), ("kind", "comfort"), ("reason", "joy"), ("art", 2), ("body", blob(30)),
+                     ("sent_on", "2027-03-09"), ("created_at", "2027-03-02T10:00:00Z")):
+        ok, msg = _rejects(conn, f"UPDATE cards SET {col} = ? WHERE id = ?", (val, cid))
+        _report(ok and "READ_ONLY" in msg, f"보낸 카드의 {col} 칸 고치기 거부", msg)
+    ok, msg = _rejects(conn, "UPDATE cards SET art = art WHERE id = ?", (cid,))
+    _report(ok and "READ_ONLY" in msg, "같은 값으로 다시 쓰는 UPDATE 도 거부 (내용 칸에는 손대지 않는 것으로 정함)", msg)
+    after = conn.execute("SELECT sender_id, recipient_id, kind, reason, art, body, sent_on, created_at FROM cards WHERE id = ?", (cid,)).fetchone()
+    _report(after == before, "거부된 고치기는 내용을 하나도 바꾸지 않음")
+    ok, msg = _rejects(conn, "UPDATE cards SET read_at = NULL, thanked_at = ? WHERE id = ?", (T, cid))
+    _report(ok and "thanked_at IS NULL OR read_at IS NOT NULL" in msg, "읽음 없이 고마워요만 넣기 거부", msg)
+    conn.execute("UPDATE cards SET read_at = ? WHERE id = ?", (T, cid))
+    conn.execute("UPDATE cards SET thanked_at = ? WHERE id = ?", (T, cid))
+    conn.execute("UPDATE cards SET hidden_at = ? WHERE id = ?", (T, cid))
+    got = conn.execute("SELECT read_at, thanked_at, hidden_at FROM cards WHERE id = ?", (cid,)).fetchone()
+    _report(got == (T, T, T), "읽음 · 고마워요 · 숨김 칸 고치기는 됨", f"실제 {got}")
+    conn.execute("UPDATE cards SET hidden_at = NULL WHERE id = ?", (cid,))
+    got = conn.execute("SELECT hidden_at FROM cards WHERE id = ?", (cid,)).fetchone()[0]
+    _report(got is None, "숨김을 풀어 다시 보이게 하기는 됨 (hidden_at 을 비움)", f"실제 {got}")
+    ok, msg = _rejects(conn, "UPDATE cards SET read_at = NULL WHERE id = ?", (cid,))
+    _report(ok and "thanked_at IS NULL OR read_at IS NOT NULL" in msg, "고마워요 한 카드의 읽음 지우기 거부", msg)
+
+    # --- 지우기: 카드가 있는 직원은 못 지움 · 카드 줄 자체는 지워짐 ---------------------------------------------------------
+    conn.execute("DELETE FROM cards WHERE sender_id = ?", (b,))   # 거꾸로 보낸 카드를 치워서, a 는 보내기만 · b 는 받기만 한 사람으로 — 두 칸의 외래키를 따로 본다
+    for who, why in ((a, "보낸"), (b, "받은")):
+        ok, msg = _rejects(conn, "DELETE FROM users WHERE id = ?", (who,))
+        _report(ok and "FOREIGN KEY" in msg, f"카드를 {why} 직원은 지울 수 없음 (퇴직자는 비활성으로)", msg)
+    conn.execute("DELETE FROM cards WHERE id = ?", (cid,))
+    left = conn.execute("SELECT COUNT(*) FROM cards WHERE id = ?", (cid,)).fetchone()[0]
+    _report(left == 0, "카드 줄 DELETE 는 됨 (지우는 길이 서버에 없을 뿐 — 검사 정리용으로 막지 않음)", f"남은 줄 {left}")
+    conn.execute("DELETE FROM cards")
+    conn.execute("DELETE FROM users WHERE id IN (?, ?)", (a, b))
+
+
 def main() -> int:
     print("=" * 62)
     print("SQLite 스키마 적용 + 제약조건 동작 검사")
@@ -1700,6 +1799,7 @@ def main() -> int:
             check_pay_pin_tables(conn)
             check_pay_ask_table(conn)
             check_eval_tables(conn)
+            check_cards_table(conn)
         finally:
             conn.close()
 
