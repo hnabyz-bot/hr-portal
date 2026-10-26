@@ -13656,7 +13656,7 @@ function cardFace(c){   // 카드 한 장 (시안 face): 그림 · 꼬리표 / T
     <p class="cm-hand cm-msg${c.text ? '' : ' empty'}">${escapeHtml(c.text || '여기에 글이 들어가요')}</p>
     <div class="cm-hand cm-from">From. ${escapeHtml(c.fromName)} · ${/^\d{4}-/.test(c.date) ? kpiMd(c.date) : escapeHtml(c.date)}</div></div></div>`;
 }
-const CARD_LIVE = { state:'', ready:false, unread:0, received:[], sent:[], opened:false };   // 실제 로그인 카드 상자 (최근이 위). state '' 아직 · ok · err / ready: 서버 열쇠(HR_PAY_KEY)가 있어 주고받을 수 있다 / opened: 이번 창에서 도착 창을 띄웠나 (받은 카드 탭을 처음 열 때 한 번 — 시연도 이 표시)
+const CARD_LIVE = { state:'', ready:false, unread:0, received:[], sent:[], opened:false, pending:false };   // 실제 로그인 카드 상자 (최근이 위). state '' 아직 · ok · err / ready: 서버 열쇠(HR_PAY_KEY)가 있어 주고받을 수 있다 / opened: 이번 창에서 도착 창을 띄웠나 (받은 카드 탭을 처음 열 때 한 번 — 시연도 이 표시) / pending: 탭이 도착 창을 띄우려고 기다리는 중
 function cardDemoData(){   // 시연(서버 없음): 시안 IN · OUT 과 같은 가상 카드 { received, sent } — 사람은 시연 조직도에서 시연 역할(KPI_USERS)이 아닌 사람만(내가 나에게 보낸 카드가 없게). cardSelfCheck 도 이 처음 상태로 본다
   const ppl = orgMembers.filter(m=>!Object.values(KPI_USERS).some(u=>u.name===m.name)).slice(0, 8).map(m=>({ id:m.id, name:m.name, title:m.title, dept:m.team || m.division }));
   const got = (id, kind, reason, art, i, ago, text, x)=>({ id, kind, reason, art, text, date:kpiDay(-ago), from:ppl[i], read:true, thanked:false, hidden:false, ...x });
@@ -13693,9 +13693,13 @@ async function cardLoad(){   // 실제 로그인: 내 카드 상자 (GET /api/ca
 function cardContent(){   // 워크스페이스 › 받은 카드 (시안 cardBox): 받은 · 보낸 바꾸기, 요약 세 칸, 종류 걸러 보기, 카드 모음(받은 날 순), "···" 숨기기 · 숨긴 카드 보기, 보낸 카드 줄
   const L = cardList(), U = CARD_UI, off = cardNoKey(), year = kpiDay(0).slice(0, 4);
   if(AUTH.live && L.state!=='ok') return L.state==='err' ? kpiNote('카드를 불러오지 못했어요. 잠시 뒤 새로 고쳐 주세요.', 'danger') : kpiNote('카드를 불러오는 중이에요…');
-  if(!CARD_LIVE.opened && L.unread){   // 처음 그릴 때(알림 ?go=ws.w3 으로 들어와도) 안 읽은 카드가 있으면 도착 창 한 번 — 그리는 중에는 창을 열지 않고 다음 틱에, 다른 창 · 둘러보기 위에는 띄우지 않는다
-    const go = ()=>document.documentElement.classList.contains('wc-on') ? setTimeout(go, 300) : !document.getElementById('orgModal') && !tour.steps && cardArrive(0);   // ponytail: 환영 페이지가 떠 있는 동안은 0.3초마다 보고 닫힌 뒤에 (봉투가 그 뒤에 가려 움직이지 않게)
-    CARD_LIVE.opened = true; setTimeout(go);
+  if(!CARD_LIVE.opened && !CARD_LIVE.pending && L.unread){   // 처음 그릴 때(알림 ?go=ws.w3 으로 들어와도) 안 읽은 카드가 있으면 도착 창 한 번 — 그리는 중에는 열지 않고 다음 틱에. 기다리는 줄은 하나만
+    const go = ()=>{
+      if(CARD_LIVE.opened || !cardList().unread) return void (CARD_LIVE.pending = false);   // 그사이 띄웠거나(들어올 때 자동) 다 읽었다 — 그만
+      if(document.documentElement.classList.contains('wc-on') || document.getElementById('orgModal') || tour.steps) return void setTimeout(go, 300);   // ponytail: 환영 페이지 · 다른 창 · 둘러보기가 닫힐 때까지 0.3초마다 본다 (그 뒤에 가려 움직이지 않게 — 표시는 띄울 때 cardArrive 가 켠다)
+      CARD_LIVE.pending = false; cardArrive(0);
+    };
+    CARD_LIVE.pending = true; setTimeout(go);
   }
   const byDay = list=>[...list].sort((a, b)=>b.date.localeCompare(a.date));   // 받은 날 순 — 같은 날은 서버 순서(나중 것이 위) 그대로
   const shown = byDay(L.received.filter(c=>!c.hidden && (!U.f || c.kind===U.f))), hid = byDay(L.received.filter(c=>c.hidden));
@@ -13719,12 +13723,16 @@ function cardContent(){   // 워크스페이스 › 받은 카드 (시안 cardBo
        <div class="cm-foot"><span>보낸 카드는 지우거나 고칠 수 없어요.</span></div>`;
   return `${off ? kpiNote('서버 설정이 아직 끝나지 않아 카드를 보내고 받을 수 없어요.', 'info') : ''}${kpiMsg ? kpiNote(kpiMsg.msg, kpiMsg.type) : ''}<div class="card">${head}${sum}${body}</div>`;
 }
+function cardBig(c, ref, nav){   // 크게 보기 · 도착 창이 같이 쓰는 무대(카드 + 효과 칸)와 [고마워요] [답장 쓰기]. ref = 단추가 이 카드를 다시 찾는 식, nav = 도착 창의 [‹ · ›] 단추 — 있으면 봉투도 (처음 여는 카드는 봉투째)
+  const [prev, next] = nav || ['', ''];
+  return `<div class="cm-stage" style="${cardKv(c.kind)}">${nav ? '<i class="cm-ep back"></i><i class="cm-ep front"></i><i class="cm-ep flap"></i>' : ''}${cardFace({ ...c, toName:kpiOwner(), fromName:`${c.from.name} ${c.from.title || ''}`.trim() })}<div class="cm-fx"></div></div>
+    <div class="cm-acts"${nav ? '' : ' style="grid-template-columns:1fr 1fr;"'}>${prev}<button type="button" class="btn cm-thanks${c.thanked ? ' done' : ''}" onclick="cardThanks(this, ${ref})">${CARD_HEART} ${c.thanked ? '고마워요 보냄' : '고마워요'}</button>
+      <button type="button" class="btn primary" onclick="cardSend({ to:${ref}.from })">${icon('edit')} 답장 쓰기</button>${next}</div>`;
+}
 function cardOpen(id){   // 카드함에서 크게 보기 (시안 cardOpen — 살짝 떠오르기 + 종류별 효과 한 번). 열면 읽음 — 돌려주는 약속은 읽음 요청이 끝날 때
   const c = cardFind(id); if(!c) return;
   orgModal(`<div class="cm-arrive"><div class="card-title"><span>받은 카드</span><button type="button" class="x-btn" onclick="orgCloseModal()" aria-label="닫기">${icon('x')}</button></div>
-    <div class="cm-stage" style="${cardKv(c.kind)}">${cardFace({ ...c, toName:kpiOwner(), fromName:`${c.from.name} ${c.from.title || ''}`.trim() })}<div class="cm-fx"></div></div>
-    <div class="cm-acts" style="grid-template-columns:1fr 1fr;"><button type="button" class="btn cm-thanks${c.thanked ? ' done' : ''}" onclick="cardThanks(this, cardFind(${id}))">${CARD_HEART} ${c.thanked ? '고마워요 보냄' : '고마워요'}</button>
-      <button type="button" class="btn primary" onclick="cardSend({ to:cardFind(${id}).from })">${icon('edit')} 답장 쓰기</button></div>
+    ${cardBig(c, `cardFind(${id})`)}
     <div class="list-sub" style="margin:0;"><button type="button" class="cm-link" onclick="orgCloseModal(); cardHide(${id}, ${!c.hidden})">${c.hidden ? '다시 보이기' : '이 카드 숨기기'}</button>${c.hidden ? '' : ' — 숨긴 카드는 카드함 아래 "숨긴 카드 보기"에서 다시 볼 수 있어요.'}</div></div>`);
   openFx(document.querySelector('#orgModal .cm-stage'), c, false);
   return c.read ? undefined : cardMark(c, 'read');
@@ -13750,8 +13758,8 @@ async function cardMark(c, what, body={}){   // 받은 카드에 읽음(read) ·
     return '';
   } finally { CARD_BUSY.delete(key); }
 }
-async function cardThanks(btn, c){   // [고마워요] 한 번 — 이미 보냈거나 보내는 중이면 아무것도 안 한다. 보낸 사람 알림은 서버가
-  if(!c || c.thanked || btn.disabled) return;
+async function cardThanks(btn, c){   // [고마워요] 한 번 — 이미 보냈거나 보내는 중이면(창을 다시 그려 새 단추여도) 하트도 없이 아무것도 안 한다. 보낸 사람 알림은 서버가
+  if(!c || c.thanked || btn.disabled || CARD_BUSY.has(c.id+'/thanks')) return;
   heartPop(btn);
   btn.disabled = true;
   const err = await cardMark(c, 'thanks');
@@ -13776,9 +13784,7 @@ function cardArrive(i=0, list, auto){   // "카드가 왔어요 1 / 3" · 카드
   CARD_LIVE.opened = true;   // 이번 창에서 띄웠다 — 받은 카드 탭을 열어도 다시 띄우지 않는다
   const n = A.list.length, nav = (d, ic, label, on)=>`<button type="button" class="btn"${on ? '' : ' disabled'} onclick="cardArrive(${i+d})" aria-label="${label}">${icon(ic)}</button>`;
   orgModal(`<div class="cm-arrive" id="cmArrive"><div class="card-title"><span>카드가 왔어요<span class="cm-count">${i+1} / ${n}</span></span><button type="button" class="x-btn" onclick="orgCloseModal();${A.auto ? ' homeTodayPop();' : ''}" aria-label="닫기">${icon('x')}</button></div>
-    <div class="cm-stage" style="${cardKv(c.kind)}"><i class="cm-ep back"></i><i class="cm-ep front"></i><i class="cm-ep flap"></i>${cardFace({ ...c, toName:kpiOwner(), fromName:`${c.from.name} ${c.from.title || ''}`.trim() })}<div class="cm-fx"></div></div>
-    <div class="cm-acts">${nav(-1, 'chevL', '앞 카드', i > 0)}<button type="button" class="btn cm-thanks${c.thanked ? ' done' : ''}" onclick="cardThanks(this, CARD_AR.list[${i}])">${CARD_HEART} ${c.thanked ? '고마워요 보냄' : '고마워요'}</button>
-      <button type="button" class="btn primary" onclick="cardSend({ to:CARD_AR.list[${i}].from })">${icon('edit')} 답장 쓰기</button>${nav(1, 'chevR', '다음 카드', i < n-1)}</div>
+    ${cardBig(c, `CARD_AR.list[${i}]`, [nav(-1, 'chevL', '앞 카드', i > 0), nav(1, 'chevR', '다음 카드', i < n-1)])}
     <div class="list-sub" style="margin:0;">받은 카드는 <b>워크스페이스 › 받은 카드</b>에 모여요.</div></div>`);
   openFx(document.querySelector('#orgModal .cm-stage'), c, !A.seen.has(c.id));   // 처음 여는 카드만 봉투째, 넘겨 본 뒤 돌아오면 가볍게
   A.seen.add(c.id);
@@ -13830,7 +13836,7 @@ async function openFx(stage, c, full){   // 시안 openFx — full: 종류 색 �
     return burst(stage, c);
   }
   const anim = (el, kf, o)=>el.animate(kf, { fill:'forwards', ...o }).finished, gone = ()=>!stage.isConnected;   // 그사이 창을 닫았거나 넘겼다 — 떼어 낸 창에 효과를 뿌리지 않는다
-  if(acts) acts.style.opacity = 0;
+  if(acts) Object.assign(acts.style, { opacity:0, pointerEvents:'none' });   // 봉투가 열리는 동안 단추 줄은 보이지도 눌리지도 않게 (X 는 된다)
   f.style.opacity = 0;
   await Promise.all(parts.map(p=>anim(p, [{ transform:'translateY(18px) scale(.94)', opacity:0 }, { transform:'none', opacity:1 }], { duration:320, easing:'ease-out' })));
   if(gone()) return;
@@ -13843,7 +13849,7 @@ async function openFx(stage, c, full){   // 시안 openFx — full: 종류 색 �
   await anim(f, [{ transform:'translateY(-7%) scale(.93)' }, { transform:'none' }], { duration:420, easing:'cubic-bezier(.3,1.5,.5,1)' });
   parts.forEach(p=>p.remove()); f.getAnimations().forEach(a=>a.cancel());
   if(gone()) return;
-  if(acts) acts.animate([{ opacity:0, transform:'translateY(6px)' }, { opacity:1, transform:'none' }], { duration:260 }).finished.then(()=>{ acts.style.opacity = ''; });
+  if(acts){ acts.style.pointerEvents = ''; acts.animate([{ opacity:0, transform:'translateY(6px)' }, { opacity:1, transform:'none' }], { duration:260 }).finished.then(()=>{ acts.style.opacity = ''; }); }
   burst(stage, c);
 }
 function heartPop(btn){   // 시안 heartPop — [고마워요] 단추가 살짝 커졌다 돌아오고 하트 6개가 퐁(0.8초). 하트는 단추가 있는 창 안에
@@ -14006,7 +14012,8 @@ async function cardSelfCheck(){   // 브라우저 콘솔에서 await cardSelfChe
   ok(['cheer birthday', 'cheer welcome', 'cheer anniv', 'cheer joy', 'comfort', 'praise', 'thanks'].map(s=>cardSet(...s.split(' '))).join()==='birthday,welcome,anniv,joy,condol,praise,thanks', '그림 묶음 7가지 (cardSet)');
   ok(String(pushGoParse('?go=ws.w3'))==='ws,w3', '알림 주소 ?go=ws.w3 = 워크스페이스 › 받은 카드');
   const demo0 = JSON.stringify(CARD_DEMO), keep = { live:AUTH.live, me:AUTH.me, box:{ ...CARD_LIVE }, ui:{ ...CARD_UI }, msg:kpiMsg, fetch:window.fetch, render:renderContent, recv:CARD_DEMO.received, sent:CARD_DEMO.sent,
-    mm:window.matchMedia, animate:Element.prototype.animate, org:{ ...ORG_LIVE }, role:kpiRole, push:{ state:PUSH.state, go:PUSH.go, ready:PUSH.ready } };
+    mm:window.matchMedia, animate:Element.prototype.animate, org:{ ...ORG_LIVE }, role:kpiRole, push:{ state:PUSH.state, go:PUSH.go, ready:PUSH.ready },
+    arrive:cardArrive, tourSteps:tour.steps, wc:document.documentElement.classList.contains('wc-on') };
   const calls = [], row = ()=>homePortalTasks().find(p=>p.tab==='w3');
   let reply = { ok:true, status:200, j:{ unread:0 } }, renders = 0;
   try {
@@ -14071,6 +14078,10 @@ async function cardSelfCheck(){   // 브라우저 콘솔에서 await cardSelfChe
     ok(w.querySelector('[onclick="cardSend({})"]').disabled, '열쇠 없음: [카드 쓰기] 막힘');
     AUTH.live = false; ok(!dom(cardContent()).querySelector('[onclick="cardSend({})"]').disabled, '시연은 열쇠와 상관없이 켜짐'); AUTH.live = true;
     CARD_LIVE.state = ''; ok(dom(cardContent()).textContent.includes('불러오는 중'), '불러오기 전에는 안내만');
+    for(const [st, rd, on] of [['', false, false], ['err', false, false], ['ok', false, true], ['ok', true, false]]){
+      Object.assign(CARD_LIVE, { state:st, ready:rd }); const x = dom(cardContent()), add = x.querySelector('[onclick="cardSend({})"]');
+      ok(cardNoKey()===on && x.textContent.includes('서버 설정이 아직 끝나지 않아')===on && (!add || add.disabled===on), `열쇠 없음 안내 · [카드 쓰기] 막힘은 cardNoKey() 와 같다 (state '${st}' · ready ${rd} → ${on ? '안내' : '없음'})`);
+    }
     // ---- 카드 보내기 (Task 6): 창 · 종류 칩 · 예시 문구 · 글 규칙 · 보내기 (fetch · 움직임 · '움직임 줄이기' 는 가짜) ----
     let rm = true, flies = 0;
     window.matchMedia = q=>/reduced-motion/.test(q) ? { matches:rm } : keep.mm.call(window, q);
@@ -14195,6 +14206,8 @@ async function cardSelfCheck(){   // 브라우저 콘솔에서 await cardSelfChe
     let fx = {};
     const fxAnim = function(){ for(const k of ['ep', 'p', 'pop', 'face']) if(this.matches('.cm-'+k)) fx[k] = (fx[k] || 0) + 1; return { finished:Promise.resolve(), cancel(){} }; };
     Element.prototype.animate = fxAnim; rm = false;
+    const wait = ms=>new Promise(r=>setTimeout(r, ms)), wcOn = v=>document.documentElement.classList.toggle('wc-on', v);
+    wcOn(false); tour.steps = null;   // 검사하는 창에 환영 페이지 · 둘러보기가 떠 있어도 (끝나면 되돌린다)
     AUTH.live = true; AUTH.me = { ...(keep.me || {}), name:'가상나', department:'가상팀', kind:'phone' }; Object.assign(PUSH, { state:'on', go:false, ready:Promise.resolve() });
     let left = 2;
     reply = url=>/\/read$/.test(url) ? { status:200, j:{ unread:--left } } : /\/thanks$/.test(url) ? { status:200, j:{ unread:left } } : url==='/api/phone' ? { status:200, j:{ phone:null } } : { status:404, j:{} };
@@ -14203,6 +14216,7 @@ async function cardSelfCheck(){   // 브라우저 콘솔에서 await cardSelfChe
     await todayPopAuto(); await tick();
     ok(A() && cnt()==='1 / 2' && A().querySelector('.cm-msg').textContent==='가상 글 31' && A().textContent.includes('받은 카드는 워크스페이스 › 받은 카드에 모여요.'), '안 읽은 2장: 들어올 때 오늘 할 일보다 먼저 "카드가 왔어요 1 / 2" — 오래된 것부터 · 안내 한 줄');
     ok(fx.ep>0 && fx.p>0 && fx.p<=3 && !bits(), '처음 여는 카드는 봉투째 · 조사(위로)는 흰 꽃잎 3장 이하 · 끝나면 조각이 남지 않는다');
+    ok(A().querySelector('.cm-acts').style.pointerEvents==='' && A().querySelector('.cm-acts').style.opacity==='', '봉투가 다 열리면 단추 줄을 되돌린다 (보임 · 눌림)');
     fx = {}; A().querySelector('[aria-label="다음 카드"]').click(); await tick();
     ok(cnt()==='2 / 2' && fx.ep>0 && fx.p===8 && A().querySelector('[aria-label="다음 카드"]').disabled && !bits(), '넘기면 다음 카드도 봉투째 · 감사는 하트 8개 · 마지막 카드에서 [›] 막힘');
     fx = {}; A().querySelector('[aria-label="앞 카드"]').click(); await tick();
@@ -14229,6 +14243,13 @@ async function cardSelfCheck(){   // 브라우저 콘솔에서 await cardSelfChe
     tb().click(); tb().click(); await tick(); tb().click(); await tick();
     ok(calls.filter(c=>/\/thanks$/.test(c[0])).length===1 && cardFind(33).thanked && tb().textContent.includes('고마워요 보냄') && fx.pop===6 && !bits() && kpiMsg.msg==='가상보낸이 님께 고마워요를 보냈어요.', '고마워요: 두 번 눌러도 요청 한 번 · 하트 6개가 퐁 · 끝나면 남지 않음 · 알림 줄');
     orgCloseModal();
+    const replyWas = reply; let thanksGo; reply = ()=>({ status:200, j:{ unread:0 }, wait:new Promise(r=>thanksGo = r) });
+    Object.assign(cardFind(33), { read:true, thanked:false }); calls.length = 0; fx = {};
+    cardArrive(0, [cardFind(33), cardFind(30)]); await tick();
+    tb().click(); A().querySelector('[aria-label="다음 카드"]').click(); A().querySelector('[aria-label="앞 카드"]').click(); fx.pop = 0; tb().click(); await tick();
+    const busyPops = fx.pop, busyCalls = calls.length; thanksGo(); await tick(); await tick();
+    ok(busyCalls===1 && !busyPops && calls.length===1 && cardFind(33).thanked, '고마워요를 보내는 중(넘겼다 돌아와 다시 누름)에는 하트도 요청도 없다');
+    orgCloseModal(); reply = replyWas;
     // 종류별 효과 개수 (시안 burst) · 카드함에서 크게 보기는 가볍게
     for(const [k, r, n] of [['cheer', 'birthday', 30], ['cheer', 'joy', 30], ['cheer', 'welcome', 12], ['cheer', 'anniv', 12], ['praise', null, 9], ['thanks', null, 8], ['comfort', null, 3]]){
       fx = {}; cardArrive(0, [card(40, '2026-10-26', { kind:k, reason:r })]); await tick();
@@ -14247,10 +14268,10 @@ async function cardSelfCheck(){   // 브라우저 콘솔에서 await cardSelfChe
     // 움직이는 중에 X로 닫으면 조각이 남지 않는다 (움직임이 끝난 뒤에도)
     const held = []; Element.prototype.animate = function(){ return { finished:new Promise(r=>held.push(r)), cancel(){} }; };
     unread1(); cardArrive(0); await tick(); tb().click(); await tick();
-    const mid = A().querySelectorAll('.cm-ep').length===3 && document.querySelectorAll('#orgModal .cm-pop').length===6;
+    const mid = A().querySelectorAll('.cm-ep').length===3 && document.querySelectorAll('#orgModal .cm-pop').length===6 && A().querySelector('.cm-acts').style.pointerEvents==='none';
     A().querySelector('.x-btn').click(); const none = !bits();
     for(let i = 0; i < 50 && held.length; i++){ held.splice(0).forEach(r=>r()); await tick(); }
-    ok(mid && none && !bits() && !document.getElementById('orgModal'), '움직이는 중에 X로 닫으면 봉투 · 효과 · 하트 조각이 남지 않는다 (움직임이 끝난 뒤에도)');
+    ok(mid && none && !bits() && !document.getElementById('orgModal'), '봉투가 열리는 동안 단추 줄은 눌리지 않고(X 는 된다) · 그때 X로 닫으면 봉투 · 효과 · 하트 조각이 남지 않는다 (움직임이 끝난 뒤에도)');
     Element.prototype.animate = fxAnim;
     // 읽음 요청이 안 되면 창은 그대로
     unread1(); reply = ()=>({ status:500, j:{} });
@@ -14259,15 +14280,22 @@ async function cardSelfCheck(){   // 브라우저 콘솔에서 await cardSelfChe
     orgCloseModal();
     // 받은 카드 탭을 처음 그리면 도착 창 한 번 (알림 ?go=ws.w3 으로 들어와도 같은 길) — 두 번째는 뜨지 않는다
     reply = url=>/\/read$/.test(url) ? { status:200, j:{ unread:0 } } : { status:404, j:{} };
-    CARD_LIVE.opened = false; unread1(); dom(cardContent()); dom(cardContent()); await tick();
+    CARD_LIVE.opened = false; unread1(); dom(cardContent()); await tick();
     const first = !!A() && cnt()==='1 / 1'; orgCloseModal();
     unread1(); dom(cardContent()); await tick();
-    ok(first && !document.getElementById('orgModal') && CARD_LIVE.opened, '카드함을 처음 그리면 도착 창 한 번 (두 번 그려도 한 번) · 다음에는 뜨지 않는다');
-    const wcWas = document.documentElement.classList.contains('wc-on'); document.documentElement.classList.add('wc-on');
-    CARD_LIVE.opened = false; unread1(); dom(cardContent()); await tick();
-    const hidden = !document.getElementById('orgModal'); document.documentElement.classList.remove('wc-on'); await new Promise(r=>setTimeout(r, 350));
-    const shown = !!A(); orgCloseModal(); document.documentElement.classList.toggle('wc-on', wcWas);
-    ok(hidden && shown, '환영 페이지가 떠 있으면(알림으로 들어온 날) 그 뒤에 띄우지 않고, 닫힌 뒤에 띄운다');
+    ok(first && !document.getElementById('orgModal') && CARD_LIVE.opened, '카드함을 처음 그리면 도착 창 한 번 · 다음에는 뜨지 않는다');
+    let arrives = 0; cardArrive = ()=>{ arrives++; };   // 여는 일만 센다 (표시는 켜지 않는 가짜)
+    CARD_LIVE.opened = false; unread1(); dom(cardContent()); dom(cardContent()); await tick(); await tick(); cardArrive = keep.arrive;
+    ok(arrives===1 && !CARD_LIVE.pending, '창 없이 두 번 그려도 도착 창을 여는 일은 한 번 (기다리는 줄은 하나)');
+    for(const [who, on, off] of [['환영 페이지가', ()=>wcOn(true), ()=>wcOn(false)], ['다른 창이', ()=>orgModal('<div class="cm-test">다른 창</div>'), ()=>orgCloseModal()], ['사이트 둘러보기가', ()=>{ tour.steps = [{}]; }, ()=>{ tour.steps = null; }]]){
+      CARD_LIVE.opened = false; unread1(); on(); dom(cardContent()); await wait(350);
+      const waited = !A() && !CARD_LIVE.opened && CARD_LIVE.pending; off(); await wait(350);
+      const came = !!A() && cnt()==='1 / 1' && CARD_LIVE.opened && !CARD_LIVE.pending; orgCloseModal(); await wait(350);
+      ok(waited && came && !document.getElementById('orgModal'), `${who} 떠 있으면 표시를 쓰지 않고 기다렸다가, 닫힌 뒤에 도착 창 한 번 · 그 뒤로는 그만`);
+    }
+    CARD_LIVE.opened = false; unread1(); orgModal('<div class="cm-test">다른 창</div>'); dom(cardContent()); await tick();
+    Object.assign(cardFind(33), { read:true }); CARD_LIVE.unread = 0; orgCloseModal(); await wait(350);
+    ok(!document.getElementById('orgModal') && !CARD_LIVE.pending && !CARD_LIVE.opened, '기다리는 동안 다 읽었으면 띄우지 않고 그만');
     AUTH.live = false; Object.assign(CARD_DEMO, cardDemoData()); CARD_LIVE.opened = false; calls.length = 0;
     dom(cardContent()); await tick();
     const d1 = !!A() && cnt()==='1 / 3' && A().querySelector('.cm-msg').textContent===CARD_DEMO.received[2].text; orgCloseModal();
@@ -14277,6 +14305,7 @@ async function cardSelfCheck(){   // 브라우저 콘솔에서 await cardSelfChe
   } finally {
     [AUTH.live, AUTH.me, kpiMsg, window.fetch, renderContent, window.matchMedia, Element.prototype.animate, kpiRole] = [keep.live, keep.me, keep.msg, keep.fetch, keep.render, keep.mm, keep.animate, keep.role];
     Object.assign(ORG_LIVE, keep.org); Object.assign(PUSH, keep.push);
+    cardArrive = keep.arrive; tour.steps = keep.tourSteps; document.documentElement.classList.toggle('wc-on', keep.wc);
     Object.assign(CARD_LIVE, keep.box); Object.assign(CARD_UI, keep.ui); CARD_DEMO.received = keep.recv; CARD_DEMO.sent = keep.sent;
     orgCloseModal();
   }
