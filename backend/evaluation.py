@@ -13,6 +13,10 @@ app.py 가 bp 를 붙인다. 세션 검사 · 같은 출처 검사는 auth._guar
   POST /api/eval/admin/<uid>/rater        {"year", "raterId"} 평가자를 바꾼다 (HR)
   GET  /api/eval/state?year=              보는 사람에 맞춘 그해 평가 (year 가 없으면 cur_year) → {"year", "offline", "round", "deleg", "ceoId", "me", "people", "pools", "todo"}
   GET  /api/eval/files/<fid>              증빙 내려받기 (본인 · 평가자 · 배정자 · 그 본부의 본부장 · 대표이사 · HR)
+  POST /api/eval/me/self                  {"year", "entries": [{"rid", "note"?, "selfGrade"?}]} 자기평가 임시 저장 — 보낸 줄 · 칸만 바꾼다 → {"ok", "me"} (본인 — 사람 번호는 세션에서만)
+  POST /api/eval/me/submit                {"year"} 자기평가 제출 — 단계 SCORE · 평가자에게 알림 (대표이사가 평가자이고 맡겼으면 제출한 사람 뺀 HR 전원)
+  POST /api/eval/files                    multipart year · rid · file — 증빙 올리기 → {"ok", "id"} (nginx 는 이 길만 본문 11MB)
+  POST /api/eval/files/<fid>/delete       증빙 지우기 (올린 본인 · 올릴 수 있는 때만) → {"ok"}
 
 보는 수준 (공개 전 등급은 어디에도 새지 않는다 — 사람 줄을 응답에 넣는 길은 모두 _row_json 하나를 지난다. 수준은 eval_rules.level):
   full 전부 (HR · 대표이사 · 배정자 · 점수를 내기 전의 평가자 · 공개 뒤) / mine 평가자가 낸 뒤 · 공개 전 — 자기가 낸 등급 · 항목 등급 · 총점만, 고쳤으면 edited 참(내용 글자 없음) /
@@ -41,15 +45,24 @@ app.py 가 bp 를 붙인다. 세션 검사 · 같은 출처 검사는 auth._guar
   제외: 이미 제외 409 → 평가자가 점수를 냄(SCORE 지남) 409 → 사유 1~100자 400 · 되돌림: 제외가 아님 409 → 그 묶음이 WAIT · FIX 가 아님 409 ·
   자기평가 없이: 제외됨 409 → SELF 가 아님 409 → KPI 없음 409 (저장한 뒤 떠 둔 평가자에게 알림) ·
   평가자 바꾸기: SELF · SCORE 가 아님 409 → 본인이 아니고 활성이며 포털을 쓰는(로그인해 점수를 낼 수 있는) 직원이 아님 400.
-감사로그(R10): EVAL_ROUND_SET · EVAL_STARTED · EVAL_ATT_DONE · EVAL_ATTENDANCE(저장한 사람이 있을 때만) · EVAL_EXCLUDED · EVAL_INCLUDED · EVAL_SKIP_SELF · EVAL_RATER_SET —
+자기평가 저장 · 제출 (본인): 해 400 → 그해 평가 대상 아님 404 → 쓸 수 없음 403 (can.self 거짓 — 자기평가 마감일이 지났으면 그 날짜를 알리는 문구, 그 밖은 "지금은 쓸 수 없습니다") →
+  저장은 모양 400 (목록 · 없는 실행목표 · 같은 줄 두 번 · 실적 500자 · 쓸 수 없는 글자 · 등급 SABCD 또는 null, 하나라도 틀리면 아무것도 저장 안 함) /
+  제출은 실행목표마다 실적(공백 뺀 1자 이상)과 자기 등급이 다 있어야 400. 저장은 감사로그가 없고 제출은 EVAL_SELF_SUBMITTED (해만 — 글 없음). 알림은 저장(COMMIT)한 뒤.
+증빙 올리기: 몸통이 10MB + 64KB 를 넘음 400 (읽기 전에) → 해 400 → 평가 대상 아님 404 → can.upload 거짓 403 → 떠 둔 실행목표 아님 400 → 그 실행목표에 이미 5개 400 →
+  빈 파일 · 10MB 넘음 400 → 형식(_kind — 확장자 + 첫 바이트) 400. 이름은 경로를 떼고 제어문자를 빼고 120자 (비면 "증빙.<종류>"), 파일은 DB 옆 eval_files/<ev_files.id> —
+  줄을 넣어 번호를 받고 임시 이름으로 써서 바꿔 단다 (쓰다 실패하면 줄도 되돌린다 — 같은 트랜잭션). 번호는 지운 뒤 다시 쓰일 수 있어 줄과 파일은 늘 함께 지운다.
+증빙 지우기: 없는 번호 404 → 올린 본인 아님 403 → can.upload 거짓 403 → 줄과 파일을 한 트랜잭션에서 지움 (파일이 이미 없어도 200). 올리기 · 지우기는 감사로그가 없다.
+감사로그(R10): EVAL_ROUND_SET · EVAL_STARTED · EVAL_ATT_DONE · EVAL_ATTENDANCE(저장한 사람이 있을 때만) · EVAL_EXCLUDED · EVAL_INCLUDED · EVAL_SKIP_SELF · EVAL_RATER_SET · EVAL_SELF_SUBMITTED —
   after_data 는 해 · 사람 수 · 평가자 번호뿐. 사유 · 근태 숫자 · 등급 · 점수는 넣지 않는다 (공개 전 등급이 감사로그로 새지 않게).
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import sqlite3
+import unicodedata
 from contextlib import contextmanager
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
@@ -63,7 +76,7 @@ import auth
 import kpi
 import push
 from hr_eval.domain.access import Target
-from hr_eval.domain.eval_rules import (APPEAL_DAYS, BANDS, TEXT_MAX, Member, above, assign_stage, at, cap, check_pool, edited, level, pool_key,
+from hr_eval.domain.eval_rules import (APPEAL_DAYS, BANDS, FILE_MAX, FILES_PER_ITEM, GRADES, TEXT_MAX, Member, above, assign_stage, at, cap, check_pool, edited, level, pool_key,
                                        pool_state, total)
 from hr_eval.domain.models import Actor, AuditEntry, Role
 from hr_eval.domain.org import led_dept, manager_of, target_of
@@ -705,3 +718,158 @@ def file_get(fid: int) -> Response:
     resp.headers["X-Content-Type-Options"] = "nosniff"
     resp.headers["Cache-Control"] = "no-store"
     return resp
+
+
+# ---------------- 자기평가 (본인) ----------------
+def _mine(conn: sqlite3.Connection, year: int) -> tuple[_Ctx, sqlite3.Row]:
+    """본인의 그해 평가 줄 — 평가 대상이 아니면 404. 사람 번호는 늘 세션(g.actor)에서 쓴다: 요청이 보낸 번호로 남의 것을 쓸 길이 없다."""
+    ctx = _ctx(conn, year)
+    row = ctx.rows.get(g.actor.user_id)
+    if row is None:
+        raise _Refuse("이번 평가 대상이 아닙니다.", 404)
+    return ctx, row
+
+
+def _self_open(ctx: _Ctx, row: sqlite3.Row) -> None:
+    """자기평가를 쓸 수 있나 — _can 의 self 가 거짓이면 403. 마감일이 지나서면(아직 SELF 단계인 사람) 그 날짜를 알려 준다."""
+    if _can(ctx, g.actor, row)["self"]:
+        return
+    due = ctx.round["selfTo"]
+    late = row["stage"] == "SELF" and row["out_at"] is None and not ctx.round["released"] and auth._today().isoformat() > due
+    raise _Refuse(f"자기평가 마감일({due})이 지났습니다. HR에 문의해 주세요." if late else "지금은 자기평가를 쓸 수 없습니다.", 403)
+
+
+def _note(v: object) -> str:
+    if not isinstance(v, str):
+        raise _Refuse("실적은 글로 써 주세요.", 400)
+    if len(_chars(v, "실적")) > TEXT_MAX["note"]:
+        raise _Refuse(f"실적은 {TEXT_MAX['note']}자 안으로 써 주세요.", 400)
+    return v
+
+
+def _grade(v: object) -> str | None:
+    if v is not None and v not in GRADES:
+        raise _Refuse("달성 등급은 S · A · B · C · D 중에서 골라 주세요.", 400)
+    return v
+
+
+@bp.post("/api/eval/me/self")
+def self_save() -> Response:
+    b = _body()
+    year = _year(b.get("year"))
+    conn = auth._db()
+    with _txn(conn):
+        ctx, row = _mine(conn, year)
+        _self_open(ctx, row)
+        uid, ents, puts = row["user_id"], b.get("entries"), {}
+        if not isinstance(ents, list):
+            raise _Refuse("실행목표별 실적을 목록으로 보내 주세요.", 400)
+        for e in ents:  # 모두 확인한 뒤에 쓴다 — 하나라도 틀리면 아무것도 저장하지 않는다. 보낸 줄의 보낸 칸만 바뀐다.
+            rid = e.get("rid") if isinstance(e, dict) else None
+            cur = ctx.entries.get((uid, rid)) if type(rid) is int else None
+            if cur is None:
+                raise _Refuse("실행목표를 찾을 수 없습니다.", 400)
+            if rid in puts:
+                raise _Refuse("실행목표는 한 번씩만 보내 주세요.", 400)
+            puts[rid] = (_note(e["note"]) if "note" in e else cur["note"], _grade(e["selfGrade"]) if "selfGrade" in e else cur["self_grade"], year, uid, rid)
+        conn.executemany("UPDATE ev_items SET note = ?, self_grade = ? WHERE year = ? AND user_id = ? AND rid = ?", puts.values())
+        ctx = _ctx(conn, year)
+        me = _row_json(ctx, g.actor, ctx.rows[uid])
+    return jsonify(ok=True, me=me)
+
+
+@bp.post("/api/eval/me/submit")
+def self_submit() -> Response:
+    year = _year(_body().get("year"))
+    conn = auth._db()
+    with _txn(conn):
+        ctx, row = _mine(conn, year)
+        _self_open(ctx, row)
+        uid, rater = row["user_id"], row["rater_id"]
+        if not all(e["note"].strip() and e["self_grade"] for e in (ctx.entries[(uid, it["rid"])] for it in ctx.items[uid])):
+            raise _Refuse("모든 KPI에 실적과 달성 등급을 넣어 주세요.", 400)
+        conn.execute("UPDATE ev_targets SET stage = 'SCORE', self_at = ? WHERE year = ? AND user_id = ?", (auth._iso(auth._now()), year, uid))
+        _log(conn, "EVAL_SELF_SUBMITTED", "ev_target", uid, year=year)
+        to = [h for h in push.hr_admins(conn) if h != uid] if _is_ceo(ctx, rater) and ctx.deleg else [rater]  # 맡겼으면 HR 전원 (제출한 사람이 HR 이면 본인은 빼고)
+    push.notify(to, "eval_turn")  # 저장(COMMIT)한 뒤 — 평가자가 없으면 아무도
+    return jsonify(ok=True)
+
+
+# ---------------- 증빙 올리기 · 지우기 (본인) ----------------
+OLE, ZIP = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1", b"PK\x03\x04"
+HEADS = {"pdf": b"%PDF-", "png": b"\x89PNG\r\n\x1a\n", "jpg": b"\xff\xd8\xff", "xlsx": ZIP, "docx": ZIP, "hwpx": ZIP, "xls": OLE, "doc": OLE, "hwp": OLE}  # 종류 → 파일 첫 바이트
+FORM_SLACK = 64 * 1024  # 올리는 몸통에서 파일 밖의 몫 (다른 칸 · 경계) — 파일 한도에 이만큼을 더한 것보다 크면 읽기 전에 거른다
+TOO_BIG = f"증빙 파일은 {FILE_MAX // 1048576}MB까지 올릴 수 있습니다."
+
+
+def _kind(head: bytes, name: str) -> str | None:
+    """증빙 종류 — 이름의 확장자(소문자, jpeg 는 jpg)가 허용 목록에 있고 파일 첫 바이트가 그 종류와 맞아야 한다. 아니면 None."""
+    ext = name.rsplit(".", 1)[-1].lower() if "." in name else ""
+    kind = "jpg" if ext == "jpeg" else ext
+    return kind if kind in HEADS and head.startswith(HEADS[kind]) else None
+
+
+def _clean_name(raw: str) -> str:
+    """올린 이름 → 보여 줄 이름: 경로(/ · \\ 앞)를 떼고 제어 · 서식 문자(방향 바꾸기 등)를 빼고 앞뒤 공백을 뗀다. 저장 경로에는 쓰지 않는다 (파일 이름은 번호 하나)."""
+    t = raw.replace("\\", "/").rsplit("/", 1)[-1]
+    return "".join(ch for ch in t if unicodedata.category(ch) not in ("Cc", "Cf")).strip()
+
+
+def _digits(v: str | None) -> int | None:
+    """폼 칸의 번호 → 정수 (ASCII 숫자 열 자리까지). 아니면 None."""
+    return int(v) if v and v.isascii() and v.isdigit() and len(v) <= 10 else None
+
+
+@bp.post("/api/eval/files")
+def file_put() -> Response:
+    if (request.content_length or 0) > FILE_MAX + FORM_SLACK:  # 읽기 전에 — 큰 몸통을 임시 파일로 받지 않게
+        raise _Refuse(TOO_BIG, 400)
+    year, rid = _digits(request.form.get("year")), _digits(request.form.get("rid"))
+    conn = auth._db()
+    with _txn(conn):
+        ctx, row = _mine(conn, _year(year))
+        uid = row["user_id"]
+        if not _can(ctx, g.actor, row)["upload"]:
+            raise _Refuse("증빙 마감일이 지났거나 올릴 수 없는 단계입니다.", 403)
+        if (uid, rid) not in ctx.entries:
+            raise _Refuse("증빙을 붙일 실행목표를 찾을 수 없습니다.", 400)
+        if len(ctx.files.get((uid, rid), ())) >= FILES_PER_ITEM:
+            raise _Refuse(f"실행목표 하나에 증빙은 {FILES_PER_ITEM}개까지 올릴 수 있습니다.", 400)
+        f = request.files.get("file")
+        data = f.stream.read(FILE_MAX + 1) if f else b""
+        if not data:
+            raise _Refuse("올릴 파일이 비어 있습니다.", 400)
+        if len(data) > FILE_MAX:
+            raise _Refuse(TOO_BIG, 400)
+        name = _clean_name(f.filename or "")
+        kind = _kind(data[:8], name)
+        if kind is None:
+            raise _Refuse("PDF · 그림(PNG·JPG) · 엑셀 · 워드 · 한글 파일만 올릴 수 있습니다.", 400)
+        fid = conn.execute("INSERT INTO ev_files (year, user_id, rid, name, kind, size, sha256, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                           (year, uid, rid, name[:120] or f"증빙.{kind}", kind, len(data), hashlib.sha256(data).hexdigest(), auth._iso(auth._now()))).lastrowid
+        d = _files_dir()
+        tmp = d / f"{fid}.part"
+        try:
+            tmp.write_bytes(data)
+            os.replace(tmp, d / str(fid))  # 같은 번호의 옛 파일(지운 줄이 남긴 것)이 있어도 덮어쓴다
+        except BaseException:  # 줄은 _txn 이 되돌린다 — 임시 파일만 치운다
+            tmp.unlink(missing_ok=True)
+            raise
+    return jsonify(ok=True, id=fid)
+
+
+@bp.post("/api/eval/files/<int(max=2147483647):fid>/delete")
+def file_delete(fid: int) -> Response:
+    conn = auth._db()
+    with _txn(conn):
+        f = conn.execute("SELECT year, user_id FROM ev_files WHERE id = ?", (fid,)).fetchone()
+        if f is None:
+            raise _Refuse("증빙을 찾을 수 없습니다.", 404)
+        if f[1] != g.actor.user_id:
+            raise _Refuse("내가 올린 증빙만 지울 수 있습니다.", 403)
+        ctx, row = _mine(conn, f[0])
+        if not _can(ctx, g.actor, row)["upload"]:
+            raise _Refuse("증빙 마감일이 지났거나 지울 수 없는 단계입니다.", 403)
+        conn.execute("DELETE FROM ev_files WHERE id = ?", (fid,))
+        (_files_dir() / str(fid)).unlink(missing_ok=True)  # 같은 트랜잭션 안에서 — 밖에서 지우면 그 사이에 같은 번호로 올린 새 파일을 지울 수 있다
+    return jsonify(ok=True)

@@ -6556,6 +6556,350 @@ def check_eval_view(hr) -> None:
             (fdir / str(fid)).unlink(missing_ok=True)
 
 
+def check_eval_self(hr) -> None:
+    """인사평가 자기평가 · 증빙 올리기 (2026-10-26, 평가 3단계 ①): 본인이 실행목표마다 실적(500자)과 자기 등급을 임시 저장하고(자기평가 마감일 한국 밤 12시까지 — 사람 번호는 세션에서만 써서
+    남의 것을 쓸 길이 없다), 다 채우면 제출해 평가자(대표이사가 평가자이고 맡겼으면 본인 뺀 HR 전원)에게 넘긴다. 증빙은 실행목표마다 5개 · 10MB까지, 확장자와 첫 바이트가 맞는 형식만
+    (이름의 경로는 떼고 저장 이름은 번호 하나), 증빙 마감일(한국 밤 12시) 전 · 평가자가 점수를 내기 전에만 올리고 지운다. nginx 는 증빙 올리기만 본문 11MB.
+    check_eval_view 가 이어 둔 회차와 가상 조직(부서 91~97 · 사람 101~116)을 쓴다 — 시작에 단계 · 실적을 깨끗이 하고, 끝에 시계 · 알림 · 대표이사 · 맡김 · 마감일 · 올린 증빙을 되돌린다."""
+    import io
+    from unittest import mock
+
+    import evaluation
+    import push
+    from hr_eval.domain.eval_rules import FILE_MAX
+    print("인사평가 자기평가 · 증빙 올리기 · 지우기")
+    HEAD, LEAD, EMP, FIELD, EMPB, DIVD, LEADC, EMPC, HRL, HR, EXEC, CEO = range(101, 113)
+    NOCONF, HRA = 115, 1  # HRA = 평가 대상이 아닌 HR (처음 검사의 인사담당자)
+    Y, real_now, real_send, real_sync = evaluation.FIRST_YEAR, auth._now, push.SEND, push.SYNC
+    ymd = lambda m, d, y=Y: f"{y}-{m:02d}-{d:02d}"  # noqa: E731
+    z = lambda m, d, hh=3, mi=0: f"{Y}-{m:02d}-{d:02d}T{hh:02d}:{mi:02d}:00Z"  # noqa: E731
+    jar: dict[int, object] = {}
+
+    def at(m, d, hh=3, mm=0):
+        """시계를 UTC 로 (Y년 m월 d일 hh:mm) 에 맞춘다. 기본 03:00 = 한국 정오 (12월 1일은 수요일 — 2일은 근무시간이라 알림이 간다)."""
+        t = datetime(Y, m, d, hh, mm, tzinfo=timezone.utc)
+        auth._now = lambda: t
+        jar.clear()
+
+    def c(uid):
+        if uid not in jar:
+            jar[uid] = app.test_client()
+            login(jar[uid], new_token(f"HW-{uid}"))
+        return jar[uid]
+
+    get = lambda who, path: c(who).get(path, base_url=BASE)  # noqa: E731
+    post = lambda who, path, body: c(who).post(path, base_url=BASE, headers=ORIGIN, json=body)  # noqa: E731
+    hit = lambda r, code, body: r.status_code == code and r.json == body  # noqa: E731
+    save = lambda who, entries, **over: post(who, "/api/eval/me/self", {"year": Y, "entries": entries, **over})  # noqa: E731
+    sub = lambda who, **over: post(who, "/api/eval/me/submit", {"year": Y, **over})  # noqa: E731
+    rm = lambda who, fid: post(who, f"/api/eval/files/{fid}/delete", {})  # noqa: E731
+    st = lambda who: get(who, "/api/eval/state").json  # noqa: E731
+
+    def up(who, rid, data, name, year=Y):
+        """증빙 올리기 (multipart: year · rid · file)."""
+        return c(who).post("/api/eval/files", base_url=BASE, headers=ORIGIN, data={"year": str(year), "rid": str(rid), "file": (io.BytesIO(data), name)})
+
+    items = lambda uid: q("SELECT rid, note, self_grade FROM ev_items WHERE year = ? AND user_id = ? ORDER BY rid", Y, uid)  # noqa: E731
+    stage_of = lambda uid: q("SELECT stage, self_at FROM ev_targets WHERE year = ? AND user_id = ?", Y, uid)[0]  # noqa: E731
+    files_of = lambda uid: q("SELECT id, rid, name, kind, size, sha256, at FROM ev_files WHERE year = ? AND user_id = ? ORDER BY id", Y, uid)  # noqa: E731
+    audits = lambda action: [(e, json.loads(a)) for e, a in q("SELECT entity_id, after_data FROM audit_logs WHERE action = ? ORDER BY id", action)]  # noqa: E731
+    n_audit = lambda: q("SELECT COUNT(*) FROM audit_logs WHERE action GLOB 'EVAL_*'")[0][0]  # noqa: E731
+    put = lambda uid, **cols: x(f"UPDATE ev_targets SET {', '.join(f'{k} = ?' for k in cols)} WHERE year = ? AND user_id = ?", *cols.values(), Y, uid)  # noqa: E731
+    dbdir = Path(os.environ["HR_DB_PATH"]).parent
+    fdir = dbdir / "eval_files"
+    ls = lambda: sorted(p.name for p in fdir.iterdir()) if fdir.exists() else []  # noqa: E731
+
+    sent: list[tuple[int, str, str]] = []
+    owner: dict[str, int] = {}
+
+    def fake_send(info, payload, ks, ttl):  # 보낸 것을 적어 둔다 (받은 사람 · 제목 · 열 화면)
+        sent.append((owner[info["endpoint"]], payload["title"], payload["url"]))
+        return 201
+
+    def took():
+        out = sorted(sent)
+        sent.clear()
+        return out
+
+    TURN = ("인사평가에서 처리할 일이 있어요", "/?go=perf.e2")
+    PDF, PNG, JPG = "%PDF-1.4\n가상".encode(), b"\x89PNG\r\n\x1a\n" + b"0" * 8, b"\xff\xd8\xff\xe0" + b"0" * 8
+    ZIP, OLE = b"PK\x03\x04" + b"0" * 8, b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1" + b"0" * 8
+    BAD_YEAR, NOT_TARGET = {"error": "해가 올바르지 않습니다."}, {"error": "이번 평가 대상이 아닙니다."}
+    CLOSED, FILL = {"error": "지금은 자기평가를 쓸 수 없습니다."}, {"error": "모든 KPI에 실적과 달성 등급을 넣어 주세요."}
+    LATE = {"error": f"자기평가 마감일({ymd(12, 5)})이 지났습니다. HR에 문의해 주세요."}
+    ENTRIES, RID, DUP = ({"error": "실행목표별 실적을 목록으로 보내 주세요."}, {"error": "실행목표를 찾을 수 없습니다."}, {"error": "실행목표는 한 번씩만 보내 주세요."})
+    NOTE_LEN, NOTE_TYPE, NOTE_CHAR = ({"error": "실적은 500자 안으로 써 주세요."}, {"error": "실적은 글로 써 주세요."}, {"error": "실적에 쓸 수 없는 글자가 있습니다."})
+    GRADE = {"error": "달성 등급은 S · A · B · C · D 중에서 골라 주세요."}
+    NO_UP = {"error": "증빙 마감일이 지났거나 올릴 수 없는 단계입니다."}
+    NO_ITEM, FIVE = {"error": "증빙을 붙일 실행목표를 찾을 수 없습니다."}, {"error": "실행목표 하나에 증빙은 5개까지 올릴 수 있습니다."}
+    EMPTY, BIG = {"error": "올릴 파일이 비어 있습니다."}, {"error": "증빙 파일은 10MB까지 올릴 수 있습니다."}
+    FMT = {"error": "PDF · 그림(PNG·JPG) · 엑셀 · 워드 · 한글 파일만 올릴 수 있습니다."}
+    NO_DEL, NOT_MINE = {"error": "증빙 마감일이 지났거나 지울 수 없는 단계입니다."}, {"error": "내가 올린 증빙만 지울 수 있습니다."}
+    NO_FILE = {"error": "증빙을 찾을 수 없습니다."}
+
+    other_ceos = [r[0] for r in q("SELECT u.id FROM users u JOIN user_roles r ON r.user_id = u.id WHERE r.role = 'CEO' AND u.is_active = 1 AND u.id <> ?", CEO)]
+    env = {k: os.environ.get(k) for k in ("HR_PUSH_PUBLIC", "HR_PUSH_PRIVATE")}
+    orig = q("SELECT self_to FROM ev_rounds WHERE year = ?", Y)[0][0]
+    hashes: list[str] = []
+    fids: list[int] = []
+    RESET = ("UPDATE ev_targets SET stage = CASE WHEN kpi_version IS NULL THEN 'SCORE' ELSE 'SELF' END, proposed = NULL, grade = NULL, sub_score_x10 = NULL,"
+             " sub_marks = NULL, scored_at = NULL, scored_by = NULL, comment = '', head_comment = '', bonus_x2 = 0, bonus_reason = '', proxy_by = NULL, edit_seen = NULL,"
+             " late = 0, leave_x2 = 0, out_at = NULL, out_reason = NULL, out_by = NULL, no_self_at = NULL, no_self_by = NULL, self_at = NULL WHERE year = ?")
+    try:
+        for uid in other_ceos:  # 이 가상 조직의 대표이사는 check_eval_admin 이 만든 한 명뿐이게
+            x("UPDATE users SET is_active = 0, deactivated_at = '2027-01-01T00:00:00Z' WHERE id = ?", uid)
+        x("UPDATE users SET is_active = 1, deactivated_at = NULL WHERE id = ?", CEO)
+        x(RESET, Y)
+        x("UPDATE ev_items SET note = '', self_grade = NULL, grade = NULL WHERE year = ?", Y)
+        x("UPDATE ev_rounds SET self_to = ?, released_at = NULL WHERE year = ?", ymd(12, 5), Y)  # 자기평가 마감 12/5 · 증빙 마감 12/10 (평가 시작 12/1)
+        ok(q("SELECT started_at, evid_due FROM ev_rounds WHERE year = ?", Y) == [(z(12, 1), ymd(12, 10))], "(이어 쓰는 회차: 시작함 · 증빙 마감 12/10 · 자기평가 마감을 12/5 로 둠)")
+        pub, priv = push.keygen()
+        os.environ.update(HR_PUSH_PUBLIC=pub, HR_PUSH_PRIVATE=priv)
+        push.SYNC, push.SEND = True, fake_send
+        for uid in (LEAD, HEAD, CEO, HRL, HR, HRA, LEADC):  # 휴대폰을 등록한 사람 — 평가자 · 대표이사 · HR
+            h, ep = f"{uid:03d}" + "6" * 61, f"https://push.example.invalid/self-{uid}"
+            x("INSERT INTO sessions (token_hash, user_id, created_at, last_seen_at, expires_at, kind) VALUES (?, ?, ?, ?, ?, 'phone')", h, uid, z(11, 30), z(11, 30), z(12, 31))
+            x("INSERT INTO push_subscriptions (token_hash, user_id, endpoint, p256dh, auth, created_at) VALUES (?, ?, ?, 'k', 'a', ?)", h, uid, ep, z(11, 30))
+            owner[ep] = uid
+            hashes.append(h)
+
+        # ---- 로그인 · 해 · 대상 아님 · KPI 없음 ----
+        at(12, 2)
+        paths = ("/api/eval/me/self", "/api/eval/me/submit", "/api/eval/files", "/api/eval/files/1/delete")
+        ok(all(app.test_client().post(p, base_url=BASE, headers=ORIGIN, json={}).status_code == 401 for p in paths), "로그인 없이는 401 (자기평가 저장 · 제출 · 증빙 올리기 · 지우기)")
+        ok(all(hit(save(EMP, [], year=v), 400, BAD_YEAR) and hit(sub(EMP, year=v), 400, BAD_YEAR) for v in (None, str(Y), float(Y), True, 2025, 2101))
+           and all(hit(up(EMP, 1, PDF, "a.pdf", year=v), 400, BAD_YEAR) for v in (None, float(Y), True, 2025, 2101, "", "abc", "２０２７", "9" * 5000)),
+           "해가 정수(2026~2100)가 아니면 400 (글자 · 소수 · 참/거짓 · 범위 밖 · 전각 숫자 — 증빙은 폼 글자 칸)")
+        ok(all(hit(save(EMP, [], year=v), 404, NOT_TARGET) and hit(sub(EMP, year=v), 404, NOT_TARGET) and hit(up(EMP, 1, PDF, "a.pdf", year=v), 404, NOT_TARGET) for v in (Y - 1, Y + 1)),
+           "평가 대상이 아닌 해(포털 밖의 해 · 회차 없는 해)는 404")
+        ok(all(hit(save(who, []), 404, NOT_TARGET) and hit(sub(who), 404, NOT_TARGET) and hit(up(who, 1, PDF, "a.pdf"), 404, NOT_TARGET) for who in (HRA, HEAD, CEO)),
+           "평가 대상이 아닌 사람(HR · 본부장 · 대표이사)은 자기평가도 증빙도 404")
+        n0, names0 = n_audit(), ls()
+        ok(all(hit(save(who, [{"rid": 1, "note": "가상", "selfGrade": "A"}]), 403, CLOSED) and hit(sub(who), 403, CLOSED) and hit(up(who, 1, PDF, "a.pdf"), 403, NO_UP)
+               for who in (FIELD, NOCONF)) and not q("SELECT 1 FROM ev_items WHERE user_id IN (?, ?)", FIELD, NOCONF),
+           "KPI_없는_사람은_자기평가가_없다: 확정 KPI 가 없는 사람(현장직 · 확정 없음)은 저장 · 제출 403 · 증빙 403")
+        ok(hit(save(FIELD, "x"), 403, CLOSED) and hit(save(HRA, "x"), 404, NOT_TARGET), "거절 순서: 모양이 틀려도 대상이 아니면 404 · 쓸 수 없으면 403 이 먼저 (모양 400 은 그 다음)")
+
+        # ---- 자기평가 모양 ----
+        bad = [("x", ENTRIES), (None, ENTRIES), ({"rid": 1}, ENTRIES), ([5], RID), ([{}], RID), ([{"rid": 99}], RID), ([{"rid": 4}], RID), ([{"rid": "1"}], RID), ([{"rid": True}], RID),
+               ([{"rid": 1.0}], RID), ([{"rid": 1, "selfGrade": "E"}], GRADE), ([{"rid": 1, "selfGrade": "a"}], GRADE), ([{"rid": 1, "selfGrade": 5}], GRADE),
+               ([{"rid": 1, "selfGrade": ""}], GRADE), ([{"rid": 1, "selfGrade": ["A"]}], GRADE), ([{"rid": 1, "note": "가" * 501}], NOTE_LEN),
+               ([{"rid": 1, "note": "가상\x00"}], NOTE_CHAR), ([{"rid": 1, "note": "가상\x07"}], NOTE_CHAR), ([{"rid": 1, "note": 5}], NOTE_TYPE), ([{"rid": 1, "note": None}], NOTE_TYPE),
+               ([{"rid": 1}, {"rid": 1}], DUP), ([{"rid": 1, "note": "가상 저장되면 안 되는 글", "selfGrade": "A"}, {"rid": 99}], RID)]
+        ok(all(hit(save(DIVD, v), 400, m) for v, m in bad) and items(DIVD) == [(1, "", None), (2, "", None), (3, "", None)],
+           "자기평가_모양: 목록이 아님 · 없는 실행목표(rid) · 숫자가 아닌 rid · 등급 아님('E' · 소문자 · 빈 글자) · 실적 501자 · NUL 등 쓸 수 없는 글자 · 글이 아님 · 같은 줄 두 번 → 400, "
+           "뒤 줄이 틀리면 앞 줄도 저장 안 함")
+        r = save(DIVD, [{"rid": 1, "note": "가상 실적 1", "selfGrade": "A"}, {"rid": 3, "note": "가" * 500, "selfGrade": "D"}], userId=EMP, pid=EMP, rater=HEAD)
+        ok(r.status_code == 200 and r.json["ok"] is True and items(DIVD) == [(1, "가상 실적 1", "A"), (2, "", None), (3, "가" * 500, "D")]
+           and items(EMP) == [(1, "", None), (2, "", None), (4, "", None)],
+           "자기평가_모양: 보낸 줄만 바뀜(500자는 됨 · 안 보낸 2번은 그대로) · 본문에 다른 사람 번호를 넣어도 본인 줄만 바뀜 — 남의 것을 쓸 길이 없다")
+        me = r.json["me"]
+        ok(me == st(DIVD)["me"] and me["pid"] == DIVD and me["ev"][0]["note"] == "가상 실적 1" and me["ev"][0]["selfGrade"] == "A" and "grade" not in me["ev"][0]
+           and "proposed" not in me and me["can"]["self"] is True, "저장 응답의 me 는 상태 읽기의 me 와 같은 줄(_row_json) — 평가 칸이 없는 본인 줄")
+        ok(save(DIVD, [{"rid": 1, "note": "가상 고친 실적"}]).status_code == 200 and items(DIVD)[0] == (1, "가상 고친 실적", "A")
+           and save(DIVD, [{"rid": 1, "selfGrade": None}]).status_code == 200 and items(DIVD)[0] == (1, "가상 고친 실적", None)
+           and save(DIVD, []).status_code == 200 and items(DIVD)[2] == (3, "가" * 500, "D"),
+           "자기평가_모양: 보낸 칸만 바뀜(실적만 · 등급만) · 등급을 null 로 비움 · 빈 목록 200")
+        ok(n_audit() == n0 and not took(), "임시 저장은 감사로그도 알림도 없음")
+
+        # ---- 제출은 다 채워야 ----
+        ok(hit(sub(EMP), 400, FILL) and stage_of(EMP) == ("SELF", None), "제출은_다_채워야: 아무것도 안 썼으면 400")
+        save(EMP, [{"rid": 1, "note": "가상 실적 1", "selfGrade": "A"}, {"rid": 2, "note": "가상 실적 2", "selfGrade": "B"}, {"rid": 4, "selfGrade": "C"}])
+        ok(hit(sub(EMP), 400, FILL), "제출은_다_채워야: 실적 하나가 비면 400")
+        ok(all(save(EMP, [{"rid": 4, "note": v}]).status_code == 200 and hit(sub(EMP), 400, FILL) for v in ("  \n\t ", "\u3000\u00a0")), "제출은_다_채워야: 공백만 써도 400 (줄바꿈 · 탭 · 전각 공백)")
+        save(EMP, [{"rid": 4, "note": "가상 실적 4"}, {"rid": 2, "selfGrade": None}])
+        ok(hit(sub(EMP), 400, FILL) and stage_of(EMP) == ("SELF", None) and not took(), "제출은_다_채워야: 등급 하나가 비면 400 · 단계 그대로 · 알림 없음")
+        save(EMP, [{"rid": 2, "selfGrade": "B"}])
+        r = sub(EMP)
+        ok(hit(r, 200, {"ok": True}) and stage_of(EMP) == ("SCORE", z(12, 2)), "제출은_다_채워야: 다 채우면 200 → 단계 SCORE · self_at")
+        ok(took() == [(LEAD, *TURN)], "제출 → 떠 둔 평가자(팀장)에게만 eval_turn")
+        before = items(EMP)
+        ok(hit(save(EMP, [{"rid": 1, "note": "제출 뒤에 고침"}]), 403, CLOSED) and hit(sub(EMP), 403, CLOSED) and items(EMP) == before and not took(),
+           "제출은_다_채워야: 제출한 뒤 다시 저장 · 제출은 403 · 실적 그대로 · 알림 없음")
+        logs = q("SELECT after_data, before_data, reason FROM audit_logs WHERE action = 'EVAL_SELF_SUBMITTED'")
+        ok(audits("EVAL_SELF_SUBMITTED") == [(EMP, {"year": Y})] and not any("가상 실적" in "".join(map(str, row)) for row in logs) and n_audit() == n0 + 1,
+           "제출은_다_채워야: 감사로그 EVAL_SELF_SUBMITTED 는 해만 — 실적 글자가 어디에도 없음 (저장은 안 남김)")
+
+        # ---- 증빙: 제출 뒤(SCORE)에도 올림 ----
+        r = up(EMP, 1, PDF, "가상 증빙.pdf")
+        fid_emp = r.json["id"]
+        fids.append(fid_emp)
+        ok(r.status_code == 200 and r.json == {"ok": True, "id": fid_emp} and (fdir / str(fid_emp)).read_bytes() == PDF, "증빙은_마감일까지_점수_전까지: 자기평가를 낸 뒤(SCORE)에도 올릴 수 있음 → 200 · 파일은 번호 이름")
+
+        # ---- 자기평가 마감일 밤 12시 ----
+        at(12, 5, 14, 59)  # 한국 12/5 23:59 — 자기평가 마감일 밤
+        full = [{"rid": r_, "note": f"가상 실적 {r_}", "selfGrade": "B"} for r_ in (1, 2, 3)]
+        ok(save(EMPB, full).status_code == 200 and hit(sub(EMPB), 200, {"ok": True}) and stage_of(EMPB)[0] == "SCORE" and stage_of(EMPB)[1] == z(12, 5, 14, 59) and not took(),
+           "자기평가는_마감일_밤까지: 마감일 한국 23:59(UTC 14:59)에도 저장 · 제출 200 (일요일 밤이라 알림은 안 감)")
+        at(12, 5, 15, 0)  # 한국 12/6 0시
+        ok(hit(save(LEAD, full), 403, LATE) and hit(sub(LEAD), 403, LATE) and items(LEAD) == [(1, "", None), (2, "", None), (3, "", None)] and stage_of(LEAD)[0] == "SELF",
+           "자기평가는_마감일_밤까지: 다른 사람은 다음 날 0시(UTC 15:00)에 저장 · 제출 403 + 마감일 안내 문구 · 아무것도 안 바뀜")
+        ok(hit(save(EMPB, full), 403, CLOSED) and not st(LEAD)["me"]["can"]["self"], "자기평가는_마감일_밤까지: 이미 낸 사람은 마감 뒤에도 '지금은 쓸 수 없습니다' (can.self 거짓)")
+        r = up(LEAD, 1, PDF, "마감 뒤 증빙.pdf")
+        fids.append(r.json.get("id"))
+        ok(r.status_code == 200 and st(LEAD)["me"]["can"]["upload"] is True, "증빙 마감일은 따로: 자기평가 마감이 지나도 증빙 마감(12/10)까지는 올릴 수 있음")
+
+        # ---- 증빙 형식 ----
+        at(12, 2)
+        base = ls()
+        wrong = [(PNG, "가상.pdf"), (b"MZ\x90\x00" + b"0" * 8, "가상.exe"), (PDF, "가상"), (PDF, "가상.pdf.exe"), (ZIP, "가상.hwp"), (OLE, "가상.hwpx"), (OLE, "가상.xlsx"), (ZIP, "가상.xls"),
+                 (b"%PDF", "가상.pdf"), (JPG, "가상.png"), (PNG, "가상.jpg"), (b"<script>", "가상.html")]
+        ok(all(hit(up(EMPC, 1, d, n), 400, FMT) for d, n in wrong) and not files_of(EMPC) and ls() == base,
+           "증빙_형식은_첫_바이트로: .pdf 인데 PNG 머리 · .exe · 확장자 없음 · 이중 확장자 · 확장자와 머리가 안 맞음(OLE ↔ ZIP) · 머리가 짧음 → 400 · 줄도 파일도 안 남음")
+        ok(hit(up(EMPC, 1, b"", "가상.pdf"), 400, EMPTY) and hit(c(EMPC).post("/api/eval/files", base_url=BASE, headers=ORIGIN, data={"year": str(Y), "rid": "1"}), 400, EMPTY)
+           and not files_of(EMPC), "증빙_형식은_첫_바이트로: 0바이트 · 파일을 안 보냄 → 400")
+        for rid_, data, name in ((1, OLE, "가상 한글.hwp"), (1, PDF, "가상.PDF"), (1, PNG, "가상.png"), (1, JPG, "사진.JPEG"), (1, ZIP, "표.xlsx")):
+            r = up(EMPC, rid_, data, name)
+            fids.append(r.json["id"])
+            ok(r.status_code == 200 and (fdir / str(r.json["id"])).read_bytes() == data, f"증빙_형식은_첫_바이트로: {name} 200 (.hwp 는 OLE 머리 · .PDF 는 소문자로 따짐 · .JPEG 는 jpg)")
+        got = files_of(EMPC)
+        ok([(g[1], g[2], g[3], g[4], g[5], g[6]) for g in got] == [(1, "가상 한글.hwp", "hwp", len(OLE), hashlib.sha256(OLE).hexdigest(), z(12, 2)),
+                                                                 (1, "가상.PDF", "pdf", len(PDF), hashlib.sha256(PDF).hexdigest(), z(12, 2)),
+                                                                 (1, "가상.png", "png", len(PNG), hashlib.sha256(PNG).hexdigest(), z(12, 2)),
+                                                                 (1, "사진.JPEG", "jpg", len(JPG), hashlib.sha256(JPG).hexdigest(), z(12, 2)),
+                                                                 (1, "표.xlsx", "xlsx", len(ZIP), hashlib.sha256(ZIP).hexdigest(), z(12, 2))],
+           "증빙 줄: 이름 · 종류(jpeg 도 jpg) · 크기 · sha256 · 올린 때")
+        ok(hit(up(EMPC, 1, ZIP, "여섯째.docx"), 400, FIVE) and len(files_of(EMPC)) == 5, "증빙_형식은_첫_바이트로: 한 실행목표에 6번째는 400")
+        for rid_, data, name, kind in ((2, ZIP, "문서.docx", "docx"), (2, OLE, "문서.doc", "doc"), (2, ZIP, "한글.hwpx", "hwpx"), (2, OLE, "표.xls", "xls")):
+            r = up(EMPC, rid_, data, name)
+            fids.append(r.json["id"])
+            ok(r.status_code == 200 and files_of(EMPC)[-1][2:4] == (name, kind), f"{name} 200 (다른 실행목표는 따로 다섯 개까지)")
+        ok(all(hit(up(EMPC, v, PDF, "가상.pdf"), 400, NO_ITEM) for v in (99, 4, 0, -1, "abc", "", "1.5", "１")) and hit(c(EMPC).post(
+            "/api/eval/files", base_url=BASE, headers=ORIGIN, data={"year": str(Y), "file": (io.BytesIO(PDF), "a.pdf")}), 400, NO_ITEM) and len(files_of(EMPC)) == 9,
+           "증빙은 떠 둔 실행목표에만: 없는 번호 · 이 사람 KPI 에 없는 번호 · 숫자가 아님 · 빠짐 → 400")
+
+        # ---- 크기 ----
+        edge = b"%PDF-" + b"0" * (FILE_MAX - 5)
+        r = up(EMPC, 3, edge, "열 메가.pdf")
+        fids.append(r.json["id"])
+        ok(r.status_code == 200 and files_of(EMPC)[-1][4] == FILE_MAX and (fdir / str(r.json["id"])).stat().st_size == FILE_MAX, "증빙_형식은_첫_바이트로: 딱 10MB 는 200")
+        ok(hit(up(EMPC, 3, edge + b"0", "넘음.pdf"), 400, BIG) and hit(up(EMPC, 3, edge + b"0" * 70000, "많이 넘음.pdf"), 400, BIG)
+           and hit(up(FIELD, 1, edge + b"0" * 70000, "올릴 수 없는 사람.pdf"), 400, BIG) and len(files_of(EMPC)) == 10 and rm(EMPC, r.json["id"]).status_code == 200,
+           "증빙_형식은_첫_바이트로: 10MB + 1바이트 400 · 읽기 전에 몸통 크기로 거름(10MB + 70KB) 400 · 줄 안 남음")
+
+        # ---- 이름 · 저장 위치 ----
+        outside = lambda: sorted(p.name for p in dbdir.iterdir() if not p.name.startswith("auth.db"))  # noqa: E731  (DB 자신의 -wal · -shm 은 오가므로 뺀다)
+        before_dir = outside()
+        names = {"../../x.pdf": "x.pdf", "C:\\fakepath\\y.pdf": "y.pdf", "a\x07b.pdf": "ab.pdf", "가" * 200 + ".pdf": "가" * 120, "a\u202efdp.pdf": "afdp.pdf"}
+        for raw, want in names.items():
+            r = up(EMPC, 3, PDF, raw)
+            fids.append(r.json.get("id"))
+            ok(r.status_code == 200 and files_of(EMPC)[-1][2] == want, f"증빙_형식은_첫_바이트로: 이름 {raw[:20]!r} → 저장 이름 {want[:20]!r} (경로를 떼고 · 제어문자를 빼고 · 120자로 자름)")
+        ok(outside() == before_dir and not (dbdir.parent / "x.pdf").exists() and not (fdir / "x.pdf").exists() and not (fdir / "y.pdf").exists()
+           and all(n.isdigit() for n in ls()), "증빙_형식은_첫_바이트로: 폴더 밖에 아무것도 없고 폴더 안은 번호 이름뿐 (사람이 준 이름을 경로에 쓰지 않음)")
+        for f in files_of(EMPC):  # 이름을 본 파일은 지운다 (실행목표 3번을 다시 비움)
+            if f[1] == 3:
+                rm(EMPC, f[0])
+        # 쓰다가 실패하면 줄도 되돌린다
+        n_rows, names_now = len(files_of(EMPC)), ls()
+        app.logger.disabled = True  # 예상한 서버 오류의 자세한 로그를 찍지 않게
+        try:
+            with mock.patch.object(evaluation.os, "replace", side_effect=OSError("가상 쓰기 실패")):
+                r = up(EMPC, 2, PDF, "실패.pdf")
+        finally:
+            app.logger.disabled = False
+        ok(r.status_code == 500 and len(files_of(EMPC)) == n_rows and ls() == names_now, "증빙은_줄과_파일이_같이: 파일을 못 쓰면 줄도 되돌림 · 임시 파일도 안 남음")
+        r = up(EMPC, 3, PDF, "다시.pdf")
+        fids.append(r.json["id"])
+        ok(r.status_code == 200 and (fdir / str(r.json["id"])).read_bytes() == PDF, "(실패 뒤에도 올리기는 됨)")
+        (fdir / str(r.json["id"] + 1)).write_bytes(b"stale")  # 지운 뒤 같은 번호가 다시 쓰일 때 남은 옛 파일
+        stale = r.json["id"] + 1
+        r = up(EMPC, 2, ZIP, "덮어쓰기.docx")
+        fids.append(r.json["id"])
+        ok(r.json["id"] == stale and (fdir / str(stale)).read_bytes() == ZIP, "증빙은_줄과_파일이_같이: 같은 번호의 옛 파일이 남아 있어도 새 파일로 덮어씀")
+
+        # ---- 올릴 수 있는 때 ----
+        put(EMPC, stage="GRADE", proposed="B")
+        ok(hit(up(EMPC, 3, PDF, "점수 뒤.pdf"), 403, NO_UP), "증빙은_마감일까지_점수_전까지: 평가자가 점수를 낸 뒤(GRADE) 403")
+        put(EMPC, stage="SELF", proposed=None)
+        put(EMPC, out_at=z(12, 2), out_reason="가상 휴직", out_by=HRA)
+        ok(hit(up(EMPC, 3, PDF, "제외.pdf"), 403, NO_UP), "평가에서 제외된 사람은 403")
+        put(EMPC, out_at=None, out_reason=None, out_by=None)
+        x("UPDATE ev_rounds SET released_at = ? WHERE year = ?", z(12, 2), Y)
+        ok(hit(up(EMPC, 3, PDF, "공개 뒤.pdf"), 403, NO_UP), "결과를 공개한 뒤는 403")
+        x("UPDATE ev_rounds SET released_at = NULL WHERE year = ?", Y)
+        at(11, 30, 14, 59)  # 한국 11/30 23:59 — 평가 시작일(12/1) 전날
+        ok(hit(up(EMPC, 3, PDF, "시작 전.pdf"), 403, NO_UP), "증빙은_마감일까지_점수_전까지: 평가 시작일 전날 403")
+        at(12, 10, 14, 59)  # 한국 12/10 23:59 — 증빙 마감일 밤
+        r = up(EMPC, 3, PDF, "마감일 밤.pdf")
+        fids.append(r.json.get("id"))
+        ok(r.status_code == 200, "증빙은_마감일까지_점수_전까지: 증빙 마감일 한국 23:59(UTC 14:59)에도 200")
+        at(12, 10, 15, 0)  # 한국 12/11 0시
+        ok(hit(up(EMPC, 3, PDF, "마감 다음 날.pdf"), 403, NO_UP) and hit(up(EMPB, 1, PDF, "낸 사람.pdf"), 403, NO_UP) and st(EMPC)["me"]["can"]["upload"] is False,
+           "증빙은_마감일까지_점수_전까지: 마감 다음 날 0시(UTC 15:00)는 403 (자기평가를 낸 사람도) · can.upload 거짓")
+        ok(n_audit() == n0 + len(audits("EVAL_SELF_SUBMITTED")), "증빙 올리기도 감사로그를 남기지 않음 (감사로그는 제출만)")
+
+        # ---- 지우기 ----
+        at(12, 2)
+        ok(all(hit(rm(who, fid_emp), 403, NOT_MINE) for who in (LEAD, HEAD, CEO, HRA, EMPC)) and files_of(EMP) != [] and (fdir / str(fid_emp)).is_file(),
+           "증빙_지우기: 남의 것은 평가자 · 본부장 · 대표이사 · HR 도 403 · 그대로")
+        ok(hit(rm(EMP, 999999), 404, NO_FILE) and c(EMP).post(f"/api/eval/files/{2 ** 31}/delete", base_url=BASE, headers=ORIGIN, json={}).status_code == 404, "증빙_지우기: 없는 번호 404")
+        r = rm(EMP, fid_emp)
+        ok(hit(r, 200, {"ok": True}) and files_of(EMP) == [] and not (fdir / str(fid_emp)).exists() and hit(rm(EMP, fid_emp), 404, NO_FILE),
+           "증빙_지우기: 주인 200 (제출한 SCORE 단계에서도) → 줄도 파일도 사라짐 · 또 지우면 404")
+        fids.remove(fid_emp)
+        victim = files_of(EMPC)[-1][0]
+        put(EMPC, stage="GRADE", proposed="B")
+        ok(hit(rm(EMPC, victim), 403, NO_DEL) and (fdir / str(victim)).is_file() and any(f[0] == victim for f in files_of(EMPC)), "증빙_지우기: 평가자가 점수를 낸 뒤 403 · 줄도 파일도 그대로")
+        put(EMPC, stage="SELF", proposed=None)
+        at(12, 10, 15, 0)
+        ok(hit(rm(EMPC, victim), 403, NO_DEL) and (fdir / str(victim)).is_file(), "증빙_지우기: 증빙 마감 다음 날 403")
+        at(12, 2)
+        (fdir / str(victim)).unlink()  # 파일이 이미 없어도
+        ok(hit(rm(EMPC, victim), 200, {"ok": True}) and all(f[0] != victim for f in files_of(EMPC)), "증빙_지우기: 파일이 이미 없어도 줄은 지우고 200")
+        fids.remove(victim)
+        ok(n_audit() == n0 + len(audits("EVAL_SELF_SUBMITTED")), "(지우기도 감사로그 없음)")
+
+        # ---- 알림 받는 사람 ----
+        for uid in (LEADC, HRL, HR):
+            x("UPDATE ev_items SET note = '가상 실적', self_grade = 'B' WHERE year = ? AND user_id = ?", Y, uid)
+        took()
+        ok(hit(sub(LEADC), 200, {"ok": True}) and took() == [(CEO, *TURN)], "제출 알림: 평가자가 대표이사(맡기지 않음) → 대표이사에게")
+        ok(hit(sub(HR), 200, {"ok": True}) and took() == [(HRL, *TURN)], "제출 알림: 평가자가 HR 팀장 → 그 사람에게만")
+        x("INSERT INTO ceo_delegation (ceo_user_id, since) VALUES (?, ?)", CEO, z(12, 2))
+        ok(hit(sub(HRL), 200, {"ok": True}) and took() == [(HRA, *TURN), (HR, *TURN)],
+           "제출 알림: 평가자가 대표이사이고 맡겼으면 HR 전원 — 제출한 HR 본인(HR 팀장)은 빼고, 대표이사에게는 안 감")
+        put(LEADC, stage="SELF", self_at=None)
+        ok(hit(sub(LEADC), 200, {"ok": True}) and took() == [(HRA, *TURN), (HRL, *TURN), (HR, *TURN)], "제출 알림: 맡겼으면 HR 아닌 사람의 제출은 HR 전원에게")
+        x("DELETE FROM ceo_delegation WHERE ceo_user_id = ?", CEO)
+        ok(len(audits("EVAL_SELF_SUBMITTED")) == 6, "(자기평가 제출 감사로그: 제출마다 한 줄)")
+
+        # ---- nginx ----
+        conf = (HERE.parent / "nginx.conf").read_text(encoding="utf-8")
+        head, _, rest = conf.partition("location = /api/eval/files")
+        blk, api = rest.split("}", 1)[0], conf.split("location /api/ {", 1)[1].split("}", 1)[0]
+        proxy = lambda b: {ln.split("#")[0].strip() for ln in b.splitlines() if ln.strip().startswith(("proxy_set_header", "proxy_read_timeout"))}  # noqa: E731
+        ok(rest and "client_max_body_size 11m;" in blk and conf.count("client_max_body_size") == 2 and "client_max_body_size 5m;" in head.split("location", 1)[0]
+           and "proxy_pass http://api:8000;" in blk and proxy(blk) == proxy(api) and len(proxy(blk)) == 4,
+           "nginx_증빙만_11MB: location = /api/eval/files 만 본문 11m (전체 5m 는 그대로) · 나머지 proxy 설정은 /api/ 와 같음")
+    finally:
+        auth._now = real_now
+        push.SYNC, push.SEND = real_sync, real_send
+        for k, v in env.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+        app.logger.disabled = False
+        for fid in fids:
+            if fid:
+                x("DELETE FROM ev_files WHERE id = ?", fid)
+                (fdir / str(fid)).unlink(missing_ok=True)
+        x("DELETE FROM ev_files WHERE year = ?", Y)
+        for p in (fdir.iterdir() if fdir.exists() else ()):
+            p.unlink()
+        for h in hashes:
+            x("DELETE FROM push_subscriptions WHERE token_hash = ?", h)
+            x("DELETE FROM sessions WHERE token_hash = ?", h)
+        x("DELETE FROM ceo_delegation WHERE ceo_user_id = ?", CEO)
+        x(RESET, Y)
+        x("UPDATE ev_items SET note = '', self_grade = NULL, grade = NULL WHERE year = ?", Y)
+        x("UPDATE ev_rounds SET self_to = ?, released_at = NULL WHERE year = ?", orig, Y)
+        x("UPDATE users SET is_active = 0, deactivated_at = '2027-01-01T00:00:00Z' WHERE id = ?", CEO)
+        for uid in other_ceos:
+            x("UPDATE users SET is_active = 1, deactivated_at = NULL WHERE id = ?", uid)
+
+
 def main() -> int:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     seed()
@@ -6714,7 +7058,7 @@ def main() -> int:
     ok(q("SELECT hits FROM sso_rate_hits WHERE ip = '203.0.113.7'") == [(31,)], "횟수는 SQLite 에 셈 (서버 프로그램 2개가 같은 숫자)")
     auth._now = real_now
     ok(app.test_client().get("/api/auth/message?m=busy").status_code == 429, "안내 화면은 429")
-    ok(conf.count("proxy_set_header CF-Connecting-IP $http_cf_connecting_ip;") == 2, "nginx 가 CF-Connecting-IP 를 api 로 넘김")
+    ok(conf.count("proxy_set_header CF-Connecting-IP $http_cf_connecting_ip;") == 3, "nginx 가 CF-Connecting-IP 를 api 로 넘김 (로그인 · 증빙 올리기 · 그 밖 /api/)")
 
     print("12. 다른 사이트에서 몰래 보내는 요청 막기")
     s = app.test_client()
@@ -6799,6 +7143,7 @@ def main() -> int:
     check_kpi_review(hr)
     check_eval_admin(hr)
     check_eval_view(hr)
+    check_eval_self(hr)
     with pay_gate_off():  # 아래 검사들은 비밀번호 잠금 이전 동작을 본다 — 잠금은 check_pay_pin 이 켠 채로 본다
         check_payslips(hr)
         check_pay_ask(hr)
