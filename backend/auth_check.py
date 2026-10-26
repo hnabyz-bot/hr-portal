@@ -5867,6 +5867,356 @@ def check_kpi_review(hr) -> None:
             x("UPDATE kpi_years SET eval_start = ? WHERE year = ?", ev, year)
 
 
+def check_eval_admin(hr) -> None:
+    """인사평가 회차 · 시작 · HR 명단 일 (2026-10-26, 평가 3단계 ①): HR 이 회차(단계별 마감일 · 등급 기준 점수)를 정하고, 평가 시작일(한국 날짜)부터 [평가 시작]을 한 번 누르면
+    그 순간의 평가 대상 · 묶음 · 평가자 · 배정자 · 확정 KPI 판을 ev_targets 에 떠 둔다 (그 뒤 조직 · 구성원 설정이 바뀌어도 그대로). 근태 입력(연차 초과 5일이면 S·A·B 지움 · 넘어간 사람은 잠김) ·
+    제외 · 되돌림 · 자기평가 없이 진행(평가자에게 알림) · 평가자 바꾸기 · 시작한 해의 평가 시작일 잠금. 감사로그에는 해 · 사람 수 · 평가자 번호만 (사유 · 근태 숫자 · 등급 없음).
+    시계는 FIRST_YEAR(포털에서 평가하는 첫 해) 안으로 정해 놓고 돈다 — 시작은 올해 평가만 되므로. 알림은 가짜 보내기 함수로 바로(SYNC) 본다 (휴대폰 알림 검사와 같은 방법).
+    이 검사만의 가상 조직: 부서 91~97 · 사람 101~116 (81~84 는 일정 변경 검사가 이미 쓴다). 떠 둔 줄 · 회차는 지울 수 없어 남는다 — 뒤 검사(평가 읽기)가 이 조직과 시작한 회차를 이어 쓴다.
+    다른 사람의 평가 대상 칸 · 다른 대표이사 · 시계 · 알림 설정은 되돌린다."""
+    import evaluation
+    import push
+    print("인사평가 회차 · 시작 · HR 명단 일")
+    # 본부(91) > 팀A(92, 팀장 있음) · 팀B(93, 팀장 없음) / 본부장 없는 본부(94) > 팀C(95) / 대표이사 직속 팀(96 — HR 팀장 · HR 담당자) / 장이 없는 '임원'(97)
+    for dept in ((91, "E91", "가상E본부", "DIVISION", None), (92, "E92", "가상E팀A", "TEAM", 91), (93, "E93", "가상E팀B", "TEAM", 91),
+                 (94, "E94", "가상E본부2", "DIVISION", None), (95, "E95", "가상E팀C", "TEAM", 94), (96, "E96", "가상E지원팀", "DIVISION", None),
+                 (97, "E97", "임원", "DIVISION", None)):
+        x("INSERT INTO departments (id, code, name, level, parent_id) VALUES (?, ?, ?, ?, ?)", *dept)
+    HEAD, LEAD, EMP, FIELD, EMPB, DIVD, LEADC, EMPC, HRL, HR, EXEC, CEO, OFF, GONE, NOCONF, HEAD2 = range(101, 117)
+    cast = {HEAD: ("가상E본부장", 91, ["DIVISION_HEAD"], 1), LEAD: ("가상E팀장", 92, ["TEAM_LEADER"], 1), EMP: ("가상E팀원", 92, [], 1),
+            FIELD: ("가상E현장직", 92, [], 0), EMPB: ("가상E팀원B", 93, [], 1), DIVD: ("가상E본부직속", 91, [], 1),
+            LEADC: ("가상E팀장C", 95, ["TEAM_LEADER"], 1), EMPC: ("가상E팀원C", 95, [], 1), HRL: ("가상EHR팀장", 96, ["TEAM_LEADER", "HR_ADMIN"], 1),
+            HR: ("가상EHR담당", 96, ["HR_ADMIN"], 1), EXEC: ("가상E임원직원", 97, [], 1), CEO: ("가상E대표", 97, ["CEO"], 0),
+            OFF: ("가상E평가꺼짐", 92, [], 1), GONE: ("가상E퇴직", 92, [], 1), NOCONF: ("가상E확정없음", 93, [], 1), HEAD2: ("가상E새본부장", 91, [], 1)}
+    for uid, (name, dept, roles, writes) in cast.items():  # 임원 소속(EXEC)은 포털 사용이 꺼져 있다 — 그래도 평가 대상 (R3)
+        x("INSERT INTO users (id, name, email, department_id, hiworks_user_no, portal_enabled, is_active, deactivated_at, writes_kpi, in_evaluation, title)"
+          " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '가상직급')", uid, name, f"e{uid}@example.invalid", dept, f"HW-{uid}", int(uid != EXEC),
+          int(uid != GONE), "2027-01-01T00:00:00Z" if uid == GONE else None, writes, int(uid not in (OFF, HEAD2)))
+        for role in roles:
+            x("INSERT INTO user_roles (user_id, role) VALUES (?, ?)", uid, role)
+
+    Y, real_now, real_send, real_sync = evaluation.FIRST_YEAR, auth._now, push.SEND, push.SYNC
+    ymd = lambda m, d, y=Y: f"{y}-{m:02d}-{d:02d}"  # noqa: E731
+    z = lambda m, d, hh=3, y=Y: f"{y}-{m:02d}-{d:02d}T{hh:02d}:00:00Z"  # noqa: E731
+    jar: dict[int, object] = {}
+
+    def at(m, d, hh=3, mm=0, y=Y):
+        """시계를 UTC 로 (y년 m월 d일 hh:mm) 에 맞춘다. 기본 03:00 = 한국 정오 (근무시간 — 알림이 간다)."""
+        t = datetime(y, m, d, hh, mm, tzinfo=timezone.utc)
+        auth._now = lambda: t
+        jar.clear()
+
+    def c(uid):
+        if uid not in jar:
+            jar[uid] = app.test_client()
+            login(jar[uid], new_token(f"HW-{uid}"))
+        return jar[uid]
+
+    def item(name, w, rid):
+        return {"action": name, "formula": "가상 측정식", "weight": w, "owner": "가상E", "S": "가상 s", "A": "가상 a", "B": "가상 b", "C": "가상 c",
+                "D": "가상 d", "kind": "reg", "target": None, "unit": "", "scheds": [], "rid": rid}
+
+    def confirmed(uid, *versions):
+        """확정본을 바로 넣는다 — versions 는 판마다 실행목표 번호 (가중치 40 · 30 · 30)."""
+        for v, rids in enumerate(versions, 1):
+            content = json.dumps([{"team": "가상 팀목표", "personal": "가상 개인목표", "items": [item(f"가상 업무 {r}", w, r) for r, w in zip(rids, (40, 30, 30))]}],
+                                 ensure_ascii=False)
+            if v == 1:
+                x("INSERT INTO kpi_plans (user_id, year, status, draft, confirmed_version, updated_at) VALUES (?, ?, 'CONFIRMED', ?, ?, ?)", uid, Y, content, len(versions), z(3, 10))
+            x("INSERT INTO kpi_versions (user_id, year, version, content, confirmed_at, confirmed_by) VALUES (?, ?, ?, ?, ?, ?)", uid, Y, v, content, z(3, 10 + v), HEAD)
+
+    for uid in (LEAD, EMPB, DIVD, LEADC, EMPC, HRL, HR, EXEC):
+        confirmed(uid, (1, 2, 3))
+    confirmed(EMP, (1, 2, 3), (1, 2, 4))  # 판이 둘 — 마지막 확정 판(2)의 실행목표를 떠 둔다
+    x("INSERT INTO kpi_plans (user_id, year, status, draft, updated_at) VALUES (?, ?, 'DRAFT', '[]', ?)", NOCONF, Y, z(3, 10))  # KPI 를 쓰는데 확정본이 없다
+
+    post = lambda who, path, body: c(who).post(path, base_url=BASE, headers=ORIGIN, json=body)  # noqa: E731
+    hit = lambda r, code, body: r.status_code == code and r.json == body  # noqa: E731
+    ROUND = {"year": Y, "evalStart": ymd(12, 1), "selfTo": ymd(12, 10), "evidDue": ymd(12, 10), "scoreTo": ymd(12, 20),
+             "gradeTo": ymd(1, 10, Y + 1), "ceoTo": ymd(1, 20, Y + 1), "finalTo": ymd(2, 10, Y + 1), "bands": {"A": 90, "B": 80, "C": 70}}
+    rnd = lambda who=None, **over: post(who or HR, "/api/eval/admin/round", {**ROUND, **over})  # noqa: E731
+    adm = lambda what, who=None, **body: post(who or HR, f"/api/eval/admin/{what}", {"year": Y, **body})  # noqa: E731
+    one = lambda uid, what, who=None, **body: post(who or HR, f"/api/eval/admin/{uid}/{what}", {"year": Y, **body})  # noqa: E731
+    att = lambda rows: adm("attendance", rows=rows)  # noqa: E731
+    COLS = "pool, rater_id, assigner_id, stage, kpi_version, writes_kpi, div_name, team_name, division_id, team_id, is_leader, title"
+    tgt = lambda uid: next(iter(q(f"SELECT {COLS} FROM ev_targets WHERE year = ? AND user_id = ?", Y, uid)), None)  # noqa: E731
+    lv = lambda uid: q("SELECT late, leave_x2, grade FROM ev_targets WHERE year = ? AND user_id = ?", Y, uid)[0]  # noqa: E731
+    out_of = lambda uid: q("SELECT out_at, out_reason, out_by FROM ev_targets WHERE year = ? AND user_id = ?", Y, uid)[0]  # noqa: E731
+    rater = lambda uid: q("SELECT rater_id FROM ev_targets WHERE year = ? AND user_id = ?", Y, uid)[0][0]  # noqa: E731
+    audits = lambda action: [(e, json.loads(a)) for e, a in q("SELECT entity_id, after_data FROM audit_logs WHERE action = ? ORDER BY id", action)]  # noqa: E731
+
+    def stage(uid, s, grade=None, proposed="B"):
+        """단계를 바로 넣는다 (등급 배정 이후 단계엔 평가자 제안이 있어야 한다 — 표의 CHECK)."""
+        x("UPDATE ev_targets SET stage = ?, proposed = ?, grade = ? WHERE year = ? AND user_id = ?", s, None if s in ("SELF", "SCORE") else proposed, grade, Y, uid)
+
+    sent: list[tuple[int, str, str]] = []
+    owner: dict[str, int] = {}
+
+    def fake_send(info, payload, ks, ttl):  # 보낸 것을 적어 둔다 (받은 사람 · 제목 · 열 화면)
+        sent.append((owner[info["endpoint"]], payload["title"], payload["url"]))
+        return 201
+
+    def took():
+        out = sorted(sent)
+        sent.clear()
+        return out
+
+    TURN = ("인사평가에서 처리할 일이 있어요", "/?go=perf.e2")
+    for uid in (EMP, FIELD, NOCONF, HEAD, LEAD):  # 휴대폰을 등록한 사람 — KPI 있는 대상 둘(EMP · LEAD) · KPI 없는 대상 둘 · 평가 대상이 아닌 본부장(평가자)
+        h, ep = f"{uid:03d}" + "5" * 61, f"https://push.example.invalid/eval-{uid}"
+        x("INSERT INTO sessions (token_hash, user_id, created_at, last_seen_at, expires_at, kind) VALUES (?, ?, ?, ?, ?, 'phone')", h, uid, z(11, 30), z(11, 30), z(12, 31))
+        x("INSERT INTO push_subscriptions (token_hash, user_id, endpoint, p256dh, auth, created_at) VALUES (?, ?, ?, 'k', 'a', ?)", h, uid, ep, z(11, 30))
+        owner[ep] = uid
+
+    others = [r[0] for r in q("SELECT id FROM users WHERE id NOT BETWEEN 101 AND 116 AND in_evaluation = 1")]  # 앞 검사의 사람들 — 이 검사 동안만 평가 대상에서 뺀다
+    other_ceos = [r[0] for r in q("SELECT u.id FROM users u JOIN user_roles r ON r.user_id = u.id WHERE r.role = 'CEO' AND u.is_active = 1 AND u.id <> ?", CEO)]
+    env = {k: os.environ.get(k) for k in ("HR_PUSH_PUBLIC", "HR_PUSH_PRIVATE")}
+    db = connect(os.environ["HR_DB_PATH"])  # cur_year · _round · _ceo 를 바로 부를 연결
+    HR_ONLY, BAD_YEAR = {"error": "HR만 할 수 있습니다."}, {"error": "해가 올바르지 않습니다."}
+    NOT_STARTED, RELEASED = {"error": "평가를 아직 시작하지 않았습니다."}, {"error": "결과를 공개한 평가는 바꿀 수 없습니다."}
+    NOT_TARGET, LOCKED = {"error": "평가 대상이 아닙니다."}, {"error": "평가가 시작되어 평가 시작일을 바꿀 수 없습니다."}
+    try:
+        for uid in others:
+            x("UPDATE users SET in_evaluation = 0 WHERE id = ?", uid)
+        for uid in other_ceos:  # 이 가상 조직의 대표이사는 내가 만든 한 명뿐이게
+            x("UPDATE users SET is_active = 0, deactivated_at = '2027-01-01T00:00:00Z' WHERE id = ?", uid)
+        pub, priv = push.keygen()
+        os.environ.update(HR_PUSH_PUBLIC=pub, HR_PUSH_PRIVATE=priv)
+        push.SYNC, push.SEND = True, fake_send
+
+        # ---- 아무것도 정하기 전 (한국 11월 1일 월요일 정오) ----
+        at(11, 1)
+        paths = ("round", "start", "att-done", "attendance", f"{EMP}/exclude", f"{EMP}/include", f"{EMP}/skip-self", f"{EMP}/rater")
+        ok(all(app.test_client().post(f"/api/eval/admin/{p}", base_url=BASE, headers=ORIGIN, json={}).status_code == 401 for p in paths), "로그인 없이는 401 (평가 HR 일 여덟 길)")
+        ok(all(hit(post(LEAD, f"/api/eval/admin/{p}", {"year": Y}), 403, HR_ONLY) for p in paths), "회차는_HR이_2027년부터: 팀장(HR 아님)은 여덟 길 모두 403")
+        ok(all(hit(rnd(year=v), 400, BAD_YEAR) and hit(adm("start", year=v), 400, BAD_YEAR) and hit(adm("attendance", year=v, rows=[]), 400, BAD_YEAR)
+               and hit(one(EMP, "exclude", year=v, reason="가상"), 400, BAD_YEAR) for v in (None, str(Y), float(Y), True, 2025, 2101)),
+           "해가 정수(2026~2100)가 아니면 400 (글자 · 소수 · 참/거짓 · 범위 밖)")
+        offline = {"error": f"{Y - 1}년 평가는 포털 밖에서 진행합니다."}
+        ok(hit(rnd(year=Y - 1, evalStart=ymd(12, 1, Y - 1)), 403, offline) and hit(adm("start", year=Y - 1), 403, offline),
+           f"회차는_HR이_2027년부터: {Y - 1}년(포털 평가 전 해)은 회차도 시작도 403 · 문구")
+        ok(hit(adm("start", year=Y + 1), 403, {"error": "올해 평가만 시작할 수 있습니다."}), "올해가 아닌 해는 시작 403")
+        ok(hit(adm("start"), 409, {"error": "단계별 마감일을 먼저 정해 주세요."}), "시작은_평가_시작일부터_한_번: 회차 없이 409")
+        ok(hit(adm("att-done"), 409, NOT_STARTED) and hit(att([]), 409, NOT_STARTED) and hit(one(EMP, "exclude", reason="가상"), 404, NOT_TARGET),
+           "시작 전에는 근태 · 근태 마침 409, 사람 일은 대상이 없어 404")
+        ok(evaluation.cur_year(db) == Y and evaluation._round(db, Y) is None, "(회차가 없으면 보일 해는 올해, 회차 없음)")
+
+        # ---- 회차 ----
+        bad = {"날짜 빠짐": {"selfTo": None}, "없는 날": {"selfTo": ymd(11, 31)}, "날짜 모양": {"selfTo": f"{Y}-12-5"}, "날짜 숫자": {"scoreTo": 20271220},
+               "평가 시작일이 그해 밖": {"evalStart": ymd(1, 5, Y + 1)}, "마감일이 평가 시작일 전": {"selfTo": ymd(11, 30)},
+               "3월 연봉계약 뒤": {"finalTo": ymd(3, 1, Y + 1)}, "순서가 거꾸로": {"scoreTo": ymd(12, 5)}, "등급 배정이 대표이사 확인 뒤": {"gradeTo": ymd(1, 25, Y + 1)},
+               "증빙이 평가자 평가 뒤": {"evidDue": ymd(12, 21)}, "증빙이 평가 시작일 전": {"evidDue": ymd(11, 30)},
+               "기준 A = B": {"bands": {"A": 80, "B": 80, "C": 70}}, "기준 101": {"bands": {"A": 101, "B": 80, "C": 70}}, "기준 0": {"bands": {"A": 90, "B": 80, "C": 0}},
+               "기준 소수": {"bands": {"A": 90.0, "B": 80, "C": 70}}, "기준 참/거짓": {"bands": {"A": 90, "B": True, "C": 0}}, "기준 빠짐": {"bands": {"A": 90, "B": 80}},
+               "기준 목록": {"bands": [90, 80, 70]}, "기준 없음": {"bands": None}}
+        ok(all(rnd(**v).status_code == 400 for v in bad.values()) and not q("SELECT 1 FROM ev_rounds WHERE year = ?", Y) and not q("SELECT 1 FROM kpi_years WHERE year = ?", Y),
+           f"회차: 날짜 모양 · 범위 · 순서 · 기준 점수가 틀리면 400, 아무것도 안 남김 ({', '.join(bad)})")
+        ok(hit(rnd(scoreTo=ymd(12, 5)), 400, {"error": "마감일은 자기평가 → 평가자 평가 → 등급 배정 → 대표이사 확인 → HR 확정 차례로 정해 주세요."})
+           and hit(rnd(bands={"A": 80, "B": 80, "C": 70}), 400, {"error": "등급 기준 점수는 1~100 사이 정수로, A > B > C 가 되게 넣어 주세요."}),
+           "회차는_HR이_2027년부터: 순서가 거꾸로 400 · 기준 점수 A ≤ B 400 (문구)")
+        ok(hit(rnd(), 200, {"ok": True}) and q("SELECT edit_from, edit_to, eval_start, updated_by FROM kpi_years WHERE year = ?", Y) == [(None, None, ymd(12, 1), HR)]
+           and q("SELECT self_to, evid_due, score_to, grade_to, ceo_to, final_to, band_a, band_b, band_c, started_at, updated_by FROM ev_rounds WHERE year = ?", Y)
+           == [(ymd(12, 10), ymd(12, 10), ymd(12, 20), ymd(1, 10, Y + 1), ymd(1, 20, Y + 1), ymd(2, 10, Y + 1), 90, 80, 70, None, HR)]
+           and audits("EVAL_ROUND_SET") == [(Y, {"year": Y})],
+           "회차는_HR이_2027년부터: HR 200 → 작성 기간 없이 kpi_years 줄을 만들고 평가 시작일을 넣음 · 회차 줄 · 감사로그 EVAL_ROUND_SET (해만)")
+        feb = date(Y + 1, 3, 1) - timedelta(days=1)
+        ok(hit(rnd(finalTo=feb.isoformat()), 200, {"ok": True}) and q("SELECT final_to FROM ev_rounds WHERE year = ?", Y) == [(feb.isoformat(),)]
+           and hit(rnd(), 200, {"ok": True}), "다음 해 2월 말일까지는 됨 (같은 줄을 고침)")
+        ok(evaluation._round(db, Y) == {"year": Y, **{k: ROUND[k] for k in ("evalStart", "selfTo", "evidDue", "scoreTo", "gradeTo", "ceoTo", "finalTo")},
+                                         "bands": {"A": 90, "B": 80, "C": 70}, "started": None, "attDone": None, "released": None}, "_round: 회차 줄 + 평가 시작일 모양")
+
+        # ---- 시작 ----
+        at(11, 30, 14, 59)  # 한국 11월 30일 23:59 — 평가 시작일 전날
+        ok(hit(adm("start"), 403, {"error": "평가 시작일(12/1)부터 시작할 수 있습니다."}) and not q("SELECT 1 FROM ev_targets WHERE year = ?", Y),
+           "시작은_평가_시작일부터_한_번: 시작일 전날(한국 23:59) 403 · 아무것도 안 남김")
+        at(12, 1)  # 한국 12월 1일(수) 정오
+        x("UPDATE users SET in_evaluation = 0 WHERE id BETWEEN 101 AND 116")
+        ok(hit(adm("start"), 409, {"error": "평가 대상이 없습니다."}) and q("SELECT started_at FROM ev_rounds WHERE year = ?", Y) == [(None,)], "평가 대상이 0명이면 409 · 시작 안 됨")
+        x("UPDATE users SET in_evaluation = 1 WHERE id BETWEEN 101 AND 116 AND id NOT IN (?, ?)", OFF, HEAD2)
+        r = adm("start")
+        ok(hit(r, 200, {"ok": True, "count": 11, "noKpi": 1, "noRater": 0}) and q("SELECT started_at, started_by FROM ev_rounds WHERE year = ?", Y) == [(z(12, 1), HR)],
+           f"시작은_평가_시작일부터_한_번: 당일 200 · 대상 11명 · 확정 KPI 없음 1 · 평가자 못 찾음 0 ({r.json})")
+        ok(took() == [(LEAD, *TURN), (EMP, *TURN)], "시작 → KPI 가 있는 대상에게만 알림 (KPI 없는 사람 · 평가 대상이 아닌 사람은 0통)")
+        ok(hit(adm("start"), 409, {"error": "이미 시작했습니다."}) and q("SELECT COUNT(*) FROM ev_targets WHERE year = ?", Y) == [(11,)] and not took(),
+           "시작은_평가_시작일부터_한_번: 또 누르면 409 · 줄이 늘지 않음 · 알림 없음")
+        ok(audits("EVAL_STARTED") == [(Y, {"year": Y, "count": 11})], "감사로그 EVAL_STARTED (해 · 사람 수)")
+        D1, D2 = "가상E본부", "가상E본부2"
+        want = {EMP: ("DIV:91", LEAD, HEAD, "SELF", 2, 1, D1, "가상E팀A", 91, 92, 0, "가상직급"),
+                FIELD: ("DIV:91", LEAD, HEAD, "SCORE", None, 0, D1, "가상E팀A", 91, 92, 0, "가상직급"),
+                EMPB: ("DIV:91", HEAD, HEAD, "SELF", 1, 1, D1, "가상E팀B", 91, 93, 0, "가상직급"),
+                DIVD: ("DIV:91", HEAD, HEAD, "SELF", 1, 1, D1, "본부 직속", 91, None, 0, "가상직급"),
+                NOCONF: ("DIV:91", HEAD, HEAD, "SCORE", None, 1, D1, "가상E팀B", 91, 93, 0, "가상직급"),
+                EMPC: ("DIV:94", LEADC, None, "SELF", 1, 1, D2, "가상E팀C", 94, 95, 0, "가상직급"),
+                LEAD: ("LEADERS", HEAD, None, "SELF", 1, 1, D1, "가상E팀A", 91, 92, 1, "가상직급"),
+                LEADC: ("LEADERS", CEO, None, "SELF", 1, 1, D2, "가상E팀C", 94, 95, 1, "가상직급"),
+                HRL: ("LEADERS", CEO, None, "SELF", 1, 1, "대표이사 직속부서", "가상E지원팀", None, 96, 1, "가상직급"),
+                HR: ("DIRECT", HRL, None, "SELF", 1, 1, "대표이사 직속부서", "가상E지원팀", None, 96, 0, "가상직급"),
+                EXEC: ("DIRECT", CEO, None, "SELF", 1, 1, "대표이사 직속부서", "본부 직속", None, None, 0, "가상직급")}
+        bad_rows = [(uid, tgt(uid)) for uid, row in want.items() if tgt(uid) != row]
+        ok(not bad_rows, f"떠_둔_묶음과_평가자: 묶음 · 평가자 · 배정자 · 단계 · KPI 판 · 이름 칸이 맞음 (팀원 → 팀장 · 팀장 없는 팀 → 본부장 · 본부 직속 → 본부장 · "
+                         f"본부장 없는 본부 → 배정자 대표이사 · 팀장 → 본부장 또는 대표이사 · HR 담당 → HR 팀장 · 임원 소속 → 대표이사) {bad_rows}")
+        ok(all(tgt(uid) is None for uid in (HEAD, CEO, OFF, GONE, HEAD2)), "떠_둔_묶음과_평가자: 본부장 · 대표이사 · 평가 대상 꺼짐 · 비활성은 없음 (포털 사용이 꺼진 임원 소속은 있음)")
+        ok(tgt(NOCONF)[3:5] == ("SCORE", None) and tgt(FIELD)[3:5] == ("SCORE", None), "확정_KPI가_없으면_등급만: KPI 를 쓰는데 확정본 없음 → kpi_version NULL · SCORE (응답 noKpi 1) · KPI 없는 사람도 SCORE")
+        ok(q("SELECT rid, note, self_grade, grade FROM ev_items WHERE year = ? AND user_id = ? ORDER BY rid", Y, EMP) == [(1, "", None, None), (2, "", None, None), (4, "", None, None)]
+           and q("SELECT COUNT(*) FROM ev_items WHERE year = ?", Y) == [(27,)] and not q("SELECT 1 FROM ev_items WHERE year = ? AND user_id IN (?, ?)", Y, FIELD, NOCONF),
+           "실행목표마다 빈 줄 — 마지막 확정 판(판 2: 1 · 2 · 4)의 것, KPI 없는 사람은 없음")
+        ok(q("SELECT pool, closed_at, hr_seen FROM ev_pools WHERE year = ? ORDER BY pool", Y) == [("DIRECT", None, "[]"), ("DIV:91", None, "[]"), ("DIV:94", None, "[]"), ("LEADERS", None, "[]")],
+           "묶음마다 ev_pools 한 줄")
+        ok(evaluation.cur_year(db) == Y and evaluation._round(db, Y)["started"] == z(12, 1) and evaluation._ceo(db) == CEO and evaluation._deleg(db, CEO) is False,
+           "(보일 해 = 시작한 올해 · _round 의 started · 활성 대표이사 · 맡기지 않음)")
+        x("INSERT INTO ceo_delegation (ceo_user_id, since) VALUES (?, ?)", CEO, z(12, 1))
+        ok(evaluation._deleg(db, CEO) is True and evaluation._deleg(db, None) is False, "(_deleg: 맡기면 참 · 대표이사가 없으면 거짓)")
+        x("DELETE FROM ceo_delegation WHERE ceo_user_id = ?", CEO)
+
+        # ---- 시작 뒤 조직이 바뀌어도 · 자기평가 없이 진행 ----
+        at(12, 2)
+        frozen = lambda: q("SELECT user_id, pool, rater_id, assigner_id, division_id, team_id, div_name, team_name, is_leader FROM ev_targets WHERE year = ? ORDER BY user_id", Y)  # noqa: E731
+        before = frozen()
+        x("UPDATE users SET department_id = 93 WHERE id = ?", EMP)  # 팀A → 팀B (팀장 없는 팀)
+        x("UPDATE user_roles SET user_id = ? WHERE user_id = ? AND role = 'DIVISION_HEAD'", HEAD2, HEAD)  # 본부장이 바뀜
+        x("UPDATE users SET in_evaluation = 0 WHERE id = ?", FIELD)
+        r = one(EMPB, "skip-self")
+        ok(hit(r, 200, {"ok": True}) and q("SELECT stage, no_self_at, no_self_by FROM ev_targets WHERE year = ? AND user_id = ?", Y, EMPB) == [("SCORE", z(12, 2), HR)],
+           "자기평가_없이_진행: SELF → SCORE · no_self_at · no_self_by")
+        ok(took() == [(HEAD, *TURN)], "자기평가_없이_진행: 떠 둔 평가자(옛 본부장)에게 알림 하나 — 지금 본부장이 아니어도")
+        ok(frozen() == before, "시작_뒤에는_조직이_바뀌어도_그대로: 팀을 옮기고 본부장을 바꾸고 평가 대상을 꺼도 묶음 · 평가자 · 배정자 · 이름 칸이 그대로")
+        x("UPDATE users SET department_id = 92 WHERE id = ?", EMP)
+        x("UPDATE user_roles SET user_id = ? WHERE user_id = ? AND role = 'DIVISION_HEAD'", HEAD, HEAD2)
+        x("UPDATE users SET in_evaluation = 1 WHERE id = ?", FIELD)
+        ok(hit(one(EMPB, "skip-self"), 409, {"error": "자기평가 단계가 아닙니다."}) and hit(one(FIELD, "skip-self"), 409, {"error": "자기평가 단계가 아닙니다."})
+           and hit(one(OFF, "skip-self"), 404, NOT_TARGET) and not took(), "자기평가_없이_진행: 이미 넘어간 사람 · KPI 없는 사람(처음부터 SCORE) 409 · 대상 아님 404 · 알림 없음")
+        ok(audits("EVAL_SKIP_SELF") == [(EMPB, {"year": Y})], "감사로그 EVAL_SKIP_SELF (해만)")
+
+        # ---- 시작한 해의 평가 시작일 ----
+        kyear = lambda: q("SELECT edit_from, edit_to, eval_start FROM kpi_years WHERE year = ?", Y)  # noqa: E731
+        ky = lambda **b: post(HR, "/api/kpi/admin/year", {"year": Y, "editFrom": None, "editTo": None, "evalStart": ymd(12, 1), **b})  # noqa: E731
+        ok(hit(ky(evalStart=ymd(12, 2)), 409, LOCKED) and hit(ky(evalStart=None), 409, LOCKED) and kyear() == [(None, None, ymd(12, 1))],
+           "시작한_해의_평가_시작일은_못_바꾼다: /api/kpi/admin/year 로 평가 시작일을 바꾸거나 지우면 409 · 그대로")
+        ok(ky(editFrom=ymd(1, 1), editTo=ymd(3, 31)).status_code == 200 and kyear() == [(ymd(1, 1), ymd(3, 31), ymd(12, 1))]
+           and ky().status_code == 200 and kyear() == [(None, None, ymd(12, 1))], "작성 기간만 바꾸는 것은 200")
+        ok(hit(rnd(evalStart=ymd(12, 2)), 409, LOCKED) and hit(rnd(selfTo=ymd(12, 11)), 200, {"ok": True})
+           and q("SELECT self_to FROM ev_rounds WHERE year = ?", Y) == [(ymd(12, 11),)] and hit(rnd(), 200, {"ok": True}),
+           "시작한_해의_평가_시작일은_못_바꾼다: /api/eval/admin/round 의 평가 시작일 변경도 409 · 다른 마감일은 바꿀 수 있음")
+
+        # ---- 근태 ----
+        stage(EMP, "GRADE", "A")
+        ok(hit(att([{"userId": EMP, "late": 2, "leaveOver": 4.5}]), 200, {"ok": True, "done": [EMP], "locked": [], "missing": []}) and lv(EMP) == (2, 9, "A"),
+           "연차를_넣으면_SAB를_지운다: A 를 넣어 둔 사람에게 연차 초과 4.5일 → 등급 그대로 (×2 정수 9 로 저장)")
+        ok(hit(att([{"userId": EMP, "leaveOver": 5}]), 200, {"ok": True, "done": [EMP], "locked": [], "missing": []}) and lv(EMP) == (2, 10, None),
+           "연차를_넣으면_SAB를_지운다: 5일 → 등급 지움 (지각은 안 보내서 그대로)")
+        stage(EMP, "GRADE", "C")
+        ok(att([{"userId": EMP, "leaveOver": 6}]).status_code == 200 and lv(EMP) == (2, 12, "C"), "C 는 연차가 많아도 그대로")
+        BAD_ATT = {"error": "근태 숫자를 확인해 주세요. 지각은 0~999회 정수, 연차 초과는 0~365일(0.5일 단위)입니다."}
+        ok(hit(att([{"userId": EMP, "leaveOver": 0.3}]), 400, BAD_ATT) and hit(att([{"userId": EMP, "leaveOver": 366}]), 400, BAD_ATT) and lv(EMP) == (2, 12, "C"),
+           "연차를_넣으면_SAB를_지운다: 0.3 · 366 → 400")
+        wrong = ({"leaveOver": -0.5}, {"leaveOver": True}, {"leaveOver": "1"}, {"leaveOver": None}, {"late": 1000}, {"late": 1.5}, {"late": 2.0}, {"late": True},
+                 {"late": -1}, {"userId": str(FIELD)}, {"userId": True}, {"userId": 0}, {"userId": 2 ** 31})
+        ok(all(att([{"userId": FIELD, "late": 7}, {"userId": EMP, **w}]).status_code == 400 for w in wrong) and lv(FIELD) == (0, 0, None),
+           "연차를_넣으면_SAB를_지운다: 모양이 하나라도 틀리면 400 · 아무것도 저장 안 함 (앞 줄도)")
+        ok(all(att(v).status_code == 400 for v in ("x", {"userId": FIELD}, None, [5], [{"userId": FIELD}] * 2001)) and att([{"userId": FIELD}] * 2000).json["done"] == [FIELD],
+           "줄은 목록 2000줄까지 (같은 사람은 한 번만 셈)")
+        r = att([{"userId": 999999, "late": 1}, {"userId": OFF, "late": 1}, {"userId": FIELD, "late": 3, "leaveOver": 365}])
+        ok(hit(r, 200, {"ok": True, "done": [FIELD], "locked": [], "missing": [999999, OFF]}) and lv(FIELD) == (3, 730, None),
+           "연차를_넣으면_SAB를_지운다: 없는 번호 · 평가 대상이 아닌 사람은 missing · 365일까지는 됨")
+        att([{"userId": FIELD, "late": 0, "leaveOver": 0}])
+        ok(hit(adm("att-done"), 200, {"ok": True}) and q("SELECT att_done_at FROM ev_rounds WHERE year = ?", Y) == [(z(12, 2),)], "근태 마침 → att_done_at")
+        at(12, 3)
+        ok(hit(adm("att-done"), 200, {"ok": True}) and q("SELECT att_done_at FROM ev_rounds WHERE year = ?", Y) == [(z(12, 2),)] and len(audits("EVAL_ATT_DONE")) == 1,
+           "근태 마침을 또 눌러도 200 · 처음 시각 그대로 · 감사로그 한 번")
+
+        # ---- 제외와 되돌림 ----
+        why = lambda uid, reason="가상 휴직": one(uid, "exclude", reason=reason)  # noqa: E731
+        stage(EMP, "GRADE", "A")
+        ok(hit(why(EMP), 409, {"error": "평가자가 점수를 낸 뒤에는 제외할 수 없습니다."}) and out_of(EMP) == (None, None, None), "제외와_되돌림: 점수를 낸 뒤(GRADE) 제외 409")
+        TOO_LONG = {"error": "제외 사유를 100자 안으로 써 주세요."}
+        ok(all(hit(why(DIVD, v), 400, TOO_LONG) for v in ("", "   ", "가" * 101, None, 5)) and hit(why(DIVD, "가상\x00"), 400, {"error": "제외 사유에 쓸 수 없는 글자가 있습니다."})
+           and out_of(DIVD) == (None, None, None), "제외와_되돌림: 사유 없이 · 101자 · 글자가 아님 · 쓸 수 없는 글자 400")
+        ok(hit(why(999999), 404, NOT_TARGET) and hit(why(OFF), 404, NOT_TARGET) and hit(one(DIVD, "exclude", year=Y + 1, reason="가상"), 404, NOT_TARGET), "제외: 대상이 아니면 404 (다른 해 포함)")
+        ok(hit(why(DIVD, " 가상 휴직 "), 200, {"ok": True}) and out_of(DIVD) == (z(12, 3), "가상 휴직", HR) and hit(why(DIVD), 409, {"error": "이미 평가에서 제외했습니다."}),
+           "제외와_되돌림: 제외 200 (사유는 앞뒤 공백을 뺌) · 또 제외 409")
+        ok(hit(one(DIVD, "skip-self"), 409, {"error": "평가에서 제외된 사람입니다."}), "제외된 사람은 자기평가 없이 진행 409")
+        ok(hit(one(DIVD, "include"), 200, {"ok": True}) and out_of(DIVD) == (None, None, None) and hit(one(DIVD, "include"), 409, {"error": "평가에서 제외한 사람이 아닙니다."}),
+           "제외와_되돌림: 되돌림 200 · 또 되돌림 409")
+        why(DIVD)
+        for uid in (EMP, FIELD, EMPB, NOCONF):  # 본부 묶음의 나머지 넷이 모두 대표이사 확인 단계 · 정원에 맞음 → 묶음 상태 CEO
+            stage(uid, "CEO", "D", "D")
+        ok(hit(one(DIVD, "include"), 409, {"error": "이 묶음은 이미 다음 단계로 넘어가 되돌릴 수 없습니다. 먼저 묶음을 되돌려 주세요."}) and out_of(DIVD)[0] == z(12, 3),
+           "제외와_되돌림: 묶음이 CEO 로 넘어간 뒤 되돌림 409")
+        stage(EMPB, "CEO", None, "D")  # 등급 하나가 비면 FIX — 아직 되돌릴 수 있다
+        ok(hit(one(DIVD, "include"), 200, {"ok": True}), "묶음이 FIX(등급을 맞춰야 함)면 되돌림 200")
+        why(DIVD)
+        for uid in (FIELD, NOCONF, EMPB):
+            stage(uid, "SCORE")
+        stage(EMP, "GRADE", "A")
+
+        # ---- 근태 잠금 ----
+        stage(EMPB, "CEO", "B")
+        stage(LEAD, "CEO", "B")
+        stage(LEADC, "HR", "B")
+        r = att([{"userId": u, "late": 1} for u in (EMP, EMPB, LEAD, LEADC, DIVD)])
+        ok(hit(r, 200, {"ok": True, "done": [EMP, LEAD], "locked": [EMPB, LEADC, DIVD], "missing": []}) and [lv(u)[0] for u in (EMP, EMPB, LEAD, LEADC, DIVD)] == [1, 0, 1, 0, 0],
+           "근태는_넘어가면_잠긴다: GRADE 인 본부 팀원 됨 · CEO 면 locked · CEO 인 팀장 됨(팀장의 배정 단계 = CEO) · HR 이면 locked · 제외된 사람 locked")
+        stage(EMPB, "SCORE")
+        stage(LEAD, "SELF")
+        stage(LEADC, "SELF")
+
+        # ---- 평가자 바꾸기 ----
+        BAD_RATER = {"error": "평가자는 본인이 아닌 재직 중인 직원으로 골라 주세요."}
+        ok(all(hit(one(FIELD, "rater", raterId=v), 400, BAD_RATER) for v in (GONE, FIELD, 999999, str(HEAD), True, None, 2 ** 31)) and rater(FIELD) == LEAD,
+           "평가자_바꾸기: 비활성 · 본인 · 없는 사람 · 번호가 아님 400")
+        ok(hit(one(EMP, "rater", raterId=HEAD), 409, {"error": "평가자가 이미 점수를 냈습니다."}) and rater(EMP) == LEAD, "평가자_바꾸기: GRADE 409")
+        ok(hit(one(FIELD, "rater", raterId=HEAD), 200, {"ok": True}) and rater(FIELD) == HEAD and audits("EVAL_RATER_SET")[-1] == (FIELD, {"year": Y, "raterId": HEAD}),
+           "평가자_바꾸기: 200 → rater_id · 감사로그 EVAL_RATER_SET (해 · 평가자 번호)")
+        one(FIELD, "rater", raterId=LEAD)
+
+        # ---- 공개한 해 ----
+        x("UPDATE ev_rounds SET released_at = ? WHERE year = ?", z(12, 3), Y)
+        ok(hit(rnd(), 409, RELEASED) and hit(att([{"userId": FIELD, "late": 1}]), 409, RELEASED) and hit(adm("att-done"), 409, RELEASED) and lv(FIELD)[0] == 0,
+           "결과를 공개한 해는 회차 · 근태 · 근태 마침 409")
+        # 보일 해 (R13): 지난해 회차가 안 끝났으면 지난해 — 공개 전 · 공개일 + 7일(한국) 안 · 처리 중인 이의 신청
+        x("UPDATE ev_rounds SET released_at = NULL WHERE year = ?", Y)
+        at(1, 20, y=Y + 1)
+        ok(evaluation.cur_year(db) == Y, "보일 해: 다음 해 1월에도 지난해 회차가 공개 전이면 지난해")
+        x("UPDATE ev_rounds SET released_at = ? WHERE year = ?", f"{Y + 1}-01-10T15:00:00Z", Y)  # 한국 1월 11일 0시에 공개
+        at(1, 18, 14, 59, y=Y + 1)
+        r18 = evaluation.cur_year(db)
+        at(1, 18, 15, 0, y=Y + 1)
+        r19 = evaluation.cur_year(db)
+        x("INSERT INTO ev_appeals (year, user_id, reason, at, status, before) VALUES (?, ?, '가상 이의', ?, 'OPEN', 'B')", Y, EMP, f"{Y + 1}-01-12T03:00:00Z")
+        r_open = evaluation.cur_year(db)
+        x("UPDATE ev_appeals SET status = 'DONE', answer = '가상 답', after = 'B' WHERE year = ? AND user_id = ?", Y, EMP)
+        r_done = evaluation.cur_year(db)
+        ok((r18, r19, r_open, r_done) == (Y, Y + 1, Y, Y + 1), f"보일 해: 공개일 + 7일(한국 1/18 23:59)까지 지난해 · 그 뒤 올해 · 처리 중인 이의 신청이 있으면 지난해 ({r18}, {r19}, {r_open}, {r_done})")
+        x("DELETE FROM ev_appeals WHERE year = ?", Y)
+        x("UPDATE ev_rounds SET released_at = NULL WHERE year = ?", Y)
+        at(12, 3)
+
+        # ---- 감사로그 ----
+        logs = q("SELECT action, after_data, before_data, reason FROM audit_logs WHERE action GLOB 'EVAL_*'")
+        ok({a for a, *_ in logs} == {"EVAL_ROUND_SET", "EVAL_STARTED", "EVAL_ATT_DONE", "EVAL_ATTENDANCE", "EVAL_EXCLUDED", "EVAL_INCLUDED", "EVAL_SKIP_SELF", "EVAL_RATER_SET"}
+           and all(set(json.loads(a)) <= {"year", "count", "raterId"} and not {"reason", "late", "leaveOver", "grade"} & set(json.loads(a)) for _, a, _, _ in logs)
+           and not any("가상 휴직" in f"{a}{b}{rs}" for _, a, b, rs in logs) and audits("EVAL_ATTENDANCE")[0] == (Y, {"year": Y, "count": 1}),
+           "감사로그에_숫자와_글이_없다: EVAL_* 여덟 가지의 after_data 는 해 · 사람 수 · 평가자 번호뿐 (사유 · 지각 · 연차 · 등급 없음, 사유 글자도 어디에도 없음)")
+    finally:
+        db.close()
+        auth._now = real_now
+        push.SYNC, push.SEND = real_sync, real_send
+        for k, v in env.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+        for uid in others:
+            x("UPDATE users SET in_evaluation = 1 WHERE id = ?", uid)
+        x("UPDATE users SET is_active = 0, deactivated_at = '2027-01-01T00:00:00Z' WHERE id = ?", CEO)
+        for uid in other_ceos:
+            x("UPDATE users SET is_active = 1, deactivated_at = NULL WHERE id = ?", uid)
+        x("DELETE FROM push_subscriptions WHERE user_id BETWEEN 101 AND 116")
+        x("DELETE FROM sessions WHERE user_id BETWEEN 101 AND 116 AND kind = 'phone'")
+        x("DELETE FROM ev_appeals WHERE year = ?", Y)
+        x("DELETE FROM ceo_delegation WHERE ceo_user_id = ?", CEO)
+
+
 def main() -> int:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     seed()
@@ -6108,6 +6458,7 @@ def main() -> int:
     check_kpi_progress(hr)
     check_kpi_sched(hr)
     check_kpi_review(hr)
+    check_eval_admin(hr)
     with pay_gate_off():  # 아래 검사들은 비밀번호 잠금 이전 동작을 본다 — 잠금은 check_pay_pin 이 켠 채로 본다
         check_payslips(hr)
         check_pay_ask(hr)

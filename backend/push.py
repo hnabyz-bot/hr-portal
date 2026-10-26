@@ -10,7 +10,7 @@
   POST /api/push/unsubscribe  이 세션의 구독 줄 삭제
   세션 검사 · 같은 출처 검사는 auth._guard 가 모든 /api/* 에 한다. app.py 가 bp 를 붙인다.
 
-일이 생길 때 보내기: 급여명세서 · 원천징수영수증 공개, KPI 제출 · 수정 요청 · 일정 변경 요청 · 돌려보냄, 확인 메모 · 답글, 연봉계약서 발송 · 다시 보내기 · 문의가 그 일을 저장(commit)한 뒤
+일이 생길 때 보내기: 급여명세서 · 원천징수영수증 공개, KPI 제출 · 수정 요청 · 일정 변경 요청 · 돌려보냄, 확인 메모 · 답글, 연봉계약서 발송 · 다시 보내기 · 문의, 인사평가 시작 · 자기평가 없이 진행(evaluation.py)이 그 일을 저장(commit)한 뒤
 notify() 를 부른다 — 보내는 쪽(pending)이 DB 를 새로 잡으므로 commit 전에 부르면 잠김 오류가 난다. 키가 없거나 근무시간(평일 9~18시 KST) 밖이면 아무것도 안 한다 (다음 근무일 9시 묶음에 들어감).
 보내기는 요청을 붙잡지 않게 데몬 스레드에서, 실패해도 원래 일은 그대로 (예외를 밖으로 내지 않고 로그에는 상태 코드 · 예외 종류만).
 알림 문구에는 금액 · 다른 사람 이름 · 평가 등급이 없다 — 잠금 화면에 그대로 보이므로. 문구는 MESSAGES 한 곳에만 둔다.
@@ -60,6 +60,7 @@ MESSAGES: dict[str, tuple[str, str, str]] = {
     "kpi_memo": ("KPI 확인 메모가 왔어요", "PC에서 확인해 주세요", "perf.e1"),
     "kpi_reply_to_author": ("확인 메모에 새 답글이 달렸어요", "PC에서 확인해 주세요", "perf.e4"),
     "kpi_reply_to_owner": ("확인 메모에 새 답글이 달렸어요", "PC에서 확인해 주세요", "perf.e1"),
+    "eval_turn": ("인사평가에서 처리할 일이 있어요", "PC에서 확인해 주세요", "perf.e2"),
 }
 
 # 처리할 일 종류 → 9시 묶음에 쓰는 이름 (화면 homePortalTasks 제목과 같은 말, 순서도 같게)
@@ -557,7 +558,8 @@ def check() -> None:
     assert message("_blank_go")["url"] == "/"  # go 가 비면 홈
     del MESSAGES["_blank_go"]
     assert list(MESSAGES) == ["payslip", "withholding", "contract_sign", "contract_ask", "kpi_inbox", "kpi_back", "kpi_memo",
-                              "kpi_reply_to_author", "kpi_reply_to_owner"]
+                              "kpi_reply_to_author", "kpi_reply_to_owner", "eval_turn"]
+    assert message("eval_turn") == {"title": "인사평가에서 처리할 일이 있어요", "body": "PC에서 확인해 주세요", "url": "/?go=perf.e2"}  # 평가 진행 탭 — 등급 · 이름 없음
     assert list(LABELS) == ["p1", "p2", "p3", "inbox", "back", "prev", "memos", "check", "replies"]
     assert {k: MESSAGES[k][1] for k in MESSAGES if k.startswith("kpi_")} == {  # KPI 알림은 PC 에서 열라는 안내 — 평가·성과는 휴대폰에서 안 열린다
         "kpi_inbox": "PC에서 확인해 주세요", "kpi_back": "PC에서 사유를 확인하고 다시 작성해 주세요", "kpi_memo": "PC에서 확인해 주세요",
