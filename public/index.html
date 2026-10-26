@@ -501,6 +501,7 @@
   .preg-who{ display:flex; align-items:center; gap:12px; padding:14px; border-radius:var(--radius); background:rgba(17,115,77,.1); margin-bottom:6px; }
   .preg-who > i{ width:40px; height:40px; font-size:22px; margin:0; }
   .preg-who small{ display:block; color:var(--text-secondary); font-size:var(--fs-xs); margin-top:2px; }
+  .preg-who > i svg{ width:20px; height:20px; }   /* 이 휴대폰 등록 창 (phoneSelfAsk) */
   .inst{ word-break:keep-all; }
   .inst-body{ display:flex; gap:22px; align-items:flex-start; }
   .inst-qr{ flex:none; width:188px; text-align:center; font-size:var(--fs-xs); color:var(--text-muted); }
@@ -1965,7 +1966,8 @@ function homeHero(t){
         <li>${icon('wallet')}${w.isPayday ? '<b>오늘은 급여일</b>' : `급여일까지 <b>D-${left}</b>`}</li>
       </ul>
     </div>
-    ${AUTH.live && AUTH.me?.kind!=='phone' ? `<button type="button" class="hero-install" onclick="phoneReg()" aria-label="휴대폰 등록">${icon('mobile')}<span>휴대폰 등록</span></button>`
+    ${phoneSelf() ? `<button type="button" class="hero-install dot" onclick="phoneSelfAsk()" aria-label="이 휴대폰 등록">${icon('mobile')}<span>이 휴대폰 등록</span></button>`   // 휴대폰 브라우저로 하이웍스에서 들어온 창 — QR 대신 그 자리에서
+      : AUTH.live && AUTH.me?.kind!=='phone' ? `<button type="button" class="hero-install" onclick="phoneReg()" aria-label="휴대폰 등록">${icon('mobile')}<span>휴대폰 등록</span></button>`
       : pushHeroBtn()}
   </section>`;
 }
@@ -1979,6 +1981,7 @@ let authReady = Promise.resolve();   // 로그인 확인(authBoot)이 끝나면 
 async function todayPopAuto(){   // 들어올 때 자동으로: 내 업무 · KPI가 다 온 뒤에(시연 목록이 잠깐 뜨지 않게), 로그인 안내 · 둘러보기 · 다른 창이 없을 때만
   await authReady; await Promise.race([PUSH.ready, new Promise(r=>setTimeout(r, 3000))]);   // 휴대폰 알림 상태까지 본다 — 네트워크가 느려도 3초 넘게 붙잡지 않는다(그때는 이번엔 묻지 않음)
   if(AUTH.locked || PUSH.go || tour.steps || document.getElementById('orgModal')) return;   // PUSH.go: 알림을 눌러 그 화면으로 들어왔으면 창이 덮이지 않게
+  if(phoneSelf()) return phoneSelfAsk(true);   // 휴대폰 브라우저로 하이웍스에서 들어온 창: 이 휴대폰을 등록할까 먼저 묻는다(등록할 때까지 들어올 때마다) — 닫으면 오늘 할 일
   if(PUSH.state==='ask'){ if(pushIos()) return pushAsk(); pushEnable(); }   // 아직 안 켠 홈 화면 앱: 새로 열 때마다 묻는다(켤 때까지, 인사담당자 2026-10-23). 갤럭시는 휴대폰 허용 창을 바로, 아이폰은 누른 순간에만 물을 수 있어 안내 창 — 닫으면 오늘 할 일
   homeTodayPop();
 }
@@ -12595,6 +12598,24 @@ function phoneDraw(){
     <div class="preg-dev"><b>등록된 휴대폰<small>한 사람에 한 대 — 새로 등록하면 이전 휴대폰은 해제됩니다</small></b>${row}</div>
     <div class="inst-note">로그인은 <b>30일</b> 유지되고 쓸 때마다 늘어납니다. 휴대폰을 잃어버리면 여기서 해제하거나 지원팀에 알려 주세요. 카카오톡으로 QR을 찍으면 등록되지 않습니다 — 휴대폰 기본 카메라로 찍어 주세요.</div></div>`);
 }
+function phoneSelf(live = AUTH.live, kind = AUTH.me?.kind, ua = navigator.userAgent){   // 휴대폰 브라우저로 하이웍스 메뉴를 눌러 들어온 창 (2026-10-26 인사담당자 — PC 가 없는 현장 근무자). 휴대폰 기준은 서버 MOBILE_RE 와 같다
+  return !!live && kind==='pc' && /iPhone|Android|Mobile/.test(ua);
+}
+async function phoneSelfAsk(auto){   // 이 휴대폰을 바로 등록할까 묻는다 — 홈 배너 단추 · 들어올 때 자동(auto: 닫으면 오늘 할 일 창). 본인 확인은 방금 거친 하이웍스 로그인(PC 의 QR 과 같음)
+  const cur = await phoneGet(), next = `orgCloseModal();${auto ? ' homeTodayPop();' : ''}`;
+  orgModal(`<div class="inst preg"><div class="card-title"><span>이 휴대폰 등록</span><button type="button" class="x-btn" onclick="${next}" aria-label="닫기">${icon('x')}</button></div>
+    <div class="preg-who" style="background:var(--accent-soft);"><i style="background:var(--accent);">${icon('mobile')}</i><div><b>${escapeHtml(AUTH.me.name)}</b> · ${escapeHtml(AUTH.me.department)}<small>등록하면 30일 동안 로그인이 유지됩니다 (쓸 때마다 연장)</small></div></div>
+    <ol class="inst-steps">${['<b>이 휴대폰 등록</b>을 누르면 바로 등록됩니다.', '이어서 나오는 안내대로 <b>홈 화면에 추가</b>합니다.', '다음부터는 하이웍스를 거치지 않고 <b>아이콘</b>으로 바로 열리고, 알림도 받을 수 있습니다.'].map((t, i)=>`<li><i>${i+1}</i><span>${t}</span></li>`).join('')}</ol>
+    ${cur ? `<div class="preg-dev"><b>지금 등록된 휴대폰<small>한 사람에 한 대 — 이 휴대폰을 등록하면 해제됩니다</small></b><div class="preg-row"><b>${escapeHtml(cur.device)}</b><span>${phoneDay(cur.created_at)} 등록 · 마지막 사용 ${phoneDay(cur.last_seen_at)}</span></div></div>` : ''}
+    <div class="inst-note"><b>내 휴대폰</b>일 때만 등록해 주세요. 다른 사람의 휴대폰이면 <b>나중에</b>를 누르고, 다 쓴 뒤 하이웍스에서 로그아웃해 주세요.</div>
+    <div style="display:flex; gap:8px; margin-top:14px;"><button type="button" class="btn" style="flex:1; justify-content:center;" onclick="${next}">나중에</button><button type="button" class="btn primary" style="flex:2; justify-content:center;" onclick="phoneSelfGo(this)">이 휴대폰 등록</button></div></div>`);
+}
+async function phoneSelfGo(btn){   // QR 을 찍은 것과 같은 길 — 서버가 준 1회용 값을 주소 # 뒤에 얹고 다시 열면 authBoot 가 등록하고 홈 화면에 추가 순서를 띄운다
+  btn.disabled = true;
+  const r = await fetch('/api/phone/code', { method:'POST' }).catch(()=>null), j = r ? await r.json().catch(()=>({})) : {};
+  if(!r?.ok || !j.code){ orgCloseModal(); return kpiFlash(escapeHtml(j.error || '이 휴대폰을 등록하지 못했습니다. 잠시 뒤 다시 눌러 주세요.'), 'danger'); }
+  location.hash = 'd=' + j.code; location.reload();
+}
 async function phoneReg(){   // 새 QR — 서버가 앞서 띄운 값은 지운다
   clearInterval(PHONE.timer);
   const r = await fetch('/api/phone/code', { method:'POST' }), j = await r.json().catch(()=>({}));
@@ -12729,7 +12750,10 @@ async function pushSelfCheck(){   // 브라우저 콘솔에서 await pushSelfChe
     ok(['app', 'ask', 'denied'].every(s=>hb(s).includes('class="hero-install dot"')) && ['on', 'off', ''].every(s=>!hb(s).includes(' dot')), '빨간 점은 아직 못 켠 세 경우에만');
     ok(['on', 'off', ''].every(s=>hb(s)===((isPhone() || AUTH.me?.kind==='phone') && pushApp() ? '' : hb('app').replace(' dot', ''))), '켠 뒤 · 못 함 · 아직: 홈 화면 앱이면 단추 없음, 아니면 점 없는 설치 단추');
     PUSH.state = 'ask'; const h = homeContent();
-    ok(!h.includes('pushCard') && h.includes(AUTH.live && AUTH.me?.kind!=='phone' ? 'phoneReg()' : 'pushEnable()'), '홈에는 알림 칸이 없고 배너 단추로 (실제 로그인한 PC는 휴대폰 등록 그대로)');
+    ok(!h.includes('pushCard') && h.includes(phoneSelf() ? 'phoneSelfAsk()' : AUTH.live && AUTH.me?.kind!=='phone' ? 'phoneReg()' : 'pushEnable()'), '홈에는 알림 칸이 없고 배너 단추로 (실제 로그인한 PC는 휴대폰 등록 그대로)');
+    const IPH = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148 Safari/604.1', GAL = 'Mozilla/5.0 (Linux; Android 14; SM-S921N) AppleWebKit/537.36 SamsungBrowser/26.0 Mobile Safari/537.36', WIN = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/141.0 Safari/537.36';
+    ok(phoneSelf(true, 'pc', IPH) && phoneSelf(true, 'pc', GAL) && !phoneSelf(true, 'pc', WIN) && !phoneSelf(true, 'phone', IPH) && !phoneSelf(false, 'pc', IPH),
+      '휴대폰 브라우저로 하이웍스에서 들어온 창만 "이 휴대폰 등록" (PC 창 · 이미 등록한 휴대폰 · 시연은 아님)');
     pushAsk(); const am = document.getElementById('orgModal'), ab = [...am.querySelectorAll('button')].map(x=>[x.textContent.trim(), x.getAttribute('onclick')]), at = am.textContent; orgCloseModal();
     ok(at.includes('휴대폰 알림 받기') && ab.some(([t, f])=>t==='확인' && f.startsWith('pushEnable()') && f.includes('homeTodayPop()')) && ab.some(([t, f])=>t==='나중에' && !f.includes('pushEnable') && f.includes('homeTodayPop()')), '아이폰 안내 창: [확인]은 누른 그 자리에서 먼저 묻고 · [나중에]는 묻지 않고 · 둘 다 이어서 오늘 할 일');
     // 앱을 새로 열 때(todayPopAuto): 아직 안 켠 앱이면 묻는다 — 갤럭시는 바로 + 오늘 할 일, 아이폰은 안내 창(닫으면 오늘 할 일)
@@ -13923,7 +13947,7 @@ document.addEventListener('keydown', e=>{
    서버가 없으면(PC 미리보기 — /api/me 가 404·연결 실패) 지금처럼 시연 모드다. */
 const AUTH_TEXT = {
   login:['하이웍스에서 들어와 주세요', '하이웍스에 로그인한 뒤 <b>인사포털</b> 메뉴를 눌러 들어와 주세요.'],
-  phone:['휴대폰 등록이 필요합니다', 'PC의 하이웍스에서 <b>인사포털</b>을 열고 홈 배너의 <b>휴대폰 등록</b>을 누른 뒤, 나온 QR을 이 휴대폰 카메라로 찍어 주세요. 한 번 등록하면 30일 동안 로그인이 유지됩니다.'],
+  phone:['휴대폰 등록이 필요합니다', '이 휴대폰의 <b>크롬·사파리</b>로 하이웍스에 로그인한 뒤 <b>인사포털</b> 메뉴를 누르고, <b>이 휴대폰 등록</b>을 눌러 주세요. 한 번 등록하면 30일 동안 로그인이 유지됩니다.<br>PC가 있으면 PC 홈 배너의 <b>휴대폰 등록</b> QR을 찍어도 됩니다.'],
   qr:['QR을 다시 띄워 주세요', 'QR은 <b>3분 동안 한 번만</b> 쓸 수 있습니다. PC 화면의 <b>새 QR</b>을 눌러 다시 찍어 주세요.'],
   out:['로그아웃했습니다', '공용 PC라면 하이웍스도 로그아웃해 주세요. 다시 들어올 때는 하이웍스의 <b>인사포털</b> 메뉴를 누르면 됩니다.'],
 };
@@ -13950,7 +13974,7 @@ function authLock(kind){   // 로그아웃 · 세션 끝(401)에도 부른다 �
   }
   el.innerHTML = `<div class="auth-card"><div class="brand"><img src="img/logo-mark-clear.png" alt="" width="34" height="34"><span>H&abyz<small>인사포털</small></span></div>
     <h1 id="authTitle">${title}</h1><p>${body}</p>
-    ${kind==='phone' || kind==='qr' ? '' : '<a class="btn primary" href="https://login.office.hiworks.com/" rel="noopener">하이웍스 열기</a>'}
+    ${kind==='qr' ? '' : '<a class="btn primary" href="https://login.office.hiworks.com/" rel="noopener">하이웍스 열기</a>'}
     <p class="note">인사포털은 하이웍스 계정으로만 들어올 수 있습니다.</p></div>`;
 }
 async function authBoot(){

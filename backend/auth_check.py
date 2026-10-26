@@ -239,6 +239,16 @@ def check_phone(hr, save) -> None:
        and pc.get("/api/phone", base_url=BASE).json["phone"] is None and me(pc).status_code == 200,
        "본인이 해제 — 휴대폰만 끊기고 PC 는 그대로")
 
+    # 휴대폰 브라우저로 하이웍스 메뉴를 눌러 들어온 창(kind pc): 받은 값으로 그 자리에서 이 휴대폰을 등록한다 (PC 없는 현장 근무자)
+    selfp = app.test_client()
+    login(selfp, new_token("emp"))
+    was = cookie(selfp)
+    r, code = new_code(selfp)
+    ok(r.json.get("code") == code and reg(selfp, code).status_code == 200 and me(selfp).json.get("kind") == "phone"
+       and q("SELECT revoked_at IS NOT NULL FROM sessions WHERE token_hash = ?", sha(was)) == [(1,)] and me(pc).status_code == 200,
+       "휴대폰으로 하이웍스에서 들어온 창이 QR 없이 등록 — 그 창의 하이웍스 세션은 휴대폰 세션으로 바뀌고 PC 는 그대로")
+    pc.post("/api/phone/revoke", base_url=BASE, headers=ORIGIN)  # 아래 검사는 등록된 휴대폰이 없는 상태에서 시작
+
     late = app.test_client()
     _, c = new_code(pc)
     save(hr, {"3": {"use": False}})
