@@ -6839,11 +6839,15 @@ def check_eval_self(hr) -> None:
         # ---- 이름 · 저장 위치 ----
         outside = lambda: sorted(p.name for p in dbdir.iterdir() if not p.name.startswith("auth.db"))  # noqa: E731  (DB 자신의 -wal · -shm 은 오가므로 뺀다)
         before_dir = outside()
-        names = {"../../x.pdf": "x.pdf", "C:\\fakepath\\y.pdf": "y.pdf", "a\x07b.pdf": "ab.pdf", "가" * 200 + ".pdf": "가" * 116 + ".pdf", "a\u202efdp.pdf": "afdp.pdf"}
+        # 윈도 경로는 역슬래시를 두 번 써서 보낸다 — 요청 머리의 따옴표 안 역슬래시는 다음 글자를 그대로 쓰라는 표시라
+        # Werkzeug 3.1.9 부터 한 번만 쓴 역슬래시는 서버에 오기 전에 사라진다 (C:\fakepath\y.pdf → C:fakepathy.pdf). 3.1.8 은 두 개 그대로 넘긴다 — 어느 쪽이든 y.pdf
+        names = {"../../x.pdf": "x.pdf", "C:\\\\fakepath\\\\y.pdf": "y.pdf", "a\x07b.pdf": "ab.pdf", "가" * 200 + ".pdf": "가" * 116 + ".pdf", "a\u202efdp.pdf": "afdp.pdf"}
         for raw, want in names.items():
             r = up(EMPC, 3, PDF, raw)
             fids.append(r.json.get("id"))
             ok(r.status_code == 200 and files_of(EMPC)[-1][2] == want, f"증빙_형식은_첫_바이트로: 이름 {raw[:20]!r} → 저장 이름 {want[:20]!r} (경로를 떼고 · 제어문자를 빼고 · 120자로 줄이되 확장자는 남김)")
+        ok(evaluation._clean_name("C:\\fakepath\\y.pdf") == "y.pdf" and evaluation._clean_name("\\\\nas\\공유\\z.pdf") == "z.pdf",
+           "증빙_형식은_첫_바이트로: 이름 정리 — 서버에 온 윈도 경로(C:\\…\\y.pdf · \\\\nas\\…\\z.pdf)는 마지막 이름만")
         ok(outside() == before_dir and not (dbdir.parent / "x.pdf").exists() and not (fdir / "x.pdf").exists() and not (fdir / "y.pdf").exists()
            and all(n.isdigit() for n in ls()), "증빙_형식은_첫_바이트로: 폴더 밖에 아무것도 없고 폴더 안은 번호 이름뿐 (사람이 준 이름을 경로에 쓰지 않음)")
         for f in files_of(EMPC):  # 이름을 본 파일은 지운다 (실행목표 3번을 다시 비움)
