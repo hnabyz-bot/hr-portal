@@ -15,19 +15,22 @@ app.py 가 bp 를 붙인다. 세션 검사 · 같은 출처 검사는 auth._guar
 거절 순서 (서버가 늘 같은 순서로 다시 본다. 확인하고 쓰는 일은 한 트랜잭션 — 두 번 눌러도 한 번만 통과):
 회차: HR 403 → 해(2026~2100 정수) 400 → 포털 평가 전 해(FIRST_YEAR 전) 403 → 결과를 공개한 해 409 → 날짜 모양 · 범위 · 순서(R7) 400 → 기준 점수 400 → 시작한 뒤 평가 시작일을 바꿈 409.
   평가 시작일은 kpi_years.eval_start 한 곳에 둔다 — 그해 줄이 없으면 작성 기간 없이 만든다. /api/kpi/admin/year 도 시작한 해의 평가 시작일은 못 바꾼다(409).
-시작: HR 403 → 해 400 → FIRST_YEAR 403 → 올해(plan_year)가 아님 403 → 회차 없음 409 → 오늘(한국) < 평가 시작일 403 → 이미 시작 409 → 대상 0명 409.
+시작: HR 403 → 해 400 → FIRST_YEAR 403 → 올해(plan_year)가 아님 403 → 회차 없음 409 → 지금 평가 시작일로 본 날짜 순서(R7)가 어긋남 409 → 오늘(한국) < 평가 시작일 403 →
+  이미 시작 409 → 대상 0명 409. (회차를 저장한 뒤 /api/kpi/admin/year 로 평가 시작일을 옮겼을 수 있어서 순서를 다시 본다)
   대상(R3) = 활성 · 구성원 설정 "평가 대상" 켜짐 · 본부장 · 대표이사 아님 (포털 사용이 꺼진 사람도 든다). 사람마다 떠 두는 것 (R1 · R4 · R5):
   묶음 = 팀장 LEADERS · 대표이사 직속 팀 · '임원' · 본부 없음 DIRECT · 그 밖 DIV:<본부> / 평가자 = 바로 위 관리자(org.manager_of — 본인이면 NULL) /
   배정자 = DIV 묶음은 그 본부를 맡은 활성 본부장(없으면 NULL = 대표이사), 그 밖 NULL / KPI 판 = KPI 를 쓰면 그해 마지막 확정 판(없으면 NULL — 등급만) /
   단계 = KPI 판이 있으면 SELF, 없으면 SCORE / 이름 칸 = 본부 이름(없으면 "대표이사 직속부서") · 팀 이름(없으면 "본부 직속"). 실행목표마다 ev_items 빈 줄, 묶음마다 ev_pools 줄.
   저장한 뒤 KPI 가 있는 대상에게 알림(eval_turn).
 근태 마침 · 근태: HR 403 → 해 400 → 시작 안 함 409 → 공개함 409 → (근태) 줄 모양 400 (하나라도 틀리면 아무것도 저장 안 함).
-  대상이 아닌 번호는 missing, 제외됐거나 배정 단계를 지난 사람(at(stage, assign_stage(pool)) > 0)은 locked, 나머지는 저장해 done.
+  대상이 아닌 번호는 missing, 요청한 HR 본인 · 제외됐거나 배정 단계를 지난 사람(at(stage, assign_stage(pool)) > 0)은 locked, 나머지는 저장해 done.
+  본인 줄은 다른 HR 이 넣는다 (자기 연차 초과를 5일 밑으로 낮춰 S·A·B 제한을 피하지 못하게 — HR 이 명단 전체를 붙여 넣으므로 400 이 아니라 locked).
   연차 초과가 5일 이상이 되면 이미 준 S·A·B 등급을 지운다 (화면 evSetAttendance).
-명단 한 사람 (HR 403 → 해 400 → 그해 평가 대상 404 → 아래):
+명단 한 사람 (HR 403 → 본인 403 → 해 400 → 그해 평가 대상 404 → 아래). 본인 평가는 다른 HR 이 처리한다:
   제외: 이미 제외 409 → 평가자가 점수를 냄(SCORE 지남) 409 → 사유 1~100자 400 · 되돌림: 제외가 아님 409 → 그 묶음이 WAIT · FIX 가 아님 409 ·
-  자기평가 없이: 제외됨 409 → SELF 가 아님 409 → KPI 없음 409 (저장한 뒤 떠 둔 평가자에게 알림) · 평가자 바꾸기: SELF · SCORE 가 아님 409 → 본인이 아닌 활성 직원이 아님 400.
-감사로그(R10): EVAL_ROUND_SET · EVAL_STARTED · EVAL_ATT_DONE · EVAL_ATTENDANCE · EVAL_EXCLUDED · EVAL_INCLUDED · EVAL_SKIP_SELF · EVAL_RATER_SET —
+  자기평가 없이: 제외됨 409 → SELF 가 아님 409 → KPI 없음 409 (저장한 뒤 떠 둔 평가자에게 알림) ·
+  평가자 바꾸기: SELF · SCORE 가 아님 409 → 본인이 아니고 활성이며 포털을 쓰는(로그인해 점수를 낼 수 있는) 직원이 아님 400.
+감사로그(R10): EVAL_ROUND_SET · EVAL_STARTED · EVAL_ATT_DONE · EVAL_ATTENDANCE(저장한 사람이 있을 때만) · EVAL_EXCLUDED · EVAL_INCLUDED · EVAL_SKIP_SELF · EVAL_RATER_SET —
   after_data 는 해 · 사람 수 · 평가자 번호뿐. 사유 · 근태 숫자 · 등급 · 점수는 넣지 않는다 (공개 전 등급이 감사로그로 새지 않게).
 """
 
@@ -257,6 +260,10 @@ def start() -> Response:
         rnd = _round(conn, year)
         if rnd is None or rnd["evalStart"] is None:  # 평가 시작일은 /api/kpi/admin/year 로도 지울 수 있다 (시작 전에는)
             raise _Refuse("단계별 마감일을 먼저 정해 주세요.", 409)
+        try:
+            _dates(year, rnd)  # 회차 저장 뒤 /api/kpi/admin/year 로 평가 시작일을 옮겼을 수 있다 — 지금 평가 시작일과 저장된 마감일로 순서(R7)를 다시 본다
+        except _Refuse:
+            raise _Refuse("평가 시작일이 마감일보다 늦어요. 마감일을 다시 저장해 주세요.", 409) from None
         ev = date.fromisoformat(rnd["evalStart"])
         if auth._today() < ev:
             raise _Refuse(f"평가 시작일({ev.month}/{ev.day})부터 시작할 수 있습니다.", 403)
@@ -306,22 +313,25 @@ def attendance() -> Response:
             t = conn.execute("SELECT stage, pool, out_at, grade, late, leave_x2 FROM ev_targets WHERE year = ? AND user_id = ?", (year, uid)).fetchone()
             if t is None:
                 missing[uid] = None
-            elif t[2] is not None or at(t[0], assign_stage(t[1])) > 0:  # 제외됐거나 등급이 다음 단계로 넘어갔다 — 고치면 이미 준 등급이 틀어진다
+            elif uid == g.actor.user_id or t[2] is not None or at(t[0], assign_stage(t[1])) > 0:  # 본인 줄(다른 HR 이) · 제외됐거나 등급이 다음 단계로 넘어갔다(고치면 이미 준 등급이 틀어진다)
                 locked[uid] = None
             else:
                 late, x2 = t[4] if late is None else late, t[5] if x2 is None else x2
                 grade = None if t[3] and above(t[3], cap(None, x2, BANDS)) else t[3]  # 연차 초과 5일 이상이면 이미 준 S·A·B 를 지운다
                 conn.execute("UPDATE ev_targets SET late = ?, leave_x2 = ?, grade = ? WHERE year = ? AND user_id = ?", (late, x2, grade, year, uid))
                 done[uid] = None
-        _log(conn, "EVAL_ATTENDANCE", "ev_round", year, year=year, count=len(done))
+        if done:
+            _log(conn, "EVAL_ATTENDANCE", "ev_round", year, year=year, count=len(done))
     return jsonify(ok=True, done=list(done), locked=list(locked), missing=list(missing))
 
 
 # ---------------- 명단 한 사람 ----------------
 @contextmanager
 def _person(uid: int) -> Iterator[tuple[sqlite3.Connection, int, tuple]]:
-    """HR 이 평가 명단의 한 사람을 고치는 요청의 틀 (HR 403 은 길에서 먼저): 해 400 → 그해 평가 대상 404. 한 트랜잭션.
+    """HR 이 평가 명단의 한 사람을 고치는 요청의 틀 (HR 403 은 길에서 먼저): 본인 403 → 해 400 → 그해 평가 대상 404. 한 트랜잭션.
     돌려주는 줄 = (단계, 제외한 때, 묶음, KPI 판, 평가자)."""
+    if uid == g.actor.user_id:  # 본인 평가는 다른 HR 이 — 자기 평가자 · 제외 · 자기평가 단계를 스스로 바꾸지 못하게
+        raise _Refuse("본인 것은 다른 HR이 처리해요.", 403)
     year = _year(_body().get("year"))
     conn = auth._db()
     with _txn(conn):
@@ -343,7 +353,7 @@ def exclude(uid: int) -> Response:
         v = _body().get("reason")
         why = _chars(v.strip() if isinstance(v, str) else "", "제외 사유")
         if not 0 < len(why) <= TEXT_MAX["out"]:
-            raise _Refuse(f"제외 사유를 {TEXT_MAX['out']}자 안으로 써 주세요.", 400)
+            raise _Refuse(f"제외 사유를 1~{TEXT_MAX['out']}자로 써 주세요.", 400)
         conn.execute("UPDATE ev_targets SET out_at = ?, out_reason = ?, out_by = ? WHERE year = ? AND user_id = ?",
                      (auth._iso(auth._now()), why, g.actor.user_id, year, uid))
         _log(conn, "EVAL_EXCLUDED", "ev_target", uid, year=year)
@@ -391,8 +401,8 @@ def rater_set(uid: int) -> Response:
             raise _Refuse("평가자가 이미 점수를 냈습니다.", 409)
         rid = _body().get("raterId")
         if not (type(rid) is int and 0 < rid <= 2147483647 and rid != uid
-                and conn.execute("SELECT 1 FROM users WHERE id = ? AND is_active = 1", (rid,)).fetchone()):
-            raise _Refuse("평가자는 본인이 아닌 재직 중인 직원으로 골라 주세요.", 400)
+                and conn.execute("SELECT 1 FROM users WHERE id = ? AND is_active = 1 AND portal_enabled = 1", (rid,)).fetchone()):  # 로그인할 수 없는 사람은 점수를 못 낸다
+            raise _Refuse("평가자는 본인이 아닌, 포털을 쓰는 재직 중인 직원으로 골라 주세요.", 400)
         conn.execute("UPDATE ev_targets SET rater_id = ? WHERE year = ? AND user_id = ?", (rid, year, uid))
         _log(conn, "EVAL_RATER_SET", "ev_target", uid, year=year, raterId=rid)
     return jsonify(ok=True)

@@ -5944,6 +5944,8 @@ def check_eval_admin(hr) -> None:
     out_of = lambda uid: q("SELECT out_at, out_reason, out_by FROM ev_targets WHERE year = ? AND user_id = ?", Y, uid)[0]  # noqa: E731
     rater = lambda uid: q("SELECT rater_id FROM ev_targets WHERE year = ? AND user_id = ?", Y, uid)[0][0]  # noqa: E731
     audits = lambda action: [(e, json.loads(a)) for e, a in q("SELECT entity_id, after_data FROM audit_logs WHERE action = ? ORDER BY id", action)]  # noqa: E731
+    kyear = lambda: q("SELECT edit_from, edit_to, eval_start FROM kpi_years WHERE year = ?", Y)  # noqa: E731
+    ky = lambda **b: post(HR, "/api/kpi/admin/year", {"year": Y, "editFrom": None, "editTo": None, "evalStart": ymd(12, 1), **b})  # noqa: E731
 
     def stage(uid, s, grade=None, proposed="B"):
         """단계를 바로 넣는다 (등급 배정 이후 단계엔 평가자 제안이 있어야 한다 — 표의 CHECK)."""
@@ -6030,9 +6032,36 @@ def check_eval_admin(hr) -> None:
         ok(hit(adm("start"), 403, {"error": "평가 시작일(12/1)부터 시작할 수 있습니다."}) and not q("SELECT 1 FROM ev_targets WHERE year = ?", Y),
            "시작은_평가_시작일부터_한_번: 시작일 전날(한국 23:59) 403 · 아무것도 안 남김")
         at(12, 1)  # 한국 12월 1일(수) 정오
+        MOVED = {"error": "평가 시작일이 마감일보다 늦어요. 마감일을 다시 저장해 주세요."}
+        a = ky(evalStart=ymd(12, 11)).status_code == 200 and hit(adm("start"), 409, MOVED)  # 자기평가 · 증빙 마감(12/10)보다 늦음 (오늘 < 평가 시작일 403 보다 먼저)
+        b = hit(rnd(selfTo=ymd(12, 15)), 200, {"ok": True}) and ky(evalStart=ymd(12, 11)).status_code == 200 and hit(adm("start"), 409, MOVED)  # 증빙 마감(12/10)보다만 늦음
+        ok(a and b and not q("SELECT 1 FROM ev_targets WHERE year = ?", Y) and q("SELECT started_at FROM ev_rounds WHERE year = ?", Y) == [(None,)],
+           "회차 저장 뒤 /api/kpi/admin/year 로 평가 시작일을 마감일(자기평가 · 증빙)보다 늦게 옮기면 시작 409 · 아무것도 안 떠 둠")
+        ok(hit(rnd(), 200, {"ok": True}) and kyear() == [(None, None, ymd(12, 1))], "(회차를 다시 저장하면 평가 시작일도 돌아옴)")
         x("UPDATE users SET in_evaluation = 0 WHERE id BETWEEN 101 AND 116")
         ok(hit(adm("start"), 409, {"error": "평가 대상이 없습니다."}) and q("SELECT started_at FROM ev_rounds WHERE year = ?", Y) == [(None,)], "평가 대상이 0명이면 409 · 시작 안 됨")
         x("UPDATE users SET in_evaluation = 1 WHERE id BETWEEN 101 AND 116 AND id NOT IN (?, ?)", OFF, HEAD2)
+        # 평가자 · 배정자를 못 찾는 시작 — 회차는 한 번만 시작되므로 시작 직전의 DB 를 떠 놓은 사본에서 해 본다 (그날 본부장 · 대표이사가 비활성)
+        main_db, copy_db = os.environ["HR_DB_PATH"], str(Path(TMP.name) / "eval_start_copy.db")
+        src, dst = connect(main_db), connect(copy_db)
+        src.backup(dst)
+        src.close()
+        dst.close()
+        os.environ["HR_DB_PATH"] = copy_db  # 앱(auth._db) · q · x 가 모두 사본을 본다
+        try:
+            at(12, 1)
+            x("UPDATE users SET is_active = 0, deactivated_at = ? WHERE id IN (?, ?)", z(11, 30), HEAD, CEO)
+            r = adm("start")
+            ok(hit(r, 200, {"ok": True, "count": 11, "noKpi": 1, "noRater": 7})
+               and all(rater(u) is None for u in (EMPB, DIVD, NOCONF, LEAD, LEADC, HRL, EXEC)) and [rater(u) for u in (EMP, FIELD, EMPC, HR)] == [LEAD, LEAD, LEADC, HRL]
+               and q("SELECT DISTINCT assigner_id FROM ev_targets WHERE year = ? AND pool = 'DIV:91'", Y) == [(None,)],
+               f"(DB 사본) 본부장 · 대표이사가 비활성인 날 시작 → 위로 아무도 없는 7명은 평가자 NULL (응답 noRater 7) · 본부장이 비활성인 본부 묶음은 배정자 NULL(대표이사) ({r.json})")
+        finally:
+            os.environ["HR_DB_PATH"] = main_db
+            jar.clear()
+            took()
+        ok(not q("SELECT 1 FROM ev_targets WHERE year = ?", Y) and q("SELECT is_active FROM users WHERE id IN (?, ?) ORDER BY id", HEAD, CEO) == [(1,), (1,)],
+           "(진짜 DB 는 그대로 — 아직 시작 전 · 본부장 · 대표이사 활성)")
         r = adm("start")
         ok(hit(r, 200, {"ok": True, "count": 11, "noKpi": 1, "noRater": 0}) and q("SELECT started_at, started_by FROM ev_rounds WHERE year = ?", Y) == [(z(12, 1), HR)],
            f"시작은_평가_시작일부터_한_번: 당일 200 · 대상 11명 · 확정 KPI 없음 1 · 평가자 못 찾음 0 ({r.json})")
@@ -6088,8 +6117,6 @@ def check_eval_admin(hr) -> None:
         ok(audits("EVAL_SKIP_SELF") == [(EMPB, {"year": Y})], "감사로그 EVAL_SKIP_SELF (해만)")
 
         # ---- 시작한 해의 평가 시작일 ----
-        kyear = lambda: q("SELECT edit_from, edit_to, eval_start FROM kpi_years WHERE year = ?", Y)  # noqa: E731
-        ky = lambda **b: post(HR, "/api/kpi/admin/year", {"year": Y, "editFrom": None, "editTo": None, "evalStart": ymd(12, 1), **b})  # noqa: E731
         ok(hit(ky(evalStart=ymd(12, 2)), 409, LOCKED) and hit(ky(evalStart=None), 409, LOCKED) and kyear() == [(None, None, ymd(12, 1))],
            "시작한_해의_평가_시작일은_못_바꾼다: /api/kpi/admin/year 로 평가 시작일을 바꾸거나 지우면 409 · 그대로")
         ok(ky(editFrom=ymd(1, 1), editTo=ymd(3, 31)).status_code == 200 and kyear() == [(ymd(1, 1), ymd(3, 31), ymd(12, 1))]
@@ -6128,7 +6155,7 @@ def check_eval_admin(hr) -> None:
         why = lambda uid, reason="가상 휴직": one(uid, "exclude", reason=reason)  # noqa: E731
         stage(EMP, "GRADE", "A")
         ok(hit(why(EMP), 409, {"error": "평가자가 점수를 낸 뒤에는 제외할 수 없습니다."}) and out_of(EMP) == (None, None, None), "제외와_되돌림: 점수를 낸 뒤(GRADE) 제외 409")
-        TOO_LONG = {"error": "제외 사유를 100자 안으로 써 주세요."}
+        TOO_LONG = {"error": "제외 사유를 1~100자로 써 주세요."}
         ok(all(hit(why(DIVD, v), 400, TOO_LONG) for v in ("", "   ", "가" * 101, None, 5)) and hit(why(DIVD, "가상\x00"), 400, {"error": "제외 사유에 쓸 수 없는 글자가 있습니다."})
            and out_of(DIVD) == (None, None, None), "제외와_되돌림: 사유 없이 · 101자 · 글자가 아님 · 쓸 수 없는 글자 400")
         ok(hit(why(999999), 404, NOT_TARGET) and hit(why(OFF), 404, NOT_TARGET) and hit(one(DIVD, "exclude", year=Y + 1, reason="가상"), 404, NOT_TARGET), "제외: 대상이 아니면 404 (다른 해 포함)")
@@ -6161,13 +6188,28 @@ def check_eval_admin(hr) -> None:
         stage(LEADC, "SELF")
 
         # ---- 평가자 바꾸기 ----
-        BAD_RATER = {"error": "평가자는 본인이 아닌 재직 중인 직원으로 골라 주세요."}
-        ok(all(hit(one(FIELD, "rater", raterId=v), 400, BAD_RATER) for v in (GONE, FIELD, 999999, str(HEAD), True, None, 2 ** 31)) and rater(FIELD) == LEAD,
-           "평가자_바꾸기: 비활성 · 본인 · 없는 사람 · 번호가 아님 400")
+        BAD_RATER = {"error": "평가자는 본인이 아닌, 포털을 쓰는 재직 중인 직원으로 골라 주세요."}
+        ok(all(hit(one(FIELD, "rater", raterId=v), 400, BAD_RATER) for v in (GONE, FIELD, EXEC, 999999, str(HEAD), True, None, 2 ** 31)) and rater(FIELD) == LEAD,
+           "평가자_바꾸기: 비활성 · 본인 · 포털 사용 꺼짐(로그인 못 함) · 없는 사람 · 번호가 아님 400")
         ok(hit(one(EMP, "rater", raterId=HEAD), 409, {"error": "평가자가 이미 점수를 냈습니다."}) and rater(EMP) == LEAD, "평가자_바꾸기: GRADE 409")
         ok(hit(one(FIELD, "rater", raterId=HEAD), 200, {"ok": True}) and rater(FIELD) == HEAD and audits("EVAL_RATER_SET")[-1] == (FIELD, {"year": Y, "raterId": HEAD}),
            "평가자_바꾸기: 200 → rater_id · 감사로그 EVAL_RATER_SET (해 · 평가자 번호)")
         one(FIELD, "rater", raterId=LEAD)
+
+        # ---- 본인 것은 다른 HR 이 ----
+        SELF_HR = {"error": "본인 것은 다른 HR이 처리해요."}
+        ok(all(hit(one(HR, w, reason="가상", raterId=LEAD), 403, SELF_HR) for w in ("exclude", "include", "skip-self", "rater"))
+           and hit(one(HR, "exclude", year=None), 403, SELF_HR) and tgt(HR) == want[HR] and out_of(HR) == (None, None, None),
+           "본인_것은_다른_HR이: HR 담당자(평가 대상)가 자기 줄을 제외 · 되돌림 · 자기평가 없이 · 평가자 바꾸기 → 403 (해 400 보다 먼저) · 줄은 그대로")
+        n_att = len(audits("EVAL_ATTENDANCE"))
+        r = att([{"userId": HR, "leaveOver": 1}, {"userId": FIELD, "late": 4}])
+        ok(hit(r, 200, {"ok": True, "done": [FIELD], "locked": [HR], "missing": []}) and lv(HR) == (0, 0, None) and lv(FIELD)[0] == 4 and len(audits("EVAL_ATTENDANCE")) == n_att + 1,
+           "본인_것은_다른_HR이: 근태 묶음에 HR 본인 줄이 있으면 그 줄만 locked (값 그대로) · 다른 줄은 저장")
+        ok(hit(att([{"userId": HR, "late": 1}, {"userId": 999999, "late": 1}]), 200, {"ok": True, "done": [], "locked": [HR], "missing": [999999]})
+           and len(audits("EVAL_ATTENDANCE")) == n_att + 1, "저장한 사람이 없으면 EVAL_ATTENDANCE 감사로그를 남기지 않음")
+        ok(hit(one(HR, "exclude", who=HRL, reason="가상 휴직"), 200, {"ok": True}) and hit(one(HR, "include", who=HRL), 200, {"ok": True}) and out_of(HR) == (None, None, None),
+           "다른 HR(HR 팀장)은 HR 담당자의 줄을 처리할 수 있음")
+        att([{"userId": FIELD, "late": 0}])
 
         # ---- 공개한 해 ----
         x("UPDATE ev_rounds SET released_at = ? WHERE year = ?", z(12, 3), Y)
