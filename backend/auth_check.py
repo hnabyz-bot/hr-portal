@@ -6259,6 +6259,277 @@ def check_eval_admin(hr) -> None:
         x("DELETE FROM ceo_delegation WHERE ceo_user_id = ?", CEO)
 
 
+def check_eval_view(hr) -> None:
+    """인사평가 읽기 (2026-10-26, 평가 3단계 ①): GET /api/eval/state 는 보는 사람에 맞춰 깎은 줄만 준다 — 공개 전에는 평가자에게 자기가 낸 것만,
+    본인에게는 자기평가만 (등급 · 점수 · 코멘트 열쇠가 아예 없다). 본부장은 자기가 배정하는 묶음 + 자기가 평가한 사람, 대표이사 · HR 은 전원.
+    증빙 내려받기(본인 · 평가자 · 배정자 · 그 본부의 본부장 · 대표이사 · HR) · 처리할 일 숫자 · 포털 평가 전 해(FIRST_YEAR 전)는 안내만.
+    check_eval_admin 이 시작해 둔 회차와 가상 조직(부서 91~97 · 사람 101~116)을 이어 쓴다 — 떠 둔 줄은 지울 수 없어 단계 · 등급 칸을 바로 넣어 상황을 만든다.
+    대표이사 활성 · 다른 대표이사 · 시계 · 근태 마침 · 공개 · 맡김 · 포털 사용 · 올린 증빙은 되돌린다 (떠 둔 줄의 단계 · 등급 칸은 남는다)."""
+    import evaluation
+    from urllib.parse import quote
+
+    from hr_eval.domain.models import Actor, Role
+    print("인사평가 읽기 · 보는 수준 · 증빙 내려받기 · 할 일 숫자")
+    HEAD, LEAD, EMP, FIELD, EMPB, DIVD, LEADC, EMPC, HRL, HR, EXEC, CEO = range(101, 113)
+    NOCONF, HRA = 115, 1  # HRA = 평가 대상이 아닌 HR (처음 검사의 인사담당자)
+    TARGETS = sorted((LEAD, EMP, FIELD, EMPB, NOCONF, DIVD, EMPC, LEADC, HRL, HR, EXEC))
+    Y, real_now = evaluation.FIRST_YEAR, auth._now
+    z = lambda m, d, hh=3, mi=0: f"{Y}-{m:02d}-{d:02d}T{hh:02d}:{mi:02d}:00Z"  # noqa: E731
+    jar: dict[int, object] = {}
+
+    def at(m, d, hh=3, mm=0):
+        """시계를 UTC 로 (Y년 m월 d일 hh:mm) 에 맞춘다. 기본 03:00 = 한국 정오."""
+        t = datetime(Y, m, d, hh, mm, tzinfo=timezone.utc)
+        auth._now = lambda: t
+        jar.clear()
+
+    def c(uid):
+        if uid not in jar:
+            jar[uid] = app.test_client()
+            login(jar[uid], new_token(f"HW-{uid}"))
+        return jar[uid]
+
+    get = lambda who, path: c(who).get(path, base_url=BASE)  # noqa: E731
+    st = lambda who, query="": get(who, f"/api/eval/state{query}").json  # noqa: E731
+    row = lambda s, uid: next((p for p in s["people"] if p["pid"] == uid), None)  # noqa: E731
+    pids = lambda s: [p["pid"] for p in s["people"]]  # noqa: E731
+    hit = lambda r, code, body: r.status_code == code and r.json == body  # noqa: E731
+
+    def put(uid, **cols):
+        x(f"UPDATE ev_targets SET {', '.join(f'{k} = ?' for k in cols)} WHERE year = ? AND user_id = ?", *cols.values(), Y, uid)
+
+    def marks(uid, *rows):  # (실행목표 번호, 실적, 자기 등급, 지금 등급)
+        for rid, note, self_grade, grade in rows:
+            x("UPDATE ev_items SET note = ?, self_grade = ?, grade = ? WHERE year = ? AND user_id = ? AND rid = ?", note, self_grade, grade, Y, uid, rid)
+
+    def leaves(v, key=""):
+        """응답 전체를 끝까지 훑은 (열쇠, 값) 목록 — 목록 안의 값은 그 목록의 열쇠로."""
+        if isinstance(v, dict):
+            return [leaf for k, w in v.items() for leaf in leaves(w, k)]
+        if isinstance(v, list):
+            return [leaf for w in v for leaf in leaves(w, key)]
+        return [(key, v)]
+
+    def leaks(v, grade, nums, texts):
+        """grade 가 열쇠 이름에 grade 가 든 칸에 · nums 가 숫자로 · texts 가 글자 안에 있는 곳."""
+        return [(k, w) for k, w in leaves(v) if ("grade" in k.lower() and w == grade) or (type(w) in (int, float) and w in nums)
+                or (isinstance(w, str) and any(t in w for t in texts))]
+
+    FULL = {"pid", "name", "title", "team", "div", "poolKey", "poolName", "kpi", "stage", "out", "noSelf", "late", "leaveOver", "items", "ev", "grade", "proposed",
+            "subScore", "subMarks", "comment", "headComment", "bonus", "bonusReason", "total", "cap", "proxy", "edited", "editSeen", "rater", "raterIsCeo", "can", "hidden", "appeal"}
+    SELF_GONE = {"grade", "proposed", "subScore", "subMarks", "comment", "headComment", "bonus", "bonusReason", "total", "cap", "proxy", "edited", "editSeen", "rater", "raterIsCeo"}
+    NO_CAN = dict.fromkeys(("self", "upload", "score", "assign", "bonus", "head", "evidence", "behalf"), False)
+    NO_POOL_CAN = dict.fromkeys(("close", "confirm", "back", "finalize", "undo"), False)
+    other_ceos = [r[0] for r in q("SELECT u.id FROM users u JOIN user_roles r ON r.user_id = u.id WHERE r.role = 'CEO' AND u.is_active = 1 AND u.id <> ?", CEO)]
+    att_done = q("SELECT att_done_at FROM ev_rounds WHERE year = ?", Y)[0][0]
+    fdir = Path(os.environ["HR_DB_PATH"]).parent / "eval_files"
+    db = connect(os.environ["HR_DB_PATH"])
+    fids: list[int] = []
+    try:
+        for uid in other_ceos:  # 이 가상 조직의 대표이사는 check_eval_admin 이 만든 한 명뿐이게 (그 검사가 끝에 꺼 둔 것을 다시 켠다)
+            x("UPDATE users SET is_active = 0, deactivated_at = '2027-01-01T00:00:00Z' WHERE id = ?", uid)
+        x("UPDATE users SET is_active = 1, deactivated_at = NULL WHERE id = ?", CEO)
+        ok(q("SELECT user_id, pool, rater_id FROM ev_targets WHERE year = ? ORDER BY user_id", Y)
+           == [(LEAD, "LEADERS", HEAD), (EMP, "DIV:91", LEAD), (FIELD, "DIV:91", LEAD), (EMPB, "DIV:91", HEAD), (DIVD, "DIV:91", HEAD), (LEADC, "LEADERS", CEO),
+               (EMPC, "DIV:94", LEADC), (HRL, "LEADERS", CEO), (HR, "DIRECT", HRL), (EXEC, "DIRECT", CEO), (NOCONF, "DIV:91", HEAD)],
+           "(이어 쓰는 회차: 대상 11명 · 묶음 · 평가자가 check_eval_admin 이 떠 둔 그대로)")
+        # 단계 · 등급 칸을 깨끗이 (KPI 없는 사람은 SCORE, 나머지 SELF) — 앞 검사가 남긴 것을 지운다
+        x("UPDATE ev_targets SET stage = CASE WHEN kpi_version IS NULL THEN 'SCORE' ELSE 'SELF' END, proposed = NULL, grade = NULL, sub_score_x10 = NULL,"
+          " sub_marks = NULL, scored_at = NULL, scored_by = NULL, comment = '', head_comment = '', bonus_x2 = 0, bonus_reason = '', proxy_by = NULL, edit_seen = NULL,"
+          " late = 0, leave_x2 = 0, out_at = NULL, out_reason = NULL, out_by = NULL, no_self_at = NULL, no_self_by = NULL WHERE year = ?", Y)
+        x("UPDATE ev_items SET note = '', self_grade = NULL, grade = NULL WHERE year = ?", Y)
+        # 본부 팀원(EMP): 팀장이 A · B · B (40×100% + 30×90% + 30×90% = 94.0점) · 등급 의견 B 로 냈고, 본부장이 B · C · C + 가점 1.5 (85.5점) · C 로 고쳐 마감했다
+        SUB = {"1": "A", "2": "B", "4": "B"}
+        put(EMP, stage="CEO", proposed="B", grade="C", sub_score_x10=940, sub_marks=json.dumps(SUB), scored_at=z(12, 4), scored_by=LEAD,
+            comment="가상 팀장 코멘트", head_comment="가상 본부장 코멘트", bonus_x2=3, bonus_reason="가상 가점 사유")
+        marks(EMP, (1, "가상 실적 1", "A", "B"), (2, "가상 실적 2", "A", "C"), (4, "가상 실적 4", "B", "C"))
+        # 팀장(LEAD): 본부장이 A · A · A (100.0점) · A 로 냈고, 대표이사가 확인하며 A · A · B (97.0점) · B 로 고치는 중이다
+        put(LEAD, stage="CEO", proposed="A", grade="B", sub_score_x10=1000, sub_marks=json.dumps({"1": "A", "2": "A", "3": "A"}), scored_at=z(12, 4), scored_by=HEAD,
+            comment="가상 본부장 평가")
+        marks(LEAD, (1, "가상 팀장 실적", "A", "A"), (2, "가상 팀장 실적", "A", "A"), (3, "가상 팀장 실적", "A", "B"))
+        put(EMPB, stage="SCORE", no_self_at=z(12, 2, 15, 30), no_self_by=HR)  # 한국 12/3 0:30 에 자기평가 없이 넘김
+        put(DIVD, out_at=z(12, 3), out_reason="가상 휴직", out_by=HR)
+        put(FIELD, late=3, leave_x2=9)
+        put(EXEC, proxy_by=HR)
+        at(12, 5)  # 한국 12월 5일 정오 — 자기평가 · 증빙 마감(12/10) 전
+
+        ok(app.test_client().get("/api/eval/state", base_url=BASE).status_code == 401 and app.test_client().get("/api/eval/files/1", base_url=BASE).status_code == 401,
+           "로그인 없이는 401 (상태 · 증빙)")
+
+        # ---- 전원 (HR · 대표이사) ----
+        item = lambda rid, w: {"rid": rid, "team": "가상 팀목표", "personal": "가상 개인목표", "action": f"가상 업무 {rid}", "formula": "가상 측정식", "weight": w,  # noqa: E731
+                               "S": "가상 s", "A": "가상 a", "B": "가상 b", "C": "가상 c", "D": "가상 d"}
+        ev = lambda *g: [{"rid": rid, "note": f"가상 실적 {rid}", "selfGrade": s, "grade": gr, "files": []} for rid, s, gr in zip((1, 2, 4), "AAB", g)]  # noqa: E731
+        want_emp = {"pid": EMP, "name": "가상E팀원", "title": "가상직급", "team": "가상E팀A", "div": "가상E본부", "poolKey": "DIV:91", "poolName": "가상E본부 팀원",
+                    "kpi": True, "stage": "CEO", "out": None, "noSelf": "", "late": 0, "leaveOver": 0, "items": [item(1, 40), item(2, 30), item(4, 30)], "ev": ev("B", "C", "C"),
+                    "grade": "C", "proposed": "B", "subScore": 94.0, "subMarks": SUB, "comment": "가상 팀장 코멘트", "headComment": "가상 본부장 코멘트",
+                    "bonus": 1.5, "bonusReason": "가상 가점 사유", "total": 85.5, "cap": "B", "proxy": "", "edited": "총점 94.0 → 85.5 · 등급 B → C", "editSeen": False,
+                    "rater": {"id": LEAD, "name": "가상E팀장", "title": "가상직급", "canLogin": True}, "raterIsCeo": False, "can": {**NO_CAN, "evidence": True},
+                    "hidden": False, "appeal": None}
+        hra, ceo = st(HRA), st(CEO)
+        ok(hra["year"] == Y and hra["offline"] is False and hra["round"] == evaluation._round(db, Y) and hra["deleg"] is False and hra["ceoId"] == CEO and hra["me"] is None,
+           "상태: 해 · 회차(_round) · 맡김 · 대표이사 번호 · 평가 대상이 아닌 사람의 me 는 null")
+        ok(all(sorted(pids(s)) == TARGETS and all(set(p) == FULL and set(p["can"]) == set(NO_CAN) and p["hidden"] is False for p in s["people"]) and s["me"] is None
+               for s in (hra, ceo)), "대표이사와_HR은_전부: 대표이사 · HR → 11명 모두 full (줄마다 칸이 다 있음 — 화면 evPeople 칸 이름)")
+        ok(row(hra, EMP) == want_emp and row(ceo, EMP) == want_emp, "대표이사와_HR은_전부: 고친 등급 C · 지금 총점 85.5 · 가점 · 윗사람 코멘트 · 고친 내용 글자까지 다 보임")
+        f, b, d, x_ = row(hra, FIELD), row(hra, EMPB), row(hra, DIVD), row(hra, EXEC)
+        ok(f["kpi"] is False and f["items"] == [] and f["ev"] == [] and f["total"] is None and f["cap"] == "S" and (f["late"], f["leaveOver"]) == (3, 4.5),
+           "KPI 없는 사람: kpi 거짓 · 실행목표 없음 · 총점 null · 줄 수 있는 등급은 연차 규칙만 (4.5일 → S) · 지각 · 연차 초과(소수)")
+        ok(b["noSelf"] == f"{Y}-12-03" and d["out"] == {"at": z(12, 3), "why": "가상 휴직"} and x_["proxy"] == "가상EHR담당 가상직급" and x_["raterIsCeo"] is True
+           and x_["rater"] == {"id": CEO, "name": "가상E대표", "title": "가상직급", "canLogin": True} and x_["div"] == "대표이사 직속부서" and x_["team"] == "본부 직속",
+           "자기평가 없이 넘긴 날(한국 날짜) · 제외(때 · 사유) · 대리 입력 '이름 직급' · 평가자가 대표이사 · 이름 칸")
+        ok([row(hra, u)["poolName"] for u in (LEAD, HR, EMPC)] == ["전사 팀장", "직속부서 팀원", "가상E본부2 팀원"], "묶음 이름: 전사 팀장 · 직속부서 팀원 · <본부> 팀원")
+        x("UPDATE users SET portal_enabled = 0 WHERE id = ?", LEADC)
+        ok(row(st(HRA), EMPC)["rater"] == {"id": LEADC, "name": "가상E팀장C", "title": "가상직급", "canLogin": False}, "평가자가 포털을 못 쓰면 rater.canLogin 거짓 (HR 명단 경고)")
+        x("UPDATE users SET portal_enabled = 1 WHERE id = ?", LEADC)
+        P91 = {"key": "DIV:91", "name": "가상E본부 팀원", "size": 4, "state": "WAIT", "counts": {"S": 0, "A": 0, "B": 0, "C": 1, "D": 0}, "errors": [], "warnings": [],
+               "quota": "S 최대 1명 · A·B 합계 1명 (S만큼 줄어듦) · C·D 나머지", "log": {"closed": None, "ceo": None, "back": None, "undo": None}, "hrSeen": False,
+               "can": NO_POOL_CAN}
+        ok([p["key"] for p in hra["pools"]] == ["DIV:91", "DIV:94", "LEADERS", "DIRECT"] and hra["pools"][0] == P91 and all(p["can"] == NO_POOL_CAN for p in hra["pools"])
+           and [p["size"] for p in hra["pools"]] == [4, 1, 3, 2], "대표이사와_HR은_전부: pools 넷 (제외된 사람 빼고 셈 · 배정 단계에 온 사람의 등급만 셈 · 정원 글자) · 맡김 전 HR 은 마감 못 함")
+        ok([p["can"]["close"] for p in ceo["pools"]] == [False, True, False, False], "대표이사: 본부장 없는 본부 묶음(DIV:94)만 마감할 수 있음 (본부장이 있는 본부는 본부장이)")
+
+        # ---- 공개 전 평가자 (팀장) ----
+        lead = st(LEAD)
+        want_mine = {**want_emp, "ev": ev("A", "B", "B"), "grade": "B", "total": 94.0, "cap": "A", "bonus": 0, "bonusReason": "", "headComment": "", "proxy": "",
+                     "edited": True, "hidden": True}
+        ok(row(lead, EMP) == want_mine, "공개_전_평가자는_낸_것만: 팀장 → grade B · 항목 등급은 낸 그대로(A·B·B) · 총점 = 낸 94.0 · edited 참 · hidden 참 · 가점 0 · 윗사람 코멘트 ''")
+        ok(pids(lead) == [EMP, FIELD] and lead["pools"] == [] and lead["me"]["pid"] == LEAD, "팀장: people 은 자기가 평가하는 두 사람 · pools 없음 · me 는 자기 줄")
+        got = leaves(lead)
+        ok(("grade", "B") in got and ("selfGrade", "B") in got and ("subScore", 94.0) in got and ("note", "가상 실적 4") in got and ("weight", 30) in got,
+           "(훑기가 me · people · ev · items 안까지 닿음)")
+        NEW = (85.5, 855, 1.5)
+        TEXTS = ("85.5", "855", "→", "가상 본부장 코멘트", "가상 가점 사유")
+        bad = leaks(lead, "C", NEW, TEXTS)
+        ok(not bad and "85.5" not in get(LEAD, "/api/eval/state").get_data(as_text=True),
+           f"새는지_모든_칸에서: 팀장 응답 전체에 고친 등급 C(열쇠에 grade 가 든 모든 칸) · 고친 총점(85.5 · ×10 855 · 글자) · 가점 1.5 · 윗사람 코멘트 · 고친 내용 글자가 없음 {bad}")
+        ok(leaks(hra, "C", NEW, TEXTS), "(같은 훑기가 HR 응답에서는 C · 85.5 를 찾아냄 — 훑기가 제대로 잡는다)")
+
+        # ---- 본인 ----
+        emp = st(EMP)
+        me = emp["me"]
+        ok(me == {**{k: v for k, v in want_emp.items() if k not in SELF_GONE}, "ev": [{k: v for k, v in e.items() if k != "grade"} for e in ev("B", "C", "C")]}
+           and not SELF_GONE & set(me) and all("grade" not in e and {"note", "selfGrade"} <= set(e) for e in me["ev"]) and emp["people"] == [] and emp["pools"] == [],
+           "본인은_자기평가만: 본인 me 줄에 grade · proposed · subScore · subMarks · comment · headComment · bonus · total · cap · edited · rater 열쇠가 없고 "
+           "ev[] 에 grade 열쇠가 없음 · note · selfGrade · late · leaveOver 는 있음")
+        bad = leaks(emp, "C", (94.0, 940, *NEW), ("94", "가상 팀장 코멘트", *TEXTS))
+        ok(not bad, f"본인 응답 어디에도 고친 등급 C · 낸 총점 94 · 고친 총점 · 평가자 코멘트가 없음 {bad}")
+
+        # ---- 본부장 ----
+        head = st(HEAD)
+        ok(pids(head) == [LEAD, EMP, FIELD, EMPB, NOCONF, DIVD] and head["me"] is None,
+           "본부장은_자기_본부를_배정자로: 자기 본부 묶음 다섯(제외된 사람 포함) + 자기가 평가한 팀장 — 본부 → 팀 → 팀장 먼저 → 이름 차례 · 다른 본부 · 직속 · 다른 팀장 없음")
+        ok(row(head, EMP) == want_emp, "본부장은_자기_본부를_배정자로: 본부 팀원은 full (고친 C · 85.5 가 보임)")
+        lr = row(head, LEAD)
+        ok(lr["hidden"] is True and lr["grade"] == "A" and [e["grade"] for e in lr["ev"]] == ["A", "A", "A"] and lr["total"] == 100.0 and lr["edited"] == ""
+           and not leaks(lr, "B", (97.0, 970), ("97",)), "본부장은_자기_본부를_배정자로: 자기가 평가한 팀장은 mine (대표이사가 고치는 중인 B · 97점은 없음, 아직 확인 전이라 edited '')")
+        ok(head["pools"] == [{**P91, "can": {**NO_POOL_CAN, "close": True}}], "본부장은_자기_본부를_배정자로: pools 에 자기 본부 묶음만 · 마감 권한")
+
+        # ---- 팀장 · 직원 ----
+        leadc, empb = st(LEADC), st(EMPB)
+        ok(pids(leadc) == [EMPC] and leadc["pools"] == [] and EMP not in pids(leadc), "팀장은_자기_평가_대상만: 다른 팀장 응답 people 에 그 팀원(EMP)이 없음 · 자기 팀원만")
+        ok(empb["people"] == [] and empb["pools"] == [] and empb["me"]["pid"] == EMPB, "팀장은_자기_평가_대상만: 직원은 people 빈 목록 · pools 없음")
+
+        # ---- 판단 칸 (can) ----
+        ok(st(EMPC)["me"]["can"] == {**NO_CAN, "self": True, "upload": True, "evidence": True}, "판단 칸: 자기평가 단계 본인 → self · upload · evidence")
+        ok(row(lead, FIELD)["can"] == {**NO_CAN, "score": True, "evidence": True}, "판단 칸: 점수 단계 팀원 → 평가자는 score (본부 팀원 가점은 배정자 몫)")
+        ok(row(ceo, LEAD)["can"] == {**NO_CAN, "assign": True, "bonus": True, "evidence": True} and row(ceo, EXEC)["can"] == {**NO_CAN, "evidence": True},
+           "판단 칸: 대표이사 확인 단계 팀장 → 대표이사 assign · bonus (팀장 묶음은 윗사람 코멘트 없음) · 자기평가 단계 직속 직원은 아직 못 고침")
+        x("INSERT INTO ceo_delegation (ceo_user_id, since) VALUES (?, ?)", CEO, z(12, 5))
+        put(LEADC, stage="SCORE")
+        put(HR, stage="SCORE")
+        hra, hr_me = st(HRA), st(HR)
+        ok(hra["deleg"] is True and row(hra, LEADC)["can"] == {**NO_CAN, "score": True, "bonus": True, "evidence": True, "behalf": True}
+           and row(hra, LEAD)["can"] == {**NO_CAN, "assign": True, "bonus": True, "evidence": True, "behalf": True},
+           "판단 칸: 맡김 → HR 이 대표이사가 평가자인 팀장 채점 · 팀장 확인 단계 고치기를 대신 (behalf 참)")
+        ok(row(st(HRL), HR)["can"] == {**NO_CAN, "score": True, "evidence": True} and hr_me["me"]["can"]["score"] is False,
+           "판단 칸: HR 팀장이 HR 담당을 채점하는 것은 평가자 본인 일 (behalf 거짓) · HR 담당은 자기 줄을 못 고침")
+        ok([p["can"]["close"] for p in hra["pools"]] == [False, True, False, False] and [p["can"]["close"] for p in hr_me["pools"]] == [False, True, False, False],
+           "맡김 → HR 도 본부장 없는 본부 묶음을 마감할 수 있음 (그 묶음 사람이 아닐 때)")
+        cx = evaluation._ctx(db, Y)
+        ok(evaluation._pool_can(cx, Actor(EMPC, None, True), "DIV:94")["close"] is False and evaluation._pool_can(cx, Actor(HRA, None, True), "DIV:94")["close"] is True
+           and evaluation._pool_can(cx, Actor(HRA, None, True), "LEADERS")["close"] is False, "_pool_can: 그 묶음에 든 HR 은 맡겨도 마감 못 함 · 본부 팀원 묶음만 마감")
+        ok(st(HRA)["todo"] == {"me": 0, "admin": 1} and st(CEO)["todo"] == {"me": 1, "admin": 0},
+           "할_일_숫자: 맡김 → HR admin 에 대표이사가 평가자인 점수 단계 사람 1 · 대표이사 me 에도 1")
+        x("DELETE FROM ceo_delegation WHERE ceo_user_id = ?", CEO)
+        put(LEADC, stage="SELF")
+        put(HR, stage="SELF")
+
+        # ---- 증빙 ----
+        PDF, HWP = b"%PDF-1.4\n", b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"
+        for rid, name, kind, data in ((1, "가상 증빙 1.pdf", "pdf", PDF), (4, "가상 한글.hwp", "hwp", HWP)):
+            x("INSERT INTO ev_files (year, user_id, rid, name, kind, size, sha256, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", Y, EMP, rid, name, kind, len(data), "0" * 64, z(12, 5))
+            fids.append(q("SELECT id FROM ev_files WHERE year = ? AND user_id = ? AND name = ?", Y, EMP, name)[0][0])
+            fdir.mkdir(exist_ok=True)
+            (fdir / str(fids[-1])).write_bytes(data)
+        pdf, hwp = fids
+        url = f"/api/eval/files/{pdf}"
+        for u in (EMP, LEAD, HEAD, CEO, HRA, FIELD, EMPB, LEADC, EMPC):
+            c(u)  # 로그인(감사로그 LOGIN)을 먼저 해 둔다
+        n_logs = q("SELECT COUNT(*) FROM audit_logs")[0][0]
+        rs = [get(u, url) for u in (EMP, LEAD, HEAD, CEO, HRA)]
+        cd = "attachment; filename*=UTF-8''" + quote("가상 증빙 1.pdf", safe="")
+        ok(all(r.status_code == 200 and r.data == PDF and r.headers["Content-Type"] == "application/pdf" and r.headers["Content-Disposition"] == cd
+               and r.headers["X-Content-Type-Options"] == "nosniff" and r.headers["Cache-Control"] == "no-store" for r in rs),
+           "증빙은_볼_사람만: 본인 · 평가자(팀장) · 본부장 · 대표이사 · HR 200 · 파일 그대로 · Content-Type · 한글 이름(filename*) · nosniff · no-store")
+        r = get(EMP, f"/api/eval/files/{hwp}")
+        ok(r.status_code == 200 and r.data == HWP and r.headers["Content-Type"] == "application/octet-stream", "한글(hwp) 증빙은 application/octet-stream")
+        NO = {"error": "이 증빙을 볼 권한이 없습니다."}
+        ok(all(hit(get(u, url), 403, NO) for u in (FIELD, EMPB, LEADC, EMPC)), "증빙은_볼_사람만: 같은 팀 동료 · 같은 본부 다른 팀 직원 · 다른 팀장 · 다른 본부 직원 403")
+        ok(get(EMP, "/api/eval/files/999999").status_code == 404 and get(EMP, f"/api/eval/files/{2 ** 31}").status_code == 404, "증빙은_볼_사람만: 없는 번호 404")
+        ok(q("SELECT COUNT(*) FROM audit_logs")[0][0] == n_logs, "증빙 내려받기는 감사로그를 남기지 않음")
+        ok(row(st(LEAD), EMP)["ev"][0]["files"] == [{"id": pdf, "name": "가상 증빙 1.pdf", "size": 9}] and st(EMP)["me"]["ev"][2]["files"] == [{"id": hwp, "name": "가상 한글.hwp", "size": 8}]
+           and row(st(HRA), EMP)["ev"][1]["files"] == [], "상태 응답의 ev[].files — 실행목표마다 (번호 · 이름 · 크기)")
+        (fdir / str(pdf)).unlink()
+        ok(hit(get(EMP, url), 404, {"error": "증빙 파일이 서버에 없습니다."}), "증빙은_볼_사람만: 폴더에서 파일이 사라졌으면 404")
+
+        # ---- 할 일 숫자 ----
+        todo = lambda who: st(who)["todo"]  # noqa: E731
+        at(12, 10, 14, 59)  # 한국 12/10 23:59 — 자기평가 마감일 밤
+        a = todo(EMPC), st(EMPC)["me"]["can"]["self"]
+        at(12, 10, 15, 0)  # 한국 12/11 0시
+        b = todo(EMPC), st(EMPC)["me"]["can"]["self"]
+        ok(a == ({"me": 1, "admin": 0}, True) and b == ({"me": 0, "admin": 0}, False), f"할_일_숫자: 본인 자기평가 1 (마감일 한국 23:59 까지) → 다음 날 0 · can.self 도 거짓 {a} {b}")
+        at(12, 5)
+        ok(todo(LEAD) == {"me": 2, "admin": 0}, "할_일_숫자: 팀장 — 점수 낼 사람 1(현장직) + 윗사람이 고쳤는데 아직 확인 안 한 사람 1")
+        put(EMP, edit_seen="총점 94.0 → 85.5 · 등급 B → C")
+        ok(todo(LEAD) == {"me": 1, "admin": 0} and row(st(LEAD), EMP)["editSeen"] is True, "확인한 고친 내용은 안 셈 · editSeen 참")
+        ok(todo(HEAD) == {"me": 2, "admin": 0}, "할_일_숫자: 본부장 — 점수 낼 사람 2 (제외된 사람은 안 셈)")
+        put(EMPB, stage="GRADE", proposed="C")
+        put(NOCONF, stage="GRADE", proposed="C")
+        ok(todo(HEAD) == {"me": 1, "admin": 0}, "할_일_숫자: 본부장 — 둘이 배정 단계로 오면 배정할 묶음 1")
+        ok(todo(HRA) == {"me": 0, "admin": 0}, "HR: 근태를 마쳤고 맡김 · 마감 알림이 없으면 0")
+        x("UPDATE ev_rounds SET att_done_at = NULL WHERE year = ?", Y)
+        ok(todo(HRA) == {"me": 0, "admin": 1} and todo(HEAD)["admin"] == 0, "할_일_숫자: HR 근태 안 마침 1 (HR 이 아니면 admin 0)")
+        x("UPDATE ev_rounds SET att_done_at = ? WHERE year = ?", att_done, Y)
+        actor = Actor(LEAD, Role.TEAM_LEADER, False, led_team_id=92)
+        ok(evaluation.eval_todo(db, actor) == todo(LEAD) == {"me": 1, "admin": 0}, "eval_todo(conn, actor) 는 상태 응답의 todo 와 같은 셈 (휴대폰 숫자용)")
+        x("UPDATE ev_rounds SET released_at = ? WHERE year = ?", z(12, 5), Y)
+        ok(todo(LEAD) == todo(HRA) == evaluation.eval_todo(db, actor) == {"me": 0, "admin": 0}, "할_일_숫자: 공개 뒤에는 0")
+        x("UPDATE ev_rounds SET released_at = NULL WHERE year = ?", Y)
+
+        # ---- 해 ----
+        off = st(LEAD, f"?year={Y - 1}")
+        ok(off["year"] == Y - 1 and off["offline"] is True and off["round"] is None and off["me"] is None and off["people"] == [] and off["pools"] == []
+           and off["todo"] == {"me": 0, "admin": 0}, f"{Y - 1}년은_안내만: 포털 평가 전 해 → offline 참 · people 빈 목록")
+        ok(st(LEAD)["year"] == Y and st(LEAD, f"?year={Y}")["year"] == Y, "해를 주지 않으면 보일 해(cur_year)")
+        BAD = {"error": "해가 올바르지 않습니다."}
+        ok(all(hit(get(LEAD, f"/api/eval/state?year={v}"), 400, BAD) for v in ("abc", "2025", "2101", "", "2027.0", "%EF%BC%92%EF%BC%90%EF%BC%92%EF%BC%97", "9" * 5000)),
+           "해가 정수(2026~2100)가 아니면 400 (글자 · 범위 밖 · 빈 값 · 소수 · 전각 숫자 · 아주 긴 숫자)")
+    finally:
+        db.close()
+        auth._now = real_now
+        x("DELETE FROM ceo_delegation WHERE ceo_user_id = ?", CEO)
+        x("UPDATE ev_rounds SET att_done_at = ?, released_at = NULL WHERE year = ?", att_done, Y)
+        x("UPDATE users SET portal_enabled = 1 WHERE id = ?", LEADC)
+        x("UPDATE users SET is_active = 0, deactivated_at = '2027-01-01T00:00:00Z' WHERE id = ?", CEO)
+        for uid in other_ceos:
+            x("UPDATE users SET is_active = 1, deactivated_at = NULL WHERE id = ?", uid)
+        for fid in fids:
+            x("DELETE FROM ev_files WHERE id = ?", fid)
+            (fdir / str(fid)).unlink(missing_ok=True)
+
+
 def main() -> int:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     seed()
@@ -6501,6 +6772,7 @@ def main() -> int:
     check_kpi_sched(hr)
     check_kpi_review(hr)
     check_eval_admin(hr)
+    check_eval_view(hr)
     with pay_gate_off():  # 아래 검사들은 비밀번호 잠금 이전 동작을 본다 — 잠금은 check_pay_pin 이 켠 채로 본다
         check_payslips(hr)
         check_pay_ask(hr)
