@@ -6271,7 +6271,7 @@ def check_eval_view(hr) -> None:
     from hr_eval.domain.models import Actor, Role
     print("인사평가 읽기 · 보는 수준 · 증빙 내려받기 · 할 일 숫자")
     HEAD, LEAD, EMP, FIELD, EMPB, DIVD, LEADC, EMPC, HRL, HR, EXEC, CEO = range(101, 113)
-    NOCONF, HRA = 115, 1  # HRA = 평가 대상이 아닌 HR (처음 검사의 인사담당자)
+    NOCONF, HEAD2, HRA = 115, 116, 1  # HRA = 평가 대상이 아닌 HR (처음 검사의 인사담당자)
     TARGETS = sorted((LEAD, EMP, FIELD, EMPB, NOCONF, DIVD, EMPC, LEADC, HRL, HR, EXEC))
     Y, real_now = evaluation.FIRST_YEAR, auth._now
     z = lambda m, d, hh=3, mi=0: f"{Y}-{m:02d}-{d:02d}T{hh:02d}:{mi:02d}:00Z"  # noqa: E731
@@ -6302,18 +6302,17 @@ def check_eval_view(hr) -> None:
         for rid, note, self_grade, grade in rows:
             x("UPDATE ev_items SET note = ?, self_grade = ?, grade = ? WHERE year = ? AND user_id = ? AND rid = ?", note, self_grade, grade, Y, uid, rid)
 
-    def leaves(v, key=""):
-        """응답 전체를 끝까지 훑은 (열쇠, 값) 목록 — 목록 안의 값은 그 목록의 열쇠로."""
+    def leaves(v, path=()):
+        """응답 전체를 끝까지 훑은 (열쇠 길, 값) 목록 — dict 의 모든 값 · 목록 · 목록 안의 목록까지 (목록 자리는 열쇠 길에 넣지 않는다)."""
         if isinstance(v, dict):
-            return [leaf for k, w in v.items() for leaf in leaves(w, k)]
+            return [leaf for k, w in v.items() for leaf in leaves(w, (*path, k))]
         if isinstance(v, list):
-            return [leaf for w in v for leaf in leaves(w, key)]
-        return [(key, v)]
+            return [leaf for w in v for leaf in leaves(w, path)]
+        return [(path, v)]
 
-    def leaks(v, grade, nums, texts):
-        """grade 가 열쇠 이름에 grade 가 든 칸에 · nums 가 숫자로 · texts 가 글자 안에 있는 곳."""
-        return [(k, w) for k, w in leaves(v) if ("grade" in k.lower() and w == grade) or (type(w) in (int, float) and w in nums)
-                or (isinstance(w, str) and any(t in w for t in texts))]
+    def leaks(v, values=(), nums=(), texts=()):
+        """values 가 어느 칸의 값으로든 (열쇠 이름과 상관없이 — subMarks 의 값 등) · nums 가 숫자로 · texts 가 글자 안에 있는 곳."""
+        return [(p, w) for p, w in leaves(v) if (isinstance(w, str) and (w in values or any(t in w for t in texts))) or (type(w) in (int, float) and w in nums)]
 
     FULL = {"pid", "name", "title", "team", "div", "poolKey", "poolName", "kpi", "stage", "out", "noSelf", "late", "leaveOver", "items", "ev", "grade", "proposed",
             "subScore", "subMarks", "comment", "headComment", "bonus", "bonusReason", "total", "cap", "proxy", "edited", "editSeen", "rater", "raterIsCeo", "can", "hidden", "appeal"}
@@ -6388,6 +6387,8 @@ def check_eval_view(hr) -> None:
         ok([p["key"] for p in hra["pools"]] == ["DIV:91", "DIV:94", "LEADERS", "DIRECT"] and hra["pools"][0] == P91 and all(p["can"] == NO_POOL_CAN for p in hra["pools"])
            and [p["size"] for p in hra["pools"]] == [4, 1, 3, 2], "대표이사와_HR은_전부: pools 넷 (제외된 사람 빼고 셈 · 배정 단계에 온 사람의 등급만 셈 · 정원 글자) · 맡김 전 HR 은 마감 못 함")
         ok([p["can"]["close"] for p in ceo["pools"]] == [False, True, False, False], "대표이사: 본부장 없는 본부 묶음(DIV:94)만 마감할 수 있음 (본부장이 있는 본부는 본부장이)")
+        ok(sorted(["DIRECT", "DIV:100", "LEADERS", "DIV:91"], key=evaluation._pool_rank) == ["DIV:91", "DIV:100", "LEADERS", "DIRECT"],
+           "묶음 차례: 본부 팀원은 본부 번호 차례(91 → 100) → 전사 팀장 → 직속부서 팀원")
 
         # ---- 공개 전 평가자 (팀장) ----
         lead = st(LEAD)
@@ -6396,14 +6397,16 @@ def check_eval_view(hr) -> None:
         ok(row(lead, EMP) == want_mine, "공개_전_평가자는_낸_것만: 팀장 → grade B · 항목 등급은 낸 그대로(A·B·B) · 총점 = 낸 94.0 · edited 참 · hidden 참 · 가점 0 · 윗사람 코멘트 ''")
         ok(pids(lead) == [EMP, FIELD] and lead["pools"] == [] and lead["me"]["pid"] == LEAD, "팀장: people 은 자기가 평가하는 두 사람 · pools 없음 · me 는 자기 줄")
         got = leaves(lead)
-        ok(("grade", "B") in got and ("selfGrade", "B") in got and ("subScore", 94.0) in got and ("note", "가상 실적 4") in got and ("weight", 30) in got,
-           "(훑기가 me · people · ev · items 안까지 닿음)")
+        ok(all(g in got for g in ((("people", "grade"), "B"), (("people", "ev", "selfGrade"), "B"), (("people", "subMarks", "4"), "B"), (("people", "subScore"), 94.0),
+                                  (("me", "ev", "note"), "가상 팀장 실적"), (("people", "items", "weight"), 30), (("round", "bands", "C"), 70))),
+           "(훑기가 me · people · ev · items · subMarks 의 값 · round 안까지 닿음)")
         NEW = (85.5, 855, 1.5)
         TEXTS = ("85.5", "855", "→", "가상 본부장 코멘트", "가상 가점 사유")
-        bad = leaks(lead, "C", NEW, TEXTS)
+        bad = leaks(lead, ("C",), NEW, TEXTS)
         ok(not bad and "85.5" not in get(LEAD, "/api/eval/state").get_data(as_text=True),
-           f"새는지_모든_칸에서: 팀장 응답 전체에 고친 등급 C(열쇠에 grade 가 든 모든 칸) · 고친 총점(85.5 · ×10 855 · 글자) · 가점 1.5 · 윗사람 코멘트 · 고친 내용 글자가 없음 {bad}")
-        ok(leaks(hra, "C", NEW, TEXTS), "(같은 훑기가 HR 응답에서는 C · 85.5 를 찾아냄 — 훑기가 제대로 잡는다)")
+           f"새는지_모든_칸에서: 팀장 응답 전체(어느 칸의 값이든 — subMarks 의 값까지)에 고친 등급 C · 고친 총점(85.5 · ×10 855 · 글자) · 가점 1.5 · 윗사람 코멘트 · "
+           f"고친 내용 글자가 없음 {bad}")
+        ok(leaks(hra, ("C",), NEW, TEXTS), "(같은 훑기가 HR 응답에서는 C · 85.5 를 찾아냄 — 훑기가 제대로 잡는다)")
 
         # ---- 본인 ----
         emp = st(EMP)
@@ -6412,7 +6415,7 @@ def check_eval_view(hr) -> None:
            and not SELF_GONE & set(me) and all("grade" not in e and {"note", "selfGrade"} <= set(e) for e in me["ev"]) and emp["people"] == [] and emp["pools"] == [],
            "본인은_자기평가만: 본인 me 줄에 grade · proposed · subScore · subMarks · comment · headComment · bonus · total · cap · edited · rater 열쇠가 없고 "
            "ev[] 에 grade 열쇠가 없음 · note · selfGrade · late · leaveOver 는 있음")
-        bad = leaks(emp, "C", (94.0, 940, *NEW), ("94", "가상 팀장 코멘트", *TEXTS))
+        bad = leaks(emp, ("C",), (94.0, 940, *NEW), ("94", "가상 팀장 코멘트", *TEXTS))
         ok(not bad, f"본인 응답 어디에도 고친 등급 C · 낸 총점 94 · 고친 총점 · 평가자 코멘트가 없음 {bad}")
 
         # ---- 본부장 ----
@@ -6422,7 +6425,9 @@ def check_eval_view(hr) -> None:
         ok(row(head, EMP) == want_emp, "본부장은_자기_본부를_배정자로: 본부 팀원은 full (고친 C · 85.5 가 보임)")
         lr = row(head, LEAD)
         ok(lr["hidden"] is True and lr["grade"] == "A" and [e["grade"] for e in lr["ev"]] == ["A", "A", "A"] and lr["total"] == 100.0 and lr["edited"] == ""
-           and not leaks(lr, "B", (97.0, 970), ("97",)), "본부장은_자기_본부를_배정자로: 자기가 평가한 팀장은 mine (대표이사가 고치는 중인 B · 97점은 없음, 아직 확인 전이라 edited '')")
+           and not leaks(lr, ("B",), (97.0, 970), ("97",)), "본부장은_자기_본부를_배정자로: 자기가 평가한 팀장은 mine (대표이사가 고치는 중인 B · 97점은 없음, 아직 확인 전이라 edited '')")
+        bad = leaks(head, (), (97.0, 970), ("97",))
+        ok(not bad, f"본부장 응답 전체에도 대표이사가 고치는 중인 팀장 총점(97.0 · ×10 970 · 글자)이 없음 {bad}")
         ok(head["pools"] == [{**P91, "can": {**NO_POOL_CAN, "close": True}}], "본부장은_자기_본부를_배정자로: pools 에 자기 본부 묶음만 · 마감 권한")
 
         # ---- 팀장 · 직원 ----
@@ -6482,6 +6487,19 @@ def check_eval_view(hr) -> None:
            and row(st(HRA), EMP)["ev"][1]["files"] == [], "상태 응답의 ev[].files — 실행목표마다 (번호 · 이름 · 크기)")
         (fdir / str(pdf)).unlink()
         ok(hit(get(EMP, url), 404, {"error": "증빙 파일이 서버에 없습니다."}), "증빙은_볼_사람만: 폴더에서 파일이 사라졌으면 404")
+        put(LEAD, rater_id=CEO)  # 팀장의 평가자를 잠깐 대표이사로 — 본부장은 이 팀장의 평가자도 배정자(전사 팀장 묶음 = 대표이사)도 아니다
+        x("INSERT INTO user_roles (user_id, role) VALUES (?, 'DIVISION_HEAD')", HEAD2)
+        x("UPDATE users SET led_department_id = 94 WHERE id = ?", HEAD2)  # 다른 본부(94)의 본부장
+        x("INSERT INTO ev_files (year, user_id, rid, name, kind, size, sha256, at) VALUES (?, ?, 1, '가상 팀장 증빙.pdf', 'pdf', ?, ?, ?)", Y, LEAD, len(PDF), "0" * 64, z(12, 5))
+        fids.append(q("SELECT id FROM ev_files WHERE year = ? AND user_id = ?", Y, LEAD)[0][0])
+        (fdir / str(fids[-1])).write_bytes(PDF)
+        lurl = f"/api/eval/files/{fids[-1]}"
+        r = get(HEAD, lurl)
+        ok(r.status_code == 200 and r.data == PDF and hit(get(HEAD2, lurl), 403, NO),
+           "증빙은_볼_사람만: 평가자도 배정자도 아닌 그 본부의 본부장 200 · 다른 본부의 본부장 403")
+        put(LEAD, rater_id=HEAD)
+        x("DELETE FROM user_roles WHERE user_id = ? AND role = 'DIVISION_HEAD'", HEAD2)
+        x("UPDATE users SET led_department_id = NULL WHERE id = ?", HEAD2)
 
         # ---- 할 일 숫자 ----
         todo = lambda who: st(who)["todo"]  # noqa: E731
@@ -6498,6 +6516,11 @@ def check_eval_view(hr) -> None:
         put(EMPB, stage="GRADE", proposed="C")
         put(NOCONF, stage="GRADE", proposed="C")
         ok(todo(HEAD) == {"me": 1, "admin": 0}, "할_일_숫자: 본부장 — 둘이 배정 단계로 오면 배정할 묶음 1")
+        put(EMPB, stage="CEO", proposed="B", grade="C", sub_score_x10=900, scored_by=HEAD)  # 팀장 없는 팀 팀원: 본부장이 평가자이자 배정자 — 낸 B · 90점을 스스로 C · 0점으로
+        head = st(HEAD)
+        ok(row(head, EMPB)["edited"] == "" and row(st(HRA), EMPB)["edited"] == "" and todo(HEAD) == {"me": 1, "admin": 0}
+           and row(head, EMP)["edited"] == "총점 94.0 → 85.5 · 등급 B → C",
+           "평가자가 배정자 본인이면 자기가 고친 것은 edited '' · 할 일(고친 것 확인)에 안 셈 — 팀장이 평가한 사람은 그대로 고친 내용 글자")
         ok(todo(HRA) == {"me": 0, "admin": 0}, "HR: 근태를 마쳤고 맡김 · 마감 알림이 없으면 0")
         x("UPDATE ev_rounds SET att_done_at = NULL WHERE year = ?", Y)
         ok(todo(HRA) == {"me": 0, "admin": 1} and todo(HEAD)["admin"] == 0, "할_일_숫자: HR 근태 안 마침 1 (HR 이 아니면 admin 0)")
@@ -6522,6 +6545,9 @@ def check_eval_view(hr) -> None:
         x("DELETE FROM ceo_delegation WHERE ceo_user_id = ?", CEO)
         x("UPDATE ev_rounds SET att_done_at = ?, released_at = NULL WHERE year = ?", att_done, Y)
         x("UPDATE users SET portal_enabled = 1 WHERE id = ?", LEADC)
+        x("DELETE FROM user_roles WHERE user_id = ? AND role = 'DIVISION_HEAD'", HEAD2)
+        x("UPDATE users SET led_department_id = NULL WHERE id = ?", HEAD2)
+        x("UPDATE ev_targets SET rater_id = ? WHERE year = ? AND user_id = ?", HEAD, Y, LEAD)
         x("UPDATE users SET is_active = 0, deactivated_at = '2027-01-01T00:00:00Z' WHERE id = ?", CEO)
         for uid in other_ceos:
             x("UPDATE users SET is_active = 1, deactivated_at = NULL WHERE id = ?", uid)

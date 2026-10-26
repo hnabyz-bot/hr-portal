@@ -19,7 +19,7 @@ app.py 가 bp 를 붙인다. 세션 검사 · 같은 출처 검사는 auth._guar
   self 본인 · 공개 전 — 자기평가(실적 · 자기 등급 · 증빙)만, 평가 칸은 열쇠째 뺀다 / none 줄이 없다.
   people = HR · 대표이사는 전원, 그 밖은 자기가 평가자이거나 배정자인 사람 (본인 줄은 me) · pools = HR · 대표이사는 전부, 그 밖은 자기가 배정자인 묶음만.
   배정자(R6) = 본부 팀원 묶음은 떠 둔 본부장이 활성이면 그 사람, 아니면 대표이사 · 그 밖 묶음은 대표이사. 판단 칸(can)은 _can — 쓰기 길도 같은 함수로 막는다.
-  맡김(R11)이면 HR 이 대표이사 몫을 대신하되 자기 줄 · 자기가 든 묶음은 못 한다 (can.behalf — 화면의 "대리 입력" 표시).
+  맡김(R11)이면 HR 이 대표이사 몫을 대신하되 점수 · 배정은 자기 줄만, 묶음 마감은 자기가 든 묶음을 못 한다 (can.behalf — 화면의 "대리 입력" 표시).
   todo = 처리할 일 숫자 (화면 evTodo — eval_todo 로 휴대폰 숫자도 같은 셈). 상태: 해(2026~2100 정수) 400 · FIRST_YEAR 전 해는 offline 참에 빈 명단.
   증빙: 없는 번호 404 → 볼 권한(can.evidence) 아님 403 → 폴더에 파일이 없음 404. 내려받기는 attachment · nosniff · no-store, 감사로그는 남기지 않는다.
 
@@ -192,8 +192,10 @@ def _total(ctx: _Ctx, row: sqlite3.Row) -> Decimal | None:
 
 
 def _edited(ctx: _Ctx, row: sqlite3.Row) -> str:
-    """평가자가 낸 것과 지금이 달라진 내용 (eval_rules.edited — 배정 단계를 지난 뒤에만). 평가자가 대표이사면 고치는 사람도 대표이사라 따지지 않는다 (화면 evEdited)."""
-    if _is_ceo(ctx, row["rater_id"]):
+    """평가자가 낸 것과 지금이 달라진 내용 (eval_rules.edited — 배정 단계를 지난 뒤에만). 평가자가 대표이사이거나 배정자 본인이면(팀장 없는 팀 팀원의 본부장 등)
+    고친 사람도 자기라 따지지 않는다 (화면 evEdited — 자기가 고친 것을 '윗사람이 고침'으로 알리지 않게)."""
+    rater = row["rater_id"]
+    if _is_ceo(ctx, rater) or (rater is not None and rater == _assigner(ctx, row)):
         return ""
     return edited(row["proposed"], row["sub_score_x10"], row["grade"], _total(ctx, row), past=at(row["stage"], assign_stage(row["pool"])) > 0)
 
@@ -504,8 +506,14 @@ def rater_set(uid: int) -> Response:
 # ---------------- 보는 사람에 맞춘 판단 · 줄 (쓰기 길도 이것으로 막고, 응답 줄도 이것으로 깎는다) ----------------
 POOL_NAMES = {"LEADERS": "전사 팀장", "DIRECT": "직속부서 팀원"}  # DIV:n 은 "<본부 이름> 팀원"
 ITEM_KEYS = ("rid", "team", "personal", "action", "formula", "weight", "S", "A", "B", "C", "D")  # 응답의 실행목표 칸
-SELF_HIDE = ("grade", "proposed", "subScore", "subMarks", "comment", "headComment", "bonus", "bonusReason", "total", "cap", "proxy", "edited", "editSeen",
-             "rater", "raterIsCeo")  # 본인 줄(공개 전)에서 열쇠째 빼는 평가 칸 — ev[].grade 도 뺀다
+SELF_KEEP = ("pid", "name", "title", "team", "div", "poolKey", "poolName", "kpi", "stage", "out", "noSelf", "late", "leaveOver", "items", "ev", "can",
+             "hidden", "appeal")  # 본인 줄(공개 전)에 남기는 칸 — 나머지(평가 칸 · 나중에 더할 칸)는 열쇠째 빠진다
+SELF_EV_KEEP = ("rid", "note", "selfGrade", "files")  # 본인 줄의 ev[] 에 남기는 칸 (평가자 등급 grade 는 빠진다)
+
+
+def _pool_rank(key: str) -> tuple:
+    """묶음 차례: 본부 팀원(본부 번호 차례) → 전사 팀장 → 직속부서 팀원."""
+    return (0, int(key[4:])) if key.startswith("DIV:") else (1, key == "DIRECT")
 
 
 def _who(ctx: _Ctx, uid: int | None) -> str:
@@ -582,10 +590,8 @@ def _row_json(ctx: _Ctx, me: Actor, row: sqlite3.Row) -> dict | None:
         for e in ev:
             e["grade"] = (marks or {}).get(str(e["rid"]))
     elif lv == "self":
-        for k in SELF_HIDE:
-            del out[k]
-        for e in ev:
-            del e["grade"]
+        out = {k: out[k] for k in SELF_KEEP}
+        out["ev"] = [{k: e[k] for k in SELF_EV_KEEP} for e in ev]
     return out
 
 
@@ -662,7 +668,7 @@ def state() -> Response:
                   if r["user_id"] != me.user_id and (everyone or me.user_id in (r["rater_id"], _assigner(ctx, r))) and (j := _row_json(ctx, me, r)) is not None]
         body = {"year": year, "offline": False, "round": ctx.round, "deleg": ctx.deleg, "ceoId": ctx.ceo,
                 "me": None if mine is None else _row_json(ctx, me, mine), "people": people,
-                "pools": [_pool_json(ctx, me, k) for k in sorted(ctx.pools, key=lambda k: (not k.startswith("DIV:"), k == "DIRECT", k))
+                "pools": [_pool_json(ctx, me, k) for k in sorted(ctx.pools, key=_pool_rank)
                           if everyone or _pool_who(ctx, k) == me.user_id],
                 "todo": _todo(ctx, me)}
     return jsonify(body)
