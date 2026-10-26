@@ -3051,8 +3051,8 @@ def pay_gate_off():
 
 
 def check_pay_ask(hr) -> None:
-    """급여명세서 [HR에 문의] 받는 사람 (2026-10-26): HR 만 정함 · 활성 HR 만 고름 · null 이면 지움 · /api/pay/lock 의 ask = 정한 1명(아니면 HR 전원) ·
-    고른 사람이 HR 해제 · 비활성이 되면 HR 전원으로 · 바뀔 때만 감사로그. 가상971(HR)을 만들고 끝나면 지운다 — 열쇠는 검사가 만든 가짜."""
+    """급여명세서 [HR에 문의] 받는 사람 (2026-10-26): HR 만 정함 · 활성 HR 만 고름 · null 이면 지움 · /api/pay/lock 의 askHr = 정한 1명(아니면 HR 전원) ·
+    고른 사람이 HR 해제 · 비활성이 되면 줄이 지워져 HR 전원으로(다시 켜도 돌아오지 않음) · 바뀔 때만 감사로그. 가상971(HR)을 만들고 끝나면 지운다 — 열쇠는 검사가 만든 가짜."""
     import base64
 
     print("급여 문의 받는 사람")
@@ -3070,7 +3070,7 @@ def check_pay_ask(hr) -> None:
     try:
         os.environ["HR_PAY_KEY"] = base64.b64encode(os.urandom(32)).decode()  # 열쇠는 글자로 적지 않고 여기서 만든다
         all_hr = lock()["hr"]
-        ok(len(all_hr) >= 2 and me971 in all_hr and lock()["ask"] == all_hr and ask_to() is None, "정하기 전: ask = 활성 HR 전원 (hr 과 같음) · askTo null")
+        ok(len(all_hr) >= 2 and me971 in all_hr and lock()["askHr"] == all_hr and ask_to() is None, "정하기 전: askHr = 활성 HR 전원 (hr 과 같음) · askTo null")
         ok(post(emp, {"userId": 971}).status_code == 403 and post(hr, {"userId": 971}, headers={}).status_code == 403
            and post(app.test_client(), {"userId": 971}).status_code == 401 and not q("SELECT 1 FROM pay_ask_to"), "직원 403 · Origin 없으면 403 · 로그인 없이 401 (줄 없음)")
         for body in ({}, {"userId": "971"}, {"userId": True}, {"userId": 971.0}, {"userId": 0}, {"userId": -1}, {"userId": 2**31}, [971]):
@@ -3081,25 +3081,30 @@ def check_pay_ask(hr) -> None:
         ok(not q("SELECT 1 FROM pay_ask_to") and not audit(), "거절된 것은 줄 · 감사로그 없음")
 
         r = post(hr, {"userId": 971})
-        ok(r.status_code == 200 and r.json == {"askTo": 971} and ask_to() == 971 and lock()["ask"] == [me971] and lock()["hr"] == all_hr,
-           "가상971 을 정함 → askTo 971 · ask 는 가상971 한 명 · hr(비밀번호 초기화 요청)은 그대로 HR 전원")
+        ok(r.status_code == 200 and r.json == {"askTo": 971} and ask_to() == 971 and lock()["askHr"] == [me971] and lock()["hr"] == all_hr,
+           "가상971 을 정함 → askTo 971 · askHr 는 가상971 한 명 · hr(비밀번호 초기화 요청)은 그대로 HR 전원")
         ok(audit() == [(1, "user", 971, '{"userId": null}', '{"userId": 971}')], "감사로그 PAY_ASK_TO_SET — 앞뒤 직원 번호만")
         ok(post(hr, {"userId": 971}).json == {"askTo": 971} and len(audit()) == 1, "같은 사람을 또 정하면 그대로 (감사로그 더하지 않음)")
 
-        x("DELETE FROM user_roles WHERE user_id = 971 AND role = 'HR_ADMIN'")
-        ok(ask_to() is None and lock()["ask"] == lock()["hr"] and me971 not in lock()["hr"] and q("SELECT user_id FROM pay_ask_to") == [(971,)],
-           "HR 권한을 빼면 askTo null · ask 는 HR 전원 (줄은 남음)")
-        x("INSERT INTO user_roles (user_id, role) VALUES (971, 'HR_ADMIN')")
-        x("UPDATE users SET is_active = 0, deactivated_at = '2027-01-01T00:00:00Z' WHERE id = 971")
-        ok(ask_to() is None and lock()["ask"] == lock()["hr"] and me971 not in lock()["hr"], "비활성이 되면 askTo null · ask 는 활성 HR 전원")
-        ok(post(hr, {"userId": 971}).status_code == 400 and len(audit()) == 1, "비활성 HR 은 고를 수 없음 → 400")
-        x("UPDATE users SET is_active = 1, deactivated_at = NULL WHERE id = 971")
-        ok(ask_to() == 971 and lock()["ask"] == [me971], "다시 켜면 정해 둔 가상971 이 그대로 받음")
-
         r = post(hr, {"userId": None})
-        ok(r.json == {"askTo": None} and not q("SELECT 1 FROM pay_ask_to") and ask_to() is None and lock()["ask"] == lock()["hr"]
-           and audit()[-1] == (1, "user", None, '{"userId": 971}', '{"userId": null}'), "null → 줄을 지움 · HR 전원 · 감사로그")
+        ok(r.json == {"askTo": None} and not q("SELECT 1 FROM pay_ask_to") and ask_to() is None and lock()["askHr"] == lock()["hr"]
+           and audit()[-1] == (1, "user", 971, '{"userId": 971}', '{"userId": null}'), "null → 줄을 지움 · HR 전원 · 감사로그(빠진 사람 번호)")
         ok(post(hr, {"userId": None}).json == {"askTo": None} and len(audit()) == 2, "이미 비어 있으면 그대로 (감사로그 더하지 않음)")
+
+        ok(post(hr, {"userId": 971}).json == {"askTo": 971}, "(검사용) 가상971 을 다시 정함")
+        x("DELETE FROM user_roles WHERE user_id = 971 AND role = 'HR_ADMIN'")  # 구성원 설정 저장(auth._save_members)이 HR 권한을 뺄 때와 같은 명령 — 이 DB 에는 앞 검사들의 가상 인물이 있어 저장 API 는 명단 전체 검사에서 걸린다
+        ok(not q("SELECT 1 FROM pay_ask_to") and ask_to() is None and lock()["askHr"] == lock()["hr"] and me971 not in lock()["hr"],
+           "HR 권한을 빼면 받는 사람 줄이 지워짐 → HR 전원")
+        x("INSERT INTO user_roles (user_id, role) VALUES (971, 'HR_ADMIN')")
+        ok(ask_to() is None and lock()["askHr"] == lock()["hr"] and me971 in lock()["hr"], "다시 HR 이 돼도 받는 사람으로 저절로 돌아오지 않음")
+        ok(post(hr, {"userId": 971}).json == {"askTo": 971}, "(검사용) 다시 정함")
+        x("UPDATE users SET is_active = 0, deactivated_at = '2027-01-01T00:00:00Z' WHERE id = 971")  # 비활성화(구성원 설정 · 명단 동기화)와 같은 칸 바꾸기
+        ok(not q("SELECT 1 FROM pay_ask_to") and ask_to() is None and lock()["askHr"] == lock()["hr"] and me971 not in lock()["hr"],
+           "비활성이 되면 받는 사람 줄이 지워짐 → 활성 HR 전원")
+        ok(post(hr, {"userId": 971}).status_code == 400, "비활성 HR 은 고를 수 없음 → 400")
+        x("UPDATE users SET is_active = 1, deactivated_at = NULL WHERE id = 971")
+        ok(ask_to() is None and me971 in lock()["hr"], "다시 켜도 받는 사람으로 저절로 돌아오지 않음")
+        ok(len(audit()) == 4, "감사로그 PAY_ASK_TO_SET 은 HR 이 정하거나 지운 만큼만 (트리거로 지워진 것은 구성원 변경 기록에)")
     finally:
         os.environ.pop("HR_PAY_KEY", None)
         if had_key is not None:
@@ -3154,7 +3159,7 @@ def check_pay_pin(hr) -> None:
 
         print("  - 정하기 전")
         st = lock(a)
-        ok(set(st) == {"state", "left", "hr", "ask"} and st["state"] == "set" and st["left"] == 5
+        ok(set(st) == {"state", "left", "hr", "askHr"} and st["state"] == "set" and st["left"] == 5
            and all(set(h) == {"mailNo", "email"} for h in st["hr"]) and "u1@example.invalid" in {h["email"] for h in st["hr"]},
            "GET /api/pay/lock → set · 남은 5번 · 초기화를 부탁할 HR(가상1 메일)")
         paths = (("GET", "/api/payslips"), ("GET", "/api/withholding"), ("GET", "/api/withholding/2025/pdf"), ("GET", "/api/contracts/mine"),

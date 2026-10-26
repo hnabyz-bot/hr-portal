@@ -189,7 +189,8 @@ def months_get() -> Response:
 
 
 def ask_to(conn) -> int | None:
-    """급여 문의 받는 사람(pay_ask_to) — 지금 활성 HR 일 때만 그 직원 번호. 아니면(안 정함 · 비활성 · HR 해제) None = 활성 HR 전원이 받는다 (paypin.lock_get)."""
+    """급여 문의 받는 사람(pay_ask_to) — 지금 활성 HR 일 때만 그 직원 번호, 안 정했으면 None = 활성 HR 전원이 받는다 (paypin.lock_get).
+    비활성 · HR 해제가 되면 트리거(019)가 줄을 지우지만, 여기서도 한 번 더 본다."""
     row = conn.execute(
         "SELECT a.user_id FROM pay_ask_to a JOIN users u ON u.id = a.user_id"
         " WHERE u.is_active = 1 AND EXISTS (SELECT 1 FROM user_roles r WHERE r.user_id = u.id AND r.role = 'HR_ADMIN')").fetchone()
@@ -221,7 +222,7 @@ def ask_to_set() -> Response:
                 conn.execute("INSERT INTO pay_ask_to (id, user_id, updated_at, updated_by) VALUES (1, ?, ?, ?)"
                              " ON CONFLICT(id) DO UPDATE SET user_id = excluded.user_id, updated_at = excluded.updated_at, updated_by = excluded.updated_by",
                              (uid, auth._iso(auth._now()), g.actor.user_id))
-            auth._audit(conn, AuditEntry.by(g.actor, action="PAY_ASK_TO_SET", entity_type="user", entity_id=uid,
+            auth._audit(conn, AuditEntry.by(g.actor, action="PAY_ASK_TO_SET", entity_type="user", entity_id=uid if uid is not None else was,  # 지울 때는 빠진 사람
                                             before_data={"userId": was}, after_data={"userId": uid}))
         conn.execute("COMMIT")
     except BaseException:

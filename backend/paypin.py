@@ -5,8 +5,8 @@ app.py 가 bp 를 붙인다. 세션 검사 · 같은 출처 검사는 auth._guar
 
   gate()                PREFIXES 길(급여명세서 · 원천징수영수증 · 연봉계약서, HR 길 포함 · 모든 method)은 풀린 창만 —
                         아니면 423 {"error": MSG_LOCKED, "lock": "set"|"ask"|"locked"}. 쓸 때마다 풀림을 6분(OPEN_FOR)으로 다시 늘린다
-  GET  /api/pay/lock    {"state": "set"|"ask"|"open"|"locked", "left": 남은 횟수, "hr": [{"mailNo", "email"}], "ask": [같은 모양]} — 열쇠가 없으면 {"state": "off"}
-                        hr = 비밀번호 초기화를 부탁할 활성 HR 전원 · ask = 급여명세서 [HR에 문의] 받는 사람 (HR 이 정한 1명, 없으면 hr 과 같다 — payslip.ask_to)
+  GET  /api/pay/lock    {"state": "set"|"ask"|"open"|"locked", "left": 남은 횟수, "hr": [{"mailNo", "email"}], "askHr": [같은 모양]} — 열쇠가 없으면 {"state": "off"}
+                        hr = 비밀번호 초기화를 부탁할 활성 HR 전원 · askHr = 급여명세서 [HR에 문의] 받는 사람 (HR 이 정한 1명, 없으면 hr 과 같다 — payslip.ask_to)
   POST /api/pay/lock    이 창 잠그기
   POST /api/pay/pin     {"pin", "again"} 처음 정하기 → 이 창이 풀림 (감사로그 PAY_PIN_SET). 이미 있으면 409
   POST /api/pay/unlock  {"pin"} 확인 → 이 창이 풀림. 연달아 5번(FAILS_MAX) 틀리면 잠김 — 이 사람의 모든 창, HR 초기화로만 푼다 (PAY_PIN_LOCKED)
@@ -128,7 +128,7 @@ def gate() -> tuple[Response, int] | None:
 
 @bp.get("/api/pay/lock")
 def lock_get() -> Response:
-    """화면이 급여·계약 메뉴를 열 때 묻는다. hr = 잊었을 때 초기화를 부탁할 활성 HR 전원 · ask = 급여 문의 받는 사람 (하이웍스 메일 받는 사람 채우기용)."""
+    """화면이 급여·계약 메뉴를 열 때 묻는다. hr = 잊었을 때 초기화를 부탁할 활성 HR 전원 · askHr = 급여 문의 받는 사람 (하이웍스 메일 받는 사람 채우기용)."""
     if payslip.pay_key() is None:
         return jsonify(state="off")
     conn, uid = auth._db(), g.actor.user_id
@@ -138,7 +138,7 @@ def lock_get() -> Response:
         " WHERE r.role = 'HR_ADMIN' AND u.is_active = 1 ORDER BY u.id")]
     hr, to = [h for _, h in rows], payslip.ask_to(conn)
     return jsonify(state=state_of(conn, uid, g.session_hash, auth._now()), left=FAILS_MAX - (row[0] if row else 0), hr=hr,
-                   ask=[h for i, h in rows if i == to] or hr)
+                   askHr=[h for i, h in rows if i == to] or hr)
 
 
 @bp.post("/api/pay/lock")

@@ -1309,7 +1309,7 @@
   }
   /* 급여명세서 — HR 올리기 · 확인 · 공개 (ps*). 상태 칸은 폭을 고정해 줄마다 같은 자리에서 시작한다 */
   .ps-tools{ display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end; }
-  .ps-ask-row{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; } .ps-ask-row .field{ flex:0 1 320px; min-width:220px; }   /* 급여 문의 받는 사람: 고르는 칸 + 저장 */
+  .ps-ask-row{ display:flex; gap:8px; align-items:stretch; } .ps-ask-row .field{ flex:0 1 320px; min-width:0; }   /* 급여 문의 받는 사람: 고르는 칸 + 저장 — 휴대폰에서도 한 줄 · 단추 높이를 칸에 맞춘다 */
   .ps-row{ display:grid; grid-template-columns:120px 76px 52px 176px minmax(0,1fr); gap:10px; align-items:center; padding:10px 0; border-top:1px solid var(--border); }
   .ps-row.head{ border-top:0; padding:0 0 6px; font-size:var(--fs-xs); font-weight:600; color:var(--text-muted); }
   .ps-st{ display:flex; gap:6px; align-items:center; }
@@ -9204,7 +9204,7 @@ function payPickerLive(key, v = 'payViewKey', then = 'payOpen=null; payYear=null
 /* ----- 급여·계약 비밀번호 잠금 (설계 2026-10-22 4장, 시안 그림 1~4 · 7) -----
    서버는 잠긴 창의 세 앞머리(/api/payslips · /api/withholding · /api/contracts)를 423으로 막는다. 화면은 급여·계약 메뉴의 탭 내용 자리에 잠금 창을 그리고(탭 줄 · 숫자는 그대로)
    잠긴 동안 그 세 길을 부르지 않는다 — 메뉴 숫자 · 홈은 잠그지 않는 /api/pay/counts로. 실제 로그인이고 서버에 열쇠가 있을 때만(PIN.on) — 시연 · 시연 사이트 · 기존 화면 검사는 그대로 눈 단추 */
-const PIN = { on:false, state:'', left:5, hr:[], ask:[], err:'', typed:'', first:'', row:0, forgot:false, veiled:false, last:0, sent:0 };   // state: '' 아직 · set 정하기 · ask 입력 · locked 5번 틀림 · open 풀림 · err 상태를 못 받음(잠긴 것으로 친다) / typed: 잠금 창에 친 숫자 · 정하기의 "한 번 더" 줄 / first: 정하기의 "새 비밀번호" 줄 / row: 정하기에서 치는 줄 / forgot: "잊었어요"를 눌렀다 / hr: 초기화를 부탁할 HR {mailNo, email} / ask: 급여명세서 [HR에 문의] 받는 사람 (같은 모양 — HR이 정한 1명, 안 정했으면 hr과 같다) / veiled · last · sent: 1분 가림 · 마지막 움직임 · 마지막 alive
+const PIN = { on:false, state:'', left:5, hr:[], askHr:[], err:'', typed:'', first:'', row:0, forgot:false, veiled:false, last:0, sent:0 };   // state: '' 아직 · set 정하기 · ask 입력 · locked 5번 틀림 · open 풀림 · err 상태를 못 받음(잠긴 것으로 친다) / typed: 잠금 창에 친 숫자 · 정하기의 "한 번 더" 줄 / first: 정하기의 "새 비밀번호" 줄 / row: 정하기에서 치는 줄 / forgot: "잊었어요"를 눌렀다 / hr: 초기화를 부탁할 HR {mailNo, email} / askHr: 급여명세서 [HR에 문의] 받는 사람 (같은 모양 — HR이 정한 1명, 안 정했으면 hr과 같다. 풀릴 때마다 다시 받는다 — pinAskLoad) / veiled · last · sent: 1분 가림 · 마지막 움직임 · 마지막 alive
 const PAY_COUNTS = { p1:0, p2:0, p3:0, due:null };   // 잠긴 동안의 메뉴 숫자 · 서명할 계약서의 가장 이른 마감일 (금액 없음)
 function pinGated(){ return AUTH.live && PIN.on && PIN.state!=='open'; }
 async function pinLoad(){   // 이 창의 잠금 상태. 서버에 열쇠가 없으면(off) 잠그지 않는다 — 그때는 잠근 자료도 없다. 못 받으면 잠긴 것으로 친다
@@ -9212,8 +9212,11 @@ async function pinLoad(){   // 이 창의 잠금 상태. 서버에 열쇠가 없
     const r = await fetch('/api/pay/lock'), j = await r.json();
     if(!r.ok) throw new Error(r.status);
     if(j.state==='off'){ PIN.on = false; return; }
-    Object.assign(PIN, { on:true, state:j.state, left:j.left ?? 5, hr:j.hr || [], ask:j.ask || j.hr || [], last:Date.now() });   // last: 이미 풀린 창을 새로 열었으면(새로 고침) 쉰 시간은 지금부터
+    Object.assign(PIN, { on:true, state:j.state, left:j.left ?? 5, hr:j.hr || [], askHr:j.askHr || j.hr || [], last:Date.now() });   // last: 이미 풀린 창을 새로 열었으면(새로 고침) 쉰 시간은 지금부터
   } catch(e){ PIN.on = true; PIN.state = 'err'; }
+}
+async function pinAskLoad(){   // [HR에 문의] 받는 사람만 다시 받는다 — 풀릴 때 · HR이 받는 사람을 저장한 뒤 (며칠 열어 둔 휴대폰 창도 풀 때마다 맞춘다). 상태는 건드리지 않고, 못 받으면 그대로
+  try { const r = await fetch('/api/pay/lock'), j = await r.json(); if(r.ok && j.state!=='off') PIN.askHr = j.askHr || j.hr || []; } catch(e){}
 }
 async function payCountsLoad(){   // 메뉴 숫자 (잠겨 있어도 받는 길). 못 받으면 그대로 둔다
   try { const r = await fetch('/api/pay/counts'); if(r.ok){ const j = await r.json(); Object.assign(PAY_COUNTS, { p1:j.p1, p2:j.p2, p3:j.p3, due:j.due }); } } catch(e){}
@@ -9317,7 +9320,7 @@ function pinMail(){ hrMail(PIN.hr, '제목은 "급여 비밀번호 초기화 요
 function payAsk(ym){   // 명세서 제목 줄의 [HR에 문의] (2026-10-26 인사담당자) — 받는 사람은 HR이 정한 1명, 안 정했으면 활성 HR 전원 (서버 payslip.ask_to). 그사이 HR이 바꾼 것은 다시 불러올 때 반영된다
   const T = `제목은 "${psYmName(ym)} 급여명세서 문의"로 적어 주세요.`;
   if(!AUTH.live) return wsNotice('시연 화면이라 메일 창은 열지 않아요. 실제 포털에서는 하이웍스 메일 쓰기 창이 열리고 받는 사람에 HR이 들어가요. '+T);   // 발표 중에 진짜 하이웍스 창이 열리지 않게
-  hrMail(PIN.ask, T);
+  hrMail(PIN.askHr, T);
 }
 function pinForget(){   // 받아 둔 급여·계약 자료 · 상태 · 가림막을 버린다 — 잠길 때(5분 · 지금 잠그기 · 잠김 응답: 다시 보이지 않게) · 풀릴 때(처음부터 다시 받게) · 로그아웃(authLock)
   ps.pick = null; ps.prev = null; ps.state = ''; Object.assign(PAY_LIVE, { state:'', who:null, slips:[], mine:[] }); payOpen = null; payShow = false; payDedOpen = false; payDiffOpen = false;
@@ -9365,7 +9368,7 @@ async function pinOpened(){   // 풀렸다 (맞는 비밀번호 · 처음 정함
   pinForget();
   Object.assign(PIN, { state:'open', err:'', typed:'', first:'', row:0, forgot:false, veiled:false, last:Date.now() });
   payShow = true;
-  await Promise.all([payLoadMine(), whFetchMine(), ctLoadMine()]);
+  await Promise.all([payLoadMine(), whFetchMine(), ctLoadMine(), pinAskLoad()]);
   renderContent(); tourAuto();   // 풀린 화면에 처음이면 사용법(지금 잠그기 단계까지)을 바로 띄운다
 }
 function pinRefused(lock){   // 쓰던 중 잠김 응답(423 — 서버 재시작 · 6분 쉼 · 다른 창에서 5번 틀림 · HR 초기화) · 5분 잠금 · 지금 잠그기 — 받아 둔 것을 버리고 잠금 창으로. 다시 보내지 않는다(잠긴 동안 그 길을 부르지 않는다)
@@ -9461,16 +9464,16 @@ async function pinSelfCheck(){   // 브라우저 콘솔에서 await pinSelfCheck
     ok(opened.length===1 && opened[0]===HW_MAIL+'&user_nos=1001' && !copied.length && toast().includes('급여 비밀번호 초기화 요청'), 'HR 한 명 · 번호 있음: 번호로 받는 사람을 채우고 제목을 안내');
     opened.length = 0; order.length = 0; PIN.hr = [{ mailNo:'1001', email:'hr1@example.invalid' }, { mailNo:'', email:'hr2@example.invalid' }]; pinMail(); await wait();
     ok(order.join()==='copy,open' && opened[0]===HW_MAIL && copied[0]==='hr1@example.invalid;hr2@example.invalid' && toast().includes('받는 사람 2명') && toast().includes('급여 비밀번호 초기화 요청'), 'HR 두 명: 메일 주소를 창보다 먼저 복사하고 창만 연다');
-    { const pk = { ...PIN }, km = [MS_LIVE.list, MS_LIVE.state, ps.askTo];   // ----- 급여명세서 [HR에 문의] (2026-10-26) — 받는 사람 = 서버의 ask (HR이 정한 1명 · 안 정했으면 HR 전원) -----
+    { const pk = { ...PIN }, km = [MS_LIVE.list, MS_LIVE.state, ps.askTo];   // ----- 급여명세서 [HR에 문의] (2026-10-26) — 받는 사람 = 서버의 askHr (HR이 정한 1명 · 안 정했으면 HR 전원) -----
       try {
         const two = [{ mailNo:'1001', email:'hr1@example.invalid' }, { mailNo:'', email:'hr2@example.invalid' }];
-        reply['/api/pay/lock'] = ()=>json({ state:'open', left:5, hr:two, ask:[{ mailNo:'1002', email:'hr3@example.invalid' }] }); await pinLoad();
+        reply['/api/pay/lock'] = ()=>json({ state:'open', left:5, hr:two, askHr:[{ mailNo:'1002', email:'hr3@example.invalid' }] }); await pinLoad();
         opened.length = 0; copied.length = 0; payAsk('2026-09'); await wait();
         ok(opened.length===1 && opened[0]===HW_MAIL+'&user_nos=1002' && !copied.length && toast().includes('"2026년 9월분 급여명세서 문의"로'), '[HR에 문의]: 정한 1명을 번호로 채우고 몇 월분인지 제목 안내');
         reply['/api/pay/lock'] = ()=>json({ state:'open', left:5, hr:two }); await pinLoad();
         opened.length = 0; order.length = 0; copied.length = 0; payAsk('2026-09'); await wait();
-        ok(JSON.stringify(PIN.ask)===JSON.stringify(two) && order.join()==='copy,open' && opened[0]===HW_MAIL && copied[0]==='hr1@example.invalid;hr2@example.invalid' && toast().includes('받는 사람 2명') && toast().includes('급여명세서 문의'),
-          'ask가 없는 답(예전 서버)이면 HR 전원 — 메일 주소를 창보다 먼저 복사하고 창만 연다');
+        ok(JSON.stringify(PIN.askHr)===JSON.stringify(two) && order.join()==='copy,open' && opened[0]===HW_MAIL && copied[0]==='hr1@example.invalid;hr2@example.invalid' && toast().includes('받는 사람 2명') && toast().includes('급여명세서 문의'),
+          'askHr가 없는 답(예전 서버)이면 HR 전원 — 메일 주소를 창보다 먼저 복사하고 창만 연다');
         // ----- HR: 급여 문의 받는 사람 저장 -----
         MS_LIVE.list = [{ id:1, name:'가상인사', team:'가상팀', division:'', hr:true, active:true }, { id:7, name:'가상퇴사', team:'가상팀', division:'', hr:true, active:false }, { id:3, name:'가상직원', team:'가상팀', division:'', hr:false, active:true }];
         MS_LIVE.state = 'ok'; ps.askTo = null;
@@ -9479,8 +9482,11 @@ async function pinSelfCheck(){   // 브라우저 콘솔에서 await pinSelfCheck
         reply['/api/payslips/ask-to'] = o=>json({ askTo:JSON.parse(o.body).userId }); calls.length = 0;
         await psAskSave('1'); ok(sent('/api/payslips/ask-to').length===1 && JSON.parse(sent('/api/payslips/ask-to')[0].b).userId===1 && ps.askTo===1, '저장: 직원 번호(숫자)로 보내고 서버 답을 기억');
         await psAskSave(''); ok(JSON.parse(sent('/api/payslips/ask-to')[1].b).userId===null && ps.askTo===null, '정하지 않음 → null (HR 전원)');
+        reply['/api/pay/lock'] = ()=>json({ state:'open', left:5, hr:two, askHr:[{ mailNo:'1003', email:'hr4@example.invalid' }] }); calls.length = 0;
+        await psAskSave('1'); ok(sent('/api/pay/lock').length===1 && PIN.askHr[0].mailNo==='1003' && PIN.state==='open', '저장한 뒤 받는 사람을 다시 받아 이 창의 [HR에 문의]도 맞춘다 (상태는 그대로)');
+        reply['/api/pay/lock'] = ()=>json({ state:'off' }); await pinAskLoad(); ok(PIN.askHr[0].mailNo==='1003', '열쇠 없음(off) 답이면 그대로 둔다');
         reply['/api/payslips/ask-to'] = ()=>json({ error:'HR 권한이 있는 직원만 고를 수 있어요.' }, 400); await psAskSave('3');
-        ok(ps.askTo===null && kpiMsg?.type==='danger' && kpiMsg.msg.includes('HR 권한이 있는 직원만'), '서버가 거절하면 그대로 두고 서버 글을 보여 준다');
+        ok(ps.askTo===1 && PIN.askHr[0].mailNo==='1003' && kpiMsg?.type==='danger' && kpiMsg.msg.includes('HR 권한이 있는 직원만'), '서버가 거절하면 그대로(앞에 저장한 1번) 두고 서버 글을 보여 준다');
       } finally { Object.assign(PIN, pk); [MS_LIVE.list, MS_LIVE.state, ps.askTo] = km; kpiMsg = null; } }
     opened.length = 0; PIN.hr = []; pinMail(); ok(!opened.length && toast().includes('HR 메일 주소가 없어요'), 'HR이 없으면 직접 알리라고 안내');
     Object.assign(PIN, { state:'ask', typed:'', err:'', forgot:false }); renderContent(); pinForgot();
@@ -9859,6 +9865,7 @@ async function psAskSave(v){   // [저장] — 실제는 서버(POST /api/paysli
     if(r && r.status===423) return;   // 잠김 — 감싸개(pinSeen)가 이미 잠금 창으로 바꿨다. 풀린 뒤에 실패 글이 남지 않게
     if(!r || !r.ok) return kpiFlash(escapeHtml(j.error || '저장하지 못했습니다. 잠시 뒤 다시 해 주세요.'), 'danger');
     ps.askTo = j.askTo ?? null;
+    await pinAskLoad();   // 이 창의 내 명세서 [HR에 문의]도 바로 새 받는 사람으로
   } else ps.askTo = v || null;
   kpiFlash(ps.askTo===null ? '급여 문의는 HR 전원이 받아요.' : '급여 문의 받는 사람을 저장했어요.');
 }
