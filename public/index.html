@@ -13764,7 +13764,7 @@ const CARD_NEWS = { birthday:'birthday', welcome:'welcome', anniversary:'anniv',
 const CARD_BASE = [{ kind:'praise', reason:null }, { kind:'thanks', reason:null }];   // 받는 분을 고르기 전 칩 (시안처럼 칭찬 · 감사)
 const CARD_FAIL = '지금은 할 수 없어요. 잠시 뒤 다시 해 주세요.';
 const CARD_NO_KEY = '서버 설정이 아직 끝나지 않아 카드를 보낼 수 없어요.';   // 서버 503 과 같은 문구
-const cardNoKey = ()=>AUTH.live && !CARD_LIVE.ready;   // 서버 열쇠(HR_PAY_KEY)가 없다 — 소식 · 조직도 · 답장 단추는 막힌 [카드 쓰기]를 거치지 않으므로 창에서 막는다
+const cardNoKey = ()=>AUTH.live && CARD_LIVE.state==='ok' && !CARD_LIVE.ready;   // 카드 상자가 서버 열쇠(HR_PAY_KEY)가 없다고 답했다 — 소식 · 조직도 · 답장 단추는 막힌 [카드 쓰기]를 거치지 않으므로 창에서 막는다. 아직 모르면(불러오기 전 · 실패) 막지 않는다 — 보내면 서버가 503
 const CARD_S = { seq:0, to:null, reason:null, opts:CARD_BASE, sel:0, art:1, text:'', q:'', sentToday:false, err:'', busy:false };   // 보내기 창 하나. to { id: 서버 직원 번호(시연은 시연 번호), name, title, dept } · opts null = 종류를 묻는 중 · seq 는 창을 열 때마다 올라 늦게 온 답이 새 창을 덮지 않게
 const cardStill = ()=>matchMedia('(prefers-reduced-motion: reduce)').matches;   // 기기의 "움직임 줄이기"
 const cardCan = m=>!!m && !m.me && m.active!==false && (AUTH.live ? Number.isInteger(m.uid) : m.name!==kpiOwner());   // 이 조직도 사람에게 카드 단추를 보이나 — 나 · 비활성은 아니다. 실제 로그인은 서버 번호(uid)가 있어야
@@ -14040,9 +14040,14 @@ async function cardSelfCheck(){   // 브라우저 콘솔에서 await cardSelfChe
     ok(names()==='위로' && chips()[0].getAttribute('aria-pressed')==='true' && ex()==='마음 깊이 위로를 전합니다.|힘든 시간 잘 이겨 내시길 바랍니다.|필요한 일 있으면 언제든 말씀해 주세요.' && ta().placeholder==='위로의 마음을 적어 주세요', '조사: 칩 "위로" 하나 · 위로 문구');
     optR = { status:404, j:{ error:'카드를 받을 수 없는 분이에요.' } }; await cardSend({ to }); type('고마워요');
     ok(red()==='카드를 받을 수 없는 분이에요.' && btn().disabled && !chips().length && !M().querySelectorAll('.cm-ex button').length, '받을 수 없는 분(404): 붉은 줄 · [보내기] 막힘 · 예시 칩 없음');
-    CARD_LIVE.ready = false; optR = { status:200, j:{ options:OPT('praise', 'thanks'), sentToday:false } }; await cardSend({ to }); type('고마워요'); calls.length = 0; await cardSent();
-    ok(red()==='서버 설정이 아직 끝나지 않아 카드를 보낼 수 없어요.' && btn().disabled && !calls.length, '서버 열쇠 없음(ready:false): 창을 열 때부터 안내 · [보내기] 막힘 · 요청 안 감');
-    CARD_LIVE.ready = true;
+    optR = { status:200, j:{ options:OPT('praise', 'thanks'), sentToday:false } };
+    Object.assign(CARD_LIVE, { state:'ok', ready:false }); await cardSend({ to }); type('고마워요'); calls.length = 0; await cardSent();
+    ok(red()==='서버 설정이 아직 끝나지 않아 카드를 보낼 수 없어요.' && btn().disabled && !calls.length, '카드 상자가 열쇠 없음이라고 답함(state ok · ready false): 창을 열 때부터 안내 · [보내기] 막힘 · 요청 안 감');
+    for(const st of ['', 'err']){
+      Object.assign(CARD_LIVE, { state:st, ready:false }); await cardSend({ to }); type('고마워요');
+      ok(red()==='' && !btn().disabled, `카드 상자를 아직 모름(state '${st}'): 막지 않는다 — 보내면 서버가 답한다`);
+    }
+    Object.assign(CARD_LIVE, { state:'ok', ready:true });
     // 받는 분 없이 열면 이름 찾기 — 조직도 명단을 불러오고, 나는 빠진다. 고르면 서버 번호로 종류를 묻는다
     optR = { status:200, j:{ options:OPT('praise', 'thanks'), sentToday:false } }; Object.assign(ORG_LIVE, { state:'', people:[], tree:[] }); calls.length = 0;
     let orgGo; orgR = { status:200, j:org, wait:new Promise(r=>orgGo = r) };
