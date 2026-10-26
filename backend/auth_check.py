@@ -7418,6 +7418,7 @@ def check_cards(hr) -> None:
     읽음 · 고마워요 · 숨기기 · 글 검사 · 열쇠 없음 · 감사로그 없음. 글은 서버 열쇠(HR_PAY_KEY)로 잠겨 DB 에 그대로 없다. 급여 비밀번호 검문은 켠 채로 본다(카드 길은 그 앞머리가 아니다).
     가상 사람 6명(6311~6316, 부서는 seed 의 가상팀)을 만들고, 끝나면 카드 줄 · 경사 · 조사 · 이 검사의 세션을 지우고 가상 사람은 비활성으로 둔다(로그인 감사로그가 가리켜 지울 수 없다). 열쇠 · 로그 설정은 되돌린다."""
     import base64
+    import unittest
 
     import cards
 
@@ -7431,12 +7432,11 @@ def check_cards(hr) -> None:
     had_sessions = {r[0] for r in q("SELECT token_hash FROM sessions")}
     logs: list[str] = []
 
-    class Grab(logging.Handler):
+    class Grab(logging.Handler):  # 검사 내내 조용히 모으기만 한다(레벨은 그대로) — 끝에 이름 · 글이 새지 않았는지 본다
         def emit(self, rec: logging.LogRecord) -> None:
             logs.append(rec.getMessage())
 
     grab, root = Grab(level=logging.DEBUG), logging.getLogger()
-    old_level = root.level
 
     M_SHAPE, M_WHO, M_NOW = "보낸 내용의 모양이 올바르지 않아요.", "카드를 받을 수 없는 분이에요.", "지금은 이 카드를 보낼 수 없어요."
     M_ONCE, M_KEY, M_GONE = "오늘은 이미 이 분께 카드를 보냈어요. 내일 다시 보내 주세요.", "서버 설정이 아직 끝나지 않아 카드를 보낼 수 없어요.", "카드를 찾을 수 없어요."
@@ -7466,7 +7466,6 @@ def check_cards(hr) -> None:
     try:
         os.environ["HR_PAY_KEY"] = key
         root.addHandler(grab)
-        root.setLevel(logging.DEBUG)
         for uid, portal, active, hidden, title in ((A, 1, 1, 0, "프로"), (B, 1, 1, 0, None), (C, 1, 1, 0, None), (D, 0, 1, 0, None), (E, 1, 0, 0, None), (F, 1, 1, 1, None)):
             x("INSERT INTO users (id, name, email, department_id, hiworks_user_no, portal_enabled, is_active, deactivated_at, org_hidden, title)"
               " VALUES (?, ?, ?, 2, ?, ?, ?, ?, ?, ?)", uid, f"가상카드{'ABCDEF'[uid - A]}", f"card{uid}@example.invalid", f"HW-{uid}", portal, active,
@@ -7488,6 +7487,9 @@ def check_cards(hr) -> None:
         ok(get(a).json == {"ready": True, "unread": 0, "received": [], "sent": [{**info, "to": who_b, "read": False, "thanked": False}]},
            "A 의 목록: 보낸 카드 1장 (받는 사람 title 이 없으면 빈 글) · 읽지 않음 · 받은 카드 없음")
         s = row(cid)[0]
+        shown = [r, get(b), get(a), opts(a, B), post(b, "/api/cards/999999/read")]  # 보내기 · 상자 · options · 오류 응답 모두
+        ok(all(resp.headers.get("Cache-Control") == "no-store" and resp.headers.get("Referrer-Policy") == "no-referrer" for resp in shown),
+           "풀어서 내려 주는 글이라 카드 길의 성공 · 오류 응답 모두 Cache-Control: no-store + Referrer-Policy: no-referrer")
         ok(s[:5] == (A, B, "praise", None, 2) and s[6] == day and len(s[7]) == 20 and s[7].endswith("Z") and s[8:] == (None, None, None)
            and "칭찬이에요".encode() not in bytes(s[5]) and "두 줄".encode() not in bytes(s[5]) and cards.unseal_text(raw_key, A, B, day, s[5]) == text1,
            "DB 에는 글이 그대로 없고(잠금) 열쇠 · 보낸 사람 · 받는 사람 · 날로만 풀림 · 읽음 · 고마워요 · 숨김 칸은 비어 있음")
@@ -7658,18 +7660,20 @@ def check_cards(hr) -> None:
 
         print("  - 열쇠_없음")
         empty = {"ready": False, "unread": 0, "received": [], "sent": []}
+        ok(send(hr, text="카드글 둘째").status_code == 201, "(검사용) B 에게 카드를 한 장 더 — 열쇠가 바뀐 경우에 장 수를 세어 보려고")
         os.environ.pop("HR_PAY_KEY")
         ok(get(b).json == empty and get(a).json == empty, "열쇠를 빼면 GET 은 ready False · 빈 목록 · 안 읽음 0 (DB 에는 카드가 있음)")
         ok(is_err(send(c), 503, M_KEY) and cnt(C, B) == 0, "열쇠가 없으면 보내기 503 (문구) — 줄 없음")
         os.environ["HR_PAY_KEY"] = base64.b64encode(bytes(range(31))).decode()
         ok(get(b).json == empty and is_err(send(c), 503, M_KEY), "32바이트가 아닌 열쇠는 없는 것과 같음")
         os.environ["HR_PAY_KEY"] = base64.b64encode(os.urandom(32)).decode()  # 열쇠가 바뀐 경우
-        n_logs = len(logs)
-        r = get(b)
-        ok(r.status_code == 200 and r.json["ready"] is True and r.json["received"] == [] and get(a).json["sent"] == [] and len(logs) > n_logs,
-           "열쇠가 바뀌어 풀리지 않는 카드는 목록에서 빠지고 500 이 아님 (서버 로그에는 남음)")
+        with unittest.TestCase().assertLogs("cards", "ERROR") as cm:  # 로그는 잡아 두어 검사 출력에 ERROR 가 섞이지 않게
+            rb, ra = get(b), get(a)
+        ok(rb.status_code == 200 and rb.json["ready"] is True and rb.json["received"] == [] and ra.status_code == 200 and ra.json["sent"] == []
+           and [rec.args for rec in cm.records] == [(2,), (1,)] and not any(w in line for line in cm.output for w in ("가상카드", "카드글", str(B), str(A))),
+           "열쇠가 바뀌어 풀리지 않는 카드는 목록에서 빠지고 500 이 아님 — 서버 로그에는 상자마다 한 번, 빠진 장 수(2 · 1)만 (이름 · 글 · 번호 없음)")
         os.environ["HR_PAY_KEY"] = key
-        ok(get(b).json["unread"] == 1 and get(b).json["received"][0]["text"] == want, "열쇠를 되돌리면 다시 보임")
+        ok(get(b).json["unread"] == 2 and [k["text"] for k in get(b).json["received"]] == ["카드글 둘째", want], "열쇠를 되돌리면 다시 보임")
 
         print("  - 감사로그_없음")
         ok(q("SELECT COUNT(*) FROM audit_logs WHERE action LIKE '%CARD%' OR entity_type LIKE '%card%'") == [(0,)] and q("SELECT COUNT(*) FROM audit_logs WHERE action <> 'LOGIN'") == audit0,
@@ -7677,7 +7681,6 @@ def check_cards(hr) -> None:
         ok(not any("가상카드" in m or "카드글" in m for m in logs), "서버 로그에 이름 · 카드 글이 없음")
     finally:
         root.removeHandler(grab)
-        root.setLevel(old_level)
         os.environ.pop("HR_PAY_KEY", None)
         if had is not None:
             os.environ["HR_PAY_KEY"] = had
@@ -7687,7 +7690,7 @@ def check_cards(hr) -> None:
         x(f"DELETE FROM sessions WHERE token_hash IN ({','.join('?' * len(made))})", *made)
         x(f"UPDATE users SET is_active = 0, deactivated_at = '2027-01-01T00:00:00Z', portal_enabled = 0, birthday = NULL, hire_date = NULL WHERE id IN ({mine})")
     ok(not q(f"SELECT 1 FROM cards WHERE sender_id IN ({mine}) OR recipient_id IN ({mine})") and not q(f"SELECT 1 FROM users WHERE id IN ({mine}) AND is_active = 1")
-       and os.environ.get("HR_PAY_KEY") == had and root.level == old_level,
+       and os.environ.get("HR_PAY_KEY") == had and grab not in root.handlers,
        "끝나면 카드 줄 · 경사 · 조사 · 세션을 지우고 가상 사람은 비활성으로 두며 열쇠 · 로그 설정을 되돌림")
 
 

@@ -10,7 +10,7 @@
   unread()              안 읽은 받은 카드 수 (열쇠가 없으면 0)
   python -m cards check 위 규칙 자체 검증 (CI)
 
-app.py 가 bp 를 붙인다. 세션 검사 · 같은 출처 검사는 auth._guard 가 모든 /api/* 에 한다. 오류 응답은 {"error": 문구}. 카드 길은 급여 비밀번호 앞머리(paypin.PREFIXES)가 아니다.
+app.py 가 bp 를 붙인다. 세션 검사 · 같은 출처 검사는 auth._guard 가 모든 /api/* 에 한다. 오류는 CardError(문구, 상태)를 던지면 blueprint 의 errorhandler 가 {"error": 문구} 로 답한다(트랜잭션 안에서도 같다). 카드 길은 급여 비밀번호 앞머리(paypin.PREFIXES)가 아니다.
   GET  /api/cards              {"ready", "unread", "received", "sent"} — 최근이 위, 각 LIST_MAX 장. 열쇠가 없으면 ready False · 빈 목록 · 안 읽음 0.
                                받은 줄 {id, kind, reason, art, text, date, from: {id, name, title, dept}, read, thanked, hidden} · 보낸 줄 {…, to: {…}, read, thanked}
   GET  /api/cards/options?to=  {"options", "sentToday"} — 받을 수 없는 사람 404
@@ -135,8 +135,9 @@ _MARK = {  # 받은 사람이 누르는 것 — 고치는 칸은 read_at · than
 }
 
 
-def _err(msg: str, status: int) -> tuple[Response, int]:
-    return jsonify(error=msg), status
+@bp.errorhandler(CardError)
+def _fail(e: CardError) -> tuple[Response, int]:
+    return jsonify(error=e.msg), e.status
 
 
 def _num(v: str) -> int | None:
@@ -156,7 +157,7 @@ def _sent_today(conn: Connection, me: int, to: int, day: str) -> bool:
 def _box(conn: Connection, key: bytes, me: int, received: bool) -> list[dict]:
     """내가 받은(received) 또는 보낸 카드 — 최근이 위, LIST_MAX 장까지. 상대 사람은 이름 · 직급 · 부서만."""
     mine, other = ("recipient_id", "sender_id") if received else ("sender_id", "recipient_id")
-    out = []
+    out, skipped = [], 0
     for cid, kind, reason, art, blob, day, snd, rcv, read_at, thanked_at, hidden_at, uid, name, title, dept in conn.execute(
         "SELECT c.id, c.kind, c.reason, c.art, c.body, c.sent_on, c.sender_id, c.recipient_id, c.read_at, c.thanked_at, c.hidden_at, u.id, u.name, u.title, d.name"
         f" FROM cards c JOIN users u ON u.id = c.{other} LEFT JOIN departments d ON d.id = u.department_id WHERE c.{mine} = ? ORDER BY c.id DESC LIMIT ?",
@@ -164,14 +165,16 @@ def _box(conn: Connection, key: bytes, me: int, received: bool) -> list[dict]:
     ):
         try:
             text = unseal_text(key, snd, rcv, day, blob)
-        except (InvalidTag, ValueError):  # HR_PAY_KEY 가 바뀐 경우뿐 — 500 으로 상자 전체를 막지 않고 그 줄만 뺀다. 로그에는 카드 번호만(이름 · 글 없음)
-            logger.error("카드 글을 풀 수 없음: 카드 번호 %s — HR_PAY_KEY 가 바뀌었는지 확인", cid)
+        except (InvalidTag, ValueError):  # HR_PAY_KEY 가 바뀐 경우뿐 — 500 으로 상자 전체를 막지 않고 그 줄만 뺀다
+            skipped += 1
             continue
         row = {"id": cid, "kind": kind, "reason": reason, "art": art, "text": text, "date": day, "read": read_at is not None, "thanked": thanked_at is not None,
                "from" if received else "to": {"id": uid, "name": name, "title": title or "", "dept": dept or ""}}
         if received:
             row["hidden"] = hidden_at is not None
         out.append(row)
+    if skipped:  # 요청마다 한 번, 장 수만 — 이름 · 글 · 번호는 적지 않는다
+        logger.error("카드 글을 풀 수 없어 %s장을 목록에서 뺐음 — HR_PAY_KEY 가 바뀌었는지 확인", skipped)
     return out
 
 
@@ -190,52 +193,49 @@ def options_of() -> Response:
     conn, me, today = auth._db(), g.actor.user_id, auth._today()
     to = _num(request.args.get("to", ""))
     if to is None or not _receivable(conn, me, to):
-        return _err(MSG_WHO, 404)
+        raise CardError(MSG_WHO, 404)
     return jsonify(options=options(*reasons_for(conn, to, today)), sentToday=_sent_today(conn, me, to, today.isoformat()))
 
 
-def _store(conn: Connection, key: bytes, me: int, to: int, kind: str, reason: str | None, art: int, text: str, today: date) -> int | tuple[str, int]:
-    """BEGIN IMMEDIATE 안에서: 받을 수 있는 사람인가(404) → 지금 보낼 수 있는 종류인가(403) → 오늘 이미 보냈나(409) → 넣기. 카드 번호, 아니면 (문구, 상태)."""
+def _store(conn: Connection, key: bytes, me: int, to: int, kind: str, reason: str | None, art: int, text: str, today: date) -> int:
+    """BEGIN IMMEDIATE 안에서: 받을 수 있는 사람인가(404) → 지금 보낼 수 있는 종류인가(403) → 오늘 이미 보냈나(409) → 넣기. 새 카드 번호. 안 되면 CardError."""
     day = today.isoformat()
     if not _receivable(conn, me, to):
-        return MSG_WHO, 404
+        raise CardError(MSG_WHO, 404)
     if {"kind": kind, "reason": reason} not in options(*reasons_for(conn, to, today)):
-        return MSG_NOT_NOW, 403
+        raise CardError(MSG_NOT_NOW, 403)
     if _sent_today(conn, me, to, day):
-        return MSG_ONCE, 409
+        raise CardError(MSG_ONCE, 409)
     try:
         return conn.execute("INSERT INTO cards (sender_id, recipient_id, kind, reason, art, body, sent_on, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                             (me, to, kind, reason, art, seal_text(key, me, to, day, text), day, auth._iso(auth._now()))).lastrowid
     except sqlite3.IntegrityError as e:  # 위 검사를 빠져나간 같은 날 두 번째도 표의 UNIQUE 가 막는다
         if "UNIQUE" not in str(e):
             raise
-        return MSG_ONCE, 409
+        raise CardError(MSG_ONCE, 409) from None
 
 
 @bp.post("/api/cards")
 def send() -> Response:
     """{"to", "kind", "reason", "art", "text"} 카드 보내기 → 201 {"id"}. 글은 잠가서 넣는다. 열쇠가 없으면 503, 모양이 틀리면 400(글은 clean_text 의 문구)."""
     if (key := payslip.pay_key()) is None:
-        return _err(MSG_NO_KEY, 503)
+        raise CardError(MSG_NO_KEY, 503)
     b = request.get_json(silent=True)
     b = b if isinstance(b, dict) else {}
     to, kind, reason, art = b.get("to"), b.get("kind"), b.get("reason"), b.get("art")
     if not (type(to) is int and 0 < to < 2**31 and kind in KINDS and (reason is None or reason in REASONS) and (kind == "cheer") == (reason is not None)
             and type(art) is int and 1 <= art <= 4):  # type() is int: True · 1.0 · "1" 을 정수로 치지 않는다
-        return _err(MSG_SHAPE, 400)
-    try:
-        text = clean_text(b.get("text"))
-    except CardError as e:
-        return _err(e.msg, e.status)
+        raise CardError(MSG_SHAPE)
+    text = clean_text(b.get("text"))
     conn, today = auth._db(), auth._today()
-    conn.execute("BEGIN IMMEDIATE")  # 같은 사람에게 동시에 보내도 한 장만 — 검사와 넣기가 한 덩어리
+    conn.execute("BEGIN IMMEDIATE")  # 같은 사람에게 동시에 보내도 한 장만 — 검사와 넣기가 한 덩어리 (CardError 도 여기서 되돌리고 errorhandler 로)
     try:
-        out = _store(conn, key, g.actor.user_id, to, kind, reason, art, text, today)
-        conn.execute("COMMIT" if isinstance(out, int) else "ROLLBACK")
+        cid = _store(conn, key, g.actor.user_id, to, kind, reason, art, text, today)
+        conn.execute("COMMIT")
     except BaseException:
         conn.execute("ROLLBACK")
         raise
-    return (jsonify(id=out), 201) if isinstance(out, int) else _err(*out)
+    return jsonify(id=cid), 201
 
 
 def _own(conn: Connection, cid: str) -> int | None:
@@ -262,7 +262,7 @@ def read(cid: str) -> Response:
     """받은 사람이 카드를 열었다. 이미 읽었으면 그대로 200. {"unread": 남은 안 읽음}."""
     conn = auth._db()
     if (card := _own(conn, cid)) is None:
-        return _err(MSG_GONE, 404)
+        raise CardError(MSG_GONE, 404)
     return _mark(conn, card, "read")
 
 
@@ -271,7 +271,7 @@ def thanks(cid: str) -> Response:
     """[고마워요] — 읽음도 함께 채운다. 두 번째부터는 200 이되 아무것도 바뀌지 않는다."""
     conn = auth._db()
     if (card := _own(conn, cid)) is None:
-        return _err(MSG_GONE, 404)
+        raise CardError(MSG_GONE, 404)
     return _mark(conn, card, "thanks")
 
 
@@ -280,11 +280,11 @@ def hide(cid: str) -> Response:
     """{"hidden": bool} 숨기기 · 숨김 풀기. 숨길 때 읽음도 채운다(풀 때는 읽음 그대로)."""
     conn = auth._db()
     if (card := _own(conn, cid)) is None:
-        return _err(MSG_GONE, 404)
+        raise CardError(MSG_GONE, 404)
     b = request.get_json(silent=True)
     hidden = b.get("hidden") if isinstance(b, dict) else None
     if not isinstance(hidden, bool):
-        return _err(MSG_SHAPE, 400)
+        raise CardError(MSG_SHAPE)
     return _mark(conn, card, "hide" if hidden else "show")
 
 
