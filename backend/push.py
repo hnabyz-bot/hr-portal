@@ -15,6 +15,7 @@
 notify() 를 부른다 — 보내는 쪽(pending)이 DB 를 새로 잡으므로 commit 전에 부르면 잠김 오류가 난다. 키가 없거나 근무시간(평일 9~18시 KST) 밖이면 아무것도 안 한다 (다음 근무일 9시 묶음에 들어감).
 보내기는 요청을 붙잡지 않게 데몬 스레드에서, 실패해도 원래 일은 그대로 (예외를 밖으로 내지 않고 로그에는 상태 코드 · 예외 종류만).
 알림 문구에는 금액 · 다른 사람 이름 · 평가 등급이 없다 — 잠금 화면에 그대로 보이므로. 문구는 MESSAGES 한 곳에만 둔다.
+축하 · 칭찬 카드(cards.py): 카드를 받으면 받은 사람에게 "card", 처음 고마워요를 받으면 보낸 사람에게 "card_thanks" (이름 · 카드 글 없이 안내뿐). 안 읽은 받은 카드 수는 처리할 일 "cards" 로 9시 묶음 · 아이콘 숫자에 센다.
 받는 기기는 휴대폰 세션(sessions.kind='phone')뿐이다 — 로그아웃 · 휴대폰 해제 · 새 휴대폰 등록 때 forget() 으로 구독을 지우고(auth.py), 놓쳐도 targets() 가 살아 있는 세션만 거른다.
 보내기 함수 SEND 는 검사가 갈아 끼울 수 있게 모듈 이름으로 둔다 (push.SEND = 가짜). 로그에는 상태 코드만 — 이름 · 주소 · 문구는 남기지 않는다.
 """
@@ -62,6 +63,8 @@ MESSAGES: dict[str, tuple[str, str, str]] = {
     "kpi_reply_to_author": ("확인 메모에 새 답글이 달렸어요", "PC에서 확인해 주세요", "perf.e4"),
     "kpi_reply_to_owner": ("확인 메모에 새 답글이 달렸어요", "PC에서 확인해 주세요", "perf.e1"),
     "eval_turn": ("인사평가에서 처리할 일이 있어요", "PC에서 확인해 주세요", "perf.e2"),
+    "card": ("카드가 왔어요", "눌러서 확인해 주세요", "ws.w3"),  # 보낸 사람 이름 · 카드 글은 잠금 화면에 안 보이게 넣지 않는다
+    "card_thanks": ("보낸 카드에 고마워요가 왔어요", "눌러서 확인해 주세요", "ws.w3"),
 }
 
 # 처리할 일 종류 → 9시 묶음에 쓰는 이름 (화면 homePortalTasks 제목과 같은 말, 순서도 같게)
@@ -76,6 +79,7 @@ LABELS: dict[str, str] = {
     "check": "KPI 월간 확인",
     "replies": "확인 메모에 새 답글",
     "e2": "평가 진행",
+    "cards": "새 카드",
 }
 
 
@@ -327,9 +331,10 @@ def _deliver_one(conn: Connection, found: list[tuple[str, dict]], payload: dict,
 
 def pending(flask_app: Flask, uid: int) -> list[tuple[str, int]]:
     """그 사람이 처리할 일 [(종류, 개수)] — 0 인 종류는 빼고 LABELS 순서. 합은 그 사람 화면의 왼쪽 메뉴 숫자 합(homePortalTasks · TODO)과 같다:
-    화면이 부르는 서버 함수를 그 사람으로 세워 그대로 쓴다 (kpi.inbox · plan_json · progress_json · evaluation.eval_todo — 화면 TODO.e2 = 평가 진행). 이의 신청은 서버 기능이 없어 0,
+    화면이 부르는 서버 함수를 그 사람으로 세워 그대로 쓴다 (kpi.inbox · plan_json · progress_json · evaluation.eval_todo — 화면 TODO.e2 = 평가 진행 · cards.unread — 새 카드). 이의 신청은 서버 기능이 없어 0,
     연봉계약서 문의는 알림만 보내고 세지 않는다 (설계 7장). 열쇠(HR_PAY_KEY)가 없으면 급여명세서 · 영수증 · 계약서는 0 — 화면의 목록도 비어 있다.
     새 앱 컨텍스트를 먼저 연다: 요청 안에서 불러도(inline 보내기) 그 요청의 g.actor · g.db 를 덮어쓰지 않고, 여기서 연 DB 연결은 컨텍스트가 닫힐 때 닫힌다."""
+    import cards  # 쓰는 자리에서 — cards 가 payslip 을 거쳐 이 파일을 불러온다
     import evaluation  # 쓰는 자리에서 — evaluation 도 이 파일을 불러온다
     import kpi  # 쓰는 자리에서 — kpi 가 이 파일을 불러와도 순환하지 않게
     import paypin
@@ -355,6 +360,7 @@ def pending(flask_app: Flask, uid: int) -> list[tuple[str, int]]:
             n["check"], n["replies"] = box["review"]["check"], box["review"]["replies"]
         with kpi._txn(conn):  # 평가도 표 여럿을 읽는다 — 화면이 부르는 곳(/api/eval/state)과 같이 한 트랜잭션 안에서
             n["e2"] = sum(evaluation.eval_todo(conn, actor).values())  # 내 일 + HR 관리 (화면 evTodo 의 합)
+        n["cards"] = cards.unread(conn, uid)  # 안 읽은 받은 카드 (카드 상자의 안 읽음 — 열쇠가 없으면 0)
     return [(k, n[k]) for k in LABELS if n.get(k)]
 
 
@@ -563,9 +569,11 @@ def check() -> None:
     assert message("_blank_go")["url"] == "/"  # go 가 비면 홈
     del MESSAGES["_blank_go"]
     assert list(MESSAGES) == ["payslip", "withholding", "contract_sign", "contract_ask", "kpi_inbox", "kpi_back", "kpi_memo",
-                              "kpi_reply_to_author", "kpi_reply_to_owner", "eval_turn"]
+                              "kpi_reply_to_author", "kpi_reply_to_owner", "eval_turn", "card", "card_thanks"]
     assert message("eval_turn") == {"title": "인사평가에서 처리할 일이 있어요", "body": "PC에서 확인해 주세요", "url": "/?go=perf.e2"}  # 평가 진행 탭 — 등급 · 이름 없음
-    assert list(LABELS) == ["p1", "p2", "p3", "inbox", "back", "prev", "memos", "check", "replies", "e2"]  # 화면 homePortalTasks 차례 — 평가 진행은 KPI 다음
+    assert message("card") == {"title": "카드가 왔어요", "body": "눌러서 확인해 주세요", "url": "/?go=ws.w3"}  # 이름 · 글 자리 없음
+    assert message("card_thanks") == {"title": "보낸 카드에 고마워요가 왔어요", "body": "눌러서 확인해 주세요", "url": "/?go=ws.w3"}
+    assert list(LABELS) == ["p1", "p2", "p3", "inbox", "back", "prev", "memos", "check", "replies", "e2", "cards"]  # 화면 homePortalTasks 차례 — 평가 진행은 KPI 다음, 새 카드는 맨 끝
     assert {k: MESSAGES[k][1] for k in MESSAGES if k.startswith("kpi_")} == {  # KPI 알림은 PC 에서 열라는 안내 — 평가·성과는 휴대폰에서 안 열린다
         "kpi_inbox": "PC에서 확인해 주세요", "kpi_back": "PC에서 사유를 확인하고 다시 작성해 주세요", "kpi_memo": "PC에서 확인해 주세요",
         "kpi_reply_to_author": "PC에서 확인해 주세요", "kpi_reply_to_owner": "PC에서 확인해 주세요"}
@@ -576,6 +584,7 @@ def check() -> None:
     assert morning_text([("p1", 1), ("inbox", 2)]) == {"title": "처리할 일이 3건 있어요", "body": "새 급여명세서 · 처리할 KPI 2건", "url": "/"}
     assert morning_text([("check", 1)]) == {"title": "처리할 일이 1건 있어요", "body": "KPI 월간 확인", "url": "/"}
     assert morning_text([("p1", 0), ("inbox", 1)])["body"] == "처리할 KPI"  # 0건인 종류는 이름도 안 나옴
+    assert morning_text([("cards", 2)]) == {"title": "처리할 일이 2건 있어요", "body": "새 카드 2건", "url": "/"}
 
     # 9시 마감 알림 — 볼 날: 월~목은 내일, 금요일은 토 · 일 · 월 / 지난달 한 줄은 7일, 7일이 토 · 일이면 그 앞 금요일
     D = date.fromisoformat

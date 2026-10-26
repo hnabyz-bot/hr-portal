@@ -17,6 +17,8 @@ app.py 가 bp 를 붙인다. 세션 검사 · 같은 출처 검사는 auth._guar
   POST /api/cards              {"to", "kind", "reason", "art", "text"} → 201 {"id"} — 모양 400 · 받을 수 없음 404 · 지금 못 보내는 종류 403 · 오늘 이미 보냄 409 · 열쇠 없음 503
   POST /api/cards/<id>/read | thanks | hide {"hidden"}   받은 사람만 → 200 {"unread"} (남의 카드는 HR 도 404). 고치는 칸은 read_at · thanked_at · hidden_at 뿐
 카드 일은 감사로그에 남기지 않는다(누가 누구에게 보냈는지가 새지 않게). 서버 로그에도 이름 · 글은 없다.
+알림: 보내기를 저장(commit)한 뒤 받는 사람에게 push "card", 처음 [고마워요]를 누른 뒤(이미 눌렀으면 아무것도 안 바뀌어 안 보냄) 보낸 사람에게 push "card_thanks" — push.notify 규칙 그대로(평일 9~18시 · 휴대폰 등록한 사람),
+알림이 실패해도 응답은 그대로. 알림에는 이름 · 글이 없다. 안 읽은 받은 카드는 push.pending 이 처리할 일 "cards" 로 센다.
 """
 
 from __future__ import annotations
@@ -34,6 +36,7 @@ from flask import Blueprint, Response, g, jsonify, request
 
 import auth
 import payslip
+import push
 
 bp = Blueprint("cards", __name__)
 logger = logging.getLogger(__name__)
@@ -235,7 +238,9 @@ def send() -> Response:
     except BaseException:
         conn.execute("ROLLBACK")
         raise
-    return jsonify(id=cid), 201
+    resp = jsonify(id=cid), 201
+    push.notify([to], "card")  # 저장(commit)이 끝났고 응답도 정해졌다 — 알림이 안 가도(근무시간 밖 · 휴대폰 없음 · 푸시 고장) 응답은 그대로
+    return resp
 
 
 def _own(conn: Connection, cid: str) -> int | None:
@@ -244,17 +249,17 @@ def _own(conn: Connection, cid: str) -> int | None:
     return n if n is not None and conn.execute("SELECT 1 FROM cards WHERE id = ? AND recipient_id = ?", (n, g.actor.user_id)).fetchone() else None
 
 
-def _mark(conn: Connection, card: int, how: str) -> Response:
-    """받은 사람의 읽음 · 고마워요 · 숨김을 한 트랜잭션으로 적고 남은 안 읽음 수를 돌려준다. 받은 사람은 바뀌지 않으므로(트리거) 위의 확인 뒤에 해도 안전하다."""
+def _mark(conn: Connection, card: int, how: str) -> tuple[Response, bool]:
+    """받은 사람의 읽음 · 고마워요 · 숨김을 한 트랜잭션으로 적고 (남은 안 읽음 수 응답, 이번에 줄이 실제로 바뀌었나)를 돌려준다. 받은 사람은 바뀌지 않으므로(트리거) 위의 확인 뒤에 해도 안전하다."""
     conn.execute("BEGIN IMMEDIATE")
     try:
-        conn.execute(_MARK[how], (auth._iso(auth._now()), card))
+        changed = conn.execute(_MARK[how], (auth._iso(auth._now()), card)).rowcount > 0
         left = unread(conn, g.actor.user_id)
         conn.execute("COMMIT")
     except BaseException:
         conn.execute("ROLLBACK")
         raise
-    return jsonify(unread=left)
+    return jsonify(unread=left), changed
 
 
 @bp.post("/api/cards/<cid>/read")
@@ -263,16 +268,19 @@ def read(cid: str) -> Response:
     conn = auth._db()
     if (card := _own(conn, cid)) is None:
         raise CardError(MSG_GONE, 404)
-    return _mark(conn, card, "read")
+    return _mark(conn, card, "read")[0]
 
 
 @bp.post("/api/cards/<cid>/thanks")
 def thanks(cid: str) -> Response:
-    """[고마워요] — 읽음도 함께 채운다. 두 번째부터는 200 이되 아무것도 바뀌지 않는다."""
+    """[고마워요] — 읽음도 함께 채운다. 두 번째부터는 200 이되 아무것도 바뀌지 않고 알림도 없다."""
     conn = auth._db()
     if (card := _own(conn, cid)) is None:
         raise CardError(MSG_GONE, 404)
-    return _mark(conn, card, "thanks")
+    resp, changed = _mark(conn, card, "thanks")
+    if changed:  # 처음 누른 한 번만 — 저장(commit)이 끝났고 응답도 정해졌다. 보낸 사람은 바뀌지 않으므로(트리거) 보낼 때 읽는다
+        push.notify(lambda: [conn.execute("SELECT sender_id FROM cards WHERE id = ?", (card,)).fetchone()[0]], "card_thanks")
+    return resp
 
 
 @bp.post("/api/cards/<cid>/hide")
@@ -285,7 +293,7 @@ def hide(cid: str) -> Response:
     hidden = b.get("hidden") if isinstance(b, dict) else None
     if not isinstance(hidden, bool):
         raise CardError(MSG_SHAPE)
-    return _mark(conn, card, "hide" if hidden else "show")
+    return _mark(conn, card, "hide" if hidden else "show")[0]
 
 
 def check() -> None:
