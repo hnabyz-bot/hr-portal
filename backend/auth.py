@@ -337,7 +337,7 @@ def me() -> Response:
                    position=a.position.value if a.position else None, is_hr=a.is_hr, writes_kpi=bool(writes_kpi))
 
 
-# ---------------- 휴대폰 등록 (§13.1) — PC 에서 QR 을 띄우고 휴대폰 카메라로 찍는다 ----------------
+# ---------------- 휴대폰 등록 (§13.1) — PC 에서 QR 을 띄우고 휴대폰 카메라로 찍는다 (휴대폰 브라우저로 하이웍스에서 들어오면 그 자리에서) ----------------
 def _site() -> str:
     """QR 에 넣을 포털 주소. 운영은 Cloudflare 가 https 로 받는다(nginx·api 사이는 http). PC 시험은 localhost."""
     host = request.host
@@ -394,7 +394,9 @@ def _revoke_phone(conn: sqlite3.Connection, user_id: int, now: datetime) -> int:
 
 @bp.post("/api/phone/code")
 def phone_code() -> Response:
-    """QR 에 담을 1회용 값(3분). PC(하이웍스로 들어온 세션)에서만. 이 사람이 앞서 띄운 값은 지운다."""
+    """QR 에 담을 1회용 값(3분). 하이웍스로 들어온 세션(kind pc)에서만. 이 사람이 앞서 띄운 값은 지운다.
+    값(code)도 돌려준다 — 휴대폰 브라우저로 하이웍스 메뉴를 눌러 들어온 창이 QR 없이 그 값으로 이 휴대폰을 바로 등록한다
+    (2026-10-26 인사담당자 — PC 가 없는 현장 근무자). 본인 확인은 PC 와 같은 하이웍스 로그인이고, QR 무늬에도 같은 값이 들어 있다."""
     if g.session_kind != "pc":
         return jsonify(error="휴대폰 등록은 PC에서 합니다."), 403
     conn, now, raw = _db(), _now(), secrets.token_urlsafe(32)
@@ -402,7 +404,7 @@ def phone_code() -> Response:
     conn.execute("INSERT INTO phone_codes (code_hash, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)",
                  (_sha(raw), g.actor.user_id, _iso(now), _iso(now + CODE_KEEP)))
     url = f"{_site()}/#d={raw}"  # 값은 # 뒤 — 서버로 가지 않아 nginx 기록·Referer 에 남지 않는다. 화면이 POST 로 보낸다
-    return jsonify(qr=_qr_rows(url), seconds=int(CODE_KEEP.total_seconds()), since=_iso(now))
+    return jsonify(qr=_qr_rows(url), code=raw, seconds=int(CODE_KEEP.total_seconds()), since=_iso(now))
 
 
 @bp.post("/api/phone/register")
