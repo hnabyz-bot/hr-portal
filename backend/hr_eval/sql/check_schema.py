@@ -1398,6 +1398,43 @@ def check_pay_pin_tables(conn: sqlite3.Connection) -> None:
     conn.execute("DELETE FROM users WHERE id = ?", (emp3,))
 
 
+def check_pay_ask_table(conn: sqlite3.Connection) -> None:
+    """급여 문의 받는 사람 표 (019 — 판 19). 한 줄(id = 1)뿐 · 직원은 실제 있는 사람 · 받는 사람이 정해져 있으면 그 직원을 지울 수 없다 ·
+    그 사람이 비활성이 되거나 HR 권한이 빠지면 줄이 지워진다(트리거). 사람은 전부 가상."""
+    print("31. 급여 문의 받는 사람 (019)")
+    ver = conn.execute("PRAGMA user_version").fetchone()[0]
+    _report(ver >= 19, f"판 번호가 19 이상 — {ver}", f"실제 {ver}")
+    hr = conn.execute(
+        "INSERT INTO users (employee_no, name, email, department_id)"
+        " VALUES ('T038', '가상문의담당', 't038@example.invalid', (SELECT id FROM departments WHERE code='DIV1')) RETURNING id").fetchone()[0]
+    ins = "INSERT INTO pay_ask_to (id, user_id, updated_at, updated_by) VALUES (?, ?, '2027-03-02T09:00:00Z', ?)"
+    conn.execute(ins, (1, hr, hr))
+    _report(True, "받는 사람 줄 저장 (id 1)")
+    for args, why, word in (((2, hr, hr), "두 번째 줄(id 2)", "CHECK"), ((1, hr, hr), "같은 id 1 한 번 더", "UNIQUE")):
+        ok, msg = _rejects(conn, ins, args)
+        _report(ok and word in msg, f"받는 사람 {why} 거부", msg)
+    conn.execute("DELETE FROM pay_ask_to")
+    for args, why, word in (((1, 9999, hr), "없는 직원", "FOREIGN KEY"), ((1, None, hr), "직원 비어 있음", "NOT NULL"),
+                            ((1, hr, 9999), "없는 직원이 바꿈", "FOREIGN KEY")):
+        ok, msg = _rejects(conn, ins, args)
+        _report(ok and word in msg, f"받는 사람 {why} 거부", msg)
+    conn.execute(ins, (1, hr, hr))
+    ok, msg = _rejects(conn, "DELETE FROM users WHERE id = ?", (hr,))
+    _report(ok and "FOREIGN KEY" in msg, "받는 사람으로 정한 직원은 지울 수 없음 (퇴직자는 비활성으로)", msg)
+    n = lambda: conn.execute("SELECT COUNT(*) FROM pay_ask_to").fetchone()[0]  # noqa: E731
+    conn.execute("INSERT INTO user_roles (user_id, role) VALUES (?, 'HR_ADMIN'), (?, 'TEAM_LEADER')", (hr, hr))
+    conn.execute("DELETE FROM user_roles WHERE user_id = ? AND role = 'TEAM_LEADER'", (hr,))
+    _report(n() == 1, "다른 권한(팀장)이 빠지면 줄은 그대로", f"남은 줄 {n()}")
+    conn.execute("UPDATE users SET name = '가상문의담당2' WHERE id = ?", (hr,))
+    _report(n() == 1, "활성인 채로 다른 칸이 바뀌면 줄은 그대로", f"남은 줄 {n()}")
+    conn.execute("DELETE FROM user_roles WHERE user_id = ? AND role = 'HR_ADMIN'", (hr,))
+    _report(n() == 0, "HR 권한이 빠지면 줄이 지워짐 (다시 HR 이 돼도 저절로 돌아오지 않음)", f"남은 줄 {n()}")
+    conn.execute(ins, (1, hr, hr))
+    conn.execute("UPDATE users SET is_active = 0, deactivated_at = '2027-03-03T00:00:00Z' WHERE id = ?", (hr,))
+    _report(n() == 0, "비활성이 되면 줄이 지워짐", f"남은 줄 {n()}")
+    conn.execute("DELETE FROM users WHERE id = ?", (hr,))
+
+
 def main() -> int:
     print("=" * 62)
     print("SQLite 스키마 적용 + 제약조건 동작 검사")
@@ -1426,6 +1463,7 @@ def main() -> int:
             check_contract_live_tables(conn)
             check_push_tables(conn)
             check_pay_pin_tables(conn)
+            check_pay_ask_table(conn)
         finally:
             conn.close()
 

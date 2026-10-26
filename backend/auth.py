@@ -22,7 +22,7 @@ app.py 가 register(app) 로 붙인다.
   POST /api/news/events/<id>/remove  경사·조사 게시 내리기 (HR)
   GET  /api/workspace             내 워크스페이스(나의 업무 · 나의 일상) — 본인만. PC·휴대폰이 같은 내용
   POST /api/workspace/<kind>      저장 (tasks · routines). 판 번호가 다르면 409 + 서버 것 (다른 기기가 먼저 고침)
-  GET  /api/payslips · POST /api/payslips/<ym>[/open|/close|/seen]  급여명세서 — 잠가 저장, 본인(공개된 달)·HR 만. payslip.py 맨 위 참고
+  GET  /api/payslips[/months] · POST /api/payslips/<ym>[/open|/close|/seen] · POST /api/payslips/ask-to  급여명세서 — 잠가 저장, 본인(공개된 달)·HR 만 · 급여 문의 받는 사람(HR). payslip.py 맨 위 참고
   POST /api/phone/code            PC 에서 "휴대폰 등록" → QR 에 담을 1회용 값(3분) — §13.1
   POST /api/phone/register        휴대폰이 QR 주소(/#d=값)를 열면 화면이 보낸다 → 휴대폰 세션(30일)
   GET  /api/phone                 내 등록된 휴대폰 (PC 창이 "등록됐는지"를 볼 때도 쓴다)
