@@ -5,7 +5,8 @@ app.py 가 bp 를 붙인다. 세션 검사는 auth._guard 가 모든 /api/* 에 
 
   GET  /api/payslips                내 명세서 — 공개(OPEN)된 달만, 최근 달이 위. 열쇠가 없으면 빈 목록
   GET  /api/payslips?user=<id>      그 직원의 명세서 (HR) — 공개 전(DRAFT)도 포함. 남의 것을 보면 감사로그 PAYSLIP_VIEW
-  GET  /api/payslips/months         올린 달 목록 + 서버에 열쇠가 있는지(ready) (HR)
+  GET  /api/payslips/months         올린 달 목록 + 서버에 열쇠가 있는지(ready) + 급여 문의 받는 사람(askTo) (HR)
+  POST /api/payslips/ask-to         {"userId": 직원 번호 | null} 급여 문의 받는 사람 1명 (HR, 2026-10-26). 활성 HR 만 · null 이면 지움(HR 전원이 받음)
   POST /api/payslips/<ym>           {"payDate", "slips": [{"userId", "code", …명세서}]} 한 달치 올리기 (HR). 공개 중인 달은 409
   POST /api/payslips/<ym>/open      공개 — 직원 본인에게 보임 (HR)
   POST /api/payslips/<ym>/close     공개 내리기 (HR). 다시 올리려면 내렸다가 올린다
@@ -183,8 +184,50 @@ def months_get() -> Response:
         return denied
     rows = auth._db().execute(
         "SELECT ym, pay_date, status, people, revised, uploaded_at, opened_at FROM payslip_months ORDER BY ym DESC")
-    return jsonify(ready=pay_key() is not None, months=[
+    return jsonify(ready=pay_key() is not None, askTo=ask_to(auth._db()), months=[
         {"ym": r[0], "payDate": r[1], "status": r[2], "people": r[3], "revised": bool(r[4]), "uploadedAt": r[5], "openedAt": r[6]} for r in rows])
+
+
+def ask_to(conn) -> int | None:
+    """급여 문의 받는 사람(pay_ask_to) — 지금 활성 HR 일 때만 그 직원 번호. 아니면(안 정함 · 비활성 · HR 해제) None = 활성 HR 전원이 받는다 (paypin.lock_get)."""
+    row = conn.execute(
+        "SELECT a.user_id FROM pay_ask_to a JOIN users u ON u.id = a.user_id"
+        " WHERE u.is_active = 1 AND EXISTS (SELECT 1 FROM user_roles r WHERE r.user_id = u.id AND r.role = 'HR_ADMIN')").fetchone()
+    return row[0] if row else None
+
+
+@bp.post("/api/payslips/ask-to")
+def ask_to_set() -> Response:
+    """급여 문의 받는 사람 1명을 정한다 (HR). 고를 수 있는 사람은 활성 HR 만, null 이면 지운다. 바뀌었을 때만 감사로그 PAY_ASK_TO_SET."""
+    if (denied := auth._hr_only()) is not None:
+        return denied
+    b, conn = _body(), auth._db()
+    uid = b.get("userId")
+    if "userId" not in b or not (uid is None or (type(uid) is int and 0 < uid < 2**31)):  # type: bool 은 int 의 한 갈래라 isinstance 로는 True 가 1 로 들어온다
+        return jsonify(error="받는 사람을 골라 주세요."), 400
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        if uid is not None and not conn.execute(
+                "SELECT 1 FROM users u WHERE u.id = ? AND u.is_active = 1"
+                " AND EXISTS (SELECT 1 FROM user_roles r WHERE r.user_id = u.id AND r.role = 'HR_ADMIN')", (uid,)).fetchone():
+            conn.execute("ROLLBACK")
+            return jsonify(error="HR 권한이 있는 직원만 고를 수 있어요."), 400
+        row = conn.execute("SELECT user_id FROM pay_ask_to").fetchone()
+        was = row[0] if row else None
+        if was != uid:
+            if uid is None:
+                conn.execute("DELETE FROM pay_ask_to")
+            else:
+                conn.execute("INSERT INTO pay_ask_to (id, user_id, updated_at, updated_by) VALUES (1, ?, ?, ?)"
+                             " ON CONFLICT(id) DO UPDATE SET user_id = excluded.user_id, updated_at = excluded.updated_at, updated_by = excluded.updated_by",
+                             (uid, auth._iso(auth._now()), g.actor.user_id))
+            auth._audit(conn, AuditEntry.by(g.actor, action="PAY_ASK_TO_SET", entity_type="user", entity_id=uid,
+                                            before_data={"userId": was}, after_data={"userId": uid}))
+        conn.execute("COMMIT")
+    except BaseException:
+        conn.execute("ROLLBACK")
+        raise
+    return jsonify(askTo=uid)
 
 
 def remember_codes(conn, pairs: list[tuple[int, str]]) -> str | None:

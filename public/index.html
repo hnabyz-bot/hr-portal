@@ -1309,6 +1309,7 @@
   }
   /* 급여명세서 — HR 올리기 · 확인 · 공개 (ps*). 상태 칸은 폭을 고정해 줄마다 같은 자리에서 시작한다 */
   .ps-tools{ display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end; }
+  .ps-ask-row{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; } .ps-ask-row .field{ flex:0 1 320px; min-width:220px; }   /* 급여 문의 받는 사람: 고르는 칸 + 저장 */
   .ps-row{ display:grid; grid-template-columns:120px 76px 52px 176px minmax(0,1fr); gap:10px; align-items:center; padding:10px 0; border-top:1px solid var(--border); }
   .ps-row.head{ border-top:0; padding:0 0 6px; font-size:var(--fs-xs); font-weight:600; color:var(--text-muted); }
   .ps-st{ display:flex; gap:6px; align-items:center; }
@@ -8750,6 +8751,19 @@ function paySelfCheck(){   // 브라우저 콘솔에서 paySelfCheck() 실행
   ok(['식대','기숙사비','연장근로시간','생년월일'].every(t=>!h.includes(t)), 'payDetail: 0원 항목은 감춘다 · 근로시간 표·생년월일은 없다');
   ok(!h.includes('수정됨') && payDetail({ ...base, revised:true }).includes('수정됨'), '다시 올린 명세서는 제목에 수정됨');
   ok(!payDetail({ ...base, head:{ ...base.head, name:'<b>가상</b>' }, pay:[['<i>수당', 5]] }).match(/<b>가상|<i>수당/), '엑셀에서 온 글자는 그대로 HTML이 되지 않는다');
+  { const a = payDetail(base, null, true), op = window.open, lv = AUTH.live, opened = [];   // 명세서 제목 줄의 [HR에 문의] (2026-10-26)
+    ok(!h.includes('payAsk(') && a.includes(`onclick="payAsk('2026-05')"`) && /<span class="ps-tools no-print">[^]*HR에 문의[^]*인쇄 \/ PDF 저장/.test(a), '[HR에 문의]는 내 명세서에만 · 인쇄 단추 왼쪽 · 인쇄물에는 없다');
+    try {
+      window.open = u=>(opened.push(u), {}); AUTH.live = false; payAsk('2026-05');
+      const t = document.getElementById('wsToast')?.textContent || '';
+      ok(!opened.length && t.includes('시연 화면이라 메일 창은 열지 않아요') && t.includes('"2026년 5월분 급여명세서 문의"로'), '시연: 메일 창은 열지 않고 제목 안내만');
+    } finally { window.open = op; AUTH.live = lv; document.getElementById('wsToast')?.remove(); } }
+  if(!AUTH.live){ const k = [kpiRole, payViewKey, payOpen, payYear, ps.view];   // 화면: 본인 명세서에만 (HR이 다른 직원 것을 볼 때는 없다)
+    try {
+      const at = (role, key)=>{ kpiRole = role; ps.view = 'me'; payViewKey = key; payOpen = null; payContent(); const sl = payList()[0]; payYear = sl.y; payOpen = sl.label; return payContent(); };
+      ok(at('emp', 'emp').includes('payAsk(') && at('hr', 'hr').includes('payAsk('), '시연: 직원 · HR 본인 명세서에는 [HR에 문의]');
+      ok(!at('hr', 'emp').includes('payAsk('), '시연: HR이 다른 직원 명세서를 볼 때는 없다');
+    } finally { [kpiRole, payViewKey, payOpen, payYear, ps.view] = k; } }
   { const kd = payDiffOpen;   // 지난달과 달라진 항목 · 휴대폰 위아래
     try {
       const p0 = { ...base, ...payNorm({ ym:'2026-04', payDate:'2026-05-20' }), pay:[['기본급', 100], ['식대', 0], ['상여', 0]], ded:[['국민연금', 10], ['소득세', 5]], gross:100, deduct:15, net:85 };
@@ -8970,6 +8984,12 @@ function psSelfCheck(){   // 브라우저 콘솔에서 psSelfCheck() 실행
   ok(mm(P('10004','가상다른이름',''), P('10004','가상또다른이름',''), P('10001','가상하나',''))===J([...two, { id:1, why:'' }]), '같은 사원코드 두 줄도 둘 다 TWICE, 나머지는 그대로');
   ok(J(psMatch([P('10003','가상셋','')], []))===J([{ id:null, why:'NONE' }]), '명단이 비어도 오류 없이');
   ok(J(psShow([['기본급',0],['식대',0],['상여',100],['소득세',0]]))===J([['기본급',0],['상여',100],['소득세',0]]), '0원 감춤 (기본급·소득세 등은 남김)');
+  if(!AUTH.live){ const k = ps.askTo;   // 급여 문의 받는 사람 (2026-10-26) — 시연 HR 둘 중에서
+    try {
+      ps.askTo = null; const b = psAskBox();
+      ok(b.includes('정하지 않음 — HR 전원') && b.includes('박인사 · HR 담당 (지원팀)') && b.includes('최지원') && !b.includes('홍길동') && /value="" selected/.test(b), '받는 사람 칸: 정하지 않음(HR 전원) + 시연 HR 둘만 · 처음엔 정하지 않음');
+      ps.askTo = 'hrl'; ok(/value="hrl" selected/.test(psAskBox()) && !/value="" selected/.test(psAskBox()), '정한 사람이 골라져 있다');
+    } finally { ps.askTo = k; } }
   return 'psSelfCheck 통과';
 }
 
@@ -9091,14 +9111,14 @@ function payDiffBox(s, prev){   // 명세서 위 한 줄: "N월분보다 실수�
   return `<details class="dc no-print"${payDiffOpen ? ' open' : ''} ontoggle="payDiffOpen=this.open"><summary><span>${mo(prev)}보다 실수령 <b>${r.net ? sg(r.net) : '같음'}</b> · 달라진 항목 ${cnt}개</span><span class="more"></span></summary>
     <div class="dc-in">${r.pay.length ? `<div class="dc-sub">지급</div>${r.pay.map(row).join('')}` : ''}${r.ded.length ? `<div class="dc-sub">공제</div>${r.ded.map(row).join('')}` : ''}<div class="dc-note">급여대장 금액을 그대로 비교했어요. 궁금한 점은 HR에 문의해 주세요.</div></div></details>`;
 }
-function payDetail(s, prev){   // 명세서 하나 — 사람 정보는 s.head. 엑셀에서 온 글자라 모두 escapeHtml. 0원인 항목은 감춘다(psShow). prev(같은 사람의 앞 달)가 있으면 위에 달라진 항목 한 줄. 휴대폰은 위아래(pay-stack), PC · 인쇄는 가로 표(pay-wide)
+function payDetail(s, prev, ask){   // 명세서 하나 — 사람 정보는 s.head. ask = 내 명세서라 제목 줄에 [HR에 문의] (HR이 남의 것을 볼 때 · 미리 보기 창에는 없다). 엑셀에서 온 글자라 모두 escapeHtml. 0원인 항목은 감춘다(psShow). prev(같은 사람의 앞 달)가 있으면 위에 달라진 항목 한 줄. 휴대폰은 위아래(pay-stack), PC · 인쇄는 가로 표(pay-wide)
   const h = s.head || {}, pay = psShow(s.pay), ded = psShow(s.ded), n = Math.max(pay.length, ded.length), won = v=>v!=='' ? v.toLocaleString('ko-KR') : '';
   const sec = (t, items, tl, tot)=>`<div class="pst-sec"><div class="pst-h">${t}</div>${items.map(([l, v])=>`<div class="pst-r"><span>${escapeHtml(l)}</span><b>${won(v)}</b></div>`).join('')}<div class="pst-r tot"><span>${tl}</span><b>${won(tot)}</b></div></div>`;
   const rows = Array.from({length:n}, (_,i)=>{ const a = pay[i]||['',''], b = ded[i]||['',''];
     return `<tr><td>${escapeHtml(a[0])}</td><td class="num">${won(a[1])}</td><td>${escapeHtml(b[0])}</td><td class="num">${won(b[1])}</td></tr>`; }).join('');
   const kv = [['사원코드', h.code], ['사원명', h.name], ['부서', h.dept], ['직급', h.title], ['직종', h.job], ['지급일', s.payday.replace(/-/g,'.')]].map(([k, v])=>`<div class="k">${k}</div><div>${escapeHtml(v ?? '')}</div>`).join('');
   return `<div class="card ct-print pay-slip" id="paySlip">
-    <div class="card-title"><span>${escapeHtml(s.label)} 급여명세서 ${payBadges(s)}</span><button class="btn sm no-print" onclick="window.print()">${icon('download')} 인쇄 / PDF 저장</button></div>
+    <div class="card-title"><span>${escapeHtml(s.label)} 급여명세서 ${payBadges(s)}</span><span class="ps-tools no-print">${ask ? `<button type="button" class="btn sm" onclick="payAsk('${s.ym}')">${icon('mail')} HR에 문의</button>` : ''}<button class="btn sm" onclick="window.print()">${icon('download')} 인쇄 / PDF 저장</button></span></div>
     ${prev ? payDiffBox(s, prev) : ''}
     <div class="pay-doc">
       <div class="pay-doc-title">${escapeHtml(s.label)} 급여명세서</div>
@@ -9184,7 +9204,7 @@ function payPickerLive(key, v = 'payViewKey', then = 'payOpen=null; payYear=null
 /* ----- 급여·계약 비밀번호 잠금 (설계 2026-10-22 4장, 시안 그림 1~4 · 7) -----
    서버는 잠긴 창의 세 앞머리(/api/payslips · /api/withholding · /api/contracts)를 423으로 막는다. 화면은 급여·계약 메뉴의 탭 내용 자리에 잠금 창을 그리고(탭 줄 · 숫자는 그대로)
    잠긴 동안 그 세 길을 부르지 않는다 — 메뉴 숫자 · 홈은 잠그지 않는 /api/pay/counts로. 실제 로그인이고 서버에 열쇠가 있을 때만(PIN.on) — 시연 · 시연 사이트 · 기존 화면 검사는 그대로 눈 단추 */
-const PIN = { on:false, state:'', left:5, hr:[], err:'', typed:'', first:'', row:0, forgot:false, veiled:false, last:0, sent:0 };   // state: '' 아직 · set 정하기 · ask 입력 · locked 5번 틀림 · open 풀림 · err 상태를 못 받음(잠긴 것으로 친다) / typed: 잠금 창에 친 숫자 · 정하기의 "한 번 더" 줄 / first: 정하기의 "새 비밀번호" 줄 / row: 정하기에서 치는 줄 / forgot: "잊었어요"를 눌렀다 / hr: 초기화를 부탁할 HR {mailNo, email} / veiled · last · sent: 1분 가림 · 마지막 움직임 · 마지막 alive
+const PIN = { on:false, state:'', left:5, hr:[], ask:[], err:'', typed:'', first:'', row:0, forgot:false, veiled:false, last:0, sent:0 };   // state: '' 아직 · set 정하기 · ask 입력 · locked 5번 틀림 · open 풀림 · err 상태를 못 받음(잠긴 것으로 친다) / typed: 잠금 창에 친 숫자 · 정하기의 "한 번 더" 줄 / first: 정하기의 "새 비밀번호" 줄 / row: 정하기에서 치는 줄 / forgot: "잊었어요"를 눌렀다 / hr: 초기화를 부탁할 HR {mailNo, email} / ask: 급여명세서 [HR에 문의] 받는 사람 (같은 모양 — HR이 정한 1명, 안 정했으면 hr과 같다) / veiled · last · sent: 1분 가림 · 마지막 움직임 · 마지막 alive
 const PAY_COUNTS = { p1:0, p2:0, p3:0, due:null };   // 잠긴 동안의 메뉴 숫자 · 서명할 계약서의 가장 이른 마감일 (금액 없음)
 function pinGated(){ return AUTH.live && PIN.on && PIN.state!=='open'; }
 async function pinLoad(){   // 이 창의 잠금 상태. 서버에 열쇠가 없으면(off) 잠그지 않는다 — 그때는 잠근 자료도 없다. 못 받으면 잠긴 것으로 친다
@@ -9192,7 +9212,7 @@ async function pinLoad(){   // 이 창의 잠금 상태. 서버에 열쇠가 없
     const r = await fetch('/api/pay/lock'), j = await r.json();
     if(!r.ok) throw new Error(r.status);
     if(j.state==='off'){ PIN.on = false; return; }
-    Object.assign(PIN, { on:true, state:j.state, left:j.left ?? 5, hr:j.hr || [], last:Date.now() });   // last: 이미 풀린 창을 새로 열었으면(새로 고침) 쉰 시간은 지금부터
+    Object.assign(PIN, { on:true, state:j.state, left:j.left ?? 5, hr:j.hr || [], ask:j.ask || j.hr || [], last:Date.now() });   // last: 이미 풀린 창을 새로 열었으면(새로 고침) 쉰 시간은 지금부터
   } catch(e){ PIN.on = true; PIN.state = 'err'; }
 }
 async function payCountsLoad(){   // 메뉴 숫자 (잠겨 있어도 받는 길). 못 받으면 그대로 둔다
@@ -9283,15 +9303,21 @@ async function pinSetSubmit(){
   pinPaint();
 }
 function pinForgot(){ PIN.forgot = true; renderContent(); }
-function pinMail(){   // [HR에 초기화 요청 (하이웍스 메일)] — ctMail과 같은 방식: HR이 한 명이고 번호가 있으면 번호로 받는 사람을 채우고, 아니면 메일 주소를 창보다 먼저 복사한다.
-  // 제목을 주소로 채우는 길은 확인된 것이 없어 안내로 한다. 본문에 비밀번호 · 금액은 없다
-  const T = '제목은 "급여 비밀번호 초기화 요청"으로 적어 주세요.', no = PIN.hr.length===1 && PIN.hr[0].mailNo, mails = PIN.hr.map(h=>h.email).filter(Boolean);
+function hrMail(list, T){   // HR에게 하이웍스 메일 쓰기 — ctMail과 같은 방식: 한 명이고 번호가 있으면 번호로 받는 사람을 채우고, 아니면 메일 주소를 창보다 먼저 복사한다. list = [{mailNo, email}] · T = 제목 안내
+  // 제목을 주소로 채우는 길은 확인된 것이 없어 안내로 한다. 본문은 비워 둔다 (비밀번호 · 금액은 넣지 않는다)
+  const no = list.length===1 && list[0].mailNo, mails = list.map(h=>h.email).filter(Boolean);
   if(!no && !mails.length) return wsNotice('HR 메일 주소가 없어요. HR에 직접 알려 주세요.');
   const copying = no ? null : hwMailCopy(mails.join(';'), ' '+T, mails.length);   // 새 창이 포커스를 가져가면 브라우저가 복사를 거절할 수 있다
   const w = window.open(no ? HW_MAIL + '&user_nos=' + encodeURIComponent(no) : HW_MAIL, '_blank');
   if(!w) return void Promise.resolve(copying).then(()=>wsNotice('새 창이 막혔어요. 이 사이트의 팝업을 허용한 뒤 다시 눌러 주세요.'));
   try { w.opener = null; } catch(e){}
   if(no) wsNotice(T);
+}
+function pinMail(){ hrMail(PIN.hr, '제목은 "급여 비밀번호 초기화 요청"으로 적어 주세요.'); }   // [HR에 초기화 요청 (하이웍스 메일)] — 활성 HR 전원
+function payAsk(ym){   // 명세서 제목 줄의 [HR에 문의] (2026-10-26 인사담당자) — 받는 사람은 HR이 정한 1명, 안 정했으면 활성 HR 전원 (서버 payslip.ask_to). 그사이 HR이 바꾼 것은 다시 불러올 때 반영된다
+  const T = `제목은 "${psYmName(ym)} 급여명세서 문의"로 적어 주세요.`;
+  if(!AUTH.live) return wsNotice('시연 화면이라 메일 창은 열지 않아요. 실제 포털에서는 하이웍스 메일 쓰기 창이 열리고 받는 사람에 HR이 들어가요. '+T);   // 발표 중에 진짜 하이웍스 창이 열리지 않게
+  hrMail(PIN.ask, T);
 }
 function pinForget(){   // 받아 둔 급여·계약 자료 · 상태 · 가림막을 버린다 — 잠길 때(5분 · 지금 잠그기 · 잠김 응답: 다시 보이지 않게) · 풀릴 때(처음부터 다시 받게) · 로그아웃(authLock)
   ps.pick = null; ps.prev = null; ps.state = ''; Object.assign(PAY_LIVE, { state:'', who:null, slips:[], mine:[] }); payOpen = null; payShow = false; payDedOpen = false; payDiffOpen = false;
@@ -9435,6 +9461,27 @@ async function pinSelfCheck(){   // 브라우저 콘솔에서 await pinSelfCheck
     ok(opened.length===1 && opened[0]===HW_MAIL+'&user_nos=1001' && !copied.length && toast().includes('급여 비밀번호 초기화 요청'), 'HR 한 명 · 번호 있음: 번호로 받는 사람을 채우고 제목을 안내');
     opened.length = 0; order.length = 0; PIN.hr = [{ mailNo:'1001', email:'hr1@example.invalid' }, { mailNo:'', email:'hr2@example.invalid' }]; pinMail(); await wait();
     ok(order.join()==='copy,open' && opened[0]===HW_MAIL && copied[0]==='hr1@example.invalid;hr2@example.invalid' && toast().includes('받는 사람 2명') && toast().includes('급여 비밀번호 초기화 요청'), 'HR 두 명: 메일 주소를 창보다 먼저 복사하고 창만 연다');
+    { const pk = { ...PIN }, km = [MS_LIVE.list, MS_LIVE.state, ps.askTo];   // ----- 급여명세서 [HR에 문의] (2026-10-26) — 받는 사람 = 서버의 ask (HR이 정한 1명 · 안 정했으면 HR 전원) -----
+      try {
+        const two = [{ mailNo:'1001', email:'hr1@example.invalid' }, { mailNo:'', email:'hr2@example.invalid' }];
+        reply['/api/pay/lock'] = ()=>json({ state:'open', left:5, hr:two, ask:[{ mailNo:'1002', email:'hr3@example.invalid' }] }); await pinLoad();
+        opened.length = 0; copied.length = 0; payAsk('2026-09'); await wait();
+        ok(opened.length===1 && opened[0]===HW_MAIL+'&user_nos=1002' && !copied.length && toast().includes('"2026년 9월분 급여명세서 문의"로'), '[HR에 문의]: 정한 1명을 번호로 채우고 몇 월분인지 제목 안내');
+        reply['/api/pay/lock'] = ()=>json({ state:'open', left:5, hr:two }); await pinLoad();
+        opened.length = 0; order.length = 0; copied.length = 0; payAsk('2026-09'); await wait();
+        ok(JSON.stringify(PIN.ask)===JSON.stringify(two) && order.join()==='copy,open' && opened[0]===HW_MAIL && copied[0]==='hr1@example.invalid;hr2@example.invalid' && toast().includes('받는 사람 2명') && toast().includes('급여명세서 문의'),
+          'ask가 없는 답(예전 서버)이면 HR 전원 — 메일 주소를 창보다 먼저 복사하고 창만 연다');
+        // ----- HR: 급여 문의 받는 사람 저장 -----
+        MS_LIVE.list = [{ id:1, name:'가상인사', team:'가상팀', division:'', hr:true, active:true }, { id:7, name:'가상퇴사', team:'가상팀', division:'', hr:true, active:false }, { id:3, name:'가상직원', team:'가상팀', division:'', hr:false, active:true }];
+        MS_LIVE.state = 'ok'; ps.askTo = null;
+        const b = psAskBox(); ok(b.includes('가상인사 (가상팀)') && !b.includes('가상퇴사') && !b.includes('가상직원'), '실제: 고를 수 있는 사람 = 활성 HR만');
+        MS_LIVE.state = 'loading'; ok(!psAskBox().includes('psAskSel') && psAskBox().includes('명단을 불러오는 중'), '명단을 받기 전에는 고르는 칸을 그리지 않는다 ([저장]이 지워 버리지 않게)'); MS_LIVE.state = 'ok';
+        reply['/api/payslips/ask-to'] = o=>json({ askTo:JSON.parse(o.body).userId }); calls.length = 0;
+        await psAskSave('1'); ok(sent('/api/payslips/ask-to').length===1 && JSON.parse(sent('/api/payslips/ask-to')[0].b).userId===1 && ps.askTo===1, '저장: 직원 번호(숫자)로 보내고 서버 답을 기억');
+        await psAskSave(''); ok(JSON.parse(sent('/api/payslips/ask-to')[1].b).userId===null && ps.askTo===null, '정하지 않음 → null (HR 전원)');
+        reply['/api/payslips/ask-to'] = ()=>json({ error:'HR 권한이 있는 직원만 고를 수 있어요.' }, 400); await psAskSave('3');
+        ok(ps.askTo===null && kpiMsg?.type==='danger' && kpiMsg.msg.includes('HR 권한이 있는 직원만'), '서버가 거절하면 그대로 두고 서버 글을 보여 준다');
+      } finally { Object.assign(PIN, pk); [MS_LIVE.list, MS_LIVE.state, ps.askTo] = km; kpiMsg = null; } }
     opened.length = 0; PIN.hr = []; pinMail(); ok(!opened.length && toast().includes('HR 메일 주소가 없어요'), 'HR이 없으면 직접 알리라고 안내');
     Object.assign(PIN, { state:'ask', typed:'', err:'', forgot:false }); renderContent(); pinForgot();
     ok(txt().includes('HR에 초기화를 요청해 주세요') && box().querySelector('[onclick="pinMail()"]') && txt().includes('비밀번호를 입력해 주세요'), '"비밀번호를 잊었어요": 같은 창 안에 HR 요청 안내 · 단추');
@@ -9728,7 +9775,7 @@ function payContent(){
       <div class="list-sub">${live ? '월을 누르면 아래에 명세서가 열립니다. 금액은 급여대장 그대로이고, 0원인 항목은 감춥니다.' + (payViewKey===null ? '' : ' 다른 직원을 고르면 열람 기록이 남고, 공개 전인 달도 보입니다.') : '월을 누르면 아래에 명세서가 열립니다. 시연용 가상 금액이며, 실제 명세서는 위하고 자료를 올리면 표시됩니다.'}</div>
     </div>
     <div class="card" style="margin-bottom:14px;"><div class="card-title">${payYear}년 급여 수령 현황</div>${payYearChart(slips, payYear)}</div>
-    ${open ? payDetail(open, payPrevOf(slips, open)) : ''}`;
+    ${open ? payDetail(open, payPrevOf(slips, open), live ? payViewKey===null : payViewKey===role) : ''}`;
 }
 async function liveWake(L, loadMine, tab, sig){   // 실제 로그인: 화면을 다시 볼 때 — 그사이 HR이 공개한 것을 메뉴 숫자와 열려 있는 내 화면에 (오래 열어 둔 휴대폰·PC). L = PAY_LIVE · WH_LIVE
   const key = ()=>JSON.stringify(L.mine.map(sig)), was = key();
@@ -9745,7 +9792,7 @@ function whWake(){ return liveWake(WH_LIVE, whFetchMine, 'p3', y=>[y.year, y.rev
 /* ----- HR: 급여대장 올리기 · 확인 · 공개 (2026-10-20 인사담당자 — 급여명세서 실제화) -----
    HR이 고른 급여대장(암호 엑셀)을 이 PC 화면 안에서 읽어(psRead) 직원과 맞추고(psMatch) 사람별 숫자만 서버에 올린다 — 파일과 암호는 보내지 않는다.
    올린 달은 "공개"를 눌러야 직원에게 보이고, 공개 중인 달은 내린 뒤에만 다시 올린다(서버도 409). 시연(서버 없음)은 ps.mem에만 둔다 — 새로 고치면 사라진다 */
-const ps = { view:'me', months:[], ready:true, state:'', pick:null, mem:{ months:{}, slips:{} }, prev:null };   // view: HR 화면 'me' 내 급여명세서 · 'admin' 올리기·공개 / months·ready·state: 실제 달 목록(MS_LIVE와 같은 방식) / pick: 확인 창의 급여대장 / mem: 시연 기억 — months[ym] · slips[ym][시연 열쇠] = 명세서 / prev: 미리 보기 창
+const ps = { view:'me', months:[], ready:true, state:'', pick:null, mem:{ months:{}, slips:{} }, prev:null, askTo:null };   // askTo: 급여 문의 받는 사람 (실제 = 직원 번호, 시연 = 시연 열쇠, null = HR 전원) / view: HR 화면 'me' 내 급여명세서 · 'admin' 올리기·공개 / months·ready·state: 실제 달 목록(MS_LIVE와 같은 방식) / pick: 확인 창의 급여대장 / mem: 시연 기억 — months[ym] · slips[ym][시연 열쇠] = 명세서 / prev: 미리 보기 창
 const PS_ERR = {   // psRead의 err → 확인 창 대신 띄우는 문구
   HEAD:'급여대장에서 사원명 칸을 찾지 못했습니다. 급여 프로그램에서 내려받은 급여대장이 맞는지 확인해 주세요.',
   GROUP:'급여대장 제목 윗줄에서 "수당"·"공제" 묶음을 찾지 못했습니다. 급여 프로그램에서 내려받은 급여대장이 맞는지 확인해 주세요.',
@@ -9763,7 +9810,7 @@ async function psLoad(){   // 실제 로그인 HR: 올린 달 목록 + 서버에
   try {
     const r = await fetch('/api/payslips/months');
     if(!r.ok) throw new Error(r.status);
-    const j = await r.json(); ps.months = j.months; ps.ready = j.ready; ps.state = 'ok';
+    const j = await r.json(); ps.months = j.months; ps.ready = j.ready; ps.askTo = j.askTo ?? null; ps.state = 'ok';
   } catch(e){ ps.state = 'err'; }
   if(currentTab.id==='p1') renderContent();
 }
@@ -9792,7 +9839,28 @@ function psAdmin(){   // HR "명세서 올리기 · 공개" — 올린 달마다
     <div class="card" id="psMonths"><div class="card-title"><span>명세서 현황</span><span class="ps-tools">${tools}</span></div>
       <div class="list-sub" style="margin:-4px 0 12px;">올린 명세서는 "공개"를 눌러야 직원에게 보입니다.</div>
       ${rows ? `<div class="ps-row head"><span>귀속 월</span><span>지급일</span><span>인원</span><span>상태</span><span></span></div>${rows}` : '<div class="placeholder-note" style="margin:0;">아직 올린 명세서가 없습니다.</div>'}
-    </div>`;
+    </div>${psAskBox()}`;
+}
+function psAskBox(){   // 급여 문의 받는 사람 (2026-10-26 인사담당자) — 직원 명세서의 [HR에 문의]가 이 사람에게 메일을 쓴다. 고를 수 있는 사람 = 활성 HR. 정하지 않으면 HR 전원 (서버 payslip.ask_to)
+  const live = AUTH.live, e = escapeHtml;
+  const hrs = live ? MS_LIVE.list.filter(m=>m.hr && m.active).map(m=>({ id:m.id, t:`${m.name} (${m.team || m.division})` }))
+    : Object.keys(KPI_USERS).filter(k=>kpiIsHr(k)).map(k=>({ id:k, t:`${KPI_USERS[k].name} · ${KPI_USERS[k].title} (${KPI_USERS[k].dept})` }));
+  const opt = (v, t)=>`<option value="${e(String(v))}"${String(ps.askTo ?? '')===String(v) ? ' selected' : ''}>${e(t)}</option>`;
+  const body = live && MS_LIVE.state!=='ok' ? `<div class="list-sub" style="margin:0;">${MS_LIVE.state==='err' ? '명단을 불러오지 못했습니다. 잠시 뒤 새로 고쳐 주세요.' : '명단을 불러오는 중입니다…'}</div>`   // 명단 없이 그리면 "정하지 않음"이 골라진 채로 보여 [저장]이 지워 버린다
+    : `<div class="ps-ask-row"><div class="field" style="margin:0;"><select id="psAskSel" aria-label="급여 문의 받는 사람">${opt('', '정하지 않음 — HR 전원')}${hrs.map(h=>opt(h.id, h.t)).join('')}</select></div>
+      <button type="button" class="btn coral" onclick="psAskSave(document.getElementById('psAskSel').value)">저장</button></div>
+      <div class="list-sub" style="margin:8px 0 0;">직원이 급여명세서에서 <b>HR에 문의</b>를 누르면 이 사람이 하이웍스 메일 받는 사람으로 들어가요. 정하지 않으면 HR 전원이 받아요.</div>`;
+  return `<div class="card" id="psAskTo" style="margin-top:14px;"><div class="card-title"><span>급여 문의 받는 사람</span></div>${body}</div>`;
+}
+async function psAskSave(v){   // [저장] — 실제는 서버(POST /api/payslips/ask-to)가 활성 HR인지 다시 본다. 시연은 새로 고치면 사라진다
+  if(AUTH.live){
+    let r = null, j = {};
+    try { r = await fetch('/api/payslips/ask-to', { method:'POST', headers:{ 'Content-Type':'application/json' }, body:JSON.stringify({ userId:v==='' ? null : +v }) }); j = await r.json().catch(()=>({})); } catch(e){}
+    if(r && r.status===423) return;   // 잠김 — 감싸개(pinSeen)가 이미 잠금 창으로 바꿨다. 풀린 뒤에 실패 글이 남지 않게
+    if(!r || !r.ok) return kpiFlash(escapeHtml(j.error || '저장하지 못했습니다. 잠시 뒤 다시 해 주세요.'), 'danger');
+    ps.askTo = j.askTo ?? null;
+  } else ps.askTo = v || null;
+  kpiFlash(ps.askTo===null ? '급여 문의는 HR 전원이 받아요.' : '급여 문의 받는 사람을 저장했어요.');
 }
 async function psStage(fileName, rows, locked){   // 급여대장 줄 → 확인 창. 파일 고르기(rzLoad 'slip')·시연·검사가 부른다. locked = 암호를 풀어 읽었나(암호 자체는 받지 않는다)
   const r = psRead(rows);
@@ -13357,12 +13425,13 @@ const TOURS = {   // 단계: el = 가리킬 곳(여러 개면 묶어서, 배열�
     { el:'#pinBox', title:'비밀번호', body:'급여·계약 메뉴는 <b>비밀번호 6자리</b>를 넣어야 금액이 보여요. 처음 한 번은 본인이 정해요.' },
     { el:'#psUp', title:'명세서 올리기 (HR)', body:'급여 프로그램에서 내려받은 <b>급여대장 엑셀</b>을 고릅니다. 암호가 걸린 파일은 암호를 묻고, 파일은 이 PC 화면 안에서만 읽습니다. 확인 창에서 인원 · 합계 · 직원 맞추기를 본 뒤 <b>올리기 (공개 전)</b>를 누릅니다.' },
     { el:'#psMonths [onclick^="psOpenAsk"]', one:true, title:'공개 (HR)', body:'올린 달은 아직 직원에게 보이지 않습니다. <b>미리 보기</b>로 확인한 뒤 <b>공개</b>를 누르면 각자 본인 것만 볼 수 있습니다. 고칠 것이 있으면 <b>공개 내리기</b> → 다시 올리기 → 공개 순서로 하고, 직원 화면에는 "수정됨"으로 보입니다.' },
+    { el:'#psAskTo', title:'급여 문의 받는 사람 (HR)', body:'직원이 명세서에서 <b>HR에 문의</b>를 누르면 메일 받는 사람으로 들어갈 HR을 고르고 <b>저장</b>합니다. 정하지 않으면 HR 전원이 받습니다.' },
     { el:'select[onchange^="payViewKey"]', title:'볼 직원 고르기 (HR)', body:'HR은 직원을 골라 그 사람의 명세서를 볼 수 있습니다. 직원은 본인 것만 봅니다.' },
     { el:'.pay-pick', title:'캐릭터 고르기', body:'처음 한 번, 급여일까지 함께 걸어갈 캐릭터를 고릅니다. 고르면 급여일까지의 진행 그림이 나오고, 바꾸고 싶으면 그림 아래 <b>캐릭터 바꾸기</b>를 누릅니다.' },
     { el:'#pinBand', title:'지금 잠그기', body:'자리를 비울 때는 <b>지금 잠그기</b>를 눌러 주세요. 1분 쉬면 금액을 가리고, 5분 쉬면 다시 잠겨요.' },
     { el:'.pay-eye', title:'금액 보기', body:AUTH.live && PIN.on ? '비밀번호를 넣으면 금액이 보여요. 눈 모양으로 다시 가릴 수 있어요.' : '금액은 가려져 있습니다. <b>눈 모양</b>을 누르면 보이고, 다시 누르면 가려집니다.' },
     { el:'.pay-years, .pay-mgrid', title:'연도 · 월 고르기', body:'연도를 고르고 <b>월</b>을 누르면 아래에 그달 명세서가 열립니다.' + (AUTH.live ? ' 새로 공개된 달에는 <b>새 명세서</b> 표시가 붙고, 열어 보면 사라집니다.' : '') + ' 열린 명세서는 <b>인쇄 / PDF 저장</b>으로 보관할 수 있습니다.' },
-    { el:'#paySlip .card-title', title:'인쇄 · PDF 저장', body:'오른쪽 단추로 이 명세서를 <b>인쇄하거나 PDF로 저장</b>합니다.' },
+    { el:'#paySlip .card-title', title:'인쇄 · PDF 저장 · HR에 문의', body:'오른쪽 단추로 이 명세서를 <b>인쇄하거나 PDF로 저장</b>합니다. 궁금한 점은 <b>HR에 문의</b>를 누르면 하이웍스 메일 쓰기 창이 열리고, 받는 사람에 HR이 들어갑니다.' },
   ]},
   wh:{ label:'원천징수영수증 보는 법', tab:'p3', steps:()=>[
     { el:'#whSeg', title:'화면 고르기 (HR)', body:'<b>내 원천징수영수증</b>은 내 것과 직원별 영수증을 보는 화면, <b>영수증 올리기 · 공개</b>는 NAS의 zip을 올리고 공개하는 화면입니다.' },
