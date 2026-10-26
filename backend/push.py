@@ -98,7 +98,7 @@ def morning_text(items: list[tuple[str, int]]) -> dict:
 # ---- 9시 마감 알림 (2026-10-26 인사담당자 — "오늘 마감인 업무가 있습니다 · 오늘 KPI 업무 마감일입니다") ----
 # 처리할 일 묶음과 따로 한 통씩: 업무 마감(나의 업무) · KPI 마감(비정기 일정 · 지난달 한 줄). 잠금 화면에 보이므로 개수만 — 업무 제목은 넣지 않는다.
 WS_GO = "/?go=ws.w1"  # 누르면 나의 업무 (휴대폰에서도 열리고 처음 목록이 '오늘' — KPI- 업무도 여기 있다. 평가·성과는 휴대폰에서 안 열림)
-_YMD = re.compile(r"\d{4}-\d{2}-\d{2}")
+_YMD = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}")
 
 
 def deadline_days(today: date) -> dict:
@@ -355,19 +355,23 @@ def pending(flask_app: Flask, uid: int) -> list[tuple[str, int]]:
 def deadlines(flask_app: Flask, uid: int, now: datetime) -> list[tuple[str, dict]]:
     """그 사람의 9시 마감 알림 [(태그, 알림)] — 업무 마감(morning-tasks) · KPI 마감(morning-kpi) 중 셀 것이 있는 것만, 보내는 순서로 (0~2통). 날짜는 now 의 한국 날짜.
     나의 업무는 서버에 저장된 목록(workspace_data tasks)만 센다 — 한 번도 저장하지 않았으면(화면은 예시를 보여 줌) 없다. 본인만 보는 자료라 개수만 쓰고 제목은 어디에도 남기지 않는다.
-    KPI 는 지금 확정본의 진행 기록(kpi.progress_json — 화면의 KPI- 업무 · 지난달 한 줄과 같은 자료). pending() 처럼 새 앱 컨텍스트에서 자기 DB 연결로 일한다."""
+    KPI 는 지금 확정본의 진행 기록(kpi.progress_json — 화면의 KPI- 업무 · 지난달 한 줄과 같은 자료, 그해 것만 — 1월 1~7일에는 지난해 12월 한 줄 · 일정이 안 잡힌다,
+    화면 · 처리할 일 묶음과 같은 한계). pending() 처럼 새 앱 컨텍스트에서 자기 DB 연결로 일한다."""
     import kpi  # 쓰는 자리에서 — kpi 가 이 파일을 불러와도 순환하지 않게
 
     k = now.astimezone(auth.KST).date()
-    today, days = k.isoformat(), deadline_days(k)
+    today, days, out = k.isoformat(), deadline_days(k), []
     with flask_app.app_context():
         conn = auth._db()
         row = conn.execute("SELECT data FROM workspace_data WHERE user_id = ? AND kind = 'tasks'", (uid,)).fetchone()
-        with kpi._txn(conn):  # 진행 기록은 표 여럿을 읽는다 — pending() 과 같이 한 트랜잭션 안에서
-            prog = kpi.progress_json(conn, uid, kpi.plan_year())  # ponytail: pending() 도 같은 것을 한 번 더 읽는다 — 사람마다 두 번, 수십 명이면 문제없다
-    out = []
-    if msg := tasks_text(*task_counts(json.loads(row[0]) if row else [], today, days["weekend"])):
-        out.append(("morning-tasks", msg))
+        if msg := tasks_text(*task_counts(json.loads(row[0]) if row else [], today, days["weekend"])):
+            out.append(("morning-tasks", msg))
+        try:  # KPI 를 못 세도(깨진 확정본 …) 업무 마감은 간다 — 로그에는 예외 종류만
+            with kpi._txn(conn):  # 진행 기록은 표 여럿을 읽는다 — pending() 과 같이 한 트랜잭션 안에서
+                prog = kpi.progress_json(conn, uid, kpi.plan_year())  # ponytail: pending() 도 같은 것을 한 번 더 읽는다 — 사람마다 두 번, 수십 명이면 문제없다
+        except Exception as exc:
+            logger.warning("morning kpi deadlines failed: %s", type(exc).__name__)
+            return out
     n_today, soon, n_late = kpi_counts(prog, today, days["soon"])
     if msg := kpi_text(n_today, soon, n_late, prog["todo"]["prev"] if prog and days["prev"] else 0, k):
         out.append(("morning-kpi", msg))

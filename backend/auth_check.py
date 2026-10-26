@@ -2399,7 +2399,7 @@ def check_push_pending(hr) -> None:
     """휴대폰 알림 처리할 일 개수 · 아침 9시 묶음 (2026-10-22): pending() 의 합이 화면(homePortalTasks · TODO)이 서버 응답으로 세는 값과 같다 —
     급여명세서 · 원천징수영수증 · 연봉계약서(열쇠가 없으면 0) · 처리함 · 돌려받은 계획서 · 지난달 한 줄 · 확인 메모 · 월간 확인 · 새 답글(팀장 · 본부장 · 대표이사 · HR 만) ·
     대표이사 위임 중에는 대표이사 몫만 빼고 HR 몫은 센다. pending() 은 요청 안에서 불러도 그 요청의 g.actor 를 건드리지 않는다.
-    morning() 은 평일 하루 한 번, 남은 일이 있는 휴대폰에만 한 통 — 410 이면 구독 삭제 · 500 이면 그대로 · 쓸 수 없는 구독 줄은 같은 일에서 정리.
+    morning() 은 평일 하루 한 번, 남은 일이 있는 휴대폰에만 묶음 한 통(마감 알림은 check_push_deadlines) — 410 이면 구독 삭제 · 500 이면 그대로 · 쓸 수 없는 구독 줄은 같은 일에서 정리.
     이 검사만의 가상 사람 · 부서(61xx). 감사로그 때문에 지울 수 없는 가상 사람은 비활성으로 두고, 그 밖의 자료(계획서 · 메모 · 명세서 · 영수증 · 세션 · 구독 …)와 환경 값은 되돌린다."""
     import base64
     import unittest
@@ -3046,6 +3046,7 @@ def check_push_deadlines(hr) -> None:
     확정본 · 감사로그 때문에 지울 수 없는 것(가상 사람 · 확정된 계획서)은 비활성으로 두고, 그 밖의 자료와 환경 값 · 시각 · 보내기 함수는 되돌린다."""
     import unittest
 
+    import kpi
     import push
 
     print("휴대폰 9시 마감 알림")
@@ -3161,12 +3162,15 @@ def check_push_deadlines(hr) -> None:
         ok(got[EMP2] == [msg("morning-tasks", "주말 마감인 업무가 1건 있어요", "마감 지난 업무 1건 · 나의 업무에서 확인해 주세요", 0)],
            "금요일: 토요일 마감 업무 1 · 끝낸 업무는 빠지고 지난 업무 1")
 
-        # ---- 12/7 월: 오늘까지 지난달 한 줄 ----
+        # ---- 12/7 월: 오늘까지 지난달 한 줄 (KPI 쓰는 직원도 나의 업무 하나를 저장 — 세 통) ----
+        clock[0] = D7
+        ok(post(client(EMP), "/api/workspace/tasks", {"data": [{"id": 1, "title": "가상 연말 정리", "due": "2026-12-07"}], "version": 0}).json == {"version": 1},
+           "(검사용) KPI 쓰는 직원이 오늘 마감 업무 하나를 저장")
         n, got = run(D7)
         seen.extend(p for ps in got.values() for p in ps)
-        ok(got[EMP] == [bundle(2, "KPI 지난달 한 줄 쓰기 2건"),
+        ok(got[EMP] == [bundle(2, "KPI 지난달 한 줄 쓰기 2건"), msg("morning-tasks", "오늘 마감인 업무가 1건 있어요", "나의 업무에서 확인해 주세요", 2),
                         msg("morning-kpi", "오늘까지 KPI 지난달 한 줄을 써 주세요", "2건 · 마감 지난 일정 3건 · PC에서 결과를 적어 주세요", 2)],
-           "12월 7일: 11월 한 줄 2건이 오늘까지 · 결과 안 적은 지난 일정 3 (7일 처리할 일 묶음에도 그대로 — 인사담당자 결정)")
+           "12월 7일: 묶음 → 업무 마감 → KPI 마감 세 통, 아이콘 숫자는 모두 처리할 일 합 2 · 11월 한 줄 2건이 오늘까지 · 결과 안 적은 지난 일정 3 (묶음에도 그대로 — 인사담당자 결정)")
         ok(got[EMP2] == [msg("morning-tasks", "마감 지난 업무가 2건 있어요", "나의 업무에서 확인해 주세요", 0)], "주말이 지난 업무도 지난 업무로")
 
         # ---- 한쪽을 못 세도 다른 쪽은 간다 ----
@@ -3192,8 +3196,20 @@ def check_push_deadlines(hr) -> None:
            and got[EMP2] == [msg("morning-tasks", "마감 지난 업무가 2건 있어요", "나의 업무에서 확인해 주세요", None)]
            and sorted(cm.output) == ["WARNING:push:morning deadlines failed: RuntimeError", "WARNING:push:morning pending failed: RuntimeError"],
            "마감을 못 센 사람에게도 묶음은 · 처리할 일을 못 센 사람에게도 마감 알림은 아이콘 숫자 없이 감 — 로그에는 예외 종류만")
-        ok(len(seen) == 14 and all("가상" not in json.dumps(p, ensure_ascii=False) for p in seen),
-           "보낸 알림(열네 통) 어디에도 업무 · 일정 · 사람 이름(가상…)이 없음 — 개수만")
+        real_prog = kpi.progress_json
+        x("DELETE FROM push_morning WHERE day = ?", days[-1])
+        kpi.progress_json = lambda *a, **k: (_ for _ in ()).throw(RuntimeError("검사용 고장"))  # 진행 기록이 터짐 — 처리할 일 묶음도 같이 못 셈
+        try:
+            with unittest.TestCase().assertLogs("push", "WARNING") as cm:
+                n, got = run(D7)
+        finally:
+            kpi.progress_json = real_prog
+        seen.extend(p for ps in got.values() for p in ps)
+        ok(got[EMP] == [msg("morning-tasks", "오늘 마감인 업무가 1건 있어요", "나의 업무에서 확인해 주세요", None)]
+           and "WARNING:push:morning kpi deadlines failed: RuntimeError" in cm.output,
+           "KPI 진행 기록이 터진 사람에게도 업무 마감은 감 (묶음 · KPI 마감 없이, 아이콘 숫자 없이) — 로그에는 예외 종류만")
+        ok(len(seen) == 17 and all("가상" not in json.dumps(p, ensure_ascii=False) for p in seen),
+           "보낸 알림(열일곱 통) 어디에도 업무 · 일정 · 사람 이름(가상…)이 없음 — 개수만")
     finally:
         auth._now, push.SEND, push.pending, push.deadlines = real_now, real_send, real_pending, real_deadlines
         for k, v in env.items():
