@@ -11312,9 +11312,15 @@ function whDemo(){   // 시연: 시연 인물들의 가상 연말정산 숫자(W
    - 근태(연차 초과일·지각)는 그 사람의 등급이 다음 단계로 넘어가면 잠근다 (evAttLocked). HR은 결과 공개 전까지 묶음을 한 단계 되돌릴 수 있다 (evPoolUndo)
    - 자기평가는 제출하면 고칠 수 없다(제출 전에 안내 창). 증빙은 평가자가 점수를 내기 전까지만 올린다
    - 평가 항목은 목표설정(KPI) 확정본을 그대로 읽는다: 팀목표·개인목표·실행목표·측정식·가중치·S~D 달성 기준
-   - 점수: KPI별 달성 등급(S110·A100·B90·C80·D70%) × 가중치 합 + 가점(사유 필수), 총점 상한 110
-   - 등급 쿼터: 묶음 인원 N≥5면 A·B·D 각 round_half_up(N×10%), C 나머지 / N≤4면 상위(A+B) 1명(N≥2), 하위 나머지
+   - 점수: KPI별 달성 등급(S110·A100·B90·C80·D70%) × 가중치 합, 총점 상한 110. 가점은 없다 (인사담당자 2026-10-27 — 연봉 계산의 개인 포상 · 자격증 추가 인상률과 중복) — 윗사람은 코멘트만 남긴다 (evHeadAsk)
+   - 등급 쿼터 (evQuota — backend/hr_eval/domain/quota.py 와 같은 셈): 묶음 인원 N≥5면 S·A · B · D 각 round_half_up(N×그 비율), C 나머지 / N≤4면 상위(A+B) 1명(N≥2), 하위 나머지
+     등급 비율(evRatio — S·A · B · D %, 처음 10 · 10 · 10, 세 칸 합 70 이하)은 HR이 진행표에서 해마다 정하고 평가를 시작하면 잠근다. 그해 모든 묶음에 같다 (인사담당자 2026-10-27)
+     대표이사가 늘린 정원(extra — 묶음마다 S·A · B 몇 명)은 S·A · B(4명 이하 묶음은 상위)에 더한다
      S는 총점 100 초과만, S 상한 = A 정원(상위 정원), S가 K명이면 A(상위) 정원에서 K를 뺀다. 초과 = 제출 막힘, 미달 = 경고
+     D 정원은 본부장이 점수보다 낮춰 D를 줄 수 있는 인원이다 — 총점이 C 기준 이하라 점수로 D인 사람은 D 초과에 세지 않는다 (미달 경고는 모든 D)
+   - 점수 역전 (evValidate): 점수가 더 높은 사람이 더 낮은 등급을 받았고 그 등급을 받을 수 있었으면(점수 기준 · 연차) 윗사람 코멘트(이유)가 있어야 마감된다 — 없으면 오류, 있으면 경고.
+     전사 팀장 묶음은 윗사람 코멘트 칸이 없어 경고만. 동점 · 점수 없음(KPI 없음)은 따지지 않는다
+   - 등급 안내: 직원의 자기평가 · 결과 화면과 평가자 점수 화면에 등급은 점수 기준과 묶음 정원으로 정한다는 줄 (evGradeRule · evQuotaNote — 인사담당자 2026-10-27)
    - 증빙자료: 목표설정이 아니라 여기서 KPI별로 올린다. 선택 사항. 올리고 고치기는 HR이 정한 증빙 마감일까지.
      열람은 본인·평가자·본부장·대표이사·HR (같은 팀 동료는 못 봄)
    - 평가자 코멘트 필수, 본부장(직속부서는 대표이사) 코멘트 선택 */
@@ -11330,6 +11336,7 @@ const evPoolSel = { ceo:new Set(), hr:new Set() }, evPoolOpen = { ceo:null, hr:n
 let evOpen = null;   // 지금 펼친 평가 대상 pid
 const EV_RANK = 'SABCD';   // 앞이 높은 등급
 const evBands = { A:90, B:80, C:70 };   // 이 점수를 '넘어야' 그 등급을 받을 수 있다 (HR이 진행표에서 바꾼다). S는 100점 초과, C 기준 이하는 D — 인사담당자 2026-10-13: 합계에 소수점이 나올 수 있으니 90.5점은 윗등급(A)에 넣고 딱 90점부터 B
+const evRatio = { SA:10, B:10, D:10 };   // 등급 비율 — 묶음 인원의 몇 %까지 (S·A 합계 · B · D, C는 나머지). HR이 진행표에서 평가 시작 전까지 바꾼다. 실제 로그인은 서버 round.ratio
 let evAttDone = null;   // HR이 "근태 입력을 마쳤습니다"를 누른 날
 
 /* ----- 실제 로그인 (평가 3단계 ①, 2026-10-26 인사담당자) -----
@@ -11337,7 +11344,7 @@ let evAttDone = null;   // HR이 "근태 입력을 마쳤습니다"를 누른 �
    판단은 서버 칸을 그대로 읽는다(can · hidden · cap · total · edited · pools[].state · errors) — 총점 · 줄 수 있는 등급을 화면이 다시 셈하지 않는다(서버는 Decimal 사사오입).
    공개 전 숨김은 서버가 줄에서 칸을 뺀다(본인 줄은 평가 칸이 열쇠째 없고, 평가자가 낸 뒤의 줄은 낸 것만). 동작은 서버로 보내고 다시 읽는다(evLiveDo).
    적고 저장 안 한 글 · 날짜는 EV_LIVE.typed — 다시 그려도 남고 창을 닫기 전에 묻는다. 대표이사 확인 · HR 확정 · 돌려보내기 · 되돌리기(②)는 서버 pools[].can 대로 단추를 그리고, 평가 결과 탭(②)은 GET /api/eval/results (EV_RES — 평가 결과 칸). */
-const EV_LIVE = { state:'', year:null, offline:false, round:null, pools:[], todo:{ me:0, admin:0, e3:0 }, deleg:false, ceoId:null, busy:false, typed:{}, prog:{} };   // state: '' 아직 · loading · ok · err. typed: 적고 저장 안 한 것 { 'self-<rid>' 실적 · 'cmt-<pid>' 평가자 코멘트 · 'd-<kpiPeriod 칸>' 마감일 · 'b-<A|B|C>' 기준 점수 }. prog: 사람마다 받아 둔 진행 기록 { pid: 응답 | null(못 봄 · 없음) }
+const EV_LIVE = { state:'', year:null, offline:false, round:null, pools:[], todo:{ me:0, admin:0, e3:0 }, deleg:false, ceoId:null, busy:false, typed:{}, prog:{} };   // state: '' 아직 · loading · ok · err. typed: 적고 저장 안 한 것 { 'self-<rid>' 실적 · 'cmt-<pid>' 평가자 코멘트 · 'd-<kpiPeriod 칸>' 마감일 · 'b-<A|B|C>' 기준 점수 · 'r-<SA|B|D>' 등급 비율 }. prog: 사람마다 받아 둔 진행 기록 { pid: 응답 | null(못 봄 · 없음) }
 const evProgOpen = new Set();   // 펼친 진행 기록 '<pid>-<rid>' — 다시 그려도 펼친 채로
 function evYear(){ return AUTH.live ? EV_LIVE.year : KPI_YEAR; }   // 평가하는 해 (실제 로그인은 서버 — 1~2월에는 지난해일 수 있다)
 function evKind(k){ return !AUTH.live ? k : k==='LEADERS' ? 'lead' : k==='DIRECT' ? 'direct' : 'div'; }   // 묶음 열쇠 → 시연 이름 (서버 열쇠 LEADERS · DIRECT · DIV:<본부>)
@@ -11349,7 +11356,7 @@ function evType(k, v){ EV_LIVE.typed[k] = v; }   // 적는 중인 글 (저장 �
 function evTyped(k, v){ return EV_LIVE.typed[k] ?? v; }   // 적는 중인 글이 있으면 그것, 없으면 서버 값
 function evFromLive(row){   // 서버 줄 → 시연 줄 모양. 빠진 칸은 시연 기본값 (본인 줄은 공개 전 평가 칸이 없다). key 는 내 줄이면 지금 역할
   const items = row.items || [];
-  return { comment:'', headComment:'', bonus:0, bonusReason:'', grade:null, proposed:null, subScore:null, cap:'S', proxy:'', edited:'', rater:null, raterIsCeo:false, hidden:false, ...row,
+  return { comment:'', headComment:'', grade:null, proposed:null, subScore:null, cap:'S', proxy:'', edited:'', rater:null, raterIsCeo:false, hidden:false, ...row,
     key:row.pid===AUTH.me.user_id ? kpiRole : null, line:'', noSelf:row.noSelf || false, out:row.out ? { at:kpiYmd(row.out.at), why:row.out.why } : null,
     appeal:row.appeal?.at ? { ...row.appeal, at:kpiYmd(row.appeal.at) } : row.appeal ?? null,   // 이의 신청일은 한국 날짜 (서버는 UTC 시각 · 상태만 받는 분은 at 이 없다)
     subMarks:row.subMarks ? items.map(it=>row.subMarks[it.rid] ?? null) : null,   // 실행목표 번호 → 차례 (evScorePanel 이 차례로 읽는다)
@@ -11369,6 +11376,7 @@ async function evLiveLoad(year=EV_LIVE.year){   // GET /api/eval/state → evPeo
     evPeople.length = 0; evPeople.push(...rows);   // ponytail: 시연 명단 자리를 그대로 쓴다 (평가 결과 탭은 따로 — EV_RES · evResLoad)
     Object.assign(kpiPeriod, { evalFrom:rd.evalStart || '', selfTo:rd.selfTo || '', evidDue:rd.evidDue || '', scoreTo:rd.scoreTo || '', gradeTo:rd.gradeTo || '', ceoTo:rd.ceoTo || '', evalTo:rd.finalTo || '' });
     if(rd.bands) Object.assign(evBands, rd.bands);
+    Object.assign(evRatio, rd.ratio || { SA:10, B:10, D:10 });   // 회차가 없으면 처음 값 (서버 결과 응답과 같다)
     evAttDone = day(rd.attDone); evRelease.at = day(rd.released);
     evProxy = j.deleg ? '켜 둠' : false;   // 서버는 켠 날을 주지 않는다
     for(const k of Object.keys(evPoolLog)) delete evPoolLog[k];
@@ -11383,7 +11391,7 @@ function evLivePrune(){   // 다시 읽은 뒤: 서버 것과 같아졌거나 �
   for(const k of Object.keys(T)){
     const kind = k.slice(0, k.indexOf('-')), id = k.slice(k.indexOf('-')+1), v = String(T[k]).trim(), p = kind==='cmt' && evFind(+id);
     const i = kind==='self' && me?.can.self ? evKpi(me).findIndex(x=>x.rid===+id) : -1, same = s=>String(s ?? '').trim()===v;
-    if(!(kind==='self' ? i>=0 && !same(evEntry(me, i).note) : kind==='cmt' ? p && p.can.score && !same(p.comment) : kind==='d' ? !evRelease.at && !same(kpiPeriod[id]) : kind==='b' ? !evRelease.at && +v!==evBands[id] : true)) delete T[k];   // 평가 결과 탭 칸(ap · ans · ansg · ansm)은 evResPrune 이 본다
+    if(!(kind==='self' ? i>=0 && !same(evEntry(me, i).note) : kind==='cmt' ? p && p.can.score && !same(p.comment) : kind==='d' ? !evRelease.at && !same(kpiPeriod[id]) : kind==='b' ? !evRelease.at && +v!==evBands[id] : kind==='r' ? !evStarted() && +v!==evRatio[id] : true)) delete T[k];   // 평가 결과 탭 칸(ap · ans · ansg · ansm)은 evResPrune 이 본다
   }
 }
 function evLiveShow(){   // 다 받은 뒤 다시 그린다 — 평가 진행 · 평가 결과 탭 · 홈만. 글 칸에 적는 중이면 메뉴 숫자만 (다른 탭에서 적는 중인 칸 · 한글 조합을 건드리지 않게)
@@ -11452,14 +11460,14 @@ function evBoardLiveBtns(){   // 진행표 맨 위 단추 (실제 로그인): [�
   return `<button class="btn sm" onclick="evRoundSave()">마감일 저장</button>${go ? '<button class="btn sm primary" onclick="evStart()">평가 시작</button>' : ''}`;
 }
 function evBoardLiveNote(){
-  const r = EV_LIVE.round, dirty = Object.keys(EV_LIVE.typed).some(k=>/^[db]-/.test(k));
-  return (dirty ? kpiNote('바꾼 날짜 · 기준 점수는 <b>마감일 저장</b>을 눌러야 저장돼요.', 'warning') : '')
+  const r = EV_LIVE.round, dirty = Object.keys(EV_LIVE.typed).some(k=>/^[dbr]-/.test(k));
+  return (dirty ? kpiNote('바꾼 날짜 · 기준 점수 · 비율은 <b>마감일 저장</b>을 눌러야 저장돼요.', 'warning') : '')
     + (!r ? kpiNote('평가 시작일 · 단계별 마감일 · 증빙 마감일을 넣고 <b>마감일 저장</b>을 눌러 주세요. 평가 시작일이 되면 <b>평가 시작</b> 단추가 나와요.')
       : !r.started && kpiDay(0)<r.evalStart ? kpiNote(`평가 시작일(${kpiMd(r.evalStart)})부터 <b>평가 시작</b>을 누를 수 있어요. 누르는 날의 명단 · 평가자 · 확정 KPI로 이번 평가가 정해져요.`) : '');
 }
-function evRoundSave(){   // HR: 진행표의 날짜 · 기준 점수를 한 번에 (POST /api/eval/admin/round — 범위 · 차례는 서버가 다시 본다)
-  const v = k=>evTyped('d-'+k, kpiPeriod[k]) || null, b = g=>+evTyped('b-'+g, evBands[g]);
-  evLiveDo('/api/eval/admin/round', { evalStart:v('evalFrom'), selfTo:v('selfTo'), evidDue:v('evidDue'), scoreTo:v('scoreTo'), gradeTo:v('gradeTo'), ceoTo:v('ceoTo'), finalTo:v('evalTo'), bands:{ A:b('A'), B:b('B'), C:b('C') } },
+function evRoundSave(){   // HR: 진행표의 날짜 · 기준 점수 · 등급 비율을 한 번에 (POST /api/eval/admin/round — 범위 · 차례는 서버가 다시 본다. 비율은 꼭 보낸다 — 시작 뒤에는 같은 값만 통과)
+  const v = k=>evTyped('d-'+k, kpiPeriod[k]) || null, b = g=>+evTyped('b-'+g, evBands[g]), r = k=>+evTyped('r-'+k, evRatio[k]);
+  return evLiveDo('/api/eval/admin/round', { evalStart:v('evalFrom'), selfTo:v('selfTo'), evidDue:v('evidDue'), scoreTo:v('scoreTo'), gradeTo:v('gradeTo'), ceoTo:v('ceoTo'), finalTo:v('evalTo'), bands:{ A:b('A'), B:b('B'), C:b('C') }, ratio:{ SA:r('SA'), B:r('B'), D:r('D') } },
     '마감일과 기준 점수를 저장했어요.').then(j=>{ if(j && KPI_LIVE.state) kpiLiveLoad(); });   // 평가 시작일은 KPI 작성 기간 화면과 같은 칸(kpi_years.eval_start) — 그쪽 사본도 다시 읽는다
 }
 function evStart(){   // HR: 평가 시작 — 그날의 대상 · 묶음 · 평가자 · 확정 KPI를 떠 둔다 (POST /api/eval/admin/start)
@@ -11479,23 +11487,29 @@ function evSaveSelf(pid){ return evLiveDo('/api/eval/me/self', { entries:evSelfN
 function evSaveCmt(pid){ return evLiveDo(`/api/eval/people/${+pid}/edit`, { comment:evTyped('cmt-'+pid, evFind(pid).comment) }, '코멘트를 저장했어요.'); }   // 평가자 코멘트 [코멘트 저장]
 
 /* ----- 규칙 (순수 로직, evSelfCheck가 검증) ----- */
-function evRoundHalfUp(x){ return Math.floor(x + 0.5 + 1e-9); }   // 0.5 → 1 (은행가 반올림 금지)
-function evQuota(n){
-  if(n <= 4){ const upper = n>=2 ? 1 : 0; return { mode:'GROUPED', upper, lower:n-upper, capS:upper }; }
-  const q = evRoundHalfUp(n*0.1);
-  return { mode:'INDIVIDUAL', A:q, B:q, D:q, C:n-3*q, capS:q };
+function evQuota(n, extra, r=evRatio){   // 묶음 정원 — 인원 n · 등급 비율 r(S·A · B · D %) · 늘린 정원 extra { SA, B }(대표이사가 묶음마다). backend/hr_eval/domain/quota.py 와 같은 셈. 정원 합이 인원을 넘으면 null
+  const xa = extra?.SA || 0, xb = extra?.B || 0;
+  if(n <= 4){ const base = n>=2 ? 1 : 0, upper = base + xa + xb; return upper>n ? null : { mode:'GROUPED', upper, lower:n-upper, capS:base+xa }; }   // 4명 이하는 비율을 쓰지 않는다 (상위 1명, 1명 묶음은 0명) — 늘린 정원은 상위에
+  const pct = x=>Math.floor((n*x + 50)/100), A = pct(r.SA) + xa, B = pct(r.B) + xb, D = pct(r.D), C = n - A - B - D;   // 사사오입 (0.5 → 1 — 정수로 셈해 소수 오차가 없다)
+  return C<0 ? null : { mode:'INDIVIDUAL', A, B, C, D, capS:A };
 }
-function evScore(rows, bonus=0){   // rows: [{weight, grade}]
+function evQuotaText(q, extra){   // 정원 글자 — 서버 _pool_json quota 와 같은 글자 (늘린 정원이 들어간 숫자, 늘렸으면 뒤에 " · 대표이사 허용 …" — 0인 쪽은 뺀다)
+  const more = [['S·A', extra?.SA], ['B', extra?.B]].filter(([, x])=>x).map(([g, x])=>`${g} +${x}명`).join(' · ');
+  return (q.mode==='INDIVIDUAL' ? `S 최대 ${q.capS}명 · A ${q.A}명 (S만큼 줄어듦) · B ${q.B}명 · D ${q.D}명 · C 나머지` : `S 최대 ${q.capS}명 · A·B 합계 ${q.upper}명 (S만큼 줄어듦) · C·D 나머지`) + (more ? ` · 대표이사 허용 ${more}` : '');
+}
+function evQuotaWord(k){ return { div:'본부', lead:'전사 팀장', direct:'직속부서' }[evKind(k)]; }   // 등급 안내의 "… 정원"
+function evRatioText(r=evRatio){ return `S·A ${r.SA}% · B ${r.B}% · D ${r.D}% · C 나머지`; }   // 그해 등급 비율 글자 (결과 화면은 그 해 비율 — 실제 로그인은 결과 응답 ratio)
+function evScore(rows){   // rows: [{weight, grade}] — 가점은 없다 (2026-10-27)
   const base = rows.reduce((a,r)=>a + (r.grade ? (+r.weight)*EV_PCT[r.grade]/100 : 0), 0);
-  return Math.min(110, Math.round((base + (+bonus||0))*10)/10);
+  return Math.min(110, Math.round(base*10)/10);
 }
-function evValidate(roster, assign, quota, full){   // roster:[{pid,name,score}], assign:{pid:grade}. full=false면 배정 누락·미달은 검사 안 함(본부장 단계)
-  const errors = [], warnings = [], cnt = { S:0, A:0, B:0, C:0, D:0 };
+function evValidate(roster, assign, quota, full, needNote=true){   // roster:[{pid,name,score,kpi,blocked,note}], assign:{pid:grade}. full=false면 배정 누락·미달은 검사 안 함(본부장 단계). 문구 · 차례는 서버 eval_rules.check_pool 그대로 (정원 줄 → 점수 역전 줄)
+  const errors = [], warnings = [], cnt = { S:0, A:0, B:0, C:0, D:0 }, scored = r=>r.kpi!==false;   // 현장직(KPI 없음)은 총점이 없다
   roster.forEach(r=>{
     const g = assign[r.pid];
     if(!g){ if(full) errors.push(`${r.name} 님의 등급이 없습니다.`); return; }
     cnt[g]++;
-    if(r.kpi!==false && evAbove(g, evBand(r.score))) errors.push(`${r.name} 님은 총점 ${r.score}점이라 ${g}를 줄 수 없습니다. (${evBandText(g)})`);   // 점수 기준보다 높은 등급은 줄 수 없다. 현장직은 총점이 없어 제외
+    if(scored(r) && evAbove(g, evBand(r.score))) errors.push(`${r.name} 님은 총점 ${r.score}점이라 ${g}를 줄 수 없습니다. (${evBandText(g)})`);   // 점수 기준보다 높은 등급은 줄 수 없다. 현장직은 총점이 없어 제외
     if(r.blocked && 'SAB'.includes(g)) errors.push(`${r.name} 님은 연차 초과 ${EV_LEAVE_LIMIT}일 이상이라 S·A·B를 줄 수 없습니다.`);
   });
   const K = cnt.S;
@@ -11504,13 +11518,22 @@ function evValidate(roster, assign, quota, full){   // roster:[{pid,name,score}]
     const qa = quota.A - K;
     if(cnt.A > qa) errors.push(`A는 ${qa}명까지입니다${K?` (S ${K}명만큼 줄어듦)`:''}. 현재 ${cnt.A}명`);
     if(cnt.B > quota.B) errors.push(`B는 ${quota.B}명까지입니다. 현재 ${cnt.B}명`);
-    if(cnt.D > quota.D) errors.push(`D는 ${quota.D}명까지입니다. 현재 ${cnt.D}명`);
+    const forced = roster.filter(r=>assign[r.pid]==='D' && scored(r) && evBand(r.score)==='D').length, chosen = cnt.D - forced;   // 점수로 D인 사람(총점이 C 기준 이하)은 D 정원에 세지 않는다 — D 정원은 점수보다 낮춰 줄 수 있는 인원 (S7)
+    if(chosen > quota.D) errors.push(`D는 ${quota.D}명까지입니다. 현재 ${chosen}명${forced ? ` (점수로 D인 ${forced}명은 세지 않음)` : ''}`);
     if(full){ if(cnt.A < qa) warnings.push(`A가 정원보다 ${qa-cnt.A}명 적습니다.`); if(cnt.B < quota.B) warnings.push(`B가 정원보다 ${quota.B-cnt.B}명 적습니다.`); if(cnt.D < quota.D) warnings.push(`D가 정원보다 ${quota.D-cnt.D}명 적습니다.`); }
   } else {
     const up = quota.upper - K;
     if(cnt.A + cnt.B > up) errors.push(`A·B 합계는 ${up}명까지입니다. 현재 ${cnt.A+cnt.B}명`);
     if(full && cnt.A + cnt.B < up) warnings.push(`A·B가 정원보다 ${up-cnt.A-cnt.B}명 적습니다.`);
   }
+  const rated = roster.filter(r=>assign[r.pid] && scored(r)), cap = r=>{ const b = evBand(r.score); return r.blocked && evAbove(b, 'C') ? 'C' : b; };   // cap = 점수 기준과 연차 규칙 중 낮은 쪽 (evCap)
+  rated.forEach(x=>{   // 점수 역전: x보다 점수가 낮은데 더 높은 등급을 받았고 x도 그 등급을 받을 수 있었다 = x가 밀렸다 (동점 · 점수 없음은 따지지 않는다). full 과 상관없이 낸다
+    const gx = assign[x.pid], lower = rated.filter(y=>y.score < x.score && evAbove(assign[y.pid], gx) && !evAbove(assign[y.pid], cap(x)));
+    if(!lower.length) return;
+    const y = lower.reduce((m, y)=>EV_RANK.indexOf(assign[y.pid]) < EV_RANK.indexOf(assign[m.pid]) || (assign[y.pid]===assign[m.pid] && y.score > m.score) ? y : m);   // 등급이 가장 높은 사람 → 점수가 높은 사람 → 명단 앞 사람
+    const line = `${x.name} 님(총점 ${x.score}점)이 총점이 더 낮은 ${y.name} 님(${y.score}점)보다 등급이 낮습니다.`;
+    if(needNote && !x.note) errors.push(line + ' 코멘트에 이유를 적어 주세요.'); else warnings.push(line);
+  });
   return { errors, warnings, cnt };
 }
 function evCanUpload(p, role, today){ if(AUTH.live) return p.can.upload; return p.key===role && kpiPeriod.evalFrom<=today && today<=kpiPeriod.evidDue && (p.stage==='SELF' || p.stage==='SCORE'); }   // 본인만, 평가 시작 ~ 증빙 마감일, 평가자가 점수를 내기 전까지
@@ -11537,7 +11560,7 @@ function evCanAssign(p, role=kpiRole){   // 지금 이 사람의 등급과 점�
   const k = evPool(p);
   return p.stage===evAssignStage(k) && (k==='div' ? role==='head' : evCeoActs(p, role));
 }
-function evPoolCheck(k){ if(AUTH.live){ const x = evLivePool(k); return x ? { errors:x.errors, warnings:x.warnings, cnt:x.counts } : { errors:[], warnings:[], cnt:{ S:0, A:0, B:0, C:0, D:0 } }; } const list = evPoolList(k); return evValidate(evRoster(k), Object.fromEntries(list.filter(p=>p.grade).map(p=>[p.pid,p.grade])), evQuota(list.length), true); }   // 묶음 전원 검사: 등급 누락·정원 초과
+function evPoolCheck(k){ if(AUTH.live){ const x = evLivePool(k); return x ? { errors:x.errors, warnings:x.warnings, cnt:x.counts } : { errors:[], warnings:[], cnt:{ S:0, A:0, B:0, C:0, D:0 } }; } const list = evPoolList(k); return evValidate(evRoster(k), Object.fromEntries(list.filter(p=>p.grade).map(p=>[p.pid,p.grade])), evQuota(list.length, evPoolLog[k]?.extra), true, evKind(k)!=='lead'); }   // 묶음 전원 검사: 등급 누락 · 정원 초과 · 점수 역전 (전사 팀장 묶음은 윗사람 코멘트가 없어 경고만)
 function evPoolState(k){   // 묶음이 어디까지 왔나: WAIT 아직 진행 중 / FIX 대표이사가 등급을 정하거나 비율을 맞춰야 함 / CEO 대표이사 확인 대기 / HR 확정 대기 / DONE 확정
   if(AUTH.live) return evLivePool(k)?.state || 'WAIT';
   const list = evPoolList(k), ready = k==='direct' ? 'GRADE' : 'CEO';   // 직속부서 팀원은 대표이사가 등급을 정하면서 바로 확인한다
@@ -11587,9 +11610,9 @@ function evSelfCheck(){   // 브라우저 콘솔에서 evSelfCheck() 실행
   for(let n=0; n<60; n++){ const q = evQuota(n); ok((q.mode==='GROUPED' ? q.upper+q.lower : q.A+q.B+q.C+q.D)===n && (q.C===undefined || q.C>=0), '정원 합계 = N ('+n+')'); }
   ok(evQuota(4).upper===1 && evQuota(1).upper===0 && evQuota(4).mode==='GROUPED', 'N≤4 그룹 정원');
   const rows = [{weight:40,grade:'S'},{weight:30,grade:'A'},{weight:30,grade:'B'}];
-  ok(evScore(rows)===101 && evScore(rows, 20)===110 && evScore([{weight:100,grade:null}])===0, '총점 = 가중치×비율 + 가점, 상한 110');
+  ok(evScore(rows)===101 && evScore(rows, 20)===101 && evScore([{weight:100,grade:null}])===0, '총점 = 가중치×비율 (가점 없음 — 인사담당자 2026-10-27), 상한 110');
   const R = [1,2,3,4,5,6].map((pid,i)=>({ pid, name:'p'+pid, score:[101,99,96,92,88,80][i] })), q6 = evQuota(6);
-  ok(!evValidate(R, {1:'S',3:'B',6:'D',2:'C',4:'C',5:'C'}, q6, true).errors.length, 'S 1명이면 A 0명으로 통과');
+  ok(!evValidate(R, {1:'S',3:'B',6:'D',2:'C',4:'C',5:'C'}, q6, true, false).errors.length, 'S 1명이면 A 0명으로 통과 (p2가 p3에게 밀린 줄은 코멘트를 안 따지면 경고)');
   ok(evValidate(R, {1:'S',2:'A'}, q6, false).errors.length===1, 'S가 있는데 A까지 주면 초과');
   ok(evValidate(R, {2:'S'}, q6, false).errors.some(e=>e.includes('100점')), '총점 100 이하 S 불가');
   ok(evValidate(R, {1:'S',2:'S'}, q6, false).errors.some(e=>e.includes('최대')), 'S 상한');
@@ -11632,6 +11655,68 @@ function evSelfCheck(){   // 브라우저 콘솔에서 evSelfCheck() 실행
   ok(hid({ stage:'GRADE', evaluator:2 }, 'lead') && !hid({ stage:'SCORE', evaluator:2 }, 'lead') && !hid({ stage:'GRADE', evaluator:2 }, 'head') && !hid({ stage:'GRADE', evaluator:2 }, 'hr') && hid({ title:'팀장', stage:'HR', evaluator:'head' }, 'head') && !hid({ title:'팀장', stage:'HR', evaluator:'head' }, 'ceo'), '공개 전: 평가자는 자기가 낸 것만 본다 (등급을 정하는 사람·대표이사·HR은 본다)');
   ok(evCanAssign(mkp('대리', EV_DIVISION, 'GRADE'), 'head') && !evCanAssign(mkp('대리', EV_DIVISION, 'GRADE'), 'ceo') && !evCanAssign(mkp('대리', EV_DIVISION, 'CEO'), 'head') && !evCanAssign(mkp('대리', EV_DIVISION, 'CEO'), 'ceo'), '본부 팀원: 본부장이 배정하는 동안만 고친다. 대표이사는 고치지 않는다(돌려보낸다)');
   ok(evCanAssign(mkp('팀장', EV_DIVISION, 'CEO'), 'ceo') && !evCanAssign(mkp('팀장', EV_DIVISION, 'CEO'), 'head') && evCanAssign(mkp('주임', EV_DIRECT, 'GRADE'), 'ceo') && !evCanAssign(mkp('주임', EV_DIRECT, 'HR'), 'ceo'), '팀장·직속부서 팀원: 대표이사가 확인하기 전까지 고친다');
+  // 2026-10-27 평가 규칙 손질 — 등급 비율(HR) · 늘린 정원 · 점수 역전 · 점수로 D인 사람: backend/hr_eval/domain/quota.py · eval_rules.check_pool 과 같은 숫자 · 같은 문구 (hr_eval/selfcheck.py 의 같은 경우)
+  const rk = { ...evRatio }, pk2 = { ...kpiPeriod }, keep2 = { role:kpiRole, msg:kpiMsg };
+  try {
+    Object.assign(evRatio, { SA:10, B:10, D:10 });
+    const Q = (n, e)=>{ const q = evQuota(n, e); return q && (q.mode==='GROUPED' ? [q.upper, q.lower, q.capS] : [q.A, q.B, q.C, q.D, q.capS]).join(); };
+    for(let n=0; n<=60; n++){ const g = n>=2 ? 1 : 0, q = Math.floor(n*0.1 + 0.5 + 1e-9); ok(Q(n)===(n<=4 ? [g, n-g, g] : [q, q, n-3*q, q, q]).join(), `비율 기본값(10 · 10 · 10)은 지금 규칙과 같다 (${n}명)`); }
+    ok(Q(10)==='1,1,7,1,1', '10명: S·A 1 · B 1 · C 7 · D 1');
+    Object.assign(evRatio, { SA:20, B:10, D:0 }); ok(Q(10)==='2,1,7,0,2', '비율 20 · 10 · 0 → 10명 S·A 2 · B 1 · C 7 · D 0 · S 최대 2');
+    Object.assign(evRatio, { SA:25, B:15, D:10 }); ok(Q(20)==='5,3,10,2,5', '비율 25 · 15 · 10 → 20명 S·A 5 · B 3 · C 10 · D 2');
+    for(const [a, b, d] of [[70,0,0], [35,35,0], [30,30,10], [25,25,20], [0,0,70]]){ Object.assign(evRatio, { SA:a, B:b, D:d });
+      for(let n=5; n<=200; n++){ const q = evQuota(n); ok(q.C>=0 && q.A+q.B+q.C+q.D===n, `비율 합 70이면 정원 합이 인원을 넘지 않는다 (${a} · ${b} · ${d} · ${n}명)`); } }
+    Object.assign(evRatio, { SA:10, B:10, D:10 });
+    ok(Q(10, { SA:1, B:0 })==='2,1,6,1,2' && Q(10, { SA:0, B:2 })==='1,3,5,1,1' && Q(4, { SA:1, B:0 })==='2,2,2' && Q(1, { SA:1, B:0 })==='1,0,1' && Q(10, null)===Q(10), '늘린 정원은 S·A · B(4명 이하는 위쪽)에 더하고 S 상한도 오른다');
+    ok(evQuota(5, { SA:5, B:5 })===null && evQuota(3, { SA:2, B:1 })===null, '늘린 정원이 인원을 넘으면 null');
+    const T = (n, e)=>evQuotaText(evQuota(n, e), e);   // 서버 _pool_json quota (backend/auth_check.py 의 글자 그대로)
+    ok(T(4)==='S 최대 1명 · A·B 합계 1명 (S만큼 줄어듦) · C·D 나머지' && T(10)==='S 최대 1명 · A 1명 (S만큼 줄어듦) · B 1명 · D 1명 · C 나머지'
+      && T(4, { SA:1, B:0 })==='S 최대 2명 · A·B 합계 2명 (S만큼 줄어듦) · C·D 나머지 · 대표이사 허용 S·A +1명' && T(3, { SA:0, B:1 })==='S 최대 1명 · A·B 합계 2명 (S만큼 줄어듦) · C·D 나머지 · 대표이사 허용 B +1명', '정원 글자: 두 모드 · 늘린 정원 (0인 쪽은 뺀다)');
+    Object.assign(evRatio, { SA:20, B:10, D:10 });
+    ok(T(10)==='S 최대 2명 · A 2명 (S만큼 줄어듦) · B 1명 · D 1명 · C 나머지' && T(10, { SA:1, B:1 })==='S 최대 3명 · A 3명 (S만큼 줄어듦) · B 2명 · D 1명 · C 나머지 · 대표이사 허용 S·A +1명 · B +1명'
+      && T(10, { SA:0, B:1 })==='S 최대 2명 · A 2명 (S만큼 줄어듦) · B 2명 · D 1명 · C 나머지 · 대표이사 허용 B +1명' && evRatioText()==='S·A 20% · B 10% · D 10% · C 나머지', '정원 글자: 비율 20 · 10 · 10 · 늘린 정원 · 올해 비율 글자');
+    // 정원 검사: 받은 정원으로 · 점수 역전 (selfcheck 점수_역전_* · 동점_점수없음_연차초과는_역전이_아니다 · 정원_검사가_비율과_늘린_정원을_쓴다)
+    const M = (pid, name, score, o)=>({ pid, name, score, kpi:score!=null, blocked:false, note:false, ...o });
+    const R10 = Array.from({ length:10 }, (_, i)=>M(i+1, 'p'+(i+1), 94-i)), a10 = Object.fromEntries(R10.map((r, i)=>[r.pid, i<2 ? 'A' : 'C']));
+    ok(!evValidate(R10, a10, evQuota(10), false).errors.length, '비율 S·A 20% → 10명에 A 2명 통과');
+    Object.assign(evRatio, { SA:10, B:10, D:10 });
+    ok(evValidate(R10, a10, evQuota(10), false).errors.join()==='A는 1명까지입니다. 현재 2명' && !evValidate(R10, a10, evQuota(10, { SA:1, B:0 }), false).errors.length, '기본 비율이면 A 1명까지 · 늘려 주면 통과 (정원은 받은 quota)');
+    const g6 = [M(1, '가', 95), M(2, '나', 91), ...[3, 4, 5, 6].map(i=>M(i, 'p'+i, 90-i))], a6 = { 1:'C', 2:'A', 3:'C', 4:'C', 5:'C', 6:'C' }, L6 = '가 님(총점 95점)이 총점이 더 낮은 나 님(91점)보다 등급이 낮습니다.';
+    const v6 = (rows, nn)=>{ const v = evValidate(rows, a6, evQuota(rows.length), false, nn); return v.errors.join('|') + '/' + v.warnings.join('|'); };
+    ok(v6(g6)===L6+' 코멘트에 이유를 적어 주세요./' && v6([{ ...g6[0], note:true }, ...g6.slice(1)])==='/'+L6 && v6(g6, false)==='/'+L6, '점수 역전: 코멘트가 없으면 오류, 있거나 코멘트를 따지지 않으면 경고 (문구 그대로)');
+    const g2 = [g6[0], g6[1], M(7, '다', 90.5), ...g6.slice(3)], a2 = { 1:'C', 2:'A', 7:'A', 4:'C', 5:'C', 6:'C' }, e2 = evValidate(g2, a2, evQuota(6), false), f2 = evValidate(g2, a2, evQuota(6), true);
+    ok(e2.errors.length===2 && e2.errors[0]==='A는 1명까지입니다. 현재 2명' && e2.errors[1].startsWith('가 님(총점 95점)이 총점이 더 낮은 나 님(91점)') && f2.errors.at(-1).endsWith('코멘트에 이유를 적어 주세요.') && f2.warnings.slice(0, 2).join()==='B가 정원보다 1명 적습니다.,D가 정원보다 1명 적습니다.', '역전 줄은 정원 줄 뒤 · full 이어도 마지막');
+    const Wv = (list, a)=>evValidate(list, a, evQuota(list.length), false, false).warnings.join('|'), P = (i, s)=>M(i, 'p'+i, s);
+    ok(Wv([P(1, 97), P(2, 94), P(3, 91), P(4, 90.5), P(5, 85), P(6, 80)], { 1:'C', 2:'C', 3:'B', 4:'A', 5:'C', 6:'C' })===[1, 2, 3].map(i=>`p${i} 님(총점 ${[97, 94, 91][i-1]}점)이 총점이 더 낮은 p4 님(90.5점)보다 등급이 낮습니다.`).join('|')
+      && Wv([P(1, 97), P(2, 91), P(3, 92)], { 1:'C', 2:'B', 3:'B' })==='p1 님(총점 97점)이 총점이 더 낮은 p3 님(92점)보다 등급이 낮습니다.' && Wv([P(1, 97), P(2, 92), P(3, 92)], { 1:'C', 2:'B', 3:'B' })==='p1 님(총점 97점)이 총점이 더 낮은 p2 님(92점)보다 등급이 낮습니다.', '역전 줄: 밀린 사람 차례로, 부르는 사람은 등급이 가장 높은 → 점수가 높은 → 명단 앞 사람');
+    const E = (list, a)=>{ const v = evValidate(list, a, evQuota(list.length), false); return v.errors.length + v.warnings.length; };
+    ok(!E([M(1, '가', 92), M(2, '나', 92)], { 1:'C', 2:'A' }) && !E([M(1, '가', null), M(2, '나', 91)], { 1:'C', 2:'A' }) && !E([M(1, '가', 91), M(2, '나', null)], { 1:'C', 2:'A' }) && !E([M(1, '가', 95, { blocked:true }), M(2, '나', 91)], { 1:'C', 2:'B' }), '동점 · 점수 없음(KPI 없음) · 연차 초과로 그 등급을 못 받는 사람은 역전이 아니다');
+    // 점수로 D인 사람은 D 정원에 세지 않는다 (S7 — selfcheck 점수로_D인_사람은_D_정원에_세지_않는다). 10명 기본 비율 = S·A 1 · B 1 · D 1 · C 7
+    const Dv = d=>{ const list = [M(1, 'p1', 95), M(2, 'p2', 85), ...d.map((s, i)=>M(3+i, 'd'+i, s)), ...Array.from({ length:8-d.length }, (_, i)=>M(20+i, 'c'+i, 75))];
+      return evValidate(list, Object.fromEntries(list.map(r=>[r.pid, r.pid===1 ? 'A' : r.pid===2 ? 'B' : r.pid<20 ? 'D' : 'C'])), evQuota(10), true, false); }, De = d=>Dv(d).errors.join('|');
+    const d1 = Dv([65, 68]), d2 = Dv([85, 65, 68]);
+    ok(!d1.errors.length && !d1.warnings.length && d1.cnt.D===2 && !d2.errors.length && !d2.warnings.some(w=>w.startsWith('D가')) && d2.cnt.D===3, '점수로 D인 사람은 D 정원 밖 · 미달 경고 · 등급별 인원은 모든 D');
+    ok(De([85, 88, 65])==='D는 1명까지입니다. 현재 2명 (점수로 D인 1명은 세지 않음)' && De([85, 88])==='D는 1명까지입니다. 현재 2명' && De([null, null])==='D는 1명까지입니다. 현재 2명' && De([null, 65])===''
+      && De([null, null, 65])==='D는 1명까지입니다. 현재 2명 (점수로 D인 1명은 세지 않음)' && De([70, 70])==='' && De([70.1, 70.2])==='D는 1명까지입니다. 현재 2명', 'D 초과 문구 · KPI 없는 사람 D는 센다 · 점수 기준은 초과(70점은 D)');
+    Object.assign(evRatio, { SA:10, B:10, D:0 }); ok(De([65])==='' && De([85])==='D는 0명까지입니다. 현재 1명', 'D 비율 0 — 점수로 D인 사람만 D를 받는다');
+    // 진행표 등급 비율 칸 (시연 — HR이 평가 시작 전까지 바꾼다. 시안 뉴디자인/등급 비율 HR 설정 - 시안 (2026-10-27).png)
+    kpiPeriod.evalFrom = kpiDay(3); Object.assign(evRatio, { SA:20, B:10, D:10 });
+    const board = ()=>{ const t = document.createElement('template'); t.innerHTML = evBoard(); return t.content.querySelector('#evBoard'); }, b1 = board(), inp = [...b1.querySelectorAll('input[aria-label$="비율"]')];
+    ok(inp.length===3 && inp.map(x=>x.getAttribute('aria-label')+'='+x.value).join()==='S·A 비율=20,B 비율=10,D 비율=10' && inp.every(x=>!x.disabled) && b1.textContent.includes('C 나머지')
+      && b1.textContent.includes('등급별 비율 — 묶음 인원의 몇 %까지 줄 수 있음 (반올림 · C는 나머지 · 5명 이상 묶음)') && b1.textContent.includes('예: 묶음 10명 → S·A 2명 · B 1명 · D 1명 · C 6명 / 20명 → S·A 4명 · B 2명 · D 2명 · C 12명')
+      && b1.textContent.includes('S는 S·A 정원 안에서 줘요 (S를 주면 A가 줄어요) · 세 칸 합은 70%까지 · 4명 이하 묶음은 S·A·B 합쳐 1명 · 평가를 시작하면 바꿀 수 없어요'), '진행표: 비율 칸 셋 · C 나머지 · 예시 줄 · 안내 (시작 전)');
+    evSetRatio('D', '45'); ok(evRatio.D===10 && kpiMsg?.type==='danger' && kpiMsg.msg==='등급 비율은 세 칸 합이 70%를 넘을 수 없습니다.', '시연: 세 칸 합이 70을 넘으면 저장하지 않는다');
+    evSetRatio('D', '5'); ok(evRatio.D===5 && board().textContent.includes('예: 묶음 10명 → S·A 2명 · B 1명 · D 1명 · C 6명 / 20명 → S·A 4명 · B 2명 · D 1명 · C 13명'), '시연: 바꾸면 바로 (예시 줄도)');
+    kpiPeriod.evalFrom = kpiDay(-1);
+    ok([...board().querySelectorAll('input[aria-label$="비율"]')].every(x=>x.disabled && x.title==='평가가 시작되어 바꿀 수 없어요'), '평가를 시작하면 비율 칸이 잠긴다');
+    // 등급 안내 (S4): 평가자 점수 화면 · 자기평가 화면
+    Object.assign(evRatio, { SA:10, B:10, D:10 });
+    const RT = '(올해 S·A 10% · B 10% · D 10% · C 나머지)', panel = (role, pid)=>{ kpiRole = role; const p = evFind(pid); return evIsLine(p) ? evLinePanel(p) : evScorePanel(p); };
+    ok(panel('lead', 4).includes(`최종 등급은 본부장이 본부 정원${RT} 안에서 정해요. 등급 의견은 점수로 받을 수 있는 가장 높은 등급이에요.`) && panel('lead', 7).includes(`최종 등급은 본부장이 본부 정원${RT} 안에서 정해요.`)
+      && panel('ceo', 9).includes(`최종 등급은 대표이사가 전사 팀장 정원${RT} 안에서 정해요.`) && panel('hrl', 11).includes(`최종 등급은 대표이사가 직속부서 정원${RT} 안에서 정해요.`) && !panel('head', 6).includes('안에서 정해요'), '평가자 점수 화면: 점수를 내는 동안 등급을 정하는 윗사람 · 묶음 정원 · 올해 비율 (KPI 없는 분도 같은 줄)');
+    const selfLine = w=>`등급은 점수 기준과 ${w} 정원${RT}으로 정해요. 점수 기준(S 100 · A ${evBands.A} · B ${evBands.B} · C ${evBands.C}점 초과)은 받을 수 있는 가장 높은 등급이에요.`;
+    ok(evSelfCard(evFind(1)).includes(selfLine('본부')) && evSelfCard(evFind(2)).includes(selfLine('전사 팀장')) && evSelfCard(evFind(11)).includes(selfLine('직속부서')), '자기평가 화면: 등급은 점수 기준과 묶음 정원으로 (올해 비율)');
+  } finally { Object.assign(evRatio, rk); Object.assign(kpiPeriod, pk2); kpiRole = keep2.role; kpiMsg = keep2.msg; }
   return 'evSelfCheck 통과';
 }
 
@@ -11675,7 +11760,7 @@ const evPeople = [   // 평가받는 사람만 — 본부장·대표이사는 �
       ['양산태','솔루션 제조팀','솔루션사업본부','채솔루 본부장','BBB','C'], ['구매린','SCM팀','솔루션사업본부','채솔루 본부장','ABB','C']]
     .map(([name, team, div, by, marks, proposed], i)=>({ pid:13+i, key:null, name, title:'팀장', team, div, ...(by==='head' ? { evaluator:'head' } : { evaluator:null, rater:by }),
       stage:'CEO', grade:proposed, proposed, comment:'부서 목표를 책임 있게 이끌었습니다.', demoKpi:evPoolKpi(team, 0), entries:[...marks].map(g=>['시연 실적', g, [], g]) })),
-].map(p=>({ comment:'', headComment:'', bonus:0, bonusReason:'', grade:null, proposed:null, subScore:null, subMarks:null, editSeen:'', proxy:'', out:null, noSelf:false, kpi:true, late:0, leaveOver:0, line:'', div:EV_DIVISION, ...p,
+].map(p=>({ comment:'', headComment:'', grade:null, proposed:null, subScore:null, subMarks:null, editSeen:'', proxy:'', out:null, noSelf:false, kpi:true, late:0, leaveOver:0, line:'', div:EV_DIVISION, ...p,
   ev:(p.entries||[]).map(([note, selfGrade, files, grade])=>({ note, selfGrade, grade:grade||null, files:files.map(name=>({ name, demo:true })) })) }));
 function evFind(pid){ return evPeople.find(p=>p.pid===pid); }
 msLinkEv(orgMembers, evPeople);   // 조직도 명단의 KPI 작성 칸을 평가 명단과 맞춘다 (구성원 설정)
@@ -11696,9 +11781,11 @@ function evKpi(p){   // 목표설정 확정본이 있으면 그것을 실시간�
 }
 function evEntry(p, i){ return p.ev[i] || (p.ev[i] = { note:'', selfGrade:null, grade:null, files:[] }); }
 function evRows(p){ return evKpi(p).map((k,i)=>({ weight:k.weight, grade:evEntry(p,i).grade })); }
-function evTotal(p){ return AUTH.live ? (p.total ?? 0) : evScore(evRows(p), p.bonus); }   // 실제 로그인은 서버 총점 (Decimal 사사오입 — 화면이 다시 셈하지 않는다)
+function evTotal(p){ return AUTH.live ? (p.total ?? 0) : evScore(evRows(p)); }   // 실제 로그인은 서버 총점 (Decimal 사사오입 — 화면이 다시 셈하지 않는다)
 function evTotalText(p){ return AUTH.live && p.total==null ? '—' : evTotal(p).toFixed(1); }   // 그리는 총점 — 서버 줄에 총점이 없으면(본인 줄 · KPI 없는 분) —
-function evRoster(k){ return evPoolList(k).map(p=>({ pid:p.pid, name:p.name, score:evTotal(p), kpi:!evIsLine(p), blocked:evLeaveBlocked(p) })); }
+function evRoster(k){ return evPoolList(k).map(p=>({ pid:p.pid, name:p.name, score:evTotal(p), kpi:!evIsLine(p), blocked:evLeaveBlocked(p), note:!!p.headComment.trim() })); }   // note = 윗사람 코멘트가 있나 (점수 역전의 이유)
+function evGradeRule(p, r=evRatio){ return `등급은 점수 기준과 ${evQuotaWord(evPool(p))} 정원(올해 ${evRatioText(r)})으로 정해요. 점수 기준(S 100 · A ${evBands.A} · B ${evBands.B} · C ${evBands.C}점 초과)은 받을 수 있는 가장 높은 등급이에요.`; }   // 직원 등급 안내 (자기평가 · 결과 화면 — S4)
+function evQuotaNote(p){ return `<div class="list-sub" style="margin-top:8px;">최종 등급은 ${evUpper(p)}${kpiGa(evUpper(p))} ${evQuotaWord(evPool(p))} 정원(올해 ${evRatioText()}) 안에서 정해요. 등급 의견은 점수로 받을 수 있는 가장 높은 등급이에요.</div>`; }   // 평가자 점수 화면 — 점수를 내는 동안 (S4)
 function evFileCount(p){ return evKpi(p).reduce((a,_,i)=>a + evEntry(p,i).files.length, 0); }
 
 /* ----- 화면 조각 ----- */
@@ -11739,6 +11826,7 @@ function evSelfCard(p){
     <div class="card-title"><span>나의 ${evYear()}년 자기평가</span>${evStageBadge(p)}</div>${evSteps(p)}
     ${!evStarted() ? kpiNote(`아직 평가 기간이 아닙니다. (${kpiPeriod.evalFrom}부터)`) : p.stage!=='SELF' ? '' : !evSelfOpen() ? kpiNote(`자기평가 마감일(${kpiPeriod.selfTo})이 지났습니다. HR 담당자에게 문의해 주세요.`, 'danger') : kpiNote(`자기평가 마감일은 <b>${kpiPeriod.selfTo}</b>입니다. 제출한 뒤에는 고칠 수 없습니다.`)}
     <div class="list-sub" style="margin-bottom:8px;">증빙자료는 선택이며 <b>${kpiPeriod.evidDue}</b>까지 올리고 고칠 수 있습니다 (자기평가를 낸 뒤에도, 평가자가 점수를 내기 전까지). ${L ? '제출하기 전에는 본인과 HR만, 제출한 뒤에는 평가자 · 본부장 · 대표이사도 볼 수 있어요.' : '평가자·본부장·HR만 볼 수 있습니다.'} 연차를 ${EV_LEAVE_LIMIT}일 이상 초과 사용하면 S·A·B 등급을 받을 수 없습니다${p.leaveOver ? ` (지금 연차 초과 ${p.leaveOver}일)` : ''}.</div>
+    <div class="list-sub" style="margin-bottom:8px;">${evGradeRule(p)}</div>
     <div class="ct-tbl"><table class="ev-table"><thead><tr><th style="width:44%;">확정 KPI · 달성 기준</th><th>실적 · 스스로 매긴 등급</th><th style="width:24%;">증빙자료</th></tr></thead><tbody>${rows}</tbody></table></div>
     ${editable ? `<div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; margin-top:12px;"><span class="list-sub" style="margin:0;">S 110% · A 100% · B 90% · C 80% · D 70%</span>${L ? `<span style="display:flex; gap:8px;"><button class="btn" onclick="evSaveSelf(${p.pid})">임시 저장</button><button class="btn primary" onclick="evSubmitSelf(${p.pid})">자기평가 제출</button></span>` : `<button class="btn primary" onclick="evSubmitSelf(${p.pid})">자기평가 제출</button>`}</div>` : ''}
   </div>`;
@@ -11759,12 +11847,12 @@ function evScorePanel(p){
     <div class="list-sub" style="margin-bottom:6px;">평가자 ${escapeHtml(evEvaluatorName(p))} · 점선 = 본인 자기평가, 초록 = 평가자 선택 · 증빙은 눌러서 내려받기${p.noSelf ? ' · <b>자기평가 없이 진행 (HR 처리)</b>' : ''}${!mine && p.proxy ? ` · <b>대리 입력 ${escapeHtml(p.proxy)}</b>` : ''}</div>
     ${mine ? kpiNote('내가 낸 평가입니다. 그 뒤에 바뀐 내용과 최종 등급은 HR이 결과를 공개한 뒤에 보입니다.') : ''}
     <div class="ct-tbl"><table class="ev-table"><thead><tr><th style="width:40%;">KPI · 달성 기준</th><th>실적 · 달성 등급</th><th style="width:20%;">증빙자료</th><th class="num">점수</th></tr></thead>
-      <tbody>${rows}<tr><td colspan="3"><b>총점</b> (가중치 × 달성 비율${!mine && p.bonus?` + 가점 ${p.bonus}`:''}) · 이 점수로 받을 수 있는 가장 높은 등급 <b>${L ? p.cap : evBand(total)}</b></td><td class="num"><b class="ev-total">${mine || !L ? total.toFixed(1) : evTotalText(p)}</b></td></tr></tbody></table></div>
+      <tbody>${rows}<tr><td colspan="3"><b>총점</b> (가중치 × 달성 비율) · 이 점수로 받을 수 있는 가장 높은 등급 <b>${L ? p.cap : evBand(total)}</b></td><td class="num"><b class="ev-total">${mine || !L ? total.toFixed(1) : evTotalText(p)}</b></td></tr></tbody></table></div>${scoring ? evQuotaNote(p) : ''}
     <div class="field" style="margin-top:10px;"><label>${label}</label><div>${mine ? `<b class="ev-final">${p.proposed||'—'}</b>` : evPickBtns(p, editable)}</div></div>
     <div class="field" style="margin-top:10px;"><label>평가자 코멘트 (직원에게 공개 · 필수)</label>${scoring ? `<textarea rows="3" oninput="${L ? `evType('cmt-${p.pid}',this.value)` : `evFind(${p.pid}).comment=this.value`}" placeholder="잘한 점과 다음 해에 기대하는 점">${escapeHtml(L ? evTyped('cmt-'+p.pid, p.comment) : p.comment)}</textarea>` : `<div class="placeholder-note" style="margin:0;">${escapeHtml(p.comment)||'—'}</div>`}</div>
-    ${!mine && (p.headComment || p.bonusReason) ? `<div class="list-sub" style="margin-top:6px;">${p.bonus?`가점 +${p.bonus} (${escapeHtml(p.bonusReason)}) · `:''}${p.headComment?`${evUpper(p)} 코멘트: ${escapeHtml(p.headComment)}`:''}</div>` : ''}
-    ${scoring ? `<div style="text-align:right; margin-top:10px;">${L ? `<button class="btn" onclick="evSaveCmt(${p.pid})">코멘트 저장</button> ` : ''}${lead ? `<button class="btn" onclick="evBonus(${p.pid})">가점</button> ` : ''}<button class="btn primary" onclick="evSubmitScore(${p.pid})">${lead ? '점수·등급 제출 (대표이사로)' : `점수·등급 의견 제출 (${evUpper(p)}${evUpper(p)==='본부장' ? '으로' : '로'})`}</button></div>`
-      : editable ? `<div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; margin-top:10px;"><span class="list-sub" style="margin:0;">고친 점수와 등급은 바로 반영됩니다. 등급은 고친 점수의 기준 안에서만 줄 수 있습니다.</span>${lead ? `<button class="btn sm" onclick="evBonus(${p.pid})">가점</button>` : ''}</div>` : ''}
+    ${!mine && p.headComment ? `<div class="list-sub" style="margin-top:6px;">${evUpper(p)} 코멘트: ${escapeHtml(p.headComment)}</div>` : ''}
+    ${scoring ? `<div style="text-align:right; margin-top:10px;">${L ? `<button class="btn" onclick="evSaveCmt(${p.pid})">코멘트 저장</button> ` : ''}<button class="btn primary" onclick="evSubmitScore(${p.pid})">${lead ? '점수·등급 제출 (대표이사로)' : `점수·등급 의견 제출 (${evUpper(p)}${evUpper(p)==='본부장' ? '으로' : '로'})`}</button></div>`
+      : editable ? `<div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; margin-top:10px;"><span class="list-sub" style="margin:0;">고친 점수와 등급은 바로 반영됩니다. 등급은 고친 점수의 기준 안에서만 줄 수 있습니다.</span></div>` : ''}
   </div>`;
 }
 function evEditLine(p){   // 내가 평가한 사람을 윗사람이 고쳤을 때. 결과 공개 전에는 고쳤다는 사실만, 공개 뒤에 무엇이 바뀌었는지 보인다
@@ -11790,20 +11878,20 @@ function evPickBtns(p, can){   // 등급 고르기. 점선 = 평가자가 넣은
 }
 function evCounts(cnt){ return ['S','A','B','C','D'].map(g=>`<span class="ev-count">${g} <b>${cnt[g]}</b></span>`).join(''); }
 function evGradeTable(k, mode){   // 묶음 한 개의 명단 표. mode: 'head' 본부장 배정 / 'ceo' 대표이사 확인 / 'hr' HR 확정(보기만). { html, v, waiting }
-  const list = evPoolList(k), quota = evQuota(list.length), stage = evAssignStage(k), kind = evKind(k);
+  const list = evPoolList(k), extra = AUTH.live ? evLivePool(k)?.extra : evPoolLog[k]?.extra, quota = evQuota(list.length, extra), stage = evAssignStage(k), kind = evKind(k);   // extra = 대표이사가 늘린 정원 (묶음마다)
   const rows = list.slice().sort((a,b)=>evTotal(b)-evTotal(a)).map(p=>{
     const at = evAt(p, stage), can = mode!=='hr' && evStarted() && evCanAssign(p), open = evOpen===('g'+p.pid);
     const gradeCell = at===0 ? (evIsLine(p) ? evLineGradeBtns(p, can, 'evAssign') : evPickBtns(p, can))
       : (at>0 && p.grade ? `<b class="ev-final">${p.grade}</b>` : '<span class="list-sub" style="margin:0;">평가 대기</span>');
     const sub = [escapeHtml(p.team||'본부 직속'), evIsLine(p) ? `${AUTH.live ? '등급 평가' : '현장직'} · ${evAttendance(p)}` : `증빙 ${evFileCount(p)}건${evLeaveNote(p)}`, at>=0 && p.proposed && `${escapeHtml(evEvaluatorName(p))} 의견 ${p.proposed}`, p.proxy && `대리 입력 ${escapeHtml(p.proxy)}`].filter(Boolean).join(' · ');
     return `<tr><td>${escapeHtml(p.name)} ${escapeHtml(p.title)}<div class="list-sub">${sub}</div></td><td>${evStageBadge(p)}</td>
-      <td class="num">${evIsLine(p) ? `<span class="list-sub" style="margin:0;">${AUTH.live ? '등급 평가' : '팀장 평가'}</span>` : evTotalText(p)}${p.bonus?`<div class="list-sub">가점 +${p.bonus}</div>`:''}</td><td>${gradeCell}</td>
-      <td style="white-space:nowrap;">${p.stage!=='SELF' ? `<button class="btn sm" onclick="evOpen=${open?'null':`'g${p.pid}'`}; kpiFlash(null)">${open?'닫기':'상세'}</button> ` : ''}${can && kind!=='lead' ? `<button class="btn sm" onclick="evBonus(${p.pid})">가점·코멘트</button>` : ''}</td></tr>
+      <td class="num">${evIsLine(p) ? `<span class="list-sub" style="margin:0;">${AUTH.live ? '등급 평가' : '팀장 평가'}</span>` : evTotalText(p)}</td><td>${gradeCell}</td>
+      <td style="white-space:nowrap;">${p.stage!=='SELF' ? `<button class="btn sm" onclick="evOpen=${open?'null':`'g${p.pid}'`}; kpiFlash(null)">${open?'닫기':'상세'}</button> ` : ''}${can && kind!=='lead' ? `<button class="btn sm" onclick="evHeadAsk(${p.pid})">코멘트</button>` : ''}</td></tr>
       ${open ? `<tr><td colspan="5" style="padding:0;">${evIsLine(p) ? evLinePanel(p) : evScorePanel(p)}</td></tr>` : ''}`;
   }).join('');
   const waiting = list.filter(p=>evAt(p, stage)<0).length;
-  const v = AUTH.live ? evPoolCheck(k) : evValidate(evRoster(k), Object.fromEntries(list.filter(p=>p.grade && evAt(p, stage)>=0).map(p=>[p.pid, p.grade])), quota, !waiting);   // 다 도착하기 전에는 빠진 등급을 따지지 않는다
-  const qText = quota.mode==='INDIVIDUAL' ? `S 최대 ${quota.capS}명 · A ${quota.A}명 (S만큼 줄어듦) · B ${quota.B}명 · D ${quota.D}명 · C 나머지` : `S 최대 ${quota.capS}명 · A·B 합계 ${quota.upper}명 (S만큼 줄어듦) · C·D 나머지`;
+  const v = AUTH.live ? evPoolCheck(k) : evValidate(evRoster(k), Object.fromEntries(list.filter(p=>p.grade && evAt(p, stage)>=0).map(p=>[p.pid, p.grade])), quota, !waiting, kind!=='lead');   // 다 도착하기 전에는 빠진 등급을 따지지 않는다
+  const qText = evQuotaText(quota, extra);
   const note = mode==='hr' ? '대표이사가 확인한 등급입니다' : kind==='lead' ? '전사 팀장을 한 묶음으로 비율을 맞춥니다 · 점선 = 평가자(본부장)가 넣은 등급 · 등급을 누르거나 "상세"에서 점수를 고칩니다'
     : mode==='head' ? '점선 = 팀장 의견 · "상세"에서 팀장이 매긴 점수를 보고 고칠 수 있습니다 · 팀장은 여기서 빼고 따로 평가합니다'
     : kind==='direct' ? '점선 = 팀장 의견 · 대표이사가 등급을 정합니다' : '본부장이 배정한 등급입니다 · 바꿀 것이 있으면 목록의 "돌려보내기"로 본부장에게 보냅니다';
@@ -11880,6 +11968,7 @@ function evBoardSteps(){   // HR 진행표의 줄: [단계, 마감일(kpiPeriod�
 }
 function evBoard(){   // HR: 인사평가 진행표 — 단계별 마감일을 정하고 어디까지 왔는지 본다. 평가가 시작되면 근태(연차 초과일·지각)부터 넣으라고 안내한다
   const L = AUTH.live, pv = k=>L ? evTyped('d-'+k, kpiPeriod[k]) : kpiPeriod[k];   // 실제 로그인: 바꾼 날짜는 [마감일 저장]까지 typed 에 (서버가 차례를 다시 본다)
+  const rv = k=>+(L ? evTyped('r-'+k, evRatio[k]) : evRatio[k]), ex = n=>{ const q = evQuota(n, null, { SA:rv('SA'), B:rv('B'), D:rv('D') }); return `${n}명 → S·A ${q.A}명 · B ${q.B}명 · D ${q.D}명 · C ${q.C}명`; };   // 등급 비율 (바꾼 값 — 실제 로그인은 저장 전 typed)
   const d = (k, name)=>`<input type="date" value="${pv(k)}" aria-label="${name}"${L && k==='evalFrom' && evStarted() ? ' disabled title="평가가 시작되어 바꿀 수 없어요"' : ''} onchange="${L ? `evType('d-${k}',this.value); kpiFlash(null)` : `kpiPeriod.${k}=this.value; kpiFlash('날짜를 바꿨습니다.')`}">`;
   const started = evStarted(), steps = evBoardSteps(), now = steps.findIndex(s=>s[2]<s[3]);
   const row = ([name, key, done, total, unit], i)=>{ const fin = done>=total && (!L || total>0), late = !fin && started && evLate(key);
@@ -11906,6 +11995,12 @@ function evBoard(){   // HR: 인사평가 진행표 — 단계별 마감일을 �
       <div class="field"><label>등급별 기준 점수 — 이 점수를 넘어야 그 등급을 받을 수 있음 (S는 100점 초과, C 기준 이하는 D · 90.5점은 A, 딱 90점은 B)</label>
         <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap;">${['A','B','C'].map(g=>`<span style="display:inline-flex; gap:5px; align-items:center;"><b>${g}</b><input type="number" min="1" max="100" value="${L ? evTyped('b-'+g, evBands[g]) : evBands[g]}" style="width:72px;" aria-label="${g} 기준 점수" onchange="evSetBand('${g}',this.value)">점 초과</span>`).join('')}</div></div>
     </div>
+    <div class="field-row">
+      <div class="field"><label>등급별 비율 — 묶음 인원의 몇 %까지 줄 수 있음 (반올림 · C는 나머지 · 5명 이상 묶음)</label>
+        <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap;">${[['SA','S·A'],['B','B'],['D','D']].map(([k, g])=>`<span style="display:inline-flex; gap:5px; align-items:center;"><b>${g}</b><input type="number" min="0" max="70" value="${rv(k)}" style="width:72px;" aria-label="${g} 비율"${started ? ' disabled title="평가가 시작되어 바꿀 수 없어요"' : ''} onchange="evSetRatio('${k}',this.value)">% 까지</span>`).join('')}<span class="badge neutral">C 나머지</span></div>
+        <div class="list-sub" style="margin-top:6px;">예: 묶음 ${ex(10)} / ${ex(20)}</div>
+        <div class="list-sub">S는 S·A 정원 안에서 줘요 (S를 주면 A가 줄어요) · 세 칸 합은 70%까지 · 4명 이하 묶음은 S·A·B 합쳐 1명 · 평가를 시작하면 바꿀 수 없어요</div></div>
+    </div>
   </div>`;
 }
 
@@ -11918,6 +12013,12 @@ function evSetBand(g, v){
   if(AUTH.live){ evType('b-'+g, n); return kpiFlash('<b>마감일 저장</b>을 누르면 기준 점수도 함께 저장돼요.', 'warning'); }
   evBands[g] = n;
   kpiFlash(evBands.A>evBands.B && evBands.B>evBands.C ? '등급별 기준 점수를 바꿨습니다. 이미 넣은 등급 중 기준보다 높은 것은 명단에 붉게 표시됩니다.' : '기준 점수는 A > B > C 순서여야 합니다. 다시 확인해 주세요.', evBands.A>evBands.B && evBands.B>evBands.C ? 'success' : 'danger');
+}
+function evSetRatio(k, v){   // HR: 등급 비율 한 칸 (S·A · B · D — 묶음 인원의 %). 세 칸 합 70 이하 (반올림해도 정원 합이 인원을 넘지 않게). 시작하면 칸이 잠긴다 — 범위 · 잠금은 서버가 다시 본다
+  const n = Math.round(+v), r = { ...Object.fromEntries(['SA','B','D'].map(x=>[x, AUTH.live ? +evTyped('r-'+x, evRatio[x]) : evRatio[x]])), [k]:n };
+  if(!(n>=0) || r.SA + r.B + r.D > 70) return kpiFlash(n>=0 ? '등급 비율은 세 칸 합이 70%를 넘을 수 없습니다.' : '등급 비율은 0~70 사이 정수로, 세 칸 합이 70 이하가 되게 넣어 주세요.', 'danger');
+  if(AUTH.live) evType('r-'+k, n); else evRatio[k] = n;   // 실제 로그인은 [마감일 저장]까지 typed 에
+  kpiFlash(null);
 }
 function evUndo(k){   // HR: 결과 공개 전에 묶음을 한 단계 되돌린다
   const st = evPoolState(k);
@@ -11975,21 +12076,16 @@ function evSubmitScore(pid){   // 평가자: 점수와 등급을 함께 낸다. 
   kpiFlash(`${escapeHtml(p.name)} 님 점수(${evTotal(p).toFixed(1)}점)와 등급${lead ? '' : ' 의견'}(${p.grade})을 제출했습니다. ${lead ? '대표이사 확인' : evUpper(p)+' 등급 배정'}으로 넘어갑니다.`);
 }
 function evAssign(pid, g){ const p = evFind(pid); if(evAbove(g, evCap(p))) return; if(AUTH.live) return evLiveDo(`/api/eval/people/${+pid}/edit`, { grade:p.grade===g ? null : g }, null); p.grade = p.grade===g ? null : g; evMark(p); kpiFlash(null); }
-function evBonus(pid){
+function evHeadAsk(pid){   // 윗사람(본부장 · 대표이사) 코멘트 — 등급을 배정하는 묶음(본부 팀원 · 직속부서 팀원)만. 전사 팀장은 평가자 코멘트뿐이라 단추가 없다. 가점은 없다 (2026-10-27)
   const p = evFind(pid);
-  orgModal(`<div class="card-title"><span>가점·코멘트 · ${escapeHtml(p.name)}</span><button type="button" class="x-btn" onclick="orgCloseModal()" aria-label="닫기">${icon('x')}</button></div><div id="evErr"></div>
-    <div class="list-sub" style="margin-bottom:10px;">현재 총점 ${AUTH.live ? `${evTotalText(p)}점${p.bonus ? ` (가점 ${p.bonus} 포함)` : ''}` : `${evScore(evRows(p)).toFixed(1)}점`} · 가점을 더해도 110점을 넘지 않습니다.</div>
-    <div class="field-row"><div class="field"><label>가점 (0~10)</label><input id="evF_bonus" type="number" min="0" max="10" step="0.5" value="${p.bonus}"></div><div class="field"><label>가점 사유 (가점이 있으면 필수)</label><input id="evF_reason" value="${escapeHtml(p.bonusReason)}" placeholder="회사 표창 등"></div></div>
-    ${evKind(evPool(p))==='lead' ? '<div style="height:12px;"></div>' : `<div class="field" style="margin-bottom:12px;"><label>${evUpper(p)} 코멘트 (선택 · 직원에게 공개)</label><textarea id="evF_head" rows="3">${escapeHtml(p.headComment)}</textarea></div>`}
-    <div style="display:flex; gap:8px;"><button class="btn primary" onclick="evSaveBonus(${pid})">저장</button><button class="btn" onclick="orgCloseModal()">취소</button></div>`);
+  orgModal(`<div class="card-title"><span>코멘트 · ${escapeHtml(p.name)}</span><button type="button" class="x-btn" onclick="orgCloseModal()" aria-label="닫기">${icon('x')}</button></div><div id="evErr"></div>
+    <div class="field" style="margin-bottom:12px;"><label for="evF_head">${evUpper(p)} 코멘트 (선택 · 직원에게 공개)</label><textarea id="evF_head" rows="3">${escapeHtml(p.headComment)}</textarea></div>
+    <div style="display:flex; gap:8px;"><button class="btn primary" onclick="evHeadSave(${pid})">저장</button><button class="btn" onclick="orgCloseModal()">취소</button></div>`);
 }
-function evSaveBonus(pid){
-  const p = evFind(pid), b = Math.round((+document.getElementById('evF_bonus').value||0)*2)/2, reason = document.getElementById('evF_reason').value.trim(), hc = document.getElementById('evF_head');   // 팀장은 평가자 코멘트가 따로 있어 이 칸이 없다
-  if(b<0 || b>10) return document.getElementById('evErr').innerHTML = kpiNote('가점은 0~10점입니다.', 'danger');
-  if(b>0 && !reason) return document.getElementById('evErr').innerHTML = kpiNote('가점 사유를 입력해 주세요.', 'danger');
-  if(AUTH.live) return evLiveDo(`/api/eval/people/${+pid}/edit`, { bonus:b, bonusReason:reason, ...(hc ? { headComment:hc.value.trim() } : {}) }, '저장했어요.');   // 등급은 서버가 점수에 맞춘다 (evFit 과 같은 규칙)
-  Object.assign(p, { bonus:b, bonusReason:reason, headComment:hc ? hc.value.trim() : p.headComment });
-  evFit(p); evMark(p); orgCloseModal(); kpiFlash('저장했습니다.');
+function evHeadSave(pid){
+  const p = evFind(pid), hc = document.getElementById('evF_head').value.trim();
+  if(AUTH.live) return evLiveDo(`/api/eval/people/${+pid}/edit`, { headComment:hc }, '저장했어요.');   // 권한(can.head) · 글자 수는 서버가 다시 본다
+  p.headComment = hc; evMark(p); orgCloseModal(); kpiFlash('저장했습니다.');
 }
 function evSubmitGrades(k){   // 본부장: 본부 팀원 등급 배정 마감 → 대표이사 확인. 전원에게 등급이 있고 정원을 넘지 않아야 한다 (실제 로그인: 묶음 k — POST /api/eval/pools/close, 권한 · 단계 · 정원은 서버가 다시 본다)
   if(AUTH.live){ if(!confirm(`${evPoolRaw(k)} 등급 배정을 마감할까요? 마감하면 대표이사 확인으로 넘어가 더 고칠 수 없어요.`)) return;
@@ -12080,7 +12176,7 @@ async function evLiveSelfCheck(){   // 브라우저 콘솔에서 await evLiveSel
   // 평가 화면 · 평가 숫자
   const said = e=>[...e.querySelectorAll('.center-note h3, .center-note p')].map(x=>x.innerHTML.replace('<br>', ' ')).join(' '), NOTE = '올해도 고생 많으셨습니다 2026년도 평가는 기존 방식으로 진행됩니다. 감사합니다.';
   const keep = { live:AUTH.live, me:AUTH.me, role:kpiRole, view:hrView, ap:evPeople[0].appeal, people:[...evPeople], period:{ ...kpiPeriod }, bands:{ ...evBands }, att:evAttDone, rel:evRelease.at, proxy:evProxy,
-    log:kpiClone(evPoolLog), ev:kpiClone(EV_LIVE), msg:kpiMsg, open:evOpen, fetch:window.fetch, rc:renderContent, ms:{ ...MS_LIVE },
+    log:kpiClone(evPoolLog), ev:kpiClone(EV_LIVE), ratio:{ ...evRatio }, msg:kpiMsg, open:evOpen, fetch:window.fetch, rc:renderContent, ms:{ ...MS_LIVE },
     res:kpiClone(EV_RES), rz:rzSave, cf:window.confirm, sel:{ ceo:[...evPoolSel.ceo], hr:[...evPoolSel.hr] }, rv:evResView };
   const leave = ()=>{ const e = new Event('beforeunload', { cancelable:true }); dispatchEvent(e); return e.defaultPrevented; };
   try {
@@ -12111,18 +12207,19 @@ async function evLiveSelfCheck(){   // 브라우저 콘솔에서 await evLiveSel
     ok(TODO.e2()===0 && TODO.e3()===0 && evTodo()===0 && evTodo('me')===0 && evTodo('admin')===0 && !homePortalTasks().some(p=>/^(평가 진행|이의 신청)/.test(p.title)) && !homeDates(2026, 11).some(e=>/^(평가|자기평가)/.test(e.label)), '① offline: 평가 숫자 0 · 홈 오늘의 업무 · 달력에 평가 없음');
     ok(hrTodo()[0]+hrTodo()[1]===TODO.e1(), '① HR 전환 단추 숫자에도 평가 몫 없음');
     // ② 평가자가 낸 뒤 윗사람이 고친 줄 (hidden · edited:true) — 서버가 잘못 지금 등급 · 총점을 실어 보내도 화면은 낸 것만 그린다
-    const R = { year:2026, evalStart:kpiDay(-5), selfTo:kpiDay(-2), evidDue:kpiDay(-1), scoreTo:kpiDay(3), gradeTo:kpiDay(5), ceoTo:kpiDay(7), finalTo:kpiDay(9), bands:{ A:90, B:80, C:70 }, started:'2026-10-20T00:00:00Z', attDone:null, released:null };
+    const R = { year:2026, evalStart:kpiDay(-5), selfTo:kpiDay(-2), evidDue:kpiDay(-1), scoreTo:kpiDay(3), gradeTo:kpiDay(5), ceoTo:kpiDay(7), finalTo:kpiDay(9), bands:{ A:90, B:80, C:70 }, ratio:{ SA:20, B:10, D:5 }, started:'2026-10-20T00:00:00Z', attDone:null, released:null };
     const it = rid=>({ rid, team:'가상 팀목표', personal:'가상 개인목표', action:'가상 실행목표 '+rid, formula:'건수', weight:50, S:'s', A:'a', B:'b', C:'c', D:'d' });
-    const can = o=>({ self:false, upload:false, score:false, assign:false, bonus:false, head:false, evidence:true, behalf:false, ...o });
+    const can = o=>({ self:false, upload:false, score:false, assign:false, head:false, evidence:true, behalf:false, ...o });   // 판 23부터 가점 칸(bonus)이 없다
     const row = o=>({ pid:3, name:'가상직원', title:'사원', team:'국내영업팀', div:'전략마케팅본부', poolKey:'DIV:1', poolName:'전략마케팅본부 팀원', kpi:true, stage:'GRADE', out:null, noSelf:'', late:0, leaveOver:0, items:[it(11), it(12)],
       ev:[{ rid:11, note:'가상 실적 하나', selfGrade:'A', grade:'C', files:[] }, { rid:12, note:'가상 실적 둘', selfGrade:'A', grade:'C', files:[] }], grade:'C', proposed:'B', subScore:95, subMarks:{ 11:'A', 12:'B' }, comment:'가상 코멘트',
-      headComment:'', bonus:0, bonusReason:'', total:85, cap:'A', proxy:'', edited:true, editSeen:false, rater:{ id:2, name:'가상팀장', title:'팀장', canLogin:true }, raterIsCeo:false, can:can(), hidden:true, appeal:null, ...o });
+      headComment:'', total:85, cap:'A', proxy:'', edited:true, editSeen:false, rater:{ id:2, name:'가상팀장', title:'팀장', canLogin:true }, raterIsCeo:false, can:can(), hidden:true, appeal:null, ...o });
     state = { ...state, offline:false, round:R, people:[row()], todo:{ me:1, admin:0 } };
     await evLiveLoad(); evOpen = 3;
     const e2 = evContent(), d2 = dom(e2);
     ok(e2.includes('내가 낸 평가입니다') && e2.includes('본부장이 평가를 고쳤습니다') && d2.querySelector('button[onclick^="evEditSeen"]') && [...d2.querySelectorAll('.ev-final')].map(x=>x.textContent).join()==='B'
       && [...d2.querySelectorAll('.ev-panel .ev-g.on')].map(x=>x.textContent).join()==='A,B' && !e2.includes('85.0') && !/등급 B →|수정 ·/.test(d2.textContent) && !e2.includes('시연용'), '② 평가자 줄(hidden · edited:true): "내가 낸 평가입니다"와 낸 등급만, 고친 등급 · 총점 글자 없음');
     ok(TODO.e2()===1 && evTodo('me')===1 && evEditNews().length===1, '② 숫자는 서버 todo · 고친 것 알림은 서버 edited · editSeen');
+    ok(!e2.includes('안에서 정해요') && !e2.includes('가점'), '② 점수를 낸 뒤에는 평가자 등급 안내 줄 없음 · 가점 글자 없음');
     state = { ...state, people:[row({ assignerIsCeo:true })] };
     await evLiveLoad();
     const e2c = evContent();
@@ -12145,6 +12242,7 @@ async function evLiveSelfCheck(){   // 브라우저 콘솔에서 await evLiveSel
       && TOURS.ev.steps().find(x=>x.title==='증빙자료 (선택)').body==='실적을 뒷받침하는 파일을 올려요. 제출하기 전에는 본인과 HR만, 제출한 뒤에는 평가자 · 본부장 · 대표이사도 볼 수 있어요.', '③ 증빙 안내(실제): 제출 전에는 본인 · HR만, 제출한 뒤에는 평가자 · 본부장 · 대표이사도 (자기평가 카드 · 사이트 둘러보기)');
     const pf = [...d3.querySelectorAll('#evSelf details.ev-prog')].map(x=>x.textContent);
     ok(pf.length===2 && pf[0].includes('9월 안 씀') && pf[0].includes('10월 가상 10월 한 줄') && !pf[0].includes('11월') && pf[1].includes('9/30 가상 일정 · 가상 결과 한 줄') && pf[1].includes('12/20 가상 연말 · 예정') && pf[1].includes('늦어지는 이유 가상 늦어지는 이유') && evSteps({ poolKey:'LEADERS', evaluator:null, stage:'SELF' }).includes('>평가자 평가<'), '③ KPI 줄마다 진행 기록 (쓴 달 · 안 쓴 달 · 일정 결과 · 늦어지는 이유) · 평가자 칸이 없는 본인 팀장 줄의 단계 이름은 "평가자 평가"');
+    ok(d3.querySelector('#evSelf').textContent.includes('등급은 점수 기준과 본부 정원(올해 S·A 20% · B 10% · D 5% · C 나머지)으로 정해요. 점수 기준(S 100 · A 90 · B 80 · C 70점 초과)은 받을 수 있는 가장 높은 등급이에요.') && evRatio.SA===20, '③ 자기평가 화면 등급 안내: 묶음 정원 · 올해 비율은 서버 round.ratio');
     evType('self-11', '새로 적은 실적'); sent.length = 0;
     ok(leave(), '③ 적고 저장 안 한 실적이 있으면 창을 닫기 전에 묻는다');
     await evSaveSelf(3);
@@ -12164,10 +12262,12 @@ async function evLiveSelfCheck(){   // 브라우저 콘솔에서 await evLiveSel
     const d4 = dom(evContent()), pick = [...d4.querySelectorAll('.ev-panel .field .ev-g')];
     ok(off.length===15 && off.every(b=>b.disabled) && [...d4.querySelectorAll('.ev-panel .ev-g')].some(b=>!b.disabled) && pick.find(b=>b.textContent==='S').disabled && !pick.find(b=>b.textContent==='A').disabled && d4.querySelector('button[onclick^="evSaveCmt"]'),
       '④ can.score 거짓이면 등급 단추가 모두 막힌다 · 참이면 열리고 등급은 서버 cap(A)까지 · [코멘트 저장]');
-    const sbtn = ()=>dom(evContent()).querySelector('button[onclick^="evSubmitScore"]').textContent, sb1 = sbtn();
+    const sbtn = ()=>dom(evContent()).querySelector('button[onclick^="evSubmitScore"]').textContent, sb1 = sbtn(), qn = ()=>dom(evContent()).querySelector('.ev-panel').textContent, qn1 = qn();
     state = { ...state, people:[sc({ can:can({ score:true }), assignerIsCeo:true })] };
     await evLiveLoad();
     ok(sb1==='점수·등급 의견 제출 (본부장으로)' && sbtn()==='점수·등급 의견 제출 (대표이사로)', '⑩ 내는 단추: 본부장이면 "(본부장으로)" · 본부장이 없는 본부면 "(대표이사로)"');
+    ok(qn1.includes('최종 등급은 본부장이 본부 정원(올해 S·A 20% · B 10% · D 5% · C 나머지) 안에서 정해요. 등급 의견은 점수로 받을 수 있는 가장 높은 등급이에요.') && qn().includes('최종 등급은 대표이사가 본부 정원(올해 S·A 20% · B 10% · D 5% · C 나머지) 안에서 정해요.') && !qn().includes('가점'),
+      '④ 평가자 점수 화면 등급 안내: 본부장 · 본부장이 없는 본부는 대표이사 · 올해 비율 (서버 round.ratio) · 가점 단추 없음');
     state = { ...state, people:[sc({ can:can({ score:true }) })] };
     await evLiveLoad();
     // ⑤ 동작 하나: 점수 내기 → 적던 코멘트 저장 · people/<uid>/submit · 다시 읽기
@@ -12192,6 +12292,19 @@ async function evLiveSelfCheck(){   // 브라우저 콘솔에서 await evLiveSel
     ok(!b7.textContent.includes('현장직') && b7.textContent.includes('지각 횟수는 등급 평가(KPI 없는 분)만') && b7.querySelector("[onclick=\"goTo('perf','e3')\"]") && b7.textContent.includes('모든 묶음이 확정되면 평가 결과 탭에서 공개합니다.')
       && !r7.textContent.includes('현장직') && r7.textContent.includes('지각은 등급 평가(KPI 없는 분)만 입력합니다') && r7.querySelector('summary').textContent.includes('등급 평가(KPI 없는 분)가 아니면 지각은 0'),
       '⑪ 진행표 · 명단 도움말(실제): "현장직" 대신 "등급 평가(KPI 없는 분)" · 마지막 줄은 평가 결과 탭 고리 (① 넘김)');
+    // 진행표 등급 비율 (실제 로그인): 서버 round.ratio · 시작 뒤 잠김 · [마감일 저장] 몸통에 ratio (시작 뒤에도 같은 값 — 서버가 통과시킨다)
+    const rin = ()=>[...dom(evContent()).querySelectorAll('#evBoard input[aria-label$="비율"]')];
+    ok(!e7.includes('가점') && rin().map(x=>x.value).join()==='20,10,5' && rin().every(x=>x.disabled && x.title==='평가가 시작되어 바꿀 수 없어요') && evRatio.SA===20, '진행표 비율(실제): 서버 round.ratio · 평가가 시작되면 잠긴다');
+    sent.length = 0; await evRoundSave();
+    ok(sent[0][0]==='/api/eval/admin/round' && JSON.stringify(sent[0][1].ratio)==='{"SA":20,"B":10,"D":5}', '[마감일 저장]: 시작 뒤에도 그해 비율을 함께 보낸다');
+    state = { ...state, round:{ ...R, started:null } }; await evLiveLoad();
+    evSetRatio('SA', '15');
+    ok(rin().every(x=>!x.disabled) && EV_LIVE.typed['r-SA']===15 && evRatio.SA===20 && rin()[0].value==='15' && dom(evContent()).querySelector('#evBoard').textContent.includes('바꾼 날짜 · 기준 점수 · 비율은 마감일 저장을 눌러야 저장돼요.') && leave(),
+      '시작 전(실제): 바꾼 비율은 typed 에 두고 저장 안내 · 나가기 전에 묻는다');
+    evSetRatio('D', '60'); ok(EV_LIVE.typed['r-D']===undefined && kpiMsg.msg==='등급 비율은 세 칸 합이 70%를 넘을 수 없습니다.', '실제 로그인도 세 칸 합이 70을 넘으면 넣지 않는다');
+    sent.length = 0; await evRoundSave();
+    ok(sent[0][0]==='/api/eval/admin/round' && JSON.stringify(sent[0][1].ratio)==='{"SA":15,"B":10,"D":5}' && JSON.stringify(sent[0][1].bands)==='{"A":90,"B":80,"C":70}', '[마감일 저장]: 바꾼 비율을 ratio 로 함께 보낸다');
+    EV_LIVE.typed = {}; state = { ...state, round:R }; await evLiveLoad();
     state = { ...state, people:[...state.people, row({ pid:8, name:'가상직원', out:{ at:'2026-10-21T00:00:00Z', why:'가상 휴직' }, stage:'SCORE', hidden:false, edited:'' })] };
     await evLiveLoad(); sent.length = 0;
     const pr = evParseAttendance('이름\t지각\t연차초과\n가상직원\t1\t2\n가상해외\t3\t1\n없는사람\t1\t1');
@@ -12201,12 +12314,17 @@ async function evLiveSelfCheck(){   // 브라우저 콘솔에서 await evLiveSel
     ok(sent[0][0]==='/api/eval/admin/attendance' && JSON.stringify(sent[0][1].rows)==='[{"userId":7,"late":3,"leaveOver":1}]' && kpiMsg.type==='warning'
       && kpiMsg.msg.includes('같은 이름이 여럿이라 건너뛴 이름: 가상직원 — 명단에서 직접 넣어 주세요') && kpiMsg.msg.includes('없는 이름: 없는사람'), '⑨ 보내는 줄은 이름이 하나뿐인 분만(번호로) · 건너뛴 이름을 알린다');
     kpiRole = 'head'; AUTH.me = { ...AUTH.me, user_id:5, position:'DIVISION_HEAD', is_hr:false }; evOpen = 7;
-    state = { ...state, me:null, people:[row({ pid:7, name:'가상해외', rater:{ id:5, name:'가상본부장', title:'', canLogin:true }, kpi:false, items:[], ev:[], hidden:false, edited:'', stage:'SCORE', total:null, cap:'C', can:can({ score:true }) }), row({ hidden:false, edited:'', stage:'GRADE', grade:'B', proposed:'B', can:can({ assign:true }) })], pools:[{ ...pool, state:'WAIT', can:{ ...pool.can, close:true } }] };
+    state = { ...state, me:null, people:[row({ pid:7, name:'가상해외', rater:{ id:5, name:'가상본부장', title:'', canLogin:true }, kpi:false, items:[], ev:[], hidden:false, edited:'', stage:'SCORE', total:null, cap:'C', can:can({ score:true }) }), row({ hidden:false, edited:'', stage:'GRADE', grade:'B', proposed:'B', can:can({ assign:true }) })],
+      pools:[{ ...pool, state:'WAIT', can:{ ...pool.can, close:true }, extra:{ SA:1, B:0, reason:'가상 늘린 이유', at:'2026-10-26T01:00:00Z', by:'가상대표' } }] };
     await evLiveLoad();
     const e8 = evContent(), d8 = dom(e8);
     ok(e8.includes('등급 평가 · KPI 없이 평가자가 등급을 매겨요') && e8.includes('평가자 코멘트 (선택') && !/현장직|팀장 평가/.test(d8.querySelector('.ev-panel').textContent) && evStageLabel(evFind(7))==='평가자 등급 대기'
       && [...d8.querySelectorAll('.ev-panel .ev-g')].filter(b=>!b.disabled).map(b=>b.textContent).join('')==='CD' && e8.includes('등급 배정 마감 (대표이사로)')
       && d8.querySelector('.ev-quota').textContent.includes('70점 초과 (등급 평가(KPI 없는 분)는 제외)') && !d8.querySelector('.ev-quota').textContent.includes('현장직'), '⑧ KPI 없는 분(실제): "등급 평가" · 평가자 등급 대기 · 등급 단추는 서버 cap(C) · 본부장 마감 단추');
+    ok(d8.querySelector('.ev-quota').textContent.startsWith('S 최대 2명 · A·B 합계 2명 (S만큼 줄어듦) · C·D 나머지 · 대표이사 허용 S·A +1명 · ') && e8.includes('최종 등급은 본부장이 본부 정원(올해 S·A 20% · B 10% · D 5% · C 나머지) 안에서 정해요.')
+      && d8.querySelector('button[onclick="evHeadAsk(3)"]')?.textContent==='코멘트' && !d8.querySelector('button[onclick="evHeadAsk(7)"]') && !e8.includes('가점'), '⑧ 정원 줄 = 서버 비율 · 묶음 extra (서버 quota 글자와 같게) · KPI 없는 분 점수 화면 안내 · [코멘트] 단추(배정할 수 있는 줄만)');
+    evHeadAsk(3); document.getElementById('evF_head').value = '  가상 윗사람 코멘트 '; sent.length = 0; await evHeadSave(3);
+    ok(sent[0][0]==='/api/eval/people/3/edit' && JSON.stringify(sent[0][1])==='{"year":2026,"headComment":"가상 윗사람 코멘트"}' && !document.getElementById('orgModal'), '⑧ 코멘트 창: people/<uid>/edit 에 headComment 만 (가점 칸 없음) · 받은 뒤 창을 닫는다');
     kpiRole = 'ceo'; AUTH.me = { ...AUTH.me, user_id:6, position:'CEO' };
     ok(!evContent().includes('(대표이사로)') && evContent().includes('등급 배정 마감'), '⑧ 본부장이 없는 본부를 대표이사가 마감할 때는 "(대표이사로)"를 붙이지 않는다');
     // ⑫ 평가 3단계 ② — 대표이사 확인 · HR 확정 · 돌려보내기 · 되돌리기: 체크 · 단추는 서버 pools[].can 대로, 보내는 본문 (되돌리기는 화면이 본 상태 from)
@@ -12258,7 +12376,7 @@ async function evLiveSelfCheck(){   // 브라우저 콘솔에서 await evLiveSel
     evPoolPick('hr', 'DIV:1', true); state = { ...state, pools:[pc('DIV:1', 'DONE', {}), pc('LEADERS', 'DONE', {}), empty] }; await evPoolDone('hr');
     ok(kpiMsg.msg.startsWith('모든 묶음을 확정했어요.'), '⑫ 마지막 확정: 0명인 묶음(WAIT)은 "나머지 묶음"으로 세지 않는다 — 공개할 수 있다는 안내');
     // ⑬ 평가 결과 탭 (GET /api/eval/results — 받은 줄은 evFromLive)
-    const R0 = { years:[], year:2026, offline:false, released:null, appealDue:null, mine:null, team:[], appeals:[] }, NO = '아직 포털에서 공개한 평가 결과가 없어요.';
+    const R0 = { years:[], year:2026, offline:false, released:null, appealDue:null, ratio:{ SA:15, B:10, D:10 }, mine:null, team:[], appeals:[] }, NO = '아직 포털에서 공개한 평가 결과가 없어요.';
     AUTH.me = { ...AUTH.me, user_id:3, name:'가상직원', position:null, is_hr:false }; kpiRole = 'emp'; hrView = 'me';
     res = { ...R0, offline:true }; EV_RES.state = ''; await evResLoad();
     const n0 = evResultContent();
@@ -12276,6 +12394,9 @@ async function evLiveSelfCheck(){   // 브라우저 콘솔에서 await evLiveSel
     const r14 = evResultContent(), q14 = dom(r14);
     ok(q14.querySelector('.evr-grade').textContent==='B' && !r14.includes('능력급') && !r14.includes('연봉계약서') && q14.querySelector('.evr-note').textContent==='공개일 2026-10-27' && r14.includes('95.0점') && r14.includes('-5점')
       && r14.includes('가상팀장 팀장') && r14.includes('이의 신청 D-5') && q14.querySelector('#evAp') && q14.querySelector('button[onclick="evAppealSubmit(3)"]'), '⑬ 공개 뒤 본인: 등급 · 서버 총점 · 공개일만 (능력급 칸 · 연봉계약서 줄 없음) · 평가자는 서버 rater · 이의 신청 D-5');
+    const rc = o=>{ const p = { ...EV_RES.data.mine, ...o }; return dom(evResultCard(p, evResultNow(p), false)).textContent; };
+    ok(r14.includes('점수로는 A까지 가능했고, 본부 정원에 따라 B로 정해졌어요.') && r14.includes('등급은 점수 기준과 본부 정원(올해 S·A 15% · B 10% · D 10% · C 나머지)으로 정해요.') && !rc({ cap:'B' }).includes('점수로는') && !rc({ kpi:false, items:[], ev:[] }).includes('점수로는') && !r14.includes('가점'),
+      '⑬ 결과 화면 등급 안내: 결과 응답 ratio · 서버 cap 이 등급보다 높을 때만 "점수로는 …" (KPI 없는 분은 없음) · 가점 글자 없음');
     evType('ap-3-2026', '  가상 이의 사유 ');
     ok(leave(), '⑬ 적던 이의 신청 사유가 있으면 창을 닫기 전에 묻는다');
     const r2026 = res; res = { ...R0, years:[2026, 2025], year:2025, released:'2025-12-20T01:00:00Z', appealDue:'2025-12-27', mine:full3 }; await evResLoad(2025);
@@ -12292,7 +12413,7 @@ async function evLiveSelfCheck(){   // 브라우저 콘솔에서 await evLiveSel
     res = { ...R0, years:[2026], released:'2026-10-27T01:00:00Z', appealDue:kpiDay(5), team:[ap3, line7], appeals:[ap3] }; await evResLoad();
     const r16 = evResultContent(), q16 = dom(r16);
     ok(q16.querySelector('#evAnsG3') && q16.querySelector('#evAnsM3_0') && q16.querySelector('#evAnsM3_1') && q16.querySelector('#evAnsT3') && !r16.includes('계약서') && !r16.includes('시연') && r16.includes('공개일 <b>2026-10-27</b>')
-      && !q16.querySelector('[onclick="evPublish()"]') && r16.includes('>2명<') && q16.querySelector('[onclick="evReport()"]'), '⑬ HR: 답변 칸(실행목표 등급 · 등급 · 답변) · 공개일 · 계약서 칸 없음 · 전체 결과 2명 · 보고서 단추');
+      && !q16.querySelector('[onclick="evPublish()"]') && r16.includes('>2명<') && q16.querySelector('[onclick="evReport()"]') && !r16.includes('가점'), '⑬ HR: 답변 칸(실행목표 등급 · 등급 · 답변) · 공개일 · 계약서 칸 없음 · 전체 결과 2명 · 보고서 단추');
     evType('ansm-3_0', 'S'); evType('ansg-3', 'A'); evType('ans-3', ' 가상 답변 ');
     res = { ...res, appeals:[{ ...ap3, appeal:{ ...ap, status:'CEO', answer:'가상 답변', after:'A', marks:{ 11:'S' } } }] }; sent.length = 0; await evAnswerSubmit(3);
     ok(sent[0][0]==='/api/eval/appeals/3/answer' && JSON.stringify(sent[0][1])==='{"year":2026,"grade":"A","answer":"가상 답변","marks":{"11":"S","12":"B"}}' && !Object.keys(EV_LIVE.typed).some(k=>k.startsWith('ans')),
@@ -12330,14 +12451,14 @@ async function evLiveSelfCheck(){   // 브라우저 콘솔에서 await evLiveSel
     const b19 = dom(evContent()).querySelector('#evBoard');
     ok(b19.querySelector("[onclick=\"goTo('perf','e3')\"]") && b19.textContent.includes('공개 2026-10-27') && b19.textContent.includes('이의 신청 1건'), '① 넘김: 진행표 끝 줄은 평가 결과 탭 고리 · 서버 공개일 · 이의 신청 수');
   } finally {
-    Object.assign(AUTH, { live:keep.live, me:keep.me }); kpiRole = keep.role; hrView = keep.view; Object.assign(kpiPeriod, keep.period); Object.assign(evBands, keep.bands); evAttDone = keep.att; evRelease.at = keep.rel; evProxy = keep.proxy;
+    Object.assign(AUTH, { live:keep.live, me:keep.me }); kpiRole = keep.role; hrView = keep.view; Object.assign(kpiPeriod, keep.period); Object.assign(evBands, keep.bands); Object.assign(evRatio, keep.ratio); evAttDone = keep.att; evRelease.at = keep.rel; evProxy = keep.proxy;
     for(const k of Object.keys(evPoolLog)) delete evPoolLog[k]; Object.assign(evPoolLog, keep.log); Object.assign(EV_LIVE, keep.ev);
     evPeople.length = 0; evPeople.push(...keep.people); evPeople[0].appeal = keep.ap; kpiMsg = keep.msg; evOpen = keep.open; window.fetch = keep.fetch; renderContent = keep.rc; Object.assign(MS_LIVE, keep.ms);
     Object.assign(EV_RES, keep.res); rzSave = keep.rz; window.confirm = keep.cf; evResView = keep.rv; ['ceo', 'hr'].forEach(m=>{ evPoolSel[m].clear(); keep.sel[m].forEach(k=>evPoolSel[m].add(k)); });
     if(document.getElementById('orgModal')) orgCloseModal(true);
   }
   await new Promise(r=>setTimeout(r, 30));   // 검사가 남긴 요청이 끝난 뒤에도 되돌린 그대로인지
-  ok(MS_LIVE.state===keep.ms.state && MS_LIVE.list===keep.ms.list && JSON.stringify(EV_LIVE)===JSON.stringify(keep.ev) && JSON.stringify(EV_RES)===JSON.stringify(keep.res) && window.fetch===keep.fetch && rzSave===keep.rz, '끝나면 바꾼 것을 모두 되돌리고 남는 요청이 없다');
+  ok(MS_LIVE.state===keep.ms.state && MS_LIVE.list===keep.ms.list && JSON.stringify(EV_LIVE)===JSON.stringify(keep.ev) && JSON.stringify(evRatio)===JSON.stringify(keep.ratio) && JSON.stringify(EV_RES)===JSON.stringify(keep.res) && window.fetch===keep.fetch && rzSave===keep.rz, '끝나면 바꾼 것을 모두 되돌리고 남는 요청이 없다');
   if(!AUTH.live) ok(evPeople.length===20 && evPeople[0].name==='홍길동' && evContent().includes('시연용 가상 인원'), '⑥ 실제 로그인이 끝나면 시연 evPeople 20명이 돌아온다');
   return 'evLiveSelfCheck 통과';
 }
@@ -12406,7 +12527,7 @@ function evLinePanel(p){
   const editable = p.stage==='SCORE' && evStarted() && evIsEvaluator(p);
   return `<div class="ev-panel">
     <div class="list-sub" style="margin-bottom:8px;">${AUTH.live ? '등급 평가 · KPI 없이 평가자가 등급을 매겨요' : '현장직 · KPI 없이 팀장이 등급을 매깁니다'} · ${evAttendance(p)}</div>
-    ${evLineGradeBtns(evHidden(p) ? { ...p, grade:p.proposed } : p, editable, 'evSetLine')}${evHidden(p) ? '<div class="list-sub" style="margin-top:6px;">내가 낸 등급 의견입니다. 최종 등급은 결과 공개 뒤에 보입니다.</div>' : ''}
+    ${evLineGradeBtns(evHidden(p) ? { ...p, grade:p.proposed } : p, editable, 'evSetLine')}${evHidden(p) ? '<div class="list-sub" style="margin-top:6px;">내가 낸 등급 의견입니다. 최종 등급은 결과 공개 뒤에 보입니다.</div>' : ''}${editable ? evQuotaNote(p) : ''}
     <div class="field" style="margin-top:10px;"><label>${AUTH.live ? '평가자' : '팀장'} 코멘트 (선택 · 직원에게 공개)</label>${editable ? `<textarea rows="2" oninput="${AUTH.live ? `evType('cmt-${p.pid}',this.value)` : `evFind(${p.pid}).comment=this.value`}" placeholder="한 해 근무에 대한 한 줄 평">${escapeHtml(AUTH.live ? evTyped('cmt-'+p.pid, p.comment) : p.comment)}</textarea>` : `<div class="placeholder-note" style="margin:0;">${escapeHtml(p.comment)||'—'}</div>`}</div>
     ${editable ? `<div style="text-align:right; margin-top:10px;">${AUTH.live ? `<button class="btn" onclick="evSaveCmt(${p.pid})">코멘트 저장</button> ` : ''}<button class="btn primary" onclick="evSubmitLine(${p.pid})">등급 제출</button></div>` : ''}
   </div>`;
@@ -12554,7 +12675,7 @@ function evAppeal(p, role, reason, today){
   if(!reason.trim()) return '이의 신청 사유를 적어 주세요.';
   p.appeal = { reason:reason.trim(), at:today, status:'OPEN', answer:'', before:p.grade, after:null }; return null;
 }
-function evMarksTotal(p, marks){ return evScore(evKpi(p).map((k,i)=>({ weight:k.weight, grade:marks[i] })), p.bonus); }   // 항목별 등급을 이렇게 고치면 나오는 총점
+function evMarksTotal(p, marks){ return evScore(evKpi(p).map((k,i)=>({ weight:k.weight, grade:marks[i] }))); }   // 항목별 등급을 이렇게 고치면 나오는 총점
 function evApplyMarks(p, marks){ marks.forEach((g,i)=>{ evEntry(p,i).grade = g; }); }
 function evGradeFits(p, grade, total){   // 이의 신청으로 바꿀 수 있는 등급인가. 정원은 따지지 않는다 — 이미 공개된 다른 사람의 등급을 건드릴 수 없고 대표이사 확인을 거친다(2026-10-13). 점수 기준과 연차 규칙은 지킨다
   const errs = [];
@@ -12599,12 +12720,12 @@ function evDemoFillData(stage='DONE'){   // 시연: 확정 상태(DONE) 또는 �
     p.stage = stage==='DONE' ? 'DONE' : evPool(p)==='direct' ? 'GRADE' : 'CEO';
   });
 }
-function evResultNow(p){ return { year:AUTH.live ? EV_RES.year : KPI_YEAR, grade:p.grade, comment:p.comment, head:p.headComment, bonus:p.bonus, bonusReason:p.bonusReason,
+function evResultNow(p){ return { year:AUTH.live ? EV_RES.year : KPI_YEAR, grade:p.grade, comment:p.comment, head:p.headComment,
   rows:evKpi(p).map((k,i)=>({ action:k.action, weight:k.weight, self:evEntry(p,i).selfGrade, grade:evEntry(p,i).grade })) }; }
 function evResultPast(key, y){
   const h = EV_HISTORY[key] && EV_HISTORY[key][y]; if(!h) return null;
   const [grade, comment, head, rows] = h;
-  return { year:y, grade, comment, head, bonus:0, rows:rows.map(([action, weight, self, g])=>({ action, weight, self, grade:g })) };
+  return { year:y, grade, comment, head, rows:rows.map(([action, weight, self, g])=>({ action, weight, self, grade:g })) };
 }
 function evExportGrade(p){ return p.appeal && p.appeal.status!=='DONE' ? '' : p.grade || ''; }   // 이의 처리 중이면 비운다 — 연봉 인상 계산이 그 사람을 "등급 없음"으로 둔다 (계약서도 처리 뒤 반영)
 function evReportData(list=evActive()){   // HR 보고용 엑셀 (인사담당자 2026-10-22 — "바로 보고할 수 있을 정도로"): 서버(backend/eval_report.py)가 표·그래프로 꾸민다. 명단은 본부 → 부서 → 팀장 먼저 → 이름
@@ -12623,6 +12744,25 @@ function evrSelfCheck(){   // 브라우저 콘솔에서 evrSelfCheck() 실행 (�
   try {
     ok(evAddDays('2027-01-15',7)==='2027-01-22' && evAddDays('2027-02-25',7)==='2027-03-04', '7일 뒤 (월말 넘김)');
     const hong = evFind(1), park = evFind(4), choi = evFind(7);
+    // 가점 없앰 (2026-10-27): 평가 진행 · 평가 결과 탭을 역할 · 화면 · 펼친 사람 · 펼친 묶음마다 그려도 '가점' 글자가 없다 · 윗사람 코멘트 창
+    const look = { role:kpiRole, view:hrView, open:evOpen, po:{ ...evPoolOpen }, rv:evResView, period:{ ...kpiPeriod }, head:evPeople.map(p=>p.headComment) };
+    const scan = ()=>Object.keys(KPI_USERS).every(role=>{ kpiRole = role; return (kpiIsHr(role) ? ['me', 'admin'] : ['me']).every(v=>{ hrView = v; const one = ()=>!evContent().includes('가점');
+      evPoolOpen.ceo = evPoolOpen.hr = null; const a = [null, ...evPeople.map(p=>p.pid)].every(o=>{ evOpen = o; return one(); });
+      const b = EV_POOLS.every(k=>{ evPoolOpen.ceo = evPoolOpen.hr = k; return evPoolList(k).every(p=>{ evOpen = 'g'+p.pid; return one(); }); });
+      evOpen = null; evPoolOpen.ceo = evPoolOpen.hr = null; return a && b && [null, ...evPeople.map(p=>p.pid)].every(o=>{ evResView = o; return !evResultContent().includes('가점'); }); }); });
+    try {
+      kpiPeriod.evalFrom = kpiDay(-1);
+      ok(scan(), '가점 없음: 진행 중 (평가자 · 윗사람 점수 화면)');
+      evDemoFillData('CEO'); evPoolList('div').forEach(p=>{ p.stage = 'GRADE'; });
+      ok(scan(), '가점 없음: 본부장 배정 · 대표이사 확인');
+      const hb = k=>{ const t = document.createElement('template'); t.innerHTML = evGradeTable(k, kpiRole==='head' ? 'head' : 'ceo').html; return [...t.content.querySelectorAll('button[onclick^="evHeadAsk"]')]; };
+      kpiRole = 'head'; const b1 = hb('div'); kpiRole = 'ceo'; const b2 = hb('lead'), b3 = hb('direct');
+      ok(b1.length===evPoolList('div').length && [...b1, ...b3].every(b=>b.textContent==='코멘트') && !b2.length && b3.length===evPoolList('direct').length, '[코멘트] 단추: 본부 팀원(본부장) · 직속부서 팀원(대표이사) — 전사 팀장 묶음은 윗사람 코멘트가 없어 단추 없음');
+      kpiRole = 'head'; evHeadAsk(6); document.getElementById('evF_head').value = '  가상 윗사람 코멘트 '; evHeadSave(6);
+      ok(evFind(6).headComment==='가상 윗사람 코멘트' && !document.getElementById('orgModal'), '코멘트 창: 윗사람 코멘트 하나만 저장');
+      evDemoFillData(); evRelease.at = kpiDay(0);
+      ok(scan(), '가점 없음: 결과 공개 뒤');
+    } finally { kpiRole = look.role; hrView = look.view; evOpen = look.open; Object.assign(evPoolOpen, look.po); evResView = look.rv; Object.assign(kpiPeriod, look.period); evPeople.forEach((p, i)=>{ p.headComment = look.head[i]; }); evRelease.at = null; if(document.getElementById('orgModal')) orgCloseModal(true); }
     // 2026-10-13: 대표이사 확인 → HR 확정을 묶음째로, 본부 팀원은 돌려보내기
     evRelease.at = null; evDemoFillData('CEO');
     ok(evPoolKeys().every(k=>evPoolState(k)==='CEO'), '대표이사 확인 직전: 세 묶음 모두 확인 대기');
@@ -12645,6 +12785,13 @@ function evrSelfCheck(){   // 브라우저 콘솔에서 evrSelfCheck() 실행 (�
     ok(evFinalGrade(hong)===null && !evCanAppeal(hong,'emp','2027-01-16'), '공개 전엔 결과·이의 신청 없음');
     ok(['div','lead','direct'].every(k=>{ const v = evPoolCheck(k); return !v.errors.length && !v.warnings.length; }), '시연 확정 등급은 묶음마다 정원 규칙 통과');
     evRelease.at = '2027-01-15';
+    // 결과 화면 등급 안내 (S4 — 2026-10-27): 규칙 줄 · 점수로 받을 수 있던 등급보다 낮게 정해졌으면 그 까닭 한 줄 (KPI 없는 분 · 지난 결과는 까닭 줄 없음)
+    const card = (p, g)=>{ const keep = p.grade; p.grade = g; try { return evResultCard(p, evResultNow(p), false); } finally { p.grade = keep; } }, RT = `(올해 ${evRatioText()})`;
+    const rule = w=>`등급은 점수 기준과 ${w} 정원${RT}으로 정해요. 점수 기준(S 100 · A ${evBands.A} · B ${evBands.B} · C ${evBands.C}점 초과)은 받을 수 있는 가장 높은 등급이에요.`;
+    ok(card(hong, 'C').includes('점수로는 A까지 가능했고, 본부 정원에 따라 C로 정해졌어요.') && card(hong, 'C').includes(rule('본부')) && !card(hong, 'A').includes('점수로는') && card(hong, 'A').includes(rule('본부'))
+      && card(evFind(9), 'B').includes('점수로는 A까지 가능했고, 전사 팀장 정원에 따라 B로 정해졌어요.') && card(evFind(11), 'C').includes('점수로는 B까지 가능했고, 직속부서 정원에 따라 C로 정해졌어요.')
+      && card(choi, 'D').includes(rule('본부')) && !card(choi, 'D').includes('점수로는') && !evResultCard(hong, evResultPast('emp', 2025), true).includes('등급은 점수 기준과') && RT==='(올해 S·A 10% · B 10% · D 10% · C 나머지)',
+      '결과 화면: 규칙 줄 · "점수로는 …까지 가능했고, … 정원에 따라 …로" (cap > 등급일 때만 · KPI 없는 분 · 지난 결과는 없음)');
     ok(evCanAppeal(hong,'emp','2027-01-22') && !evCanAppeal(hong,'emp','2027-01-23') && !evCanAppeal(hong,'lead','2027-01-20'), '이의 신청: 본인만, 공개일부터 7일');
     ok(evAppeal(hong,'emp',' ','2027-01-16') && !hong.appeal, '사유 필수');
     ok(!evAppeal(hong,'emp','실적 누락','2027-01-16') && hong.appeal.status==='OPEN' && evFinalGrade(hong)==='WAIT', '신청 → 처리 대기');
@@ -12684,10 +12831,11 @@ function evrGrade(g){ return `<span class="evr-g${g==='C'||g==='D'?' low':''}">$
 function evDaysLeft(due){ return Math.round((Date.parse(due) - Date.parse(kpiDay(0)))/864e5); }
 function evResultCard(p, r, past){
   const fg = past ? r.grade : evFinalGrade(p), wait = fg==='WAIT', L = AUTH.live;
-  const score = L ? (p.total ?? 0) : evScore(r.rows, r.bonus), self = evScore(r.rows.map(x=>({ weight:x.weight, grade:x.self })));   // 실제 로그인 총점은 서버 값 (자기평가 대비만 화면이 셈한다)
+  const score = L ? (p.total ?? 0) : evScore(r.rows), self = evScore(r.rows.map(x=>({ weight:x.weight, grade:x.self })));   // 실제 로그인 총점은 서버 값 (자기평가 대비만 화면이 셈한다)
   const diff = Math.round((score-self)*10)/10, line = !r.rows.length;   // 실행목표가 없으면 현장직(팀장 평가)
   const rows = r.rows.map(x=>`<tr><td>${escapeHtml(x.action)}</td><td class="num">${x.weight}%</td><td>${x.self||'—'}</td><td>${evrGrade(x.grade)}</td><td class="num">${x.grade?((+x.weight)*EV_PCT[x.grade]/100).toFixed(1):'—'}</td></tr>`).join('');
   const changed = !past && p.appeal && p.appeal.status==='DONE' && p.appeal.before!==p.appeal.after ? ` · 이의 신청으로 ${p.appeal.before} → ${p.appeal.after}` : '';
+  const cap = L ? p.cap : evCap(p), why = past || wait || !fg ? '' : `<div class="list-sub" style="margin-top:10px;">${!evIsLine(p) && evAbove(cap, fg) ? `<b style="color:var(--text-secondary);">점수로는 ${cap}까지 가능했고, ${evQuotaWord(evPool(p))} 정원에 따라 ${fg}로 정해졌어요.</b><br>` : ''}${evGradeRule(p, L ? EV_RES.data.ratio : evRatio)}</div>`;   // 등급 안내 (S4 — 그 해 비율 · 결과 공개 뒤 정해진 등급만)
   const note = past ? `${r.year}년 확정 결과` : L ? `${EV_RES.data.released ? `공개일 ${EV_RES.data.released}` : '공개 전'}${changed}` : `공개일 ${evRelease.at}${changed} · 이 등급이 ${ctPeriod(new Date()).year}년 3월 연봉계약서 능력급에 반영됩니다${wait?' (이의 처리 후)':''}`;
   return `<section class="evr-hero" aria-label="${r.year}년 최종 등급">
       <div><div class="evr-grade${wait?' wait':''}">${wait ? '처리 중' : r.grade}</div><div class="evr-cap">${wait ? '이의 신청 처리 중' : '최종 등급'}</div></div>
@@ -12697,9 +12845,9 @@ function evResultCard(p, r, past){
         ${L ? '' : `<div class="evr-tile"><small>능력급 인상률</small><b>${past ? '—' : wait ? '대기' : '+'+evRaisePct(p, fg)+'%'}</b></div>`}
         <div class="evr-note">${note}</div>
       </div>
-    </section>
+    </section>${why}
     ${line ? '' : `<div class="ct-tbl" style="margin-top:12px;"><table><thead><tr><th>실행목표</th><th class="num">가중치</th><th>자기평가</th><th>최종</th><th class="num">점수</th></tr></thead>
-      <tbody>${rows}${r.bonus?`<tr><td colspan="4">가점 (${escapeHtml(r.bonusReason||'')})</td><td class="num">+${r.bonus}</td></tr>`:''}</tbody></table></div>`}
+      <tbody>${rows}</tbody></table></div>`}
     <div class="evr-comments">
       <div class="evr-comment"><small>${line && !L ? '팀장' : '평가자'}${past?'':' '+escapeHtml(evEvaluatorName(p))}</small>${escapeHtml(r.comment)||'—'}</div>
       ${r.head ? `<div class="evr-comment"><small>${past ? '본부장' : evUpper(p)}</small>${escapeHtml(r.head)}</div>` : ''}
