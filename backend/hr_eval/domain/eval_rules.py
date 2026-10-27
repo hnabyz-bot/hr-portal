@@ -8,6 +8,8 @@ evScore · evBand · evCap · evValidate · evPoolState · evEdited)과 같은 �
 - 연차 초과가 5일(x2 단위 10) 이상이면 S·A·B 를 못 준다. 반일이 있어 연차와 가점은 2배 숫자(x2)로 다룬다.
 - 점수가 없는 사람(KPI 없는 현장직)은 점수 기준을 따지지 않고 연차 규칙만 본다.
 - 묶음 열쇠: 전사 팀장 "LEADERS" · 대표이사 직속부서 팀원 "DIRECT" · 본부 팀원 "DIV:본부번호".
+- 정원은 묶음 인원과 등급 비율(해마다 HR 이 정한다)·늘린 정원(대표이사가 묶음마다 늘려 준다)으로 정한다. quota.py 참고.
+- 점수 역전: 점수가 더 높은 사람이 더 낮은 등급을 받고, 그 등급을 받을 수도 있었으면(점수 기준 · 연차) 윗사람 코멘트(이유)가 꼭 있어야 한다. 동점 · 점수 없음은 따지지 않는다.
 - 정원 검사 문구에는 이름 · 총점 · 등급이 든다. 이 결과는 배정자 · 대표이사 · HR 에게만 보낸다.
 """
 
@@ -19,7 +21,7 @@ from typing import Sequence
 
 from hr_eval.domain.access import Act, Pool, PoolRef, Target, can
 from hr_eval.domain.models import Actor, Role
-from hr_eval.domain.quota import QuotaMode, calculate_department_quota
+from hr_eval.domain.quota import DEFAULT_RATIOS, QuotaMode, calculate_department_quota
 
 GRADES = ("S", "A", "B", "C", "D")  # 앞이 높은 등급
 PCT = {"S": 110, "A": 100, "B": 90, "C": 80, "D": 70}  # 등급별 달성 비율(%)
@@ -102,13 +104,14 @@ def at(stage: str, ref: str) -> int:
 
 @dataclass(frozen=True)
 class Member:
-    """정원 검사에 넣는 묶음의 한 사람. score 가 None 이면 KPI 없는 사람(점수 기준 없음)."""
+    """정원 검사에 넣는 묶음의 한 사람. score 가 None 이면 KPI 없는 사람(점수 기준 없음). note 는 윗사람 코멘트가 있나(공백만이면 없음)."""
 
     uid: int
     name: str
     score: Decimal | None
     grade: str | None
     leave_x2: int
+    note: bool = False
 
 
 def _num(x: Decimal) -> str:
@@ -120,11 +123,19 @@ def _band_text(g: str, bands: tuple[int, int, int]) -> str:
     return "100점 초과만" if g == "S" else f"{g}는 {bands['ABC'.index(g)]}점 초과"
 
 
-def check_pool(members: Sequence[Member], bands: tuple[int, int, int], full: bool) -> tuple[list[str], list[str], dict[str, int]]:
+def check_pool(
+    members: Sequence[Member],
+    bands: tuple[int, int, int],
+    full: bool,
+    ratios: tuple[int, int, int] = DEFAULT_RATIOS,
+    extra: tuple[int, int] = (0, 0),
+    need_note: bool = True,
+) -> tuple[list[str], list[str], dict[str, int]]:
     """묶음의 등급 배정 검사 → (오류, 경고, 등급별 인원). 문구와 순서는 화면 evValidate 그대로.
 
     full 이 거짓이면(배정하는 중) 등급 누락 · 정원 미달은 따지지 않는다. 마감 · 확정은 full.
-    정원은 묶음 인원(len(members))으로 정한다."""
+    정원은 묶음 인원(len(members))과 ratios(S·A · B · D %) · extra(S·A +명 · B +명)로 정한다.
+    점수 역전 줄은 정원 줄 뒤에 붙고 full 과 상관없이 낸다: need_note 이고 note 가 없으면 오류, 아니면 경고."""
     errors: list[str] = []
     warnings: list[str] = []
     cnt = dict.fromkeys(GRADES, 0)
@@ -139,7 +150,7 @@ def check_pool(members: Sequence[Member], bands: tuple[int, int, int], full: boo
             errors.append(f"{m.name} 님은 총점 {_num(m.score)}점이라 {g}를 줄 수 없습니다. ({_band_text(g, bands)})")  # 점수 기준보다 높은 등급은 못 준다
         if m.leave_x2 >= LEAVE_LIMIT_X2 and g in "SAB":
             errors.append(f"{m.name} 님은 연차 초과 {LEAVE_LIMIT_X2 // 2}일 이상이라 S·A·B를 줄 수 없습니다.")
-    quota = calculate_department_quota(len(members))
+    quota = calculate_department_quota(len(members), ratios, extra)
     k = cnt["S"]
     if k > quota.cap_s:
         errors.append(f"S는 최대 {quota.cap_s}명입니다. (현재 {k}명)")
@@ -164,6 +175,18 @@ def check_pool(members: Sequence[Member], bands: tuple[int, int, int], full: boo
             errors.append(f"A·B 합계는 {up}명까지입니다. 현재 {cnt['A'] + cnt['B']}명")
         if full and cnt["A"] + cnt["B"] < up:
             warnings.append(f"A·B가 정원보다 {up - cnt['A'] - cnt['B']}명 적습니다.")
+    rated = [m for m in members if m.grade and m.score is not None]
+    for x in rated:
+        # x 보다 점수가 낮은데 더 높은 등급을 받았고, x 도 그 등급을 받을 수 있었다 = x 가 밀렸다 (동점 · 점수 없음은 제외)
+        lower = [y for y in rated if y.score < x.score and above(y.grade, x.grade) and not above(y.grade, cap(x.score, x.leave_x2, bands))]
+        if not lower:
+            continue
+        y = min(lower, key=lambda y: (GRADES.index(y.grade), -y.score))  # 등급이 가장 높은 사람 → 점수가 높은 사람 → 명단 차례(min 은 앞선 것을 고른다)
+        line = f"{x.name} 님(총점 {_num(x.score)}점)이 총점이 더 낮은 {y.name} 님({_num(y.score)}점)보다 등급이 낮습니다."
+        if need_note and not x.note:
+            errors.append(f"{line} 코멘트에 이유를 적어 주세요.")
+        else:
+            warnings.append(line)
     return errors, warnings, cnt
 
 
