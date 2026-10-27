@@ -11315,7 +11315,8 @@ function whDemo(){   // 시연: 시연 인물들의 가상 연말정산 숫자(W
    - 점수: KPI별 달성 등급(S110·A100·B90·C80·D70%) × 가중치 합, 총점 상한 110. 가점은 없다 (인사담당자 2026-10-27 — 연봉 계산의 개인 포상 · 자격증 추가 인상률과 중복) — 윗사람은 코멘트만 남긴다 (evHeadAsk)
    - 등급 쿼터 (evQuota — backend/hr_eval/domain/quota.py 와 같은 셈): 묶음 인원 N≥5면 S·A · B · D 각 round_half_up(N×그 비율), C 나머지 / N≤4면 상위(A+B) 1명(N≥2), 하위 나머지
      등급 비율(evRatio — S·A · B · D %, 처음 10 · 10 · 10, 세 칸 합 70 이하)은 HR이 진행표에서 해마다 정하고 평가를 시작하면 잠근다. 그해 모든 묶음에 같다 (인사담당자 2026-10-27)
-     대표이사가 늘린 정원(extra — 묶음마다 S·A · B 몇 명)은 S·A · B(4명 이하 묶음은 상위)에 더한다
+     대표이사가 늘린 정원(extra — 묶음마다 S·A · B 몇 명)은 S·A · B(4명 이하 묶음은 상위)에 더한다 — 본부장이 있는 본부는 돌려보내기 창에서(evReturnAsk),
+     대표이사가 직접 정하는 묶음(전사 팀장 · 직속부서 · 본부장 없는 본부)은 등급 표의 [정원 늘리기]에서(evExtraAsk). 점수 기준 · 연차 규칙은 그대로
      S는 총점 100 초과만, S 상한 = A 정원(상위 정원), S가 K명이면 A(상위) 정원에서 K를 뺀다. 초과 = 제출 막힘, 미달 = 경고
      D 정원은 본부장이 점수보다 낮춰 D를 줄 수 있는 인원이다 — 총점이 C 기준 이하라 점수로 D인 사람은 D 초과에 세지 않는다 (미달 경고는 모든 D)
    - 점수 역전 (evValidate): 점수가 더 높은 사람이 더 낮은 등급을 받았고 그 등급을 받을 수 있었으면(점수 기준 · 연차) 윗사람 코멘트(이유)가 있어야 마감된다 — 없으면 오류, 있으면 경고.
@@ -11331,7 +11332,7 @@ const EV_DIVISION = '전략마케팅본부', EV_DIRECT = '대표이사 직속부
 const EV_RATERS = { head:'이철수 본부장', ceo:'천대표 대표이사' };   // 평가는 하지만 평가받지 않는 사람 (시연 역할)
 const EV_POOL_NAME = { div:EV_DIVISION+' 팀원', lead:'전사 팀장', direct:'직속부서 팀원' };
 const EV_POOLS = ['div','lead','direct'];   // 대표이사 확인·HR 확정 목록의 줄. ponytail: 시연 명단에 팀원이 있는 본부가 하나라 'div'도 하나다 — 실제로는 본부마다 한 줄
-const evPoolLog = { div:{}, lead:{}, direct:{} };   // 묶음마다 남기는 기록: head = 본부장 마감 { at, seen:{역할:true} } — 대표이사 확인을 기다리는 동안 HR에게 알림으로 띄운다 · ceo = 대표이사 확인 { at, by } · back = 대표이사가 본부장에게 돌려보냄 { at, by, reason }
+const evPoolLog = { div:{}, lead:{}, direct:{} };   // 묶음마다 남기는 기록: head = 본부장 마감 { at, seen:{역할:true} } — 대표이사 확인을 기다리는 동안 HR에게 알림으로 띄운다 · ceo = 대표이사 확인 { at, by } · back = 대표이사가 본부장에게 돌려보냄 { at, by, reason } · extra = 대표이사가 늘린 정원 { SA, B, reason, at, by } | null (다시 마감해도 남는다 — 실제 로그인은 묶음 extra)
 const evPoolSel = { ceo:new Set(), hr:new Set() }, evPoolOpen = { ceo:null, hr:null };   // 목록에서 체크한 묶음 / 명단을 펼친 묶음
 let evOpen = null;   // 지금 펼친 평가 대상 pid
 const EV_RANK = 'SABCD';   // 앞이 높은 등급
@@ -11371,7 +11372,7 @@ async function evLiveLoad(year=EV_LIVE.year){   // GET /api/eval/state → evPeo
     if(!r.ok) throw new Error(r.status);
     const j = await r.json(), rd = j.round || {}, day = t=>t ? kpiYmd(t) : null, at = a=>a ? { ...a, at:day(a.at) } : null;
     const rows = [j.me, ...j.people].filter(Boolean).map(evFromLive), logs = j.pools.map(x=>{ const l = x.log;   // 먼저 다 바꿔 본다 — 줄 하나가 틀리면 아래로 가지 않는다(전에 읽은 것 그대로)
-      return [x.key, { head:l.closed && { ...at(l.closed), seen:{ [kpiRole]:x.hrSeen } }, ceo:at(l.ceo), back:at(l.back), undo:l.undo && { ...at(l.undo), from:l.undo.from==='HR' ? 'HR 확정' : '대표이사 확인' } }]; });   // 되돌린 단계: 서버 HR(확정을 되돌림) · CEO(대표이사 확인을 되돌림) → evPoolText 글자
+      return [x.key, { head:l.closed && { ...at(l.closed), seen:{ [kpiRole]:x.hrSeen } }, ceo:at(l.ceo), back:at(l.back), undo:l.undo && { ...at(l.undo), from:l.undo.from==='HR' ? 'HR 확정' : '대표이사 확인' }, extra:at(x.extra) }]; });   // 되돌린 단계: 서버 HR(확정을 되돌림) · CEO(대표이사 확인을 되돌림) → evPoolText 글자
     Object.assign(EV_LIVE, { state:'ok', year:j.year, offline:j.offline, round:j.round, pools:j.pools, todo:j.todo, deleg:j.deleg, ceoId:j.ceoId });
     evPeople.length = 0; evPeople.push(...rows);   // ponytail: 시연 명단 자리를 그대로 쓴다 (평가 결과 탭은 따로 — EV_RES · evResLoad)
     Object.assign(kpiPeriod, { evalFrom:rd.evalStart || '', selfTo:rd.selfTo || '', evidDue:rd.evidDue || '', scoreTo:rd.scoreTo || '', gradeTo:rd.gradeTo || '', ceoTo:rd.ceoTo || '', evalTo:rd.finalTo || '' });
@@ -11494,6 +11495,7 @@ function evQuota(n, extra, r=evRatio){   // 묶음 정원 — 인원 n · 등급
   return C<0 ? null : { mode:'INDIVIDUAL', A, B, C, D, capS:A };
 }
 function evQuotaText(q, extra){   // 정원 글자 — 서버 _pool_json quota 와 같은 글자 (늘린 정원이 들어간 숫자, 늘렸으면 뒤에 " · 대표이사 허용 …" — 0인 쪽은 뺀다)
+  if(!q) return '늘린 정원이 묶음 인원보다 많습니다.';   // 정원 셈이 멈춤 (서버는 인원을 바꾸는 쓰기에서 막는다 — 보이는 명단 수가 서버와 다를 때)
   const more = [['S·A', extra?.SA], ['B', extra?.B]].filter(([, x])=>x).map(([g, x])=>`${g} +${x}명`).join(' · ');
   return (q.mode==='INDIVIDUAL' ? `S 최대 ${q.capS}명 · A ${q.A}명 (S만큼 줄어듦) · B ${q.B}명 · D ${q.D}명 · C 나머지` : `S 최대 ${q.capS}명 · A·B 합계 ${q.upper}명 (S만큼 줄어듦) · C·D 나머지`) + (more ? ` · 대표이사 허용 ${more}` : '');
 }
@@ -11512,6 +11514,7 @@ function evValidate(roster, assign, quota, full, needNote=true){   // roster:[{p
     if(scored(r) && evAbove(g, evBand(r.score))) errors.push(`${r.name} 님은 총점 ${r.score}점이라 ${g}를 줄 수 없습니다. (${evBandText(g)})`);   // 점수 기준보다 높은 등급은 줄 수 없다. 현장직은 총점이 없어 제외
     if(r.blocked && 'SAB'.includes(g)) errors.push(`${r.name} 님은 연차 초과 ${EV_LEAVE_LIMIT}일 이상이라 S·A·B를 줄 수 없습니다.`);
   });
+  if(!quota) return { errors:[...errors, '늘린 정원이 묶음 인원보다 많습니다.'], warnings, cnt };   // 정원 셈이 멈춤 — 정원 · 역전 줄은 따지지 않는다 (고르기 칸 · 시연 제외가 막는다)
   const K = cnt.S;
   if(K > quota.capS) errors.push(`S는 최대 ${quota.capS}명입니다. (현재 ${K}명)`);
   if(quota.mode==='INDIVIDUAL'){
@@ -11581,11 +11584,14 @@ function evPoolUndo(k, by){   // HR: 결과 공개 전에 묶음을 한 단계 �
   if(st==='HR') evPoolLog[k].ceo = null;
   evPoolLog[k].undo = { at:kpiDay(0), by, from:st==='DONE' ? 'HR 확정' : '대표이사 확인' }; return null;
 }
-function evPoolBack(k, reason, by){   // 대표이사가 본부 팀원 등급 배정을 본부장에게 돌려보낸다 (직접 고치지 않는다)
+function evPoolBack(k, reason, by, extra){   // 대표이사가 본부 팀원 등급 배정을 본부장에게 돌려보낸다 (직접 고치지 않는다). extra = 늘린 정원 { SA, B } — 주면 그 이유로 바꾸고(0 · 0 이면 지움), 안 주면 그대로 (서버 pools/back)
   if(k!=='div' || evPoolState(k)!=='CEO') return '돌려보낼 수 있는 단계가 아닙니다.';
   if(!reason.trim()) return '돌려보내는 이유를 적어 주세요.';
+  if(extra && !evQuota(evPoolList(k).length, extra)) return '늘린 정원이 묶음 인원보다 많습니다.';
   evPoolList(k).forEach(p=>{ p.stage = 'GRADE'; });
-  evPoolLog[k].back = { at:kpiDay(0), by, reason:reason.trim() }; return null;
+  evPoolLog[k].back = { at:kpiDay(0), by, reason:reason.trim() };
+  if(extra) evPoolLog[k].extra = evExtraRec(extra, reason, by);
+  return null;
 }
 function evEdited(p){   // 윗사람이 넘긴 뒤 평가자가 낸 점수·등급과 달라졌으면 무엇이 바뀌었는지(글자). 같거나 아직 안 넘겼으면 ''. 대표이사가 평가자인 직속부서 팀장은 고치는 사람도 대표이사라 따지지 않는다
   if(AUTH.live) return p.edited===true ? '고쳤습니다' : p.edited || '';   // 서버: 공개 전 평가자에게는 참(고쳤다는 사실)만, 보는 사람에게는 고친 내용 글자
@@ -11669,6 +11675,10 @@ function evSelfCheck(){   // 브라우저 콘솔에서 evSelfCheck() 실행
     Object.assign(evRatio, { SA:10, B:10, D:10 });
     ok(Q(10, { SA:1, B:0 })==='2,1,6,1,2' && Q(10, { SA:0, B:2 })==='1,3,5,1,1' && Q(4, { SA:1, B:0 })==='2,2,2' && Q(1, { SA:1, B:0 })==='1,0,1' && Q(10, null)===Q(10), '늘린 정원은 S·A · B(4명 이하는 위쪽)에 더하고 S 상한도 오른다');
     ok(evQuota(5, { SA:5, B:5 })===null && evQuota(3, { SA:2, B:1 })===null, '늘린 정원이 인원을 넘으면 null');
+    ok(evQuotaText(null)==='늘린 정원이 묶음 인원보다 많습니다.' && evValidate([{ pid:1, name:'가', score:95, kpi:true }], { 1:'A' }, null, false).errors.join()==='늘린 정원이 묶음 인원보다 많습니다.', '정원 셈이 멈춰도(늘린 정원 > 인원) 정원 글자 · 검사는 멈추지 않고 서버 문구');
+    const XO = (n, g, e)=>[...evExtraOpts(n, g, e).matchAll(/value="(\d)"/g)].map(m=>m[1]).join('');
+    ok(XO(5, 'SA', { SA:0, B:0 })==='012' && XO(5, 'B', { SA:2, B:0 })==='0' && XO(4, 'SA', { SA:0, B:2 })==='01' && XO(4, 'B', { SA:0, B:0 })==='0123' && XO(13, 'SA', { SA:0, B:0 })==='012345' && XO(1, 'SA', { SA:0, B:0 })==='01' && XO(0, 'B', { SA:0, B:0 })==='0'
+      && evExtraOpts(5, 'SA', { SA:1, B:0 }).includes('<option value="1" selected>+1명</option>'), '늘린 정원 고르기 칸: 다른 칸 값 그대로 정원 합이 인원을 넘지 않는 데까지 · 5명까지 (서버 _extra) · 지금 값이 처음 값');
     const T = (n, e)=>evQuotaText(evQuota(n, e), e);   // 서버 _pool_json quota (backend/auth_check.py 의 글자 그대로)
     ok(T(4)==='S 최대 1명 · A·B 합계 1명 (S만큼 줄어듦) · C·D 나머지' && T(10)==='S 최대 1명 · A 1명 (S만큼 줄어듦) · B 1명 · D 1명 · C 나머지'
       && T(4, { SA:1, B:0 })==='S 최대 2명 · A·B 합계 2명 (S만큼 줄어듦) · C·D 나머지 · 대표이사 허용 S·A +1명' && T(3, { SA:0, B:1 })==='S 최대 1명 · A·B 합계 2명 (S만큼 줄어듦) · C·D 나머지 · 대표이사 허용 B +1명', '정원 글자: 두 모드 · 늘린 정원 (0인 쪽은 뺀다)');
@@ -11878,7 +11888,7 @@ function evPickBtns(p, can){   // 등급 고르기. 점선 = 평가자가 넣은
 }
 function evCounts(cnt){ return ['S','A','B','C','D'].map(g=>`<span class="ev-count">${g} <b>${cnt[g]}</b></span>`).join(''); }
 function evGradeTable(k, mode){   // 묶음 한 개의 명단 표. mode: 'head' 본부장 배정 / 'ceo' 대표이사 확인 / 'hr' HR 확정(보기만). { html, v, waiting }
-  const list = evPoolList(k), extra = AUTH.live ? evLivePool(k)?.extra : evPoolLog[k]?.extra, quota = evQuota(list.length, extra), stage = evAssignStage(k), kind = evKind(k);   // extra = 대표이사가 늘린 정원 (묶음마다)
+  const list = evPoolList(k), extra = evPoolLog[k]?.extra, quota = evQuota(list.length, extra), stage = evAssignStage(k), kind = evKind(k);   // extra = 대표이사가 늘린 정원 (묶음마다 — 실제 로그인은 evLiveLoad 가 묶음 extra 를 옮겨 둔다)
   const rows = list.slice().sort((a,b)=>evTotal(b)-evTotal(a)).map(p=>{
     const at = evAt(p, stage), can = mode!=='hr' && evStarted() && evCanAssign(p), open = evOpen===('g'+p.pid);
     const gradeCell = at===0 ? (evIsLine(p) ? evLineGradeBtns(p, can, 'evAssign') : evPickBtns(p, can))
@@ -11895,18 +11905,19 @@ function evGradeTable(k, mode){   // 묶음 한 개의 명단 표. mode: 'head' 
   const note = mode==='hr' ? '대표이사가 확인한 등급입니다' : kind==='lead' ? '전사 팀장을 한 묶음으로 비율을 맞춥니다 · 점선 = 평가자(본부장)가 넣은 등급 · 등급을 누르거나 "상세"에서 점수를 고칩니다'
     : mode==='head' ? '점선 = 팀장 의견 · "상세"에서 팀장이 매긴 점수를 보고 고칠 수 있습니다 · 팀장은 여기서 빼고 따로 평가합니다'
     : kind==='direct' ? '점선 = 팀장 의견 · 대표이사가 등급을 정합니다' : '본부장이 배정한 등급입니다 · 바꿀 것이 있으면 목록의 "돌려보내기"로 본부장에게 보냅니다';
-  const html = `<div class="ev-quota">${qText} · <b>점수 기준: S 100 · A ${evBands.A} · B ${evBands.B} · C ${evBands.C}점 초과</b>${kind==='lead' ? '' : AUTH.live ? ' (등급 평가(KPI 없는 분)는 제외)' : ' (현장직 제외)'} · <b>연차 초과 ${EV_LEAVE_LIMIT}일 이상은 S·A·B 불가</b> · ${note}</div>
+  const html = `<div class="ev-quota">${qText} · <b>점수 기준: S 100 · A ${evBands.A} · B ${evBands.B} · C ${evBands.C}점 초과</b>${kind==='lead' ? '' : AUTH.live ? ' (등급 평가(KPI 없는 분)는 제외)' : ' (현장직 제외)'} · <b>연차 초과 ${EV_LEAVE_LIMIT}일 이상은 S·A·B 불가</b> · ${note}${mode!=='hr' && evExtraCan(k) ? ` <button class="btn sm" style="margin-left:4px;" onclick="evExtraAsk('${k}')">정원 늘리기</button>` : ''}</div>
     <div class="ct-tbl"><table class="ev-table"><thead><tr><th>이름</th><th>단계</th><th class="num">총점</th><th>등급</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
     ${v.errors.length ? kpiNote(v.errors.map(escapeHtml).join('<br>'), 'danger') : ''}${v.warnings.length ? kpiNote(v.warnings.map(escapeHtml).join('<br>')+'<br>정원보다 적은 건 경고만 하고 넘길 수 있습니다.', 'warning') : ''}`;
   return { html, v, waiting };
 }
 function evHeadCard(k='div'){   // 본부장: 본부 팀원 등급 배정 → 마감하면 대표이사 확인으로 넘어간다 (실제 로그인: 마감할 수 있는 묶음 k 마다 — evLiveHeads)
-  const t = evGradeTable(k, 'head'), list = evPoolList(k), here = list.some(p=>p.stage==='GRADE'), back = evPoolLog[k]?.back;
+  const t = evGradeTable(k, 'head'), list = evPoolList(k), here = list.some(p=>p.stage==='GRADE'), back = evPoolLog[k]?.back, x = evPoolLog[k]?.extra;
+  const more = x ? ` · <b>${[['S·A', x.SA], ['B', x.B]].filter(([, n])=>n).map(([g, n])=>`${g} 정원 +${n}명`).join(' · ')} 허용</b> (올해 이 본부만)` : '';   // 대표이사가 늘린 정원 (시안 2)
   const foot = t.waiting ? `아직 ${t.waiting}명이 이전 단계에 있습니다.` : here ? '등급을 모두 넣고 비율에 문제가 없으면 마감할 수 있습니다.'
     : { CEO:'마감했습니다. 대표이사 확인을 기다립니다.', HR:'대표이사가 확인했습니다. HR 확정을 기다립니다.', DONE:'확정됐습니다.' }[evPoolState(k)] || '';
   return `<div class="card" style="margin-bottom:14px;">
     <div class="card-title"><span>③ 본부 등급 배정 <span style="font-weight:500; color:var(--text-secondary);">${evPoolName(k)} ${list.length}명</span></span><span class="ev-counts">${evCounts(t.v.cnt)}</span></div>
-    ${back && here ? kpiNote(`<b>대표이사가 돌려보냈습니다</b> · ${back.at} · ${escapeHtml(back.reason)}`, 'danger') : ''}
+    ${back && here ? kpiNote(`<b>대표이사가 돌려보냈습니다</b> · ${back.at} · ${escapeHtml(back.reason)}${more}`, 'danger') : ''}
     ${t.html}
     <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; margin-top:10px;">
       <span class="list-sub" style="margin:0;">${here && evLate('gradeTo') ? '<span class="badge danger">기한 지남</span> ' : ''}${foot}</span>
@@ -12119,19 +12130,48 @@ function evPoolDone(mode){   // 체크한 묶음을 한 번에: 대표이사 확
     : evActive().every(p=>p.stage==='DONE') ? `모든 평가 결과를 확정했습니다. <span class="more" onclick="goTo('perf','e3')">평가 결과 탭</span>에서 공개하면 직원이 보고, 등급이 연봉계약 능력급에 반영됩니다.`
     : `${done.length}개 묶음을 확정했습니다. 나머지 묶음도 확정해야 결과를 공개할 수 있습니다.`);
 }
+function evExtraOf(k){ const e = evPoolLog[k]?.extra; return { SA:e?.SA || 0, B:e?.B || 0 }; }   // 그 묶음의 지금 늘린 정원 (시연 · 실제 로그인 모두 evPoolLog — evLiveLoad 가 묶음 extra 를 옮긴다)
+function evExtraOpts(n, g, ex){   // 늘린 정원 고르기 칸 g('SA' · 'B')의 숫자: 다른 칸은 ex 그대로, 정원 합이 인원 n 을 넘지 않는 데까지 · 5명까지 (서버 _extra · EXTRA_MAX). 지금 값(ex[g])이 처음 값
+  let h = '';
+  for(let x=0; x<=5 && evQuota(n, { ...ex, [g]:x }); x++) h += `<option value="${x}"${x===ex[g] ? ' selected' : ''}>+${x}명</option>`;
+  return h;
+}
+function evExtraFields(k){   // 고르기 칸 둘 (돌려보내기 · 정원 늘리기 창). "지금" = 비율로 센 정원 (4명 이하 묶음은 S·A·B 합쳐 하나라 B 는 늘린 몫만)
+  const n = evPoolList(k).length, ex = evExtraOf(k), q = evQuota(n), now = { SA:q.capS, B:q.mode==='INDIVIDUAL' ? q.B : q.upper - q.capS };
+  return `<div style="display:flex; gap:16px; align-items:center; flex-wrap:wrap;">${[['SA','S·A'],['B','B']].map(([g, t])=>`<span style="display:inline-flex; gap:6px; align-items:center;"><b>${t}</b> 지금 ${now[g]}명 → <select id="evX${g}" style="width:auto;" aria-label="${t} 늘릴 정원" onchange="evExtraRe('${k}')">${evExtraOpts(n, g, ex)}</select></span>`).join('')}</div>`;
+}
+function evExtraNow(){ return { SA:+document.getElementById('evXSA').value, B:+document.getElementById('evXB').value }; }   // 창에서 고른 늘린 정원
+function evExtraRe(k){ const n = evPoolList(k).length, ex = evExtraNow(); ['SA','B'].forEach(g=>{ document.getElementById('evX'+g).innerHTML = evExtraOpts(n, g, ex); }); }   // 하나를 고르면 두 칸의 숫자를 다시 (넘는 숫자를 내놓지 않는다)
+function evExtraCan(k){ if(AUTH.live) return !!evLivePool(k)?.can.extra; return evKind(k)!=='div' && evStarted() && !['HR','DONE'].includes(evPoolState(k)) && evPeople.filter(p=>evPool(p)===k).every(p=>evCeoActs(p)); }   // [정원 늘리기]: 대표이사가 직접 등급을 정하는 묶음만 · 대표이사 확인 전. 시연은 대표이사 또는 맡은 HR(자기가 든 묶음 빼고 — 제외된 사람도 든 것으로, 서버 _behalf_ok)
+function evExtraAsk(k){   // 대표이사가 직접 정하는 묶음(전사 팀장 · 직속부서 · 본부장 없는 본부)의 정원 늘리기 창
+  orgModal(`<div class="card-title"><span>정원 늘리기 · ${evPoolName(k)}</span><button type="button" class="x-btn" onclick="orgCloseModal()" aria-label="닫기">${icon('x')}</button></div><div id="evErr"></div>
+    <div class="field" style="margin-bottom:12px;">${evExtraFields(k)}</div>
+    <div class="field" style="margin-bottom:12px;"><label for="evXWhy">늘리는 이유 (HR에게 보입니다)</label><textarea id="evXWhy" rows="3" maxlength="200">${escapeHtml(evPoolLog[k]?.extra?.reason || '')}</textarea></div>
+    <div style="display:flex; gap:8px;"><button class="btn primary" onclick="evExtraSet('${k}')">저장</button><button class="btn" onclick="orgCloseModal()">취소</button></div>`);
+}
+function evExtraRec(ex, why, by){ return ex.SA || ex.B ? { SA:ex.SA, B:ex.B, reason:why.trim(), at:kpiDay(0), by } : null; }   // 시연 묶음 기록 (0 · 0 이면 지운다 — 서버 _put_extra)
+function evExtraSet(k){   // [저장] — 실제 로그인 pools/extra (권한 · 상태 · 인원 · 글자 수는 서버가 다시 본다), 시연은 묶음 기록에 바로. 단계는 그대로 (대표이사가 그만큼 더 주고 확인한다)
+  const ex = evExtraNow(), why = document.getElementById('evXWhy').value.trim();
+  if((ex.SA || ex.B) && !why) return document.getElementById('evErr').innerHTML = kpiNote('정원을 늘리는 이유를 1~200자로 써 주세요.', 'danger');
+  if(AUTH.live) return evLiveDo('/api/eval/pools/extra', { pool:k, extra:ex, reason:why }, '정원을 바꿨어요.');
+  if(!evExtraCan(k)) return;
+  evPoolLog[k].extra = evExtraRec(ex, why, evActor()); orgCloseModal(); kpiFlash('정원을 바꿨어요.');
+}
 function evReturnAsk(k){
-  const self = evNoHead(k);   // 본부장이 없는 본부: 대표이사 자신의 배정 단계로 되돌린다
+  const self = evNoHead(k);   // 본부장이 없는 본부: 대표이사 자신의 배정 단계로 되돌린다 (정원은 등급 표의 [정원 늘리기]로)
   orgModal(`<div class="card-title"><span>${self ? '배정 단계로 되돌리기' : '본부장에게 돌려보내기'} · ${evPoolName(k)}</span><button type="button" class="x-btn" onclick="orgCloseModal()" aria-label="닫기">${icon('x')}</button></div><div id="evErr"></div>
     <div class="list-sub" style="margin-bottom:10px;">${self ? '되돌리면 이 묶음이 대표이사 배정 단계로 돌아가요. 등급을 다시 정해 마감해 주세요.' : '대표이사는 본부 팀원의 등급을 직접 고치지 않습니다. 이유를 적어 돌려보내면 본부장이 다시 배정해 마감합니다.'}</div>
     <div class="field" style="margin-bottom:12px;"><label for="evRetWhy">${self ? '되돌리는 이유' : '돌려보내는 이유 (본부장에게 보입니다)'}</label><textarea id="evRetWhy" rows="3" placeholder="예: A 등급 대상자를 다시 검토해 주세요"></textarea></div>
+    ${self ? '' : `<div class="field" style="margin-bottom:12px;"><label for="evXSA">정원 늘려 주기 (필요할 때만)</label>${evExtraFields(k)}<div class="list-sub" style="margin:8px 0 0;">올해 이 본부만 늘어나요 · 본부장이 그만큼 더 주고 다시 마감해요 · 점수 기준과 연차 규칙은 그대로예요 · 늘린 정원과 이유는 HR 화면 · 결과 보고서에 남아요</div></div>`}
     <div style="display:flex; gap:8px;"><button class="btn primary" onclick="evReturn('${k}')">${self ? '배정 단계로 되돌리기' : '돌려보내기'}</button><button class="btn" onclick="orgCloseModal()">취소</button></div>`);
 }
 function evReturn(k){
-  if(AUTH.live){ const why = document.getElementById('evRetWhy').value.trim(), self = evNoHead(k);   // 권한 · 상태(CEO · FIX) · 글자 수(200)는 서버가 다시 본다
+  const x = document.getElementById('evXSA') && evExtraNow(), o = evExtraOf(k), extra = x && (x.SA!==o.SA || x.B!==o.B) ? x : undefined;   // 늘린 정원은 바꿨을 때만 보낸다 (안 보내면 그대로 — 늘린 이유도 남는다)
+  if(AUTH.live){ const why = document.getElementById('evRetWhy').value.trim(), self = evNoHead(k);   // 권한 · 상태(CEO · FIX) · 글자 수(200) · 늘린 정원은 서버가 다시 본다
     if(!why) return document.getElementById('evErr').innerHTML = kpiNote(self ? '되돌리는 이유를 적어 주세요.' : '돌려보내는 이유를 적어 주세요.', 'danger');
-    return evLiveDo('/api/eval/pools/back', { pool:k, reason:why }, ()=>{ evPoolSel.ceo.delete(k); return self ? `${evPoolName(k)} 묶음을 배정 단계로 되돌렸어요. 등급을 다시 정해 마감하면 목록에 돌아와요.` : `${evPoolName(k)} 등급 배정을 돌려보냈어요. 다시 마감하면 목록에 돌아와요.`; }); }
+    return evLiveDo('/api/eval/pools/back', { pool:k, reason:why, ...(extra && { extra }) }, ()=>{ evPoolSel.ceo.delete(k); return self ? `${evPoolName(k)} 묶음을 배정 단계로 되돌렸어요. 등급을 다시 정해 마감하면 목록에 돌아와요.` : `${evPoolName(k)} 등급 배정을 돌려보냈어요. 다시 마감하면 목록에 돌아와요.`; }); }
   if(!evCeoActs(null)) return;
-  const err = evPoolBack(k, document.getElementById('evRetWhy').value, evActor());
+  const err = evPoolBack(k, document.getElementById('evRetWhy').value, evActor(), extra);
   if(err) return document.getElementById('evErr').innerHTML = kpiNote(escapeHtml(err), 'danger');
   evPoolSel.ceo.delete(k); orgCloseModal(); kpiFlash(`${evPoolName(k)} 등급 배정을 본부장에게 돌려보냈습니다. 본부장이 다시 마감하면 목록에 돌아옵니다.`);
 }
@@ -12325,6 +12365,14 @@ async function evLiveSelfCheck(){   // 브라우저 콘솔에서 await evLiveSel
       && d8.querySelector('button[onclick="evHeadAsk(3)"]')?.textContent==='코멘트' && !d8.querySelector('button[onclick="evHeadAsk(7)"]') && !e8.includes('가점'), '⑧ 정원 줄 = 서버 비율 · 묶음 extra (서버 quota 글자와 같게) · KPI 없는 분 점수 화면 안내 · [코멘트] 단추(배정할 수 있는 줄만)');
     evHeadAsk(3); document.getElementById('evF_head').value = '  가상 윗사람 코멘트 '; sent.length = 0; await evHeadSave(3);
     ok(sent[0][0]==='/api/eval/people/3/edit' && JSON.stringify(sent[0][1])==='{"year":2026,"headComment":"가상 윗사람 코멘트"}' && !document.getElementById('orgModal'), '⑧ 코멘트 창: people/<uid>/edit 에 headComment 만 (가점 칸 없음) · 받은 뒤 창을 닫는다');
+    const p8 = state.pools[0], s8 = state.people, b8 = ()=>dom(evContent()).querySelector("button[onclick=\"evSubmitGrades('DIV:1')\"]");
+    state = { ...state, people:[s8[1]], pools:[{ ...p8, log:{ ...p8.log, closed:null, back:{ at:'2026-10-26T01:00:00Z', by:'가상대표', reason:'가상 한 명 더' } } }] }; await evLiveLoad();
+    const t8 = dom(evContent()).textContent, on8 = !b8().disabled;
+    state = { ...state, pools:[{ ...state.pools[0], errors:['가상 역전 줄'], warnings:['가상 경고 줄'] }] }; await evLiveLoad();
+    const t8b = dom(evContent()).textContent;
+    ok(t8.includes('대표이사가 돌려보냈습니다 · 2026-10-26 · 가상 한 명 더 · S·A 정원 +1명 허용 (올해 이 본부만)') && JSON.stringify(evPoolLog['DIV:1'].extra)==='{"SA":1,"B":0,"reason":"가상 늘린 이유","at":"2026-10-26","by":"가상대표"}'
+      && on8 && b8().disabled && t8b.includes('가상 역전 줄') && t8b.includes('가상 경고 줄'), '⑧ 묶음 extra → evPoolLog (at 은 한국 날짜) · 돌려보낸 줄 끝 늘린 정원 · 서버 errors 면 마감 단추 꺼짐 · warnings 노란 줄');
+    state = { ...state, people:s8, pools:[p8] }; await evLiveLoad();
     kpiRole = 'ceo'; AUTH.me = { ...AUTH.me, user_id:6, position:'CEO' };
     ok(!evContent().includes('(대표이사로)') && evContent().includes('등급 배정 마감'), '⑧ 본부장이 없는 본부를 대표이사가 마감할 때는 "(대표이사로)"를 붙이지 않는다');
     // ⑫ 평가 3단계 ② — 대표이사 확인 · HR 확정 · 돌려보내기 · 되돌리기: 체크 · 단추는 서버 pools[].can 대로, 보내는 본문 (되돌리기는 화면이 본 상태 from)
@@ -12347,6 +12395,22 @@ async function evLiveSelfCheck(){   // 브라우저 콘솔에서 await evLiveSel
     ok(sent[0][0]==='/api/eval/pools/confirm' && JSON.stringify(sent[0][1])==='{"year":2026,"pools":["DIV:1"]}' && sent[1][0]==='/api/eval/state?year=2026' && !evPoolSel.ceo.size, '⑫ [선택한 1개 확인]: pools/confirm {year, pools} → 다시 읽기 · 고른 것을 비운다');
     evReturnAsk('DIV:1'); document.getElementById('evRetWhy').value = '  가상 다시 봐 주세요 '; sent.length = 0; await evReturn('DIV:1');
     ok(sent[0][0]==='/api/eval/pools/back' && JSON.stringify(sent[0][1])==='{"year":2026,"pool":"DIV:1","reason":"가상 다시 봐 주세요"}' && !document.getElementById('orgModal'), '⑫ 돌려보내기: pools/back {year, pool, reason(앞뒤 공백 뗌)} · 받은 뒤 창을 닫는다');
+    const xs = id=>[...document.getElementById(id).options].map(o=>o.value).join(), xpick = (id, v)=>{ const s = document.getElementById(id); s.value = v; s.dispatchEvent(new Event('change')); };
+    evReturnAsk('DIV:1');
+    ok(xs('evXSA')==='0,1' && xs('evXB')==='0,1' && document.getElementById('orgModal').textContent.includes('정원 늘려 주기 (필요할 때만)'), '⑫ 돌려보내기 창(본부장이 있는 본부): 정원 늘려 주기 칸 — 1명 묶음은 +1명까지');
+    xpick('evXSA', '1'); document.getElementById('evRetWhy').value = '가상 정원 더'; sent.length = 0; await evReturn('DIV:1');
+    ok(sent[0][0]==='/api/eval/pools/back' && JSON.stringify(sent[0][1])==='{"year":2026,"pool":"DIV:1","reason":"가상 정원 더","extra":{"SA":1,"B":0}}' && !document.getElementById('orgModal'), '⑫ 늘린 정원을 고르면 pools/back 에 extra {SA, B} 를 함께 (바꾸지 않으면 보내지 않는다 — 위 줄)');
+    state = { ...state, people:[...state.people, row({ pid:9, name:'가상팀장둘', title:'팀장', poolKey:'LEADERS', poolName:'전사 팀장', hidden:false, edited:'', stage:'CEO', grade:'B' })], pools:[pc('DIV:1', 'CEO', { confirm:true, back:true }), pc('LEADERS', 'WAIT', { extra:true }), pc('DIRECT', 'CEO', {})] };
+    await evLiveLoad();
+    const xb = k=>dom(evGradeTable(k, 'ceo').html).querySelector(`button[onclick="evExtraAsk('${k}')"]`);
+    ok(xb('LEADERS')?.textContent==='정원 늘리기' && !xb('DIV:1') && !xb('DIRECT'), '⑫ [정원 늘리기]: 서버 can.extra 인 묶음만');
+    evExtraAsk('LEADERS');
+    ok(document.getElementById('orgModal').querySelector('.card-title').textContent.startsWith('정원 늘리기 · 전사 팀장') && xs('evXSA')==='0,1', '⑫ 정원 늘리기 창: 제목 · 고르기 칸');
+    xpick('evXSA', '1'); sent.length = 0; await evExtraSet('LEADERS');
+    ok(!sent.length && document.getElementById('evErr').textContent==='정원을 늘리는 이유를 1~200자로 써 주세요.', '⑫ 늘리면서 이유가 없으면 보내지 않는다');
+    document.getElementById('evXWhy').value = ' 가상 늘린 이유 '; await evExtraSet('LEADERS');
+    ok(sent[0][0]==='/api/eval/pools/extra' && JSON.stringify(sent[0][1])==='{"year":2026,"pool":"LEADERS","extra":{"SA":1,"B":0},"reason":"가상 늘린 이유"}' && !document.getElementById('orgModal') && kpiMsg.msg==='정원을 바꿨어요.', '⑫ 정원 늘리기: pools/extra {year, pool, extra, reason} → 다시 읽기 · 창을 닫는다');
+    state = { ...state, people:state.people.slice(0, 1), pools:[pc('DIV:1', 'CEO', { confirm:true, back:true }), pc('LEADERS', 'WAIT', {}), pc('DIRECT', 'CEO', {})] }; await evLiveLoad();
     // ⑫ 본부장이 없는 본부(서버 assignerIsCeo — 배정자 = 대표이사)는 "본부장" 대신 "배정 단계로" · FIX 묶음은 돌려보내라는 안내 (대표이사는 본부 팀원 등급을 고치지 못한다)
     state = { ...state, pools:[{ ...pc('DIV:1', 'FIX', { back:true }), errors:['가상 A·B 정원 초과'] }] }; await evLiveLoad();
     ok(evPoolText('DIV:1', 'FIX', 'ceo')==='가상 A·B 정원 초과 — 본부장에게 돌려보내 주세요', '⑫ 본부 팀원 묶음 FIX: "명단을 열어 맞춰" 대신 본부장에게 돌려보내라는 안내');
@@ -12354,7 +12418,7 @@ async function evLiveSelfCheck(){   // 브라우저 콘솔에서 await evLiveSel
     ok(evPoolText('DIV:1', 'FIX', 'ceo')==='가상 A·B 정원 초과 — 배정 단계로 되돌려 주세요', '⑫ 본부장이 없는 본부 FIX: 배정 단계로 되돌리라는 안내');
     state = { ...state, pools:[pc('DIV:1', 'CEO', { confirm:true, back:true })] }; await evLiveLoad();
     evReturnAsk('DIV:1'); const m12 = document.getElementById('orgModal').textContent;
-    ok(m12.includes('배정 단계로 되돌리기') && !m12.includes('본부장'), '⑫ 본부장이 없는 본부의 돌려보내기 창: 제목 · 안내 · 단추가 "배정 단계로 되돌리기" (본부장 글자 없음)');
+    ok(m12.includes('배정 단계로 되돌리기') && !m12.includes('본부장') && !document.getElementById('evXSA'), '⑫ 본부장이 없는 본부의 돌려보내기 창: 제목 · 안내 · 단추가 "배정 단계로 되돌리기" (본부장 글자 없음) · 정원 늘려 주기 칸 없음 (등급 표의 [정원 늘리기])');
     document.getElementById('evRetWhy').value = '가상 다시'; await evReturn('DIV:1');
     ok(kpiMsg.msg.includes('배정 단계로 되돌렸어요') && !kpiMsg.msg.includes('본부장'), '⑫ 되돌린 뒤 알림 글도 "배정 단계로"');
     state = { ...state, people:[row({ hidden:false, edited:'', stage:'GRADE', grade:'B', assignerIsCeo:true })], pools:[{ ...pc('DIV:1', 'WAIT', {}), log:{ closed:null, ceo:null, back:{ at:'2026-10-26T01:00:00Z', by:'가상대표', reason:'가상 다시' }, undo:null } }] };
@@ -12611,6 +12675,7 @@ function evSkipSelf(pid){   // HR: 자기평가를 내지 않은 사람을 자�
 function evExclude(pid){   // HR: 이번 평가에서 뺀다(수습·휴직 등). 평가자가 점수를 내기 전에만. 묶음 인원과 비율에서도 빠진다
   const p = evFind(pid);
   if(!kpiIsHr() || p.out || evAt(p, 'SCORE')>0) return;
+  if(!AUTH.live && !evQuota(evPoolList(evPool(p)).length - 1, evPoolLog[evPool(p)]?.extra)) return kpiFlash('대표이사가 늘린 정원이 묶음 인원보다 많아져 뺄 수 없습니다. 먼저 늘린 정원을 줄여 주세요.', 'danger');   // 시연: 빼고 나서도 늘린 정원이 맞아야 (서버 409 — 실제 로그인은 서버가 본다)
   const why = (prompt(`${p.name} 님을 이번 평가에서 제외하는 이유를 적어 주세요. (예: 수습, 휴직)`) || '').trim();
   if(!why) return;
   if(AUTH.live) return evLiveDo(`/api/eval/admin/${+pid}/exclude`, { reason:why }, ()=>{ evOpen = null; return `${escapeHtml(p.name)} 님을 이번 평가에서 제외했어요. 묶음 인원과 등급 비율에서도 빠져요.`; });
@@ -12621,6 +12686,7 @@ function evInclude(pid){   // 제외를 되돌린다 — 그 사람의 묶음이
   if(!kpiIsHr() || !p.out) return;
   const st = evPoolState(evPool(p));
   if(st!=='WAIT' && st!=='FIX') return kpiFlash('이 묶음은 이미 다음 단계로 넘어가 되돌릴 수 없습니다. 먼저 묶음을 되돌려 주세요.', 'danger');
+  if(!AUTH.live && !evQuota(evPoolList(evPool(p)).length + 1, evPoolLog[evPool(p)]?.extra)) return kpiFlash('대표이사가 늘린 정원이 묶음 인원보다 많아져 되돌릴 수 없습니다. 먼저 늘린 정원을 줄여 주세요.', 'danger');   // 시연: 4명 → 5명이면 사람마다 정원이 되어 넘칠 수 있다 (서버 409)
   if(AUTH.live) return evLiveDo(`/api/eval/admin/${+pid}/include`, {}, `${escapeHtml(p.name)} 님을 평가 대상으로 되돌렸어요.`);
   p.out = null; kpiFlash(`${escapeHtml(p.name)} 님을 평가 대상으로 되돌렸습니다.`);
 }
@@ -12734,8 +12800,9 @@ function evReportData(list=evActive()){   // HR 보고용 엑셀 (인사담당�
     return { div:p.div, team:p.team || '본부 직속', no:p.no || '', name:p.name, title:p.title, pool:evPoolRaw(evPool(p)), total:evIsLine(p) ? null : +evTotal(p).toFixed(1), grade:evExportGrade(p),
       stage:EV_STAGES[p.stage].replace('등급', '배정'),   // '본부장 등급 대기'의 '등급' 글자가 첫 사람 줄에 오면 연봉 인상 계산이 그 줄까지 제목으로 읽는다 (rzHead)
       appeal:!a ? '' : a.status==='OPEN' ? `처리 중 (지금 ${p.grade})` : a.status==='CEO' ? `대표이사 확인 대기 (${a.before} → ${a.after})` : a.before!==a.after ? `${a.before} → ${a.after} 반영` : '유지' }; });
-  return { year:KPI_YEAR, date:kpiDay(0), released:evRelease.at || null, appeals:list.filter(p=>p.appeal).length, open:list.filter(p=>p.appeal && p.appeal.status!=='DONE').length, people,
-    pools:evPoolKeys().map(k=>{ const q = evQuota(evPoolList(k).length); return { name:evPoolRaw(k), quota:q.mode==='GROUPED' ? `A·B 합계 ${q.upper}명` : `A·B·D 각 ${q.A}명`, ok:!evPoolCheck(k).errors.length }; }) };
+  return { year:KPI_YEAR, date:kpiDay(0), released:evRelease.at || null, ratio:{ ...evRatio }, appeals:list.filter(p=>p.appeal).length, open:list.filter(p=>p.appeal && p.appeal.status!=='DONE').length, people,
+    pools:evPoolKeys().map(k=>{ const x = evExtraOf(k), q = evQuota(evPoolList(k).length, x);   // 정원 글자 = 서버 eval_report._from_db (그해 비율 · 늘린 정원이 들어간 숫자, 늘렸으면 "(대표이사 허용 +n명)")
+      return { name:evPoolRaw(k), quota:(q.mode==='GROUPED' ? `S·A·B 합계 ${q.upper}명` : `S·A ${q.A}명 · B ${q.B}명 · D ${q.D}명`) + (x.SA + x.B ? ` (대표이사 허용 +${x.SA + x.B}명)` : ''), ok:!evPoolCheck(k).errors.length }; }) };
 }
 function evrSelfCheck(){   // 브라우저 콘솔에서 evrSelfCheck() 실행 (시연 상태는 끝나면 되돌린다)
   const ok = (c,m)=>{ if(!c) throw new Error('evrSelfCheck 실패: '+m); };
@@ -12763,6 +12830,74 @@ function evrSelfCheck(){   // 브라우저 콘솔에서 evrSelfCheck() 실행 (�
       evDemoFillData(); evRelease.at = kpiDay(0);
       ok(scan(), '가점 없음: 결과 공개 뒤');
     } finally { kpiRole = look.role; hrView = look.view; evOpen = look.open; Object.assign(evPoolOpen, look.po); evResView = look.rv; Object.assign(kpiPeriod, look.period); evPeople.forEach((p, i)=>{ p.headComment = look.head[i]; }); evRelease.at = null; if(document.getElementById('orgModal')) orgCloseModal(true); }
+    // 2026-10-27 대표이사 정원 늘려 주기 · 점수 역전 · 보고서 정원 글자 (시안 뉴디자인/대표이사 정원 예외 - 시안 1 돌려보내기 창 · 시안 2 본부장 화면 (2026-10-27).png)
+    const look2 = { role:kpiRole, period:{ ...kpiPeriod }, proxy:evProxy, msg:kpiMsg, ratio:{ ...evRatio }, log:kpiClone(evPoolLog), head:evPeople.map(p=>p.headComment), prompt:window.prompt };
+    try {
+      const dom = h=>{ const t = document.createElement('template'); t.innerHTML = h; return t.content; }, md = ()=>document.getElementById('orgModal'), mt = ()=>md().textContent;
+      const xs = id=>[...document.getElementById(id).options].map(o=>o.value).join(), pick = (id, v)=>{ const s = document.getElementById(id); s.value = v; s.dispatchEvent(new Event('change')); };
+      const head = ()=>{ kpiRole = 'head'; return evHeadCard('div'); }, close = ()=>{ kpiRole = 'head'; evSubmitGrades(); kpiRole = 'ceo'; };
+      kpiPeriod.evalFrom = kpiDay(-1); evProxy = false; Object.assign(evRatio, { SA:10, B:10, D:10 }); EV_POOLS.forEach(k=>{ evPoolLog[k] = {}; });
+      window.prompt = ()=>{ throw new Error('묻지 않아야 함'); };
+      evDemoFillData('CEO'); kpiRole = 'ceo';
+      evReturnAsk('div');
+      ok(xs('evXSA')==='0,1,2' && xs('evXB')==='0,1,2' && document.getElementById('evXSA').value==='0' && mt().includes('정원 늘려 주기 (필요할 때만)') && mt().includes('S·A 지금 1명 → ') && mt().includes('B 지금 1명 → ')
+        && mt().includes('올해 이 본부만 늘어나요 · 본부장이 그만큼 더 주고 다시 마감해요 · 점수 기준과 연차 규칙은 그대로예요 · 늘린 정원과 이유는 HR 화면 · 결과 보고서에 남아요'), '돌려보내기 창: 정원 늘려 주기 칸 (5명 묶음 기본 비율 — S·A · B 각 +0~+2명, 넘는 숫자 없음)');
+      pick('evXSA', '1');
+      ok(xs('evXB')==='0,1' && xs('evXSA')==='0,1,2' && document.getElementById('evXSA').value==='1', '하나를 고르면 다른 칸은 정원 합이 인원을 넘지 않는 데까지');
+      document.getElementById('evRetWhy').value = ' A 대상자 한 명을 더 검토해 주세요 '; evReturn('div');
+      ok(!md() && evPoolState('div')==='WAIT' && JSON.stringify(evPoolLog.div.extra)===JSON.stringify({ SA:1, B:0, reason:'A 대상자 한 명을 더 검토해 주세요', at:kpiDay(0), by:evActor() }), '보내면 늘린 정원 · 이유 · 날짜 · 누가 (evPoolLog.div.extra)');
+      const h1 = head(), q1 = dom(h1).querySelector('.ev-quota').textContent;
+      ok(h1.includes(`<b>대표이사가 돌려보냈습니다</b> · ${kpiDay(0)} · A 대상자 한 명을 더 검토해 주세요 · <b>S·A 정원 +1명 허용</b> (올해 이 본부만)`) && q1.startsWith('S 최대 2명 · A 2명 (S만큼 줄어듦) · B 1명 · D 1명 · C 나머지 · 대표이사 허용 S·A +1명 · '), '본부장 배정 카드: 돌려보낸 줄 끝에 늘린 정원 · 정원 줄은 늘린 숫자 (시안 2)');
+      close(); evReturnAsk('div');
+      ok(document.getElementById('evXSA').value==='1' && xs('evXB')==='0,1', '다시 돌려보낼 때 고르기 칸 처음 값 = 지금 늘린 값');
+      document.getElementById('evRetWhy').value = '다른 이유'; evReturn('div');
+      ok(evPoolLog.div.extra.reason==='A 대상자 한 명을 더 검토해 주세요' && evPoolLog.div.back.reason==='다른 이유', '늘린 정원을 바꾸지 않고 보내면 늘린 정원 · 그 이유는 그대로 (서버: extra 를 보내지 않음)');
+      close();
+      ok(evPoolBack('div', '더 늘려요', '대', { SA:2, B:1 })==='늘린 정원이 묶음 인원보다 많습니다.' && evPoolState('div')==='CEO' && evPoolLog.div.extra.SA===1, '인원보다 많이 늘리면 돌려보내지 않는다 (서버 400)');
+      ok(evPoolBack('div', '둘 다 늘려요', '대', { SA:1, B:1 })===null && head().includes(' · 둘 다 늘려요 · <b>S·A 정원 +1명 · B 정원 +1명 허용</b> (올해 이 본부만)'), '둘 다 늘리면 " · "로 이어서');
+      close(); ok(evPoolBack('div', '원래대로', '대', { SA:0, B:0 })===null && evPoolLog.div.extra===null && !head().includes('허용'), '0 · 0 으로 보내면 늘린 정원을 지운다');
+      close();
+      const xb = (k, mode='ceo')=>dom(evGradeTable(k, mode).html).querySelector(`button[onclick="evExtraAsk('${k}')"]`);
+      ok(xb('lead')?.textContent==='정원 늘리기' && xb('direct') && !xb('div') && !xb('lead', 'hr'), '[정원 늘리기]: 대표이사가 직접 정하는 묶음(전사 팀장 · 직속부서)만 — 본부장이 있는 본부 · HR 확정 화면엔 없음');
+      kpiRole = 'head'; const xh = !xb('lead') && !xb('div', 'head'); kpiRole = 'hrl'; const xn = !xb('lead') && !xb('direct');
+      evProxy = kpiDay(0); const xp = !xb('lead') && !!xb('direct'); evProxy = false; kpiRole = 'ceo';
+      evPoolList('lead').forEach(p=>{ p.stage = 'HR'; }); const xd = !xb('lead'); evPoolList('lead').forEach(p=>{ p.stage = 'CEO'; });
+      ok(xh && xn && xp && xd, '본부장 · 맡기지 않은 HR에게는 없고, 맡긴 HR은 자기가 든 묶음 빼고 (HR 팀장 = 전사 팀장 묶음) · 대표이사 확인을 마친 묶음엔 없음');
+      evExtraAsk('lead');
+      ok(md().querySelector('.card-title').textContent.startsWith('정원 늘리기 · 전사 팀장') && xs('evXSA')==='0,1,2,3,4,5' && xs('evXB')==='0,1,2,3,4,5' && mt().includes('S·A 지금 1명 → ') && mt().includes('늘리는 이유 (HR에게 보입니다)') && !mt().includes('올해 이 본부만'), '정원 늘리기 창: 제목 · 고르기 칸 둘(13명 — 5명까지) · 이유 칸');
+      pick('evXSA', '1'); evExtraSet('lead');
+      ok(md() && md().querySelector('#evErr').textContent==='정원을 늘리는 이유를 1~200자로 써 주세요.' && !evPoolLog.lead.extra, '늘리면 이유가 있어야 한다');
+      document.getElementById('evXWhy').value = ' 가상 늘린 이유 '; evExtraSet('lead');
+      ok(!md() && kpiMsg?.msg==='정원을 바꿨어요.' && JSON.stringify(evPoolLog.lead.extra)===JSON.stringify({ SA:1, B:0, reason:'가상 늘린 이유', at:kpiDay(0), by:evActor() }) && evPoolState('lead')==='CEO'
+        && dom(evGradeTable('lead', 'ceo').html).querySelector('.ev-quota').textContent.startsWith('S 최대 2명 · A 2명 (S만큼 줄어듦) · B 1명 · D 1명 · C 나머지 · 대표이사 허용 S·A +1명'), '저장하면 묶음 기록에 바로 · 단계는 그대로 · 정원 줄');
+      evExtraAsk('lead');
+      ok(document.getElementById('evXSA').value==='1' && document.getElementById('evXWhy').value==='가상 늘린 이유', '다시 열면 지금 늘린 값 · 이유');
+      pick('evXSA', '0'); evExtraSet('lead');
+      ok(!md() && evPoolLog.lead.extra===null, '0 · 0 이면 지운다');
+      evExtraAsk('direct');
+      ok(xs('evXSA')==='0,1' && xs('evXB')==='0,1' && mt().includes('S·A 지금 1명 → ') && mt().includes('B 지금 0명 → '), '직속부서 팀원(2명 — S·A·B 합쳐 1명): 고르기 칸은 +1명까지');
+      orgCloseModal(true);
+      kpiRole = 'hr'; const kim = evFind(2); kim.stage = 'SCORE'; evPoolLog.lead.extra = { SA:5, B:5, reason:'가상', at:kpiDay(0), by:'가상' };
+      evExclude(2);
+      ok(!kim.out && kpiMsg.type==='danger' && kpiMsg.msg==='대표이사가 늘린 정원이 묶음 인원보다 많아져 뺄 수 없습니다. 먼저 늘린 정원을 줄여 주세요.', '시연 제외: 빼면 늘린 정원이 인원보다 많아지면 막는다 (서버 409 · 묻기 전에)');
+      evPoolLog.lead.extra = null; kim.stage = 'CEO';
+      hong.out = { at:kpiDay(0), why:'가상' }; evPoolList('div').forEach(p=>{ p.stage = 'GRADE'; }); evPoolLog.div.extra = { SA:2, B:1, reason:'가상', at:kpiDay(0), by:'가상' };
+      evInclude(1);
+      ok(hong.out && kpiMsg.type==='danger' && kpiMsg.msg==='대표이사가 늘린 정원이 묶음 인원보다 많아져 되돌릴 수 없습니다. 먼저 늘린 정원을 줄여 주세요.', '시연 되돌리기: 4명 → 5명이면 사람마다 정원이 되어 넘치면 막는다 (서버 409)');
+      evPoolLog.div.extra = { SA:1, B:0, reason:'가상', at:kpiDay(0), by:'가상' }; evInclude(1);
+      ok(!hong.out, '맞으면 되돌린다');
+      evPoolLog.div.extra = null; evPoolLog.div.back = null; kpiRole = 'head'; evPoolList('div').forEach(p=>{ p.stage = 'GRADE'; }); hong.grade = 'C'; hong.headComment = '';
+      const cb = h=>dom(h).querySelector('button[onclick="evSubmitGrades()"]'), RL = '홍길동 님(총점 100점)이 총점이 더 낮은 정해외 님(90점)보다 등급이 낮습니다.';
+      const bad = h=>dom(h).querySelector('.placeholder-note[style*="bg-danger"]')?.textContent || '', warn = h=>dom(h).querySelector('.placeholder-note[style*="bg-warning"]')?.textContent || '';
+      const r1 = evHeadCard('div');
+      ok(cb(r1).disabled && bad(r1)===RL+' 코멘트에 이유를 적어 주세요.' && !warn(r1).includes(RL), '점수 역전 (본부 팀원): 밀린 사람에게 윗사람 코멘트가 없으면 빨간 줄 · 마감 단추 꺼짐');
+      hong.headComment = '가상 윗사람 코멘트'; const r2 = evHeadCard('div');
+      ok(!cb(r2).disabled && !bad(r2) && warn(r2).includes(RL) && !warn(r2).includes('코멘트에 이유를'), '코멘트를 넣으면 노란 줄(경고)로 바뀌고 마감할 수 있다');
+      kpiRole = 'hr'; hong.grade = 'A'; Object.assign(evRatio, { SA:20, B:10, D:10 }); evPoolLog.lead.extra = { SA:1, B:1, reason:'가상', at:kpiDay(0), by:'가상' };
+      const rq = evReportData();
+      ok(JSON.stringify(rq.ratio)==='{"SA":20,"B":10,"D":10}' && rq.pools.map(x=>x.name+' '+x.quota).join('|')===`${EV_DIVISION} 팀원 S·A 1명 · B 1명 · D 1명|전사 팀장 S·A 4명 · B 2명 · D 1명 (대표이사 허용 +2명)|직속부서 팀원 S·A·B 합계 1명`,
+        '보고서 몸통: ratio · 묶음 정원 글자 = 서버 eval_report._from_db (늘린 정원은 "(대표이사 허용 +n명)")');
+    } finally { kpiRole = look2.role; Object.assign(kpiPeriod, look2.period); evProxy = look2.proxy; kpiMsg = look2.msg; Object.assign(evRatio, look2.ratio); EV_POOLS.forEach(k=>{ evPoolLog[k] = look2.log[k]; }); evPeople.forEach((p, i)=>{ p.headComment = look2.head[i]; }); window.prompt = look2.prompt; if(document.getElementById('orgModal')) orgCloseModal(true); }
     // 2026-10-13: 대표이사 확인 → HR 확정을 묶음째로, 본부 팀원은 돌려보내기
     evRelease.at = null; evDemoFillData('CEO');
     ok(evPoolKeys().every(k=>evPoolState(k)==='CEO'), '대표이사 확인 직전: 세 묶음 모두 확인 대기');
