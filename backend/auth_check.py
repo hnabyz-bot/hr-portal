@@ -7550,15 +7550,21 @@ def check_cards(hr) -> None:
         ok(opts(a, B).json["options"] == [cheer("welcome"), PRAISE, THANKS], "입사 10일 전 → cheer/welcome")
         x("UPDATE users SET hire_date = ? WHERE id = ?", date(today.year - 3, today.month, 1).isoformat(), B)
         ok(opts(a, B).json["options"] == [cheer("anniv", [6, 1, 2]), PRAISE, THANKS], "3년 전 이번 달 입사 → cheer/anniv — 그림 6(3주년) · 1(꽃다발) · 2(트로피)")
-        for y, n in ((1, 5), (5, 7), (10, 8), (15, 9), (20, 9)):
+        for y, arts in ((1, [5, 1, 2]), (5, [7, 1, 2]), (10, [8, 1, 2]), (15, [9, 10, 1, 2]), (20, [9, 10, 1, 2])):
             x("UPDATE users SET hire_date = ? WHERE id = ?", date(today.year - y, today.month, 1).isoformat(), B)
-            ok(opts(a, B).json["options"] == [cheer("anniv", [n, 1, 2]), PRAISE, THANKS], f"{y}년 전 이번 달 입사 → cheer/anniv 그림 {n} · 1 · 2")
+            ok(opts(a, B).json["options"] == [cheer("anniv", arts), PRAISE, THANKS], f"{y}년 전 이번 달 입사 → cheer/anniv 그림 {' · '.join(map(str, arts))}")
         x("UPDATE users SET hire_date = ? WHERE id = ?", date(today.year - 3, today.month, 1).isoformat(), B)
-        ok(all(is_err(send(a, kind="cheer", reason="anniv", art=n), 400, M_SHAPE) for n in (3, 4, 5, 7, 9)) and cnt(A, B) == 0,
-           "3주년에게 화초 3 · 메달 4 · 다른 연차 숫자 그림 5 · 7 · 9 → 400 (모양 문구) — 줄 없음")
+        ok(all(is_err(send(a, kind="cheer", reason="anniv", art=n), 400, M_SHAPE) for n in (3, 4, 5, 7, 9, 10)) and cnt(A, B) == 0,
+           "3주년에게 화초 3 · 메달 4 · 다른 연차 숫자 그림 5 · 7 · 장기근속 9 · 10 → 400 (모양 문구) — 줄 없음")
         r = send(a, kind="cheer", reason="anniv", art=6, text="카드글 3주년 축하해요")
         ok(r.status_code == 201 and row(r.json["id"])[0][2:5] == ("cheer", "anniv", 6) and send(c, kind="cheer", reason="anniv", art=2).status_code == 201,
            "3주년 숫자 그림 6 → 201 (그림 번호 그대로) · 트로피 2 도 201")
+        x("UPDATE users SET hire_date = ? WHERE id = ?", date(today.year - 15, today.month, 1).isoformat(), B)
+        to_b = lambda: q("SELECT COUNT(*) FROM cards WHERE recipient_id = ?", B)[0][0]  # noqa: E731
+        n_b = to_b()
+        ok(is_err(send(hr, kind="cheer", reason="anniv", art=6), 400, M_SHAPE) and to_b() == n_b, "15주년에게 3주년 숫자 그림 6 → 400 — 줄 없음")
+        r = send(hr, kind="cheer", reason="anniv", art=10, text="카드글 15주년 축하해요")
+        ok(r.status_code == 201 and row(r.json["id"])[0][2:5] == ("cheer", "anniv", 10), "15주년에게 장기근속 그림 10 → 201 (그림 번호 그대로)")
         x("UPDATE users SET hire_date = ? WHERE id = ?", date(today.year - 4, today.month, 1).isoformat(), B)
         ok(opts(a, B).json["options"] == [PRAISE, THANKS], "4년 전 입사는 기념이 아님")
         reset_b()

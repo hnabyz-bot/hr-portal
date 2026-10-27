@@ -13653,7 +13653,8 @@ const CARD_HEART = '<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stro
 const CARD_SETS = ['birthday', 'welcome', 'anniv', 'joy', 'condol', 'praise', 'thanks'];   // 그림 묶음 (img/cards/{묶음}-{번호}.jpg)
 const cardArtOk = n=>Number.isInteger(n) && n>=1 && n<=20;   // 그림 번호 = 표(022)의 범위 1~20 정수
 function cardArts(reason, y){   // 그 카드에 고를 수 있는 그림 번호 (보이는 순서 · 맨 앞이 처음 골라짐) — 서버 cards.arts_for 와 같은 규칙 (2026-10-27 인사담당자). 실제 로그인은 서버가 준 option.arts, 시연(cardDemoOpts)은 이 함수
-  return reason==='birthday' ? [5, 6, 3, 4] : reason==='anniv' ? [{ 1:5, 3:6, 5:7, 10:8 }[y] || 9, 1, 2] : [1, 2, 3, 4];   // 생일 5(남) · 6(여) · 3 · 4 / 입사 기념 = 연차 숫자 그림(1 · 3 · 5 · 10주년, 그 뒤 장기근속 9) + 꽃다발 1 · 트로피 2 / 나머지 1~4
+  const n = { 1:5, 3:6, 5:7, 10:8 }[y];   // 입사 기념 연차 → 숫자 그림 (1 · 3 · 5 · 10주년)
+  return reason==='birthday' ? [5, 6, 3, 4] : reason==='anniv' ? (n ? [n, 1, 2] : [9, 10, 1, 2]) : [1, 2, 3, 4];   // 생일 5(남) · 6(여) · 3 · 4 / 입사 기념 = 연차 숫자 그림 + 꽃다발 1 · 트로피 2, 15주년부터는 장기근속 9 · 10 + 1 · 2 / 나머지 1~4
 }
 function cardSet(kind, reason){   // 그림 묶음 — 축하는 소식 종류(birthday · welcome · anniv · joy)가 곧 묶음. 모르는 값이면 칭찬 묶음 (주소에 그대로 넣지 않는다)
   const s = { comfort:'condol', praise:'praise', thanks:'thanks', cheer:reason }[kind];
@@ -14110,8 +14111,8 @@ async function cardSelfCheck(){   // 브라우저 콘솔에서 await cardSelfChe
     const src = html=>dom(html).querySelector('img').getAttribute('src');
     ok(src(cardArt('cheer', null, 21))==='img/cards/praise-1.jpg?v=1' && src(cardArt('cheer', '../x"', '1"'))==='img/cards/praise-1.jpg?v=1' && src(cardArt('constructor', 'joy', 0))==='img/cards/praise-1.jpg?v=1' && src(cardArt('comfort', 'joy', 4))==='img/cards/condol-4.jpg?v=1', '모르는 묶음 · 번호는 알려진 그림(칭찬 1번)으로');
     ok(src(cardArt('cheer', 'birthday', 1))==='img/cards/birthday-1.jpg?v=1' && src(cardArt('cheer', 'anniv', 4))==='img/cards/anniv-4.jpg?v=1' && src(cardArt('cheer', 'birthday', 6))==='img/cards/birthday-6.jpg?v=1'
-      && src(cardArt('cheer', 'anniv', 9))==='img/cards/anniv-9.jpg?v=1' && src(cardArt('praise', null, 20))==='img/cards/praise-20.jpg?v=1' && [0, 21, 1.5, '5', null, -3].every(n=>src(cardArt('cheer', 'anniv', n))==='img/cards/anniv-1.jpg?v=1'),
-      '그림 번호는 1~20 정수면 그대로 — 받은 카드의 옛 번호(생일 1 · 입사 기념 4) · 새 번호(생일 6 · 장기근속 9)도, 그 밖은 1번');
+      && src(cardArt('cheer', 'anniv', 9))==='img/cards/anniv-9.jpg?v=1' && src(cardArt('cheer', 'anniv', 10))==='img/cards/anniv-10.jpg?v=1' && src(cardArt('praise', null, 20))==='img/cards/praise-20.jpg?v=1' && [0, 21, 1.5, '5', null, -3].every(n=>src(cardArt('cheer', 'anniv', n))==='img/cards/anniv-1.jpg?v=1'),
+      '그림 번호는 1~20 정수면 그대로 — 받은 카드의 옛 번호(생일 1 · 입사 기념 4) · 새 번호(생일 6 · 장기근속 9 · 10)도, 그 밖은 1번');
     CARD_LIVE.received.push(card(16, '2026-10-22', { kind:'cheer', reason:'anniv', art:4 })); w = dom(cardContent()); CARD_LIVE.received.pop();
     ok([...w.querySelectorAll('.cm-mini img')].map(i=>i.getAttribute('src')).join()==='img/cards/anniv-4.jpg?v=1,img/cards/birthday-1.jpg?v=1,img/cards/praise-1.jpg?v=1,img/cards/praise-1.jpg?v=1', '받은 카드: 이제 고를 수 없는 옛 그림(입사 기념 4 메달 · 생일 1 케이크)도 저장된 번호 그대로 보인다');
     const bad = card(15, '2026-10-22', { kind:'nope', reason:'x', art:7 });
@@ -14309,16 +14310,17 @@ async function cardSelfCheck(){   // 브라우저 콘솔에서 await cardSelfChe
     ok(ok1 && ok1.textContent.trim()==='칭찬 · 감사 카드 보내기' && !ok2 && !ok3, 'orgShow: [칭찬 · 감사 카드 보내기] — 나 · 비활성에게는 없다');
     orgCloseModal();
     ok([['birthday', 0], ['anniv', 1], ['anniv', 3], ['anniv', 5], ['anniv', 10], ['anniv', 15], ['anniv', 20], ['anniv', 35], ['welcome', 0], ['joy', 0], [null, 0]].map(([r, y])=>cardArts(r, y).join('·')).join()
-      ==='5·6·3·4,5·1·2,6·1·2,7·1·2,8·1·2,9·1·2,9·1·2,9·1·2,1·2·3·4,1·2·3·4,1·2·3·4', '그림 목록 표(cardArts)가 서버 cards.check 의 arts_for 표와 같다');
+      ==='5·6·3·4,5·1·2,6·1·2,7·1·2,8·1·2,9·10·1·2,9·10·1·2,9·10·1·2,1·2·3·4,1·2·3·4,1·2·3·4', '그림 목록 표(cardArts)가 서버 cards.check 의 arts_for 표와 같다');
     { const now = new Date(), mm = String(now.getMonth()+1).padStart(2, '0'), am = orgMembers.find(x=>cardCan(x) && !cardMourn(x)), h0 = am.hireDate;
       try {
-        for(const [y, want] of [[3, '6,1,2'], [15, '9,1,2'], [4, '']]){
+        for(const [y, want] of [[3, '6,1,2'], [15, '9,10,1,2'], [4, '']]){
           am.hireDate = `${now.getFullYear()-y}-${mm}-01`;
           const an = cardDemoOpts(am.id)[0].find(o=>o.reason==='anniv');
           ok(want ? an && an.arts.join()===want : !an, `시연: 입사 ${y}년인 분 — ${want ? '입사 기념 그림 '+want : '입사 기념 없음'} (시연 명단의 입사일로 센다)`);
         }
         am.hireDate = `${now.getFullYear()-15}-${mm}-01`; await cardSendOrg(am.id, 'anniv');
-        ok(chips().find(b=>b.getAttribute('aria-pressed')==='true').textContent==='축하 · 입사 기념' && arts()==='anniv-9*,anniv-1,anniv-2' && pvArt()==='img/cards/anniv-9.jpg?v=1', '시연 창: 15주년 그림 칸 9 · 1 · 2 (장기근속 9가 처음 골라짐)');
+        ok(chips().find(b=>b.getAttribute('aria-pressed')==='true').textContent==='축하 · 입사 기념' && arts()==='anniv-9*,anniv-10,anniv-1,anniv-2' && pvArt()==='img/cards/anniv-9.jpg?v=1', '시연 창: 15주년 그림 칸 4장 9 · 10 · 1 · 2 (장기근속 9가 처음 골라짐)');
+        M().querySelectorAll('.cm-arts button')[1].click(); ok(arts()==='anniv-9,anniv-10*,anniv-1,anniv-2' && pvArt()==='img/cards/anniv-10.jpg?v=1', '시연 창: 장기근속 둘째 그림 10을 누르면 미리 보기도 10');
         chips().find(b=>b.textContent==='칭찬').click(); ok(arts()==='praise-1*,praise-2,praise-3,praise-4', '시연 창: 칭찬으로 바꾸면 1~4 · 첫 그림 1');
         orgCloseModal();
       } finally { am.hireDate = h0; }

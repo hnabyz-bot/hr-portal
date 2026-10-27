@@ -1730,7 +1730,7 @@ def check_cards_table(conn: sqlite3.Connection) -> None:
         if no:
             refused.append(f"{art}: {msg}")
         conn.execute("DELETE FROM cards WHERE sent_on = '2027-03-06'")
-    _report(not refused, "그림 번호 5 · 9 · 20 저장됨 (판 22 — 생일 5 · 6, 입사 기념 연차 그림 5~9)", f"거부 {refused}")
+    _report(not refused, "그림 번호 5 · 9 · 20 저장됨 (판 22 — 생일 5 · 6, 입사 기념 5~10)", f"거부 {refused}")
     for body, why in (("가" * 40, "글자(BLOB 아님)"), (blob(28), "28바이트"), (b"", "빈 BLOB"), (None, "비어 있음")):
         bad("length(body)" if body is not None else "NOT NULL", f"글 {why}", body=body, sent_on="2027-03-05")
     for day, why in (("2027-02-30", "2027-02-30"), ("2027-13-01", "13월"), ("2027-3-5", "0 없는 날짜"), ("20270305", "하이픈 없는 날짜"), (None, "비어 있음")):
