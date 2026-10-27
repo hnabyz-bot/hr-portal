@@ -300,13 +300,14 @@ def report() -> Response:
 # ----- 실제 평가: DB 에서 -----
 
 def _appeal_text(a: dict | None, grade: str | None) -> str:
-    """이의 신청 칸 글자 (화면 evReportData): 없음 "" · 처리 중 (지금 등급) · 대표이사 확인 대기 (전 → 후) · 등급이 바뀌었으면 "전 → 후 반영" · 그대로면 유지."""
+    """이의 신청 칸 글자 (화면 evReportData): 없음 "" · 처리 중 (지금 등급) · 대표이사 확인 대기 (전 → 후 — 내려받는 HR 본인의 이의는 후가 null 이라 화살표 없이) ·
+    등급이 바뀌었으면 "전 → 후 반영" · 그대로면 유지."""
     if a is None:
         return ""
     if a["status"] == "OPEN":
         return f"처리 중 (지금 {grade or ''})"
     if a["status"] == "CEO":
-        return f"대표이사 확인 대기 ({a['before']} → {a['after']})"
+        return f"대표이사 확인 대기 ({a['before']} → {a['after']})" if a["after"] else "대표이사 확인 대기"
     return f"{a['before']} → {a['after']} 반영" if a["before"] != a["after"] else "유지"
 
 

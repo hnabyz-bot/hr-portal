@@ -2223,6 +2223,16 @@ def check_eval_report(hr) -> None:
         x("UPDATE ev_rounds SET released_at = '2027-12-15T03:00:00Z' WHERE year = ?", Y)
         r = get(hr)
         ok(r.status_code == 200 and "2027-12-15" in load_workbook(io.BytesIO(r.data))["요약"]["A2"].value and len(audit()) == 2, "보고서는_DB에서: 공개한 뒤에는 공개일(한국 날짜)이 적힌다")
+        HRL_, HR_ = 109, 110   # check_eval_admin 의 가상 HR 팀장 · HR 담당 (둘 다 평가 대상)
+        x("INSERT INTO ev_appeals (year, user_id, reason, at, status, before, after, answer, answered_by) VALUES (?, ?, '가상 사유', '2027-12-16T03:00:00Z', 'CEO', 'B', 'A', '가상 답변', ?)",
+          Y, HR_, HRL_)
+        hr_self = app.test_client()
+        login(hr_self, new_token(f"HW-{HR_}"))
+        r = get(hr_self)
+        mine = {p["이름"]: p for p in (dict(zip(head, [c.value for c in row])) for row in load_workbook(io.BytesIO(r.data))["명단"].iter_rows(min_row=5))}
+        ok(r.status_code == 200 and mine["가상EHR담당"]["이의 신청"] == "대표이사 확인 대기" and mine["가상EHR담당"]["최종등급"] is None
+           and not any("None" in (p["이의 신청"] or "") for p in mine.values()),
+           "보고서는_DB에서: HR 본인 이의가 대표이사 확인 대기면 바뀔 등급을 받지 않으니 화살표 없이 (None 글자 없음)")
     finally:
         x("DELETE FROM ev_appeals WHERE year = ?", Y)
         x("UPDATE ev_rounds SET released_at = NULL, released_by = NULL WHERE year = ?", Y)
@@ -8035,8 +8045,9 @@ def check_eval_appeal(hr) -> None:
         ok(lm["grade"] == "C" and lm["appeal"] == cut and sm["appeal"] == cut,
            "바꾸려면_점수와_대표이사: 본인 응답(결과 · 상태 둘 다)에 after · answer · marks 없음 (대표이사 확인 전) · 등급 C 그대로")
         full = {**cut, "answer": "가상 상향", "after": "A", "marks": {"1": "A"}}
-        ok(row_of(res(HRA)["team"], LEAD)["appeal"] == full and row_of(res(CEO)["appeals"], LEAD)["appeal"] == full and row_of(res(HEAD)["team"], LEAD)["appeal"] == {"status": "CEO"},
-           "HR · 대표이사에게는 바뀔 등급 · 고친 실행목표 · 답변 / 본부장에게는 상태만")
+        ok(row_of(res(HRA)["team"], LEAD)["appeal"] == full and row_of(res(CEO)["appeals"], LEAD)["appeal"] == full and row_of(res(HEAD)["team"], LEAD)["appeal"] == {"status": "OPEN"}
+           and row_of(st(HEAD)["people"], LEAD)["appeal"] == {"status": "OPEN"},
+           "HR · 대표이사에게는 바뀔 등급 · 고친 실행목표 · 답변 / 본부장에게는 상태만 — 대표이사 확인 대기도 OPEN (등급 변경이 제안됐는지 모르게 · 결과 · 상태 둘 다)")
         ok(e3(CEO) == 1 and phone(CEO) == (0, 1) and e3(HRA) == 2, "처리할 일 e3: 대표이사 = 확인할 등급 변경 1 · HR = 남은 OPEN 2")
         ok(hit(ans(HRA, LEAD, grade="A", answer="가상"), 409, ANSWERED), "대표이사 확인을 기다리는 이의에 또 답하면 409")
         ok(all(hit(dec(who, LEAD, w), 403, NO_RIGHT) for who in (HEAD, HRA, HR, LEAD) for w in ("confirm", "back")),
@@ -8066,6 +8077,19 @@ def check_eval_appeal(hr) -> None:
         ok(hit(ans(HRA, EMP, grade="B", answer="가상 정원과 상관없이 상향"), 200, OK) and ap(EMP)[:3] == ("CEO", "C", "B") and took() == [(CEO, *APPEAL)],
            "정원은_따지지_않는다: A·B 정원이 찬 묶음(팀원B 가 B)에서도 C → B 답변 200")
         x("INSERT INTO ceo_delegation (ceo_user_id, since) VALUES (?, ?)", CEO, z(12, 16))
+        roles0 = q("SELECT user_id, role, granted_at, granted_by FROM user_roles WHERE role = 'HR_ADMIN' AND user_id NOT IN (?, ?)", HRL, HR)
+        ask0 = q("SELECT id, user_id, updated_at, updated_by FROM pay_ask_to")  # HR 권한을 빼면 트리거가 지운다 — 되돌린다
+        try:  # HR 이 둘뿐(신청한 HR 담당 · 답하는 HR 팀장) — 남는 HR 이 없다
+            x(f"DELETE FROM user_roles WHERE role = 'HR_ADMIN' AND user_id NOT IN ({HRL}, {HR})")
+            ok(hit(ans(HRL, HR, grade="B", answer="가상 HR 담당 상향"), 200, OK) and ap(HR)[:3] == ("CEO", "C", "B") and took() == [(CEO, *APPEAL)],
+               "맡김 · HR 둘뿐 → 등급을 바꾸는 답변 알림을 받을 HR(신청한 분 · 답한 분 빼고)이 없으면 대표이사에게")
+        finally:
+            for r_ in roles0:
+                x("INSERT OR IGNORE INTO user_roles (user_id, role, granted_at, granted_by) VALUES (?, ?, ?, ?)", *r_)
+            for r_ in ask0:
+                x("INSERT OR REPLACE INTO pay_ask_to (id, user_id, updated_at, updated_by) VALUES (?, ?, ?, ?)", *r_)
+        ok(hit(dec(CEO, HR, "back"), 200, OK) and ap(HR)[0] == "OPEN" and took() == sorted([(HRA, *APPEAL), (HRL, *APPEAL)]),
+           "(대표이사가 HR 로 돌려보냄 — HR 이 셋일 때 다시 답한다)")
         ok(hit(ans(HRL, HR, grade="B", answer="가상 HR 담당 상향"), 200, OK) and ap(HR)[:3] == ("CEO", "C", "B") and took() == [(HRA, *APPEAL)],
            "맡김 → 등급을 바꾸는 답변 알림은 HR 로 (신청한 HR 담당 · 답한 HR 팀장 빼고)")
         ok((e3(HR), e3(HRA), e3(HRL), e3(CEO)) == (1, 1, 1, 2) and phone(HR) == (0, 1) and phone(HRA) == (0, 1) and phone(HRL) == (0, 1) and phone(CEO) == (0, 2)

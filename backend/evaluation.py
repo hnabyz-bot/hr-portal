@@ -32,7 +32,7 @@ app.py 가 bp 를 붙인다. 세션 검사 · 같은 출처 검사는 auth._guar
                                           → {"years": 공개한 해(최근부터), "year", "offline", "released", "appealDue", "mine", "team", "appeals"}
   POST /api/eval/me/appeal                {"year", "reason"} 이의 신청 (본인 · 공개일 + 7일 한국 23:59 까지 한 번) — HR 전원에게 알림(eval_appeal, 신청한 사람은 빼고)
   POST /api/eval/appeals/<uid>/answer     {"year", "grade", "answer", "marks"?: {"<rid>": 등급}} HR 답변 — 등급 그대로면 끝(DONE · 신청한 사람에게 eval_answer),
-                                          바꾸면 대표이사 확인 대기(CEO — 대표이사, 맡겼으면 신청한 사람 뺀 HR 에게 eval_appeal · 누른 사람은 빼고)
+                                          바꾸면 대표이사 확인 대기(CEO — 대표이사, 맡겼으면 신청한 사람 뺀 HR 에게 eval_appeal · 누른 사람은 빼고, 남는 HR 이 없으면 대표이사)
   POST /api/eval/appeals/<uid>/confirm    {"year"} 등급 변경 확인 — 고친 실행목표 등급 · 등급 반영 · 끝 (대표이사 · 맡김이면 그 답변을 쓰지 않은 HR) — 신청한 사람에게 eval_answer
   POST /api/eval/appeals/<uid>/back       {"year"} 등급 변경을 HR 로 돌려보낸다 (OPEN · 답변 글은 남김) — HR 전원(누른 사람 · 신청한 사람 빼고)에게 eval_appeal
   GET  /api/eval/report?year=             평가 결과 보고서 엑셀 (HR 만 · 공개 전에도) — eval_report.py 가 같은 _ctx · _row_json 으로 DB 에서 만든다.
@@ -50,7 +50,8 @@ app.py 가 bp 를 붙인다. 세션 검사 · 같은 출처 검사는 auth._guar
   결과(results — 한 트랜잭션): mine = 본인 줄 / team = HR 은 공개 전에도 전원(제외된 사람 포함), 그 밖은 공개 뒤에만 access.can VIEW_RESULT 범위(팀장 = 자기 팀원 ·
   본부장 = 자기 본부 · 대표이사 = 전원)의 제외 안 된 사람 — 평가자 · 배정자라서가 아니라 조직 위치로 / appeals = 처리할 이의 신청(_appeals_for — todo.e3 와 같은 셈).
   줄의 appeal(_appeal_json) = 본인 · HR · 대표이사에게 {"reason", "at", "status", "before", "answer", "after", "marks"} — 본인에게는 끝나기(DONE) 전 answer · after · marks 가 null
-  (대표이사 확인을 기다리는 변경 · 돌려보내져 HR 이 고칠 답변 — 화면 evAppealBox 의 full), 그 밖 사람에게는 {"status"}만. 해 모양 400 은 상태와 같다.
+  (대표이사 확인을 기다리는 변경 · 돌려보내져 HR 이 고칠 답변 — 화면 evAppealBox 의 full), 그 밖 사람에게는 {"status"}만 — OPEN · CEO 는 모두 "OPEN"
+  (대표이사가 정하기 전에 등급 변경이 제안됐는지 알 수 없게 — 화면은 둘 다 "이의 처리 중"), DONE 은 "DONE". 해 모양 400 은 상태와 같다.
   증빙: 없는 번호 404 → 볼 권한(can.evidence) 아님 403 → 폴더에 파일이 없음 404. 내려받기는 attachment · nosniff · no-store, 감사로그는 남기지 않는다.
 
 거절 순서 (서버가 늘 같은 순서로 다시 본다. 확인하고 쓰는 일은 한 트랜잭션 — 두 번 눌러도 한 번만 통과):
@@ -104,7 +105,7 @@ app.py 가 bp 를 붙인다. 세션 검사 · 같은 출처 검사는 auth._guar
     EVAL_POOL_RETURNED (이유 없음). 알림: 배정자(_turn_to — 대표이사이고 맡겼으면 HR 전원) — 누른 사람은 빼고.
   돌려보내기는 FIX(마감 뒤 기준 점수가 바뀌어 등급이 어긋남)에서도 된다 — 대표이사는 본부 팀원 등급을 고치지 못하니 그것이 빠져나갈 길이다.
   확정: 모두 DONE · EVAL_POOL_FINALIZED 묶음마다 · 알림 없음. 되돌리기: DONE → HR (undo_from HR) / HR → ready_stage(직속 GRADE · 그 밖 CEO) · ceo_* 비움 (undo_from CEO) ·
-    undo_at/by/from · EVAL_POOL_UNDONE {from} · 알림 없음. 본 상태(from)와 지금이 다르면 409 ("이미 되돌렸습니다" · "그사이 확정됐습니다") — 두 창이 눌러도 한 단계만.
+    undo_at/by/from · EVAL_POOL_UNDONE {from} · 알림 없음. 본 상태(from)와 지금이 다르면 409 ("이미 되돌렸습니다" · "그사이 확정됐습니다" · "되돌릴 수 있는 단계가 아닙니다") — 두 창이 눌러도 한 단계만.
 결과 공개: HR 403 → 해 400 → FIRST_YEAR 403 → 시작 안 함 409 → 이미 공개 409 → 제외 안 된 사람이 없음 409 (공개는 되돌릴 수 없다) → 제외 안 된 사람 중 DONE 이 아닌 사람 409 →
   released_at/by · EVAL_RELEASED {count = 제외 안 된 대상 수}.
   알림(eval_open): 제외 안 된 대상 전원 — 공개한 HR 도 대상이면 받는다 (남의 일을 한 사람이 아니라 자기 결과를 받는 사람). 공개 뒤에는 level 이 full 이라 _row_json 이 전부 보인다.
@@ -627,12 +628,13 @@ def _target(row: sqlite3.Row) -> Target:
 
 def _appeal_json(ctx: _Ctx, me: Actor, uid: int) -> dict | None:
     """줄의 이의 신청 (없으면 None): 본인 · HR · 대표이사 = 전부 — 본인에게는 끝나기(DONE) 전 답변 · 바뀔 등급 · 고친 실행목표 등급을 null 로
-    (대표이사 확인을 기다리는 변경 · 돌려보내져 HR 이 고칠 답변 — 화면 evAppealBox 의 full) / 그 밖(팀장 · 본부장 …) = 상태만."""
+    (대표이사 확인을 기다리는 변경 · 돌려보내져 HR 이 고칠 답변 — 화면 evAppealBox 의 full) / 그 밖(팀장 · 본부장 …) = 상태만 — CEO 도 "OPEN"
+    (등급 변경이 제안됐는지 대표이사가 정하기 전에 알 수 없게)."""
     a = ctx.appeals.get(uid)
     if a is None:
         return None
     if not (uid == me.user_id or me.is_hr or me.position is Role.CEO):
-        return {"status": a["status"]}
+        return {"status": "DONE" if a["status"] == "DONE" else "OPEN"}
     cut = uid == me.user_id and a["status"] != "DONE"
     return {"reason": a["reason"], "at": a["at"], "status": a["status"], "before": a["before"], "answer": None if cut else a["answer"],
             "after": None if cut else a["after"], "marks": None if cut or a["marks"] is None else json.loads(a["marks"])}
@@ -1486,7 +1488,7 @@ def appeal_answer(uid: int) -> Response:
                          " decided_behalf = NULL WHERE year = ? AND user_id = ?", (answer, grade, fixed, now, me, now, me, year, uid))
             to, kind = [uid], "eval_answer"
         _log(conn, "EVAL_APPEAL_ANSWERED", "ev_appeal", uid, year=year, changed=changed)
-    push.notify([u for u in to if u != me], kind)  # 저장(COMMIT)한 뒤 — 답한 사람 본인에게는 보내지 않는다
+    push.notify([u for u in to if u != me] or [ctx.ceo], kind)  # 저장(COMMIT)한 뒤 — 답한 사람 본인에게는 보내지 않는다. 맡김 중 남는 HR 이 없으면(신청한 분 · 답한 분뿐) 대표이사가 확인한다
     return jsonify(ok=True)
 
 
