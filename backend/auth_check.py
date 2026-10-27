@@ -483,7 +483,9 @@ def check_news(hr) -> None:
        "평년에는 2월 29일 생일을 2월 28일에 (윤년은 2월 29일)")
     ok(kinds([(1, None, "01-02", 1), (2, None, "12-31", 1)], d(2026, 12, 31)) == [("birthday", 2), ("birthday", 1)], "연말연초 7일 · 날짜순")
     ok(kinds([(1, "2021-10-20", None, 1), (2, "2022-10-01", None, 1), (3, "2021-09-20", None, 1), (4, "2016-10-05", None, 1), (5, "2025-10-30", None, 1)])
-       == [("anniversary", 1), ("anniversary", 4), ("anniversary", 5)], "입사 N주년 = 이번 달, 1·3·5·10년 이후 5년마다")
+       == [("anniversary", 1), ("anniversary", 4), ("anniversary", 5)], "입사 N주년 = 이번 달 (5 · 10 · 1주년, 4주년 · 다른 달은 아님)")
+    ok(kinds([(y, f"{2026 - y}-10-15", None, 1) for y in range(0, 22)]) == [("anniversary", y) for y in (1, 3, 5, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21)],
+       "입사 N주년 = 1 · 3 · 5 · 10년, 11년부터는 해마다 (2026-10-27 인사담당자 — 2 · 4 · 6~9년은 아님)")
     notes = [i["note"] for i in auth.news_items([(1, "2026-09-07", "03-05", 1), (2, "2021-10-20", None, 1)], d(2026, 10, 5))]
     ok(notes == ["9월 7일 입사", "입사 5주년 · 10월 20일"] and auth.news_items([(1, None, "10-05", 1)], d(2026, 10, 5))[0]["note"] == "10월 5일 생일",
        "보이는 글 (입사 · 생일 · 주년)")
@@ -7550,7 +7552,7 @@ def check_cards(hr) -> None:
         ok(opts(a, B).json["options"] == [cheer("welcome"), PRAISE, THANKS], "입사 10일 전 → cheer/welcome")
         x("UPDATE users SET hire_date = ? WHERE id = ?", date(today.year - 3, today.month, 1).isoformat(), B)
         ok(opts(a, B).json["options"] == [cheer("anniv", [6, 1, 2]), PRAISE, THANKS], "3년 전 이번 달 입사 → cheer/anniv — 그림 6(3주년) · 1(꽃다발) · 2(트로피)")
-        for y, arts in ((1, [5, 1, 2]), (5, [7, 1, 2]), (10, [8, 1, 2]), (15, [9, 10, 1, 2]), (20, [9, 10, 1, 2])):
+        for y, arts in ((1, [5, 1, 2]), (5, [7, 1, 2]), (10, [8, 1, 2]), (11, [9, 10, 1, 2]), (12, [9, 10, 1, 2]), (14, [9, 10, 1, 2]), (15, [9, 10, 1, 2]), (20, [9, 10, 1, 2])):
             x("UPDATE users SET hire_date = ? WHERE id = ?", date(today.year - y, today.month, 1).isoformat(), B)
             ok(opts(a, B).json["options"] == [cheer("anniv", arts), PRAISE, THANKS], f"{y}년 전 이번 달 입사 → cheer/anniv 그림 {' · '.join(map(str, arts))}")
         x("UPDATE users SET hire_date = ? WHERE id = ?", date(today.year - 3, today.month, 1).isoformat(), B)
@@ -7565,8 +7567,9 @@ def check_cards(hr) -> None:
         ok(is_err(send(hr, kind="cheer", reason="anniv", art=6), 400, M_SHAPE) and to_b() == n_b, "15주년에게 3주년 숫자 그림 6 → 400 — 줄 없음")
         r = send(hr, kind="cheer", reason="anniv", art=10, text="카드글 15주년 축하해요")
         ok(r.status_code == 201 and row(r.json["id"])[0][2:5] == ("cheer", "anniv", 10), "15주년에게 장기근속 그림 10 → 201 (그림 번호 그대로)")
-        x("UPDATE users SET hire_date = ? WHERE id = ?", date(today.year - 4, today.month, 1).isoformat(), B)
-        ok(opts(a, B).json["options"] == [PRAISE, THANKS], "4년 전 입사는 기념이 아님")
+        for y in (2, 4, 6, 7, 8, 9):
+            x("UPDATE users SET hire_date = ? WHERE id = ?", date(today.year - y, today.month, 1).isoformat(), B)
+            ok(opts(a, B).json["options"] == [PRAISE, THANKS], f"{y}년 전 입사는 기념이 아님")
         reset_b()
         event("joy", soon)
         ok(opts(a, B).json["options"] == [cheer("joy"), PRAISE, THANKS], "경사(celeb_events joy) 게시 중 → cheer/joy")

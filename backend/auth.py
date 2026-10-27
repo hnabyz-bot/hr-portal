@@ -836,7 +836,7 @@ def _today() -> date:
 def news_items(people: list[tuple], today: date) -> list[dict]:
     """people = [(id, hire_date, birthday, birthday_public)] → 지금 보일 줄. 화면 celebList 와 같은 규칙:
     새 식구 = 입사 후 30일 · 생일 = 오늘부터 7일 안(2026-10-20 인사담당자 — 전에는 이번 주 월~일. 평년에는 02-29 를 02-28 에), 생일 알림을 끈 사람은 빼고 ·
-    입사 N주년 = 이번 달, 1·3·5·10년 이후 5년마다. 순서는 새 식구 · 생일(날짜순) · 입사 기념."""
+    입사 N주년 = 이번 달, 1·3·5·10년, 11년부터는 해마다(2026-10-27 인사담당자 — 전에는 10년 뒤 5년마다). 순서는 새 식구 · 생일(날짜순) · 입사 기념."""
     week = [today + timedelta(days=i) for i in range(7)]
     md = lambda m, d: f"{m}월 {d}일"  # noqa: E731
     welcome, birthday, anniv = [], [], []
@@ -845,7 +845,7 @@ def news_items(people: list[tuple], today: date) -> list[dict]:
         if h and 0 <= (today - h).days <= 30:
             welcome.append({"kind": "welcome", "id": uid, "note": f"{md(h.month, h.day)} 입사"})
         y = today.year - h.year if h else 0
-        if h and h.month == today.month and (y in (1, 3, 5) or (y >= 10 and y % 5 == 0)):
+        if h and h.month == today.month and (y in (1, 3, 5, 10) or y >= 11):
             anniv.append({"kind": "anniversary", "id": uid, "note": f"입사 {y}주년 · {md(h.month, h.day)}"})
         if bday and public:
             day = next((d for d in week if d.strftime("%m-%d") == ("02-28" if bday == "02-29" and not isleap(d.year) else bday)), None)

@@ -81,12 +81,12 @@ def reasons_for(conn: Connection, uid: int, today: date) -> tuple[list[str], boo
     return [r for r in REASONS if r in got], "condol" in kinds, years
 
 
-_ANNIV_ART = {1: 5, 3: 6, 5: 7, 10: 8}  # 입사 기념 연차 → 숫자 그림 (1 · 3 · 5 · 10주년). 그 뒤(15 · 20 … — 입사 기념은 news_items 의 그 해들에만 뜬다)는 장기근속 그림 9 · 10 두 장
+_ANNIV_ART = {1: 5, 3: 6, 5: 7, 10: 8}  # 입사 기념 연차 → 숫자 그림 (1 · 3 · 5 · 10주년). 그 뒤(11주년부터 해마다 — 입사 기념은 news_items 의 그 해들에만 뜬다)는 장기근속 그림 9 · 10 두 장
 
 
 def arts_for(reason: str | None, years: int) -> list[int]:
     """그 카드에 고를 수 있는 그림 번호 — 보이는 순서이고 맨 앞이 처음 골라진다. 화면 cardArts 와 같은 규칙(cardSelfCheck 에 check() 와 같은 표).
-    생일 = 새 그림 5(남) · 6(여) + 3 · 4 / 입사 기념 = 연차 숫자 그림 + 꽃다발 1 · 트로피 2 (15주년부터는 숫자 그림 대신 장기근속 9 · 10) / 나머지(새 식구 · 경사 · 칭찬 · 감사 · 위로) = 1~4.
+    생일 = 새 그림 5(남) · 6(여) + 3 · 4 / 입사 기념 = 연차 숫자 그림 + 꽃다발 1 · 트로피 2 (11주년부터는 숫자 그림 대신 장기근속 9 · 10) / 나머지(새 식구 · 경사 · 칭찬 · 감사 · 위로) = 1~4.
     이제 고를 수 없는 옛 그림(생일 1 · 2, 입사 기념 3 · 4)도 이미 보낸 카드에는 저장된 번호 그대로 보인다(그림 파일은 지우지 않는다). 번호는 표(022)의 범위 1~20 안."""
     if reason == "birthday":
         return [5, 6, 3, 4]
@@ -333,8 +333,8 @@ def check() -> None:
                                                         {"kind": "praise", "reason": None, "arts": four}, {"kind": "thanks", "reason": None, "arts": four}]
     assert options(["birthday"], True, 0) == [{"kind": "comfort", "reason": None, "arts": four}]  # 조사면 위로만
     assert options([], False, 0) == [{"kind": "praise", "reason": None, "arts": four}, {"kind": "thanks", "reason": None, "arts": four}]
-    # 그림 목록 (2026-10-27 인사담당자): 생일 5 · 6 · 3 · 4 / 입사 기념 = 연차 숫자 그림(1 → 5 · 3 → 6 · 5 → 7 · 10 → 8) + 꽃다발 1 + 트로피 2, 15주년부터는 장기근속 9 · 10 + 1 · 2 / 나머지 1~4 — 화면 cardArts 와 같은 표 (cardSelfCheck)
-    got = [arts_for(r, y) for r, y in (("birthday", 0), ("anniv", 1), ("anniv", 3), ("anniv", 5), ("anniv", 10), ("anniv", 15), ("anniv", 20), ("anniv", 35),
+    # 그림 목록 (2026-10-27 인사담당자): 생일 5 · 6 · 3 · 4 / 입사 기념 = 연차 숫자 그림(1 → 5 · 3 → 6 · 5 → 7 · 10 → 8) + 꽃다발 1 + 트로피 2, 11주년부터는 장기근속 9 · 10 + 1 · 2 / 나머지 1~4 — 화면 cardArts 와 같은 표 (cardSelfCheck)
+    got = [arts_for(r, y) for r, y in (("birthday", 0), ("anniv", 1), ("anniv", 3), ("anniv", 5), ("anniv", 10), ("anniv", 11), ("anniv", 15), ("anniv", 35),
                                        ("welcome", 0), ("joy", 0), (None, 0))]
     assert got == [[5, 6, 3, 4], [5, 1, 2], [6, 1, 2], [7, 1, 2], [8, 1, 2], [9, 10, 1, 2], [9, 10, 1, 2], [9, 10, 1, 2], four, four, four], got
     assert all(type(n) is int and 1 <= n <= 20 for r in (*REASONS, None) for y in (1, 3, 5, 10, 15, 40) for n in arts_for(r, y))  # 표(022)의 그림 번호 범위 1~20 안
