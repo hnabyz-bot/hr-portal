@@ -107,7 +107,7 @@ app.py 가 bp 를 붙인다. 세션 검사 · 같은 출처 검사는 auth._guar
     알림(저장한 뒤): 배정자(팀장 묶음은 대표이사) — 그가 대표이사이고 맡겼으면 평가받는 사람 뺀 HR 전원. 낸 사람 본인에게는 보내지 않는다.
   확인(seen): 평가자 본인 아님 403 → edit_seen = 지금 고친 내용 글자 (응답은 editSeen 참/거짓만 — 글자는 공개 전 평가자에게 가지 않는다).
 묶음 마감: 해 400 → 본부 팀원 묶음(DIV:) 아님 400 → 묶음 없음 404 → 권한(_pool_auth.close — 공개 여부는 빼고) 403 → 제외 안 된 사람이 없음 409 → 공개 뒤 409 → 제외 안 된 사람 중 배정 단계(GRADE) 전인 사람 409 →
-  이미 넘어감 409 → 전원 검사(check_pool full — 등급 누락 · 정원(그해 비율 · 늘린 정원) · 점수 기준 · 연차 · 점수 역전(밀린 사람에게 윗사람 코멘트 없음)) 오류 409
+  이미 넘어감 409 → 전원 검사(check_pool full — 등급 누락 · 정원(그해 비율 · 늘린 정원) · 점수 기준 · 연차 · 점수 역전(밀린 사람에게 윗사람 코멘트 없음 · 전사 팀장 묶음의 역전은 보정 점수로 · 경고만)) 오류 409
   {"error": 첫 오류, "errors"}. 모두 CEO · closed_at/by · 돌려보낸 기록(back_*) 비움 · hr_seen [] ·
   EVAL_POOL_CLOSED (HR 이 대신이면 on_behalf_of). 알림: 대표이사(맡겼으면 빼고) + HR 전원 — 마감한 사람 본인은 빼고.
 마감 확인: HR 403 → 해 400 → 묶음 없음 404 → hr_seen 에 나를 더함 (이미 있으면 그대로).
@@ -169,7 +169,7 @@ import kpi
 import push
 from hr_eval.domain.access import Act, Delegation, Target, can
 from hr_eval.domain.eval_rules import (APPEAL_DAYS, BANDS, FILE_MAX, FILES_PER_ITEM, GRADES, LEAVE_LIMIT_X2, TEXT_MAX, Member, _band_text, above,
-                                       after_score, assign_stage, at, cap, check_pool, edited, level, pool_key, pool_state, ready_stage, total)
+                                       adjusted, after_score, assign_stage, at, cap, check_pool, edited, level, pool_key, pool_state, ready_stage, total)
 from hr_eval.domain.models import Actor, AuditEntry, Role
 from hr_eval.domain.org import led_dept, manager_of, target_of
 from hr_eval.domain.quota import DEFAULT_RATIOS, EXTRA_MAX, RATIO_SUM_MAX, QuotaMode, calculate_department_quota
@@ -332,13 +332,16 @@ def _pool(ctx: _Ctx, key: str) -> tuple[str, list[str], list[str], dict[str, int
     """묶음 → (상태, 오류, 경고, 등급별 인원, 제외 안 된 사람 줄). 화면 evGradeTable · evPoolCard · evPoolState 와 같은 셈:
     배정 단계에 온 사람의 등급만 세고, 다 오기 전에는 빠진 등급 · 미달을 따지지 않는다(full 거짓).
     모두 대표이사 확인 단계(ready_stage)에 왔으면 배정 단계도 지났으니 full 검사다 — 그 오류로 FIX · CEO 를 가른다.
-    정원은 그해 비율(_ratios_of) · 그 묶음의 늘린 정원(_extra_of). 점수 역전(밀린 사람)은 윗사람 코멘트가 없으면 오류 — 전사 팀장 묶음은 윗사람 코멘트 칸이 없어 경고만."""
+    정원은 그해 비율(_ratios_of) · 그 묶음의 늘린 정원(_extra_of). 점수 역전(밀린 사람)은 윗사람 코멘트가 없으면 오류 — 전사 팀장 묶음은 윗사람 코멘트 칸이 없어 경고만이고,
+    총점이 아니라 보정 점수(지금 총점 − 그 평가자의 채점 성향, eval_rules.adjusted)로 비교한다. 성향은 이 묶음의 제외 안 된 KPI 있는 사람 중 평가자가 낸 점수(sub_score_x10)로 센다."""
     ref = assign_stage(key)
     rows = sorted((r for r in ctx.rows.values() if r["pool"] == key and r["out_at"] is None), key=lambda r: _order(ctx, r))
+    leaders = key == "LEADERS"
+    adj = adjusted([(r["rater_id"], r["sub_score_x10"] if r["kpi_version"] is not None else None, _total(ctx, r)) for r in rows]) if leaders else [None] * len(rows)
     members = [Member(r["user_id"], ctx.names[r["user_id"]][0], _total(ctx, r), r["grade"] if at(r["stage"], ref) >= 0 else None, r["leave_x2"],
-                      note=bool(r["head_comment"].strip())) for r in rows]
+                      note=bool(r["head_comment"].strip()), adj=a) for r, a in zip(rows, adj)]
     errors, warnings, counts = check_pool(members, _bands_of(ctx), all(at(r["stage"], ref) >= 0 for r in rows), _ratios_of(ctx), _extra_of(ctx, key),
-                                          need_note=key != "LEADERS")
+                                          need_note=not leaders, calibrated=leaders)
     return pool_state([r["stage"] for r in rows], key, bool(errors)), errors, warnings, counts, rows
 
 

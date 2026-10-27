@@ -15,6 +15,7 @@ import traceback
 from dataclasses import replace
 from datetime import date, datetime
 from decimal import Decimal
+from fractions import Fraction
 
 # Windows 콘솔 기본 코드페이지(cp949)에서 한글·기호가 깨지는 걸 막는다.
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -72,7 +73,7 @@ from hr_eval.domain.kpi_review import (
 )
 from hr_eval.domain.eval_rules import (
     APPEAL_DAYS, BANDS, FILE_MAX, FILES_PER_ITEM, GRADES, LEAVE_LIMIT_X2, ORDER, PCT, TEXT_MAX, TOTAL_MAX,
-    Member as EvMember, above, after_score, assign_stage, at, band, cap, check_pool, edited, level, pool_key, pool_ref, pool_state, ready_stage, total,
+    Member as EvMember, above, adj_text, adjusted, after_score, assign_stage, at, band, cap, check_pool, edited, level, pool_key, pool_ref, pool_state, ready_stage, total,
 )
 from hr_eval.domain.access import Act, Delegation, Pool, PoolRef, Target, can
 from hr_eval.domain.roster import (
@@ -2453,6 +2454,45 @@ def 동점_점수없음_연차초과는_역전이_아니다():
     assert 줄([EvMember(1, "가", None, "C", 0), EvMember(2, "나", Decimal("91"), "A", 0)]) == ([], [])  # 점수 없음(KPI 없음)은 따지지 않는다
     assert 줄([EvMember(1, "가", Decimal("91"), "C", 0), EvMember(2, "나", None, "A", 0)]) == ([], [])  # 올려 받은 쪽이 점수 없음이어도 마찬가지
     assert 줄([EvMember(1, "가", Decimal("95"), "C", 10), EvMember(2, "나", Decimal("91"), "B", 0)]) == ([], [])  # 연차 초과라 그 등급을 받을 수 없었다
+
+
+@check
+def 보정_점수():  # 지금 총점 − (그 평가자가 낸 점수 평균 − 전체 평균) — 분수 그대로
+    D = Decimal
+    rows = [("a", 900, D("90")), ("a", 960, D("96")), ("b", 800, D("80")), ("b", 840, D("85")), ("c", None, D("70"))]
+    assert adjusted(rows) == [Fraction(169, 2), Fraction(181, 2), Fraction(171, 2), Fraction(181, 2), None]  # 전체 87.5 · a +5.5 · b -5.5 · 넷째 줄은 낸 84 · 지금 85(고친 총점) · 낸 점수 없는 줄은 None
+    assert adjusted([("a", 900, D("90")), ("a", 800, D("80"))]) == [Fraction(90), Fraction(80)]  # 평가자가 하나면 성향 0 = 총점 그대로
+    assert adjusted([("a", 900, None), ("b", 800, D("80"))]) == [None, Fraction(85)]  # 총점이 없으면 None (낸 점수는 평균에 든다 — 전체 85 · b -5)
+    assert adjusted([(None, 900, D("90")), (None, 800, D("80")), (7, 700, D("70"))]) == [Fraction(85), Fraction(75), Fraction(80)]  # 평가자 열쇠 None 은 None 끼리 한 사람
+    assert adjusted([]) == []
+
+
+@check
+def 보정_점수_글자는_0점1_사사오입():
+    assert [adj_text(Fraction(a, b)) for a, b in ((1774, 20), (2603, 30), (1735, 20), (90, 1), (-1, 20), (0, 1), (-3, 40))] == ["88.7", "86.8", "86.8", "90", "-0.1", "0", "-0.1"]  # 86.75 는 올림 · -0.05 는 0에서 먼 쪽 · -0.075 도 -0.1
+
+
+@check
+def 팀장_묶음_역전은_보정_점수로():
+    D = Decimal
+    rows = [("a", 900, D("90")), ("a", 960, D("96")), ("b", 800, D("80")), ("b", 840, D("85")), ("c", None, D("70"))]
+    adj = adjusted(rows)[:4]
+    M = lambda i, 총점, g, a: EvMember(i, f"가상팀장{i}", D(총점), g, 0, adj=a)  # noqa: E731
+    # 가상팀장1 90 → 84.5 B · 가상팀장2 96 → 90.5 A · 가상팀장3 80 → 85.5 C · 가상팀장4 85 → 90.5 C (a 가 후하게, b 가 짜게 줬다)
+    R = [M(1, "90", "B", adj[0]), M(2, "96", "A", adj[1]), M(3, "80", "C", adj[2]), M(4, "85", "C", adj[3])]
+    L4 = "가상팀장4 님(보정 점수 90.5점)이 보정 점수가 더 낮은 가상팀장1 님(84.5점)보다 등급이 낮습니다."
+    e, w, _ = check_pool(R, BANDS, False, need_note=False, calibrated=True)
+    assert w == [L4], w  # 총점은 85 < 90 이라 총점으로는 역전이 아니다 · 가상팀장3(80)은 B를 못 받아 밀린 게 아니다(cap 은 총점) · 90.5 동점끼리(가상팀장2 · 4)는 역전이 아니다
+    assert check_pool(R, BANDS, False, need_note=False)[1] == [], "calibrated=False 는 총점으로"
+    assert check_pool([replace(m, adj=None) for m in R], BANDS, False, need_note=False, calibrated=True)[1] == []  # 보정 점수가 없는 사람은 따지지 않는다
+    # 코멘트를 요구하는 묶음이면 보정 점수 역전도 오류 (전사 팀장 묶음은 요구하지 않는다)
+    e, w, _ = check_pool(R, BANDS, False, calibrated=True)
+    assert [x for x in e if x.startswith("가상팀장4")] == [f"{L4} 코멘트(직원에게 공개)에 이유를 적어 주세요."] and w == [], (e, w)
+    # 평가자가 하나면 보정 점수 = 총점 — 같은 사람 · 같은 숫자 (문구만 다르다)
+    one = adjusted([("a", 910, D("91")), ("a", 850, D("85"))])
+    O = [EvMember(1, "가상팀장1", D("91"), "C", 0, adj=one[0]), EvMember(2, "가상팀장2", D("85"), "B", 0, adj=one[1])]
+    assert check_pool(O, BANDS, False, need_note=False)[1] == ["가상팀장1 님(총점 91점)이 총점이 더 낮은 가상팀장2 님(85점)보다 등급이 낮습니다."]
+    assert check_pool(O, BANDS, False, need_note=False, calibrated=True)[1] == ["가상팀장1 님(보정 점수 91점)이 보정 점수가 더 낮은 가상팀장2 님(85점)보다 등급이 낮습니다."]
 
 
 @check

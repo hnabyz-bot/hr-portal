@@ -7536,12 +7536,15 @@ def check_eval_score(hr) -> None:
         b = pool_of(HEAD, "DIV:91")
         ok((a["state"], a["errors"]) == ("FIX", [NOTE]) and (b["state"], b["errors"]) == ("CEO", []) and LINE in b["warnings"],
            "점수_역전은_윗사람_코멘트로: 본부 팀원 묶음에서 밀린 사람에게 윗사람 코멘트가 없으면 오류(FIX) · 코멘트를 쓰면 경고만")
-        setg(LEADC, "A", "B", "B")  # 전사 팀장: 94.0점 팀장C 가 C · 90.0점 팀장이 B — 팀장 묶음은 윗사람 코멘트 칸이 없다
-        p = pool_of(CEO, "LEADERS")
-        LINE2 = "가상E팀장C 님(총점 94점)이 총점이 더 낮은 가상E팀장 님(90점)보다 등급이 낮습니다."
-        ok(LINE2 in p["warnings"] and not any(LINE2 in e for e in p["errors"]), "점수_역전은_윗사람_코멘트로: 전사 팀장 묶음은 경고만")
+        setg(LEADC, "A", "B", "B")  # 전사 팀장: 팀장C 94.0점 C · 팀장 87.0점 B(대표이사가 고쳐 낸 90.0과 다르다) — 팀장 묶음은 윗사람 코멘트 칸이 없다
+        setg(LEAD, "B", "B", "C")
+        p = pool_of(CEO, "LEADERS")  # 낸 점수 평균 93.3(팀장 90.0 · 팀장C 90.0 · HR팀장 100.0) → 팀장(본부장) -3.3 · 팀장C(대표이사) +1.7 → 보정 점수 팀장 90.3 · 팀장C 92.3
+        LINE2 = "가상E팀장C 님(보정 점수 92.3점)이 보정 점수가 더 낮은 가상E팀장 님(90.3점)보다 등급이 낮습니다."
+        ok(LINE2 in p["warnings"] and not any("총점이 더 낮은" in w for w in p["warnings"]) and not any(LINE2 in e for e in p["errors"]),
+           "점수_역전은_윗사람_코멘트로: 전사 팀장 묶음은 보정 점수로 비교하고 경고만")
         setg(EMPB, "B", "B", "B")
         setg(LEADC, "B", "B", "B")
+        setg(LEAD, "B", "B", "B")
         put(EMPB, head_comment="")
         put(DIVD, grade="C")
         put(FIELD, grade="B")
@@ -7973,16 +7976,26 @@ def check_eval_close(hr) -> None:
         ok(hit(act(HR, "confirm", pools=[DR]), 403, no(ND, "확인할")) and hit(act(HR, "confirm", pools=[LD, DR]), 403, no(ND, "확인할"))
            and hit(act(HRL, "confirm", pools=[LD]), 403, no(NL, "확인할")) and stages(LD) == ["CEO"] * 3 and stages(DR) == ["GRADE"] * 2,
            "HR은_자기_묶음을_확인_못_한다: 맡겨도 HR 담당자는 직속부서 묶음(본인 있음) 403 · 섞어도 403 · HR 팀장은 전사 팀장 묶음 403 — 그대로")
-        put(LEAD, grade="B")  # 점수 역전: 94.0점 팀장C 가 C · 90.0점 팀장이 B — 전사 팀장 묶음은 윗사람 코멘트 칸이 없어 경고만
-        setg(LEADC, "A", "B", "B")
+        put(LEAD, grade="B", sub_score_x10=960)  # 점수 역전: 평가자 본부장은 후하게(낸 점수 96.0) · 대표이사는 짜게(팀장C 88.0 · HR팀장 80.0) — 전사 팀장 묶음은 윗사람 코멘트 칸이 없어 경고만
+        put(LEADC, sub_score_x10=880)
+        put(HRL, sub_score_x10=800)
+        setg(LEADC, "A", "B", "B")  # 총점 팀장 90.0 B · 팀장C 94.0 C · HR팀장 90.0 C — 낸 점수 평균 88.0, 본부장 +8.0 · 대표이사 -4.0 → 보정 점수 팀장 82 · 팀장C 98 · HR팀장 94
         pl = pool_of(HR, LD)
-        ok((pl["state"], pl["errors"]) == ("CEO", []) and "가상E팀장C 님(총점 94점)이 총점이 더 낮은 가상E팀장 님(90점)보다 등급이 낮습니다." in pl["warnings"],
-           "점수_역전: 전사 팀장 묶음은 밀린 사람에게 코멘트가 없어도 대표이사 확인 대기 (경고만)")
+        CAL = ["가상E팀장C 님(보정 점수 98점)이 보정 점수가 더 낮은 가상E팀장 님(82점)보다 등급이 낮습니다.",
+               "가상EHR팀장 님(보정 점수 94점)이 보정 점수가 더 낮은 가상E팀장 님(82점)보다 등급이 낮습니다."]  # 총점으로는 팀장C 한 줄뿐이었다
+        ok((pl["state"], pl["errors"]) == ("CEO", []) and pl["warnings"] == CAL and not any("총점이 더 낮은" in w for w in pl["warnings"]),
+           f"점수_역전: 전사 팀장 묶음은 보정 점수로 비교하고, 밀린 사람에게 코멘트가 없어도 대표이사 확인 대기 (경고만) {pl['warnings']}")
+        ok(set(row_of(st(CEO), LEAD)) == {"pid", "name", "title", "team", "div", "poolKey", "poolName", "kpi", "stage", "out", "noSelf", "late", "leaveOver", "items", "ev", "grade",
+                                          "proposed", "subScore", "subMarks", "comment", "headComment", "total", "cap", "proxy", "edited", "editSeen", "rater", "raterIsCeo",
+                                          "assignerIsCeo", "can", "hidden", "appeal"}
+           and set(pl) == {"key", "name", "size", "state", "counts", "errors", "warnings", "quota", "extra", "log", "hrSeen", "can"},
+           "점수_역전: 보정 점수가 응답에 새 칸을 만들지 않는다 (사람 줄 · 묶음 줄 칸 이름이 그대로)")
         ok(hit(act(HR, "confirm", pools=[LD]), 200, {"ok": True, "done": [LD]}) and stages(LD) == ["HR"] * 3 and prow(LD)[2:5] == (z(12, 7), HR, CEO)
            and by("EVAL_POOL_CONFIRMED")[-1] == (HR, CEO), "HR은_자기_묶음을_확인_못_한다: HR 담당자가 전사 팀장 묶음 200 (점수 역전 경고가 있어도) — ceo_behalf · on_behalf_of = 대표이사")
         ok(took() == [(HRA, *TURN), (HRL, *TURN)], "대신 확인해도 HR 전원(누른 사람 빼고)에게 알림")
         setg(LEADC, "B", "B", "B")
         put(LEAD, grade="C")
+        x("UPDATE ev_targets SET sub_score_x10 = NULL WHERE year = ? AND pool = ?", Y, LD)
         ok(hit(act(CEO, "confirm", pools=[DR]), 200, {"ok": True, "done": [DR]}) and stages(DR) == ["HR"] * 2 and prow(DR)[2:5] == (z(12, 7), CEO, None)
            and by("EVAL_POOL_CONFIRMED")[-1] == (CEO, None) and took() == [(HRA, *TURN), (HRL, *TURN), (HR, *TURN)],
            "맡긴 동안에도 대표이사가 직접 확인 200 (대신 아님)")
