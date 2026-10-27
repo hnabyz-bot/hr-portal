@@ -6,7 +6,7 @@ app.py 가 bp 를 붙인다. 세션 검사는 auth._guard 가 모든 /api/* 에 
                            거절 순서: HR 403 → 해(2026~2100, ASCII 숫자 네 자리) 400 → FIRST_YEAR 전 · 시작 안 한 해 404 → 제외 안 된 사람이 없음 409.
                            사람 줄은 evaluation._row_json 을 지난다(HR = full) — 칸 · 글자는 화면 evReportData 와 같고, clean() · build() 도 아래와 같다.
                            파일 이름 "{year}년 인사평가 결과.xlsx", no-store. 감사로그 EVAL_REPORT (해뿐 — 등급 · 이름 없음)
-  POST /api/eval/report    화면이 보낸 평가 결과 → 같은 엑셀 (HR 만) — 시연 화면용 (가상 자료)
+  POST /api/eval/report    화면이 보낸 평가 결과 → 같은 엑셀 (HR 만) — 시연 화면용 (가상 자료). 몸통의 ratio {"SA", "B", "D"}(0~70 정수)는 없으면 10 · 10 · 10
 
   엑셀 시트 ① 요약 — 숫자 카드 · 본부별 등급 분포 · 평가 묶음별 분포와 정원 기준 · 본부별 그래프 (이름 없음, A4 세로 한 장)
   엑셀 시트 ② 명단 — 한 사람 한 줄 (대외비). 칸 제목 사번 · 이름 · 최종등급은 연봉 인상 계산(RZ_GRADE)이 그대로 읽는다
@@ -34,7 +34,7 @@ import auth
 import evaluation
 import kpi
 from hr_eval.domain.models import Actor
-from hr_eval.domain.quota import QuotaMode, calculate_department_quota
+from hr_eval.domain.quota import DEFAULT_RATIOS, QuotaMode, calculate_department_quota
 
 bp = Blueprint("eval_report", __name__)
 bp.register_error_handler(kpi._Refuse, kpi._refused)
@@ -75,6 +75,10 @@ def clean(body: object) -> dict | str:
     day, released = body.get("date"), body.get("released")
     if year is None or not (isinstance(day, str) and DAY.fullmatch(day)) or not (released is None or (isinstance(released, str) and DAY.fullmatch(released))):
         return "연도 · 날짜가 맞지 않습니다."
+    ratio = body.get("ratio", dict(zip(evaluation.RATIO_KEYS, DEFAULT_RATIOS)))   # 그해 등급 비율 — 요약 아래 설명 줄 (없으면 지금 규칙 10 · 10 · 10)
+    ratio = {k: _int(ratio.get(k), 0, 70) for k in evaluation.RATIO_KEYS} if isinstance(ratio, dict) else None
+    if ratio is None or None in ratio.values():
+        return "등급 비율이 맞지 않습니다."
     appeals, open_ = _int(body.get("appeals"), 0, MAX_PEOPLE), _int(body.get("open"), 0, MAX_PEOPLE)
     people, pools = body.get("people"), body.get("pools")
     if appeals is None or open_ is None or not isinstance(people, list) or not isinstance(pools, list) or not 0 < len(people) <= MAX_PEOPLE or len(pools) > MAX_POOLS:
@@ -96,7 +100,7 @@ def clean(body: object) -> dict | str:
         if not name or quota is None or not isinstance(k.get("ok"), bool):
             return "묶음에 맞지 않는 값이 있습니다."
         pl.append({"name": name, "quota": quota, "ok": k["ok"]})
-    return {"year": year, "date": day, "released": released, "appeals": appeals, "open": open_, "people": out, "pools": pl}
+    return {"year": year, "date": day, "released": released, "ratio": ratio, "appeals": appeals, "open": open_, "people": out, "pools": pl}
 
 
 # ----- 엑셀 -----
@@ -227,7 +231,9 @@ def _summary(ws, d: dict) -> None:
 
     note = r + 3 + int(ch.height / 0.5)   # 그래프 높이(cm) ≈ 줄 수 × 0.5
     ws.cell(row=note, column=1, value="· 처리 중 = 이의 신청을 처리하고 있거나 아직 등급이 정해지지 않은 사람입니다.").font = _f(9, color=SUB)
-    ws.cell(row=note + 1, column=1, value="· 정원 기준 = 묶음 인원의 10%(반올림)씩 A·B·D, 4명 이하 묶음은 A·B 합계 1명. 비율은 반올림 값입니다.").font = _f(9, color=SUB)
+    rt = d["ratio"]
+    ws.cell(row=note + 1, column=1, value=f"· 정원 기준 = 묶음 인원의 S·A {rt['SA']}% · B {rt['B']}% · D {rt['D']}%(반올림), 4명 이하 묶음은 S·A·B 합계 1명."
+                                          " 대표이사가 늘린 정원은 묶음 줄에 적습니다.").font = _f(9, color=SUB)
     ws.print_options.horizontalCentered = True
     _print(ws, landscape=False, one_page=True)
 
@@ -324,17 +330,19 @@ def _from_db(conn: sqlite3.Connection, year: int, me: Actor) -> dict:
             raise kpi._Refuse("보고서에 넣을 분이 없습니다.", 409)
         no = dict(conn.execute("SELECT id, employee_no FROM users"))
         pools = []
-        for k in sorted(ctx.pools, key=evaluation._pool_rank):
+        for k in sorted(ctx.pools, key=evaluation._pool_rank):   # 정원 글자 = 그해 비율 · 늘린 정원이 들어간 숫자 (늘렸으면 뒤에 "(대표이사 허용 +n명)")
             _, errors, _, _, members = evaluation._pool(ctx, k)
-            q = calculate_department_quota(len(members))
-            pools.append({"name": evaluation._pool_label(ctx, k), "quota": f"A·B 합계 {q.upper}명" if q.mode is QuotaMode.GROUPED else f"A·B·D 각 {q.a}명", "ok": not errors})
+            extra = evaluation._extra_of(ctx, k)
+            q = calculate_department_quota(len(members), evaluation._ratios_of(ctx), extra)
+            quota = f"S·A·B 합계 {q.upper}명" if q.mode is QuotaMode.GROUPED else f"S·A {q.a}명 · B {q.b}명 · D {q.d}명"
+            pools.append({"name": evaluation._pool_label(ctx, k), "quota": quota + (f" (대표이사 허용 +{sum(extra)}명)" if any(extra) else ""), "ok": not errors})
     people = [{"div": j["div"], "team": j["team"] or evaluation.NO_TEAM, "no": no[j["pid"]] or "", "name": j["name"], "title": j["title"], "pool": j["poolName"],
                "total": None if j["total"] is None else round(j["total"], 1),
                "grade": "" if j["appeal"] and j["appeal"]["status"] != "DONE" else j["grade"] or "",   # 이의 처리 중이면 비운다 (화면 evExportGrade)
                "stage": EV_STAGES[j["stage"]].replace("등급", "배정"),   # '등급' 글자가 첫 사람 줄에 오면 연봉 인상 계산이 그 줄까지 제목으로 읽는다
                "appeal": _appeal_text(j["appeal"], j["grade"])} for j in shown]
     rel = ctx.round["released"]
-    return {"year": year, "date": auth._today().isoformat(), "released": evaluation._day(rel).isoformat() if rel else None,
+    return {"year": year, "date": auth._today().isoformat(), "released": evaluation._day(rel).isoformat() if rel else None, "ratio": ctx.round["ratio"],
             "appeals": sum(1 for j in shown if j["appeal"]), "open": sum(1 for j in shown if j["appeal"] and j["appeal"]["status"] != "DONE"),
             "people": people, "pools": pools}
 

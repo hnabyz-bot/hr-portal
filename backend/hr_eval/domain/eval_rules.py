@@ -27,7 +27,6 @@ GRADES = ("S", "A", "B", "C", "D")  # 앞이 높은 등급
 PCT = {"S": 110, "A": 100, "B": 90, "C": 80, "D": 70}  # 등급별 달성 비율(%)
 BANDS = (90, 80, 70)  # A · B · C 를 받으려면 '넘어야' 하는 점수 (HR 이 바꿀 수 있다). S 는 100 초과
 LEAVE_LIMIT_X2 = 10  # 연차 초과 5일(반일 단위 x2)
-BONUS_MAX_X2 = 20  # 가점 상한 10점(x2)
 TOTAL_MAX = Decimal("110")
 
 #: 묶음마다 거치는 단계는 다르지만 앞뒤 순서는 같다.
@@ -35,7 +34,7 @@ ORDER = ("SELF", "SCORE", "GRADE", "CEO", "HR", "DONE")
 APPEAL_DAYS = 7  # 결과 공개 뒤 이의 신청을 받는 날수
 
 #: 글자 수 한도 (서버 · 화면 · DB 같게).
-TEXT_MAX = {"note": 500, "comment": 500, "head": 500, "bonusReason": 100, "out": 100, "back": 200, "appeal": 500, "answer": 500}
+TEXT_MAX = {"note": 500, "comment": 500, "head": 500, "out": 100, "back": 200, "appeal": 500, "answer": 500}
 FILE_MAX = 10 * 1024 * 1024  # 증빙 파일 하나의 크기
 FILES_PER_ITEM = 5  # 실행목표 하나에 올릴 수 있는 증빙 수
 

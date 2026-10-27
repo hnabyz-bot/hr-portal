@@ -71,7 +71,7 @@ from hr_eval.domain.kpi_review import (
     alarm, check_state, clean_biz_plan, is_muted, js_round, month_summary, mute_until, same_kst_day,
 )
 from hr_eval.domain.eval_rules import (
-    APPEAL_DAYS, BANDS, BONUS_MAX_X2, FILE_MAX, FILES_PER_ITEM, GRADES, LEAVE_LIMIT_X2, ORDER, PCT, TEXT_MAX, TOTAL_MAX,
+    APPEAL_DAYS, BANDS, FILE_MAX, FILES_PER_ITEM, GRADES, LEAVE_LIMIT_X2, ORDER, PCT, TEXT_MAX, TOTAL_MAX,
     Member as EvMember, above, after_score, assign_stage, at, band, cap, check_pool, edited, level, pool_key, pool_ref, pool_state, ready_stage, total,
 )
 from hr_eval.domain.access import Act, Delegation, Pool, PoolRef, Target, can
@@ -2484,9 +2484,9 @@ def 묶음_참조와_단계():
     assert [after_score(k) for k in ("LEADERS", "DIRECT", "DIV:1")] == ["CEO", "GRADE", "GRADE"] and assign_stage("LEADERS") == "CEO" and assign_stage("DIV:1") == "GRADE"
     assert [ready_stage(k) for k in ("LEADERS", "DIRECT", "DIV:1")] == ["CEO", "GRADE", "CEO"]
     assert at("SCORE", "CEO") < 0 and at("CEO", "CEO") == 0 and at("HR", "CEO") > 0 and at("DONE", "GRADE") > 0  # 대표이사 확인 다음이 HR 확정
-    assert (ORDER, GRADES, BANDS, LEAVE_LIMIT_X2, BONUS_MAX_X2, TOTAL_MAX) == (("SELF", "SCORE", "GRADE", "CEO", "HR", "DONE"), ("S", "A", "B", "C", "D"), (90, 80, 70), 10, 20, Decimal("110"))
+    assert (ORDER, GRADES, BANDS, LEAVE_LIMIT_X2, TOTAL_MAX) == (("SELF", "SCORE", "GRADE", "CEO", "HR", "DONE"), ("S", "A", "B", "C", "D"), (90, 80, 70), 10, Decimal("110"))
     assert (PCT, APPEAL_DAYS, FILE_MAX, FILES_PER_ITEM) == ({"S": 110, "A": 100, "B": 90, "C": 80, "D": 70}, 7, 10 * 1024 * 1024, 5)
-    assert TEXT_MAX == {"note": 500, "comment": 500, "head": 500, "bonusReason": 100, "out": 100, "back": 200, "appeal": 500, "answer": 500}
+    assert TEXT_MAX == {"note": 500, "comment": 500, "head": 500, "out": 100, "back": 200, "appeal": 500, "answer": 500}  # 가점 사유는 판 23부터 없다
 
 
 @check
