@@ -1820,14 +1820,23 @@
   .cm-found button{ display:flex; align-items:center; gap:10px; padding:8px 12px; border:1px solid var(--border); border-radius:var(--radius); background:#fff; font:inherit; text-align:left; cursor:pointer; }
   .cm-found button:hover{ border-color:var(--accent); }
   .cm-found small{ display:block; color:var(--text-secondary); font-size:var(--fs-xs); }
-  /* 보내기 움직임 (시안 cardSent) — 봉투 뒤 · 앞 · 덮개 사이로 카드가 들어가 날아간다 */
-  .cm-ep{ position:absolute; left:7%; right:7%; bottom:0; height:52%; border-radius:10px; pointer-events:none; display:block; }
-  .cm-ep.back{ z-index:1; background:color-mix(in srgb, var(--k-fg) 22%, white); }
-  .cm-ep.front{ z-index:3; background:color-mix(in srgb, var(--k-fg) 12%, white); clip-path:polygon(0 18%, 50% 62%, 100% 18%, 100% 100%, 0 100%); }
-  .cm-ep.flap{ z-index:4; background:color-mix(in srgb, var(--k-fg) 30%, white); clip-path:polygon(0 0, 100% 0, 50% 62%); transform-origin:50% 0; }
+  /* 봉투 · 접히는 카드 (보내기 cardFly · 도착 openFx) — 뒤판(1) · 카드(2) · 앞주머니(3) · 덮개(닫히면 4, 열리면 0) 순서로 겹쳐 카드가 봉투 '안'에 있게 보인다. 자리 · 크기는 카드를 재어 JS 가 정한다(cardEnv) */
+  .cm-ep{ position:absolute; pointer-events:none; display:block; }
+  .cm-ep.back{ z-index:1; border-radius:10px; background:color-mix(in srgb, var(--k-fg) 30%, white); box-shadow:0 14px 28px -16px rgba(27,36,51,.5); }
+  .cm-ep.front{ z-index:3; border-radius:10px; background:linear-gradient(170deg, color-mix(in srgb, var(--k-fg) 11%, white), color-mix(in srgb, var(--k-fg) 19%, white)); clip-path:polygon(0 0, 50% 54%, 100% 0, 100% 100%, 0 100%); }
+  .cm-ep.flap{ z-index:4; background:linear-gradient(180deg, color-mix(in srgb, var(--k-fg) 22%, white), color-mix(in srgb, var(--k-fg) 34%, white)); clip-path:polygon(0 0, 100% 0, 50% 100%); transform-origin:50% 0; }
+  .cm-seal{ position:absolute; z-index:5; width:28px; height:28px; margin:-14px 0 0 -14px; border-radius:50%; display:grid; place-items:center; background:var(--k-fg); color:#fff; box-shadow:0 2px 6px rgba(27,36,51,.3); pointer-events:none; }   /* 하트 봉인 — 닫힌 덮개 끝 */
+  .cm-seal svg{ width:14px; height:14px; fill:currentColor; }
+  .cm-fold{ position:absolute; z-index:2; pointer-events:none; perspective:1200px; transform-origin:0 0; }   /* 접히는 카드 (cardFold): 아래 반 + 위 반(앞 · 뒷면) — 위 반을 rotateX(-180deg) 로 접는다 */
+  .cm-fold > div{ position:absolute; inset:0; }
+  .cm-fold .cm-face{ height:100%; box-shadow:none; }
+  .cm-fold-bot{ clip-path:inset(50% 0 0 0); }
+  .cm-fold-top{ transform-style:preserve-3d; transform-origin:50% 50%; }
+  .cm-fold-top > *{ position:absolute; left:0; right:0; -webkit-backface-visibility:hidden; backface-visibility:hidden; }
+  .cm-fold-top .fr{ top:0; bottom:0; clip-path:inset(0 0 50% 0); }
+  .cm-fold-top .bk{ top:0; height:50%; transform:rotateX(180deg); border-radius:14px 14px 0 0; border:1px solid color-mix(in srgb, var(--k-fg) 22%, white); background:color-mix(in srgb, var(--k-fg) 7%, #FFFDF9); display:grid; place-items:center; color:color-mix(in srgb, var(--k-fg) 55%, white); }   /* 접혔을 때 보이는 카드 뒷면 */
+  .cm-fold-top .bk svg{ width:22px; height:22px; }
   .cm-fly{ position:fixed; z-index:300; perspective:900px; pointer-events:none; }
-  .cm-fly .cm-fly-card{ position:absolute; inset:0; z-index:2; }
-  .cm-fly .cm-face{ height:100%; }
   /* 카드가 왔어요 움직임 (시안 cmFxCss) — 봉투가 열리고 카드가 올라온 뒤 종류별 효과 한 번 · 고마워요 하트 */
   .cm-stage{ position:relative; perspective:900px; overflow:hidden; border-radius:14px; }
   .cm-stage > .cm-face{ position:relative; z-index:2; }
@@ -13777,7 +13786,7 @@ async function cardHide(id, hidden){   // 숨기기 · 다시 보이기 (받은 
   if(err) kpiFlash(escapeHtml(err), 'danger');
 }
 /* ----- 카드가 왔어요 · 움직임 (시안 cardArrive · openFx · burst · heartPop 그대로, 설계 4-4 · 4-6) — 모두 한 번만 움직이고 '움직임 줄이기'(cardStill)면 움직이지 않는다.
-   조각(.cm-ep 봉투 · .cm-p 효과 · .cm-pop 하트)은 모두 창(#orgModal) 안에 붙인다 — 움직이는 중에 닫거나 넘기면 창과 함께 사라지고, 남은 움직임은 떼어 낸 창에서 멈춘다 ----- */
+   조각(.cm-ep 봉투 · .cm-fold 접히는 카드 · .cm-seal 봉인 · .cm-p 효과 · .cm-pop 하트)은 모두 창(#orgModal) 안에 붙인다 — 움직이는 중에 닫거나 넘기면 창과 함께 사라지고, 남은 움직임은 떼어 낸 창에서 멈춘다 ----- */
 const CARD_AR = { list:[], seen:new Set(), auto:false };   // 도착 창 하나: 보여 줄 카드(오래된 것부터 — 넘겨 보는 동안 그대로) · 이미 펼친 카드 번호 · 들어올 때 자동으로 떴나(닫으면 오늘 할 일)
 function cardArrive(i=0, list, auto){   // "카드가 왔어요 1 / 3" · 카드 한 장 · [‹] [고마워요] [답장 쓰기] [›]. list 가 없으면 안 읽은 받은 카드 — [‹] [›] 는 떠 있는 창의 목록을 넘긴다. 보이는 카드는 바로 읽음(안 돼도 창은 그대로) — 돌려주는 약속은 그 요청이 끝날 때
   const A = CARD_AR;
@@ -13831,7 +13840,19 @@ function burst(stage, c){   // 시안 burst — 펼쳐진 뒤 한 번 (1~4초): 
     el.animate(kf, { duration:dur, delay, easing:ease, fill:'both' }).finished.then(()=>el.remove(), ()=>el.remove());
   }
 }
-async function openFx(stage, c, full){   // 시안 openFx — full: 종류 색 봉투가 나타남 → 덮개가 열림 → 카드가 올라와 자리 잡음(약 2초) / 아니면 살짝 떠오르기만(0.3초). 그다음 burst 한 번
+function cardFold(face){   // 접히는 카드 (.cm-fold): face 를 복사해 같은 자리에 놓고 — 아래 반은 그대로, 위 반(앞 · 뒷면)을 접는 줄(가운데)에서 rotateX(-180deg) 로 접는다
+  const el = document.createElement('div'), copy = ()=>{ const c = face.cloneNode(true); c.querySelectorAll('img').forEach(i=>{ i.loading = 'eager'; }); return c; };
+  el.className = 'cm-fold';
+  el.innerHTML = `<div class="cm-fold-bot"></div><div class="cm-fold-top"><div class="fr"></div><div class="bk">${CARD_HEART}</div></div>`;
+  el.querySelector('.cm-fold-bot').appendChild(copy()); el.querySelector('.fr').appendChild(copy());
+  return el;
+}
+function cardEnv(box, x, y, ew, eh){   // 봉투 조각 자리 (box 안 px): 뒤판 · 앞주머니 ew×eh, 덮개는 위 끝에 매달린 삼각형(높이 58% — 앞주머니의 V 를 다 덮는다), 봉인은 덮개 끝
+  const fh = eh * .58, seal = box.querySelector(':scope > .cm-seal');
+  box.querySelectorAll(':scope > .cm-ep').forEach(p=>Object.assign(p.style, { left:x + 'px', top:y + 'px', width:ew + 'px', height:(p.classList.contains('flap') ? fh : eh) + 'px' }));
+  if(seal) Object.assign(seal.style, { left:x + ew / 2 + 'px', top:y + fh - 6 + 'px' });
+}
+async function openFx(stage, c, full){   // full: 닫힌 봉투가 나타남 → 하트 봉인이 떨어지고 덮개가 열림 → 접힌 카드가 봉투 안에서 올라와 빠져나옴 → 봉투는 내려가며 사라지고 카드가 펼쳐짐(약 2.5초) / 아니면 살짝 떠오르기만(0.3초). 그다음 burst 한 번
   const f = stage.querySelector('.cm-face'), parts = [...stage.querySelectorAll('.cm-ep')], flap = stage.querySelector('.cm-ep.flap'), acts = stage.parentElement.querySelector('.cm-acts');
   if(cardStill() || !full){
     parts.forEach(p=>p.remove());
@@ -13840,17 +13861,28 @@ async function openFx(stage, c, full){   // 시안 openFx — full: 종류 색 �
   }
   const anim = (el, kf, o)=>el.animate(kf, { fill:'forwards', ...o }).finished, gone = ()=>!stage.isConnected;   // 그사이 창을 닫았거나 넘겼다 — 떼어 낸 창에 효과를 뿌리지 않는다
   if(acts){ Object.assign(acts.style, { opacity:0, pointerEvents:'none' }); acts.inert = true; }   // 봉투가 열리는 동안 단추 줄은 보이지도 눌리지도 키보드로 닿지도 않게 (X 는 된다)
+  const W = f.offsetWidth, H = f.offsetHeight, ew = W * .86, eh = Math.min(ew * .62, H * .5), ex = (W - ew) / 2, ey = H - eh - W * .04;   // 봉투: 카드 아래쪽에 (카드 칸 안 px)
+  const s = Math.min(.76, ew * .9 / W, eh * .9 / (H / 2), (ey - 6) / (H / 2)), at = (y0, k)=>`translate(${(W - W * k) / 2}px,${y0 - k * H / 2}px) scale(${k})`;   // 접힌 카드(높이 H/2)를 k 배로 — 봉투 안에 들어가고, 봉투 위로 다 빠져나올 자리가 있게 / at: 접힌 카드의 위 끝을 y0 에
+  const yIn = ey + (eh - s * H / 2) / 2, yOut = ey - 6 - s * H / 2, fold = cardFold(f), top = fold.querySelector('.cm-fold-top'), seal = Object.assign(document.createElement('i'), { className:'cm-seal', innerHTML:CARD_HEART });
+  Object.assign(fold.style, { left:f.offsetLeft + 'px', top:f.offsetTop + 'px', width:W + 'px', height:H + 'px', transform:at(yIn, s), visibility:'hidden' });   // 봉투가 나타나는 동안은 숨김 (안에 있어 어차피 안 보인다)
+  top.style.transform = 'rotateX(-180deg)';   // 접힌 채로
+  f.after(fold); stage.appendChild(seal); cardEnv(stage, f.offsetLeft + ex, f.offsetTop + ey, ew, eh);
   f.style.opacity = 0;
-  await Promise.all(parts.map(p=>anim(p, [{ transform:'translateY(18px) scale(.94)', opacity:0 }, { transform:'none', opacity:1 }], { duration:320, easing:'ease-out' })));
+  await Promise.all([...parts, seal].map(p=>anim(p, [{ transform:'translateY(16px) scale(.96)', opacity:0 }, { transform:'none', opacity:1 }], { duration:320, easing:'ease-out' })));
   if(gone()) return;
-  await anim(flap, [{ transform:'rotateX(0deg)' }, { transform:'rotateX(180deg)' }], { duration:420, easing:'ease-in-out' });
+  fold.style.visibility = '';
+  anim(seal, [{ transform:'none', opacity:1 }, { transform:'translateY(-5px) scale(1.15)', opacity:1, offset:.35 }, { transform:'translateY(12px) scale(.4)', opacity:0 }], { duration:280, easing:'ease-in' });
+  await anim(flap, [{ transform:'rotateX(0deg)' }, { transform:'rotateX(180deg)' }], { duration:440, easing:'ease-in-out', delay:140 });
   if(gone()) return;
-  flap.style.zIndex = 0; f.style.opacity = 1;
-  await anim(f, [{ transform:'translateY(46%) scale(.8)' }, { transform:'translateY(-7%) scale(.93)' }], { duration:640, easing:'cubic-bezier(.2,.8,.2,1)' });
+  flap.style.zIndex = 0;   // 열린 덮개는 카드 뒤로
+  await anim(fold, [{ transform:at(yIn, s) }, { transform:at(yOut, s) }], { duration:560, easing:'cubic-bezier(.3,.7,.3,1)' });   // 앞주머니 뒤에서 올라와 봉투 위로 빠져나온다
   if(gone()) return;
-  parts.forEach(p=>anim(p, [{ transform:'none', opacity:1 }, { transform:'translateY(46px)', opacity:0 }], { duration:360, easing:'ease-in' }));
-  await anim(f, [{ transform:'translateY(-7%) scale(.93)' }, { transform:'none' }], { duration:420, easing:'cubic-bezier(.3,1.5,.5,1)' });
-  parts.forEach(p=>p.remove()); f.getAnimations().forEach(a=>a.cancel());
+  fold.style.zIndex = 6;   // 다 나왔다 — 이제 봉투 앞
+  parts.forEach(p=>anim(p, [{ transform:p===flap ? 'rotateX(180deg)' : 'none', opacity:1 }, { transform:'translateY(40px)' + (p===flap ? ' rotateX(180deg)' : ''), opacity:0 }], { duration:380, easing:'ease-in' }));
+  await anim(fold, [{ transform:at(yOut, s) }, { transform:at(H / 2, 1) }], { duration:440, easing:'cubic-bezier(.4,0,.2,1)' });   // 제자리(아래 반)로 내려오며 커진다
+  if(gone()) return;
+  await anim(top, [{ transform:'rotateX(-180deg)' }, { transform:'rotateX(0deg)' }], { duration:520, easing:'cubic-bezier(.3,.55,.25,1)' });   // 위 반을 펼친다
+  fold.remove(); seal.remove(); parts.forEach(p=>p.remove()); f.style.opacity = '';
   if(gone()) return;
   if(acts){ acts.style.pointerEvents = ''; acts.inert = false; acts.animate([{ opacity:0, transform:'translateY(6px)' }, { opacity:1, transform:'none' }], { duration:260 }).finished.then(()=>{ acts.style.opacity = ''; }); }
   burst(stage, c);
@@ -13996,23 +14028,35 @@ async function cardSent(){   // [보내기] — 글 규칙을 먼저 보고, 단
   kpiFlash(`${escapeHtml(to.name)} 님께 카드를 보냈어요.`);
   if(AUTH.live) await cardLoad();   // 보낸 카드 · 숫자
 }
-async function cardFly(o){   // 시안 cardSent 움직임(약 1.7초): 미리 보기 카드가 봉투에 들어가 덮개가 닫히고 오른쪽 위로 날아간다 (휴대폰은 창 가운데에서). 봉투는 창(#orgModal) 안에 붙여 — 도중에 창을 닫으면 함께 사라진다
+async function cardFly(o){   // 보내기 움직임(약 2.5초): 미리 보기 카드가 반으로 접힘 → 아래에 열린 봉투가 올라옴 → 접힌 카드가 봉투 폭에 맞게 작아져 안으로 들어감 → 덮개가 닫히고 하트 봉인 → 오른쪽 위로 날아간다 (휴대폰은 창 위쪽 가운데에서). 봉투는 창(#orgModal) 안에 붙여 — 도중에 창을 닫으면 함께 사라진다
   const d = document.getElementById('orgModal'), pv = d.querySelector('#cmPv .cm-face'), shown = pv && pv.offsetParent, m = d.querySelector('.card').getBoundingClientRect();
-  const w = Math.min(240, m.width * .66), rc = shown ? pv.getBoundingClientRect() : { left:m.left + (m.width - w) / 2, top:m.top + m.height * .25, width:w, height:w * 1.05 };
+  const face = shown ? pv : Object.assign(document.createElement('div'), { innerHTML:cardPv() }).firstElementChild;   // 휴대폰은 미리 보기가 숨어 있어 같은 카드를 새로 그린다
+  const rc = shown ? pv.getBoundingClientRect() : { left:m.left + (m.width - Math.min(220, m.width * .62)) / 2, top:m.top + 20, width:Math.min(220, m.width * .62) };
   const fly = document.createElement('div'); fly.className = 'cm-fly';
-  fly.style.cssText = `left:${rc.left}px; top:${rc.top}px; width:${rc.width}px; height:${rc.height}px; ${cardKv(o.kind)}`;
-  fly.innerHTML = `<i class="cm-ep back"></i><div class="cm-fly-card">${cardPv()}</div><i class="cm-ep front"></i><i class="cm-ep flap" style="z-index:0; transform:rotateX(180deg);"></i>`;
-  d.querySelector('.cm-btns').style.pointerEvents = 'none';
+  fly.style.cssText = `left:${rc.left}px; top:${rc.top}px; width:${rc.width}px; ${cardKv(o.kind)}`;
+  fly.innerHTML = `<i class="cm-ep back"></i><i class="cm-ep front"></i><i class="cm-ep flap" style="z-index:0; transform:rotateX(180deg);"></i><i class="cm-seal" style="opacity:0">${CARD_HEART}</i>`;
   d.appendChild(fly);
+  let H = rc.height;
+  if(!shown){ const probe = face.cloneNode(true); probe.style.cssText = 'position:absolute; visibility:hidden; left:0; top:0; width:100%;'; fly.appendChild(probe); H = probe.offsetHeight; probe.remove(); }   // 숨은 카드 높이는 폭에 맞춰 재어 본다
+  const W = rc.width, ew = W * .92, eh = ew * .62, ex = (W - ew) / 2, ey = H + 14;   // 봉투: 카드 바로 아래
+  const s = Math.min(.84, ew * .88 / W, eh * .86 / (H / 2)), at = (y0, k)=>`translate(${(W - W * k) / 2}px,${y0 - k * H / 2}px) scale(${k})`, yIn = ey + (eh - s * H / 2) / 2 + 2;   // 접힌 카드(높이 H/2)를 봉투 안에 들어가게 k 배로 / at: 접힌 카드의 위 끝을 y0 에
+  const fold = cardFold(face), top = fold.querySelector('.cm-fold-top'), parts = [...fly.querySelectorAll('.cm-ep')], flap = fly.querySelector('.cm-ep.flap'), seal = fly.querySelector('.cm-seal');
+  Object.assign(fold.style, { left:0, top:0, width:W + 'px', height:H + 'px' });
+  fly.style.height = H + 'px'; fly.style.transformOrigin = `${W / 2}px ${ey + eh / 2}px`;   // 날아갈 때는 봉투 가운데를 축으로
+  fly.appendChild(fold); cardEnv(fly, ex, ey, ew, eh); parts.forEach(p=>{ p.style.opacity = 0; });   // 봉투는 올라올 때까지 숨김 (나타나는 움직임에 기다림이 있다)
+  d.querySelector('.cm-btns').style.pointerEvents = 'none';
   if(shown) pv.style.visibility = 'hidden';
   try {
-    const card = fly.querySelector('.cm-fly-card'), parts = [...fly.querySelectorAll('.cm-ep')], flap = fly.querySelector('.cm-ep.flap');
     const anim = (el, kf, opt)=>el.animate(kf, { fill:'forwards', ...opt }).finished;
-    parts.forEach(p=>anim(p, [{ opacity:0, transform:(p===flap ? 'rotateX(180deg) ' : '') + 'translateY(20px)' }, { opacity:1, transform:p===flap ? 'rotateX(180deg)' : 'none' }], { duration:260, easing:'ease-out' }));
-    await anim(card, [{ transform:'none' }, { transform:'translateY(50%) scale(.8)' }], { duration:560, easing:'cubic-bezier(.5,0,.6,1)', delay:120 });
+    if(!shown) await anim(fold, [{ opacity:0, transform:'translateY(10px)' }, { opacity:1, transform:'none' }], { duration:220, easing:'ease-out' });   // 휴대폰: 숨어 있던 카드가 먼저 나타난다
+    parts.forEach(p=>anim(p, [{ opacity:0, transform:'translateY(22px)' + (p===flap ? ' rotateX(180deg)' : '') }, { opacity:1, transform:p===flap ? 'rotateX(180deg)' : 'none' }], { duration:340, easing:'ease-out', delay:180 }));   // 열린 봉투가 아래에서 올라온다
+    await anim(top, [{ transform:'rotateX(0deg)' }, { transform:'rotateX(-180deg)' }], { duration:460, easing:'cubic-bezier(.45,0,.25,1)' });   // 반으로 접힌다
+    await anim(fold, [{ transform:at(H / 2, 1) }, { transform:at(H / 2 - 8, s) }], { duration:240, easing:'ease-out' });   // 봉투 폭에 맞게 작아지며 살짝 들린다
+    await anim(fold, [{ transform:at(H / 2 - 8, s) }, { transform:at(yIn, s) }], { duration:500, easing:'cubic-bezier(.5,0,.3,1)' });   // 봉투 안으로 (앞주머니 뒤로 사라진다)
     flap.style.zIndex = 4;
-    await anim(flap, [{ transform:'rotateX(180deg)' }, { transform:'rotateX(0deg)' }], { duration:320, easing:'ease-in-out' });
-    await anim(fly, [{ transform:'none', opacity:1 }, { transform:'translate(14px,6px) rotate(3deg)', opacity:1, offset:.2 }, { transform:'translate(300px,-360px) rotate(-16deg) scale(.45)', opacity:0 }], { duration:760, easing:'cubic-bezier(.45,0,.8,.45)' });
+    await anim(flap, [{ transform:'rotateX(180deg)' }, { transform:'rotateX(0deg)' }], { duration:320, easing:'ease-in-out' });   // 덮개가 닫힌다
+    await anim(seal, [{ opacity:0, transform:'scale(.2)' }, { opacity:1, transform:'scale(1.2)', offset:.6 }, { opacity:1, transform:'scale(1)' }], { duration:220, easing:'ease-out' });   // 하트 봉인
+    await anim(fly, [{ transform:'none', opacity:1 }, { transform:'translate(10px,-8px) rotate(-3deg)', opacity:1, offset:.2 }, { transform:'translate(300px,-360px) rotate(-16deg) scale(.4)', opacity:0 }], { duration:720, easing:'cubic-bezier(.45,0,.8,.45)' });
   } finally { fly.remove(); }
 }
 async function cardSelfCheck(){   // 브라우저 콘솔에서 await cardSelfCheck() 실행 — 시연 카드 · 실제 로그인 흉내 · 화면 상태는 끝나면 되돌린다 (fetch 는 가짜 — 서버에 보내지 않는다)
@@ -14235,7 +14279,7 @@ async function cardSelfCheck(){   // 브라우저 콘솔에서 await cardSelfChe
     orgCloseModal();
     // ---- 카드가 왔어요 (Task 7): 들어올 때 자동 창 · 넘겨 보면 읽음 · 고마워요 · 움직임 · 카드함 처음 열기 (움직임은 바로 끝나는 가짜 — 몇 번 움직였나만 센다) ----
     const tick = ()=>new Promise(r=>setTimeout(r)), A = ()=>document.getElementById('cmArrive'), cnt = ()=>A().querySelector('.cm-count').textContent, tb = ()=>A().querySelector('.cm-thanks');
-    const bits = ()=>document.querySelectorAll('.cm-ep,.cm-p,.cm-fly,.cm-pop').length, title = ()=>document.querySelector('#orgModal .card-title')?.textContent || '';
+    const bits = ()=>document.querySelectorAll('.cm-ep,.cm-p,.cm-fly,.cm-pop,.cm-fold,.cm-seal').length, title = ()=>document.querySelector('#orgModal .card-title')?.textContent || '';
     let fx = {};
     const fxAnim = function(){ for(const k of ['ep', 'p', 'pop', 'face']) if(this.matches('.cm-'+k)) fx[k] = (fx[k] || 0) + 1; return { finished:Promise.resolve(), cancel(){} }; };
     Element.prototype.animate = fxAnim; rm = false;
@@ -14301,7 +14345,7 @@ async function cardSelfCheck(){   // 브라우저 콘솔에서 await cardSelfChe
     // 움직이는 중에 X로 닫으면 조각이 남지 않는다 (움직임이 끝난 뒤에도)
     const held = []; Element.prototype.animate = function(){ return { finished:new Promise(r=>held.push(r)), cancel(){} }; };
     unread1(); cardArrive(0); await tick(); tb().click(); await tick();
-    const mid = A().querySelectorAll('.cm-ep').length===3 && document.querySelectorAll('#orgModal .cm-pop').length===6 && A().querySelector('.cm-acts').style.pointerEvents==='none' && A().querySelector('.cm-acts').inert;
+    const mid = A().querySelectorAll('.cm-ep').length===3 && A().querySelectorAll('.cm-stage > .cm-fold, .cm-stage > .cm-seal').length===2 && document.querySelectorAll('#orgModal .cm-pop').length===6 && A().querySelector('.cm-acts').style.pointerEvents==='none' && A().querySelector('.cm-acts').inert;
     A().querySelector('.x-btn').click(); const none = !bits();
     for(let i = 0; i < 50 && held.length; i++){ held.splice(0).forEach(r=>r()); await tick(); }
     ok(mid && none && !bits() && !document.getElementById('orgModal'), '봉투가 열리는 동안 단추 줄은 눌리지 않고(X 는 된다) · 그때 X로 닫으면 봉투 · 효과 · 하트 조각이 남지 않는다 (움직임이 끝난 뒤에도)');
