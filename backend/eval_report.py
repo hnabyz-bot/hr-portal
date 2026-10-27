@@ -2,21 +2,26 @@
 
 app.py 가 bp 를 붙인다. 세션 검사는 auth._guard 가 모든 /api/* 에 하므로 여기서는 HR 인지만 본다.
 
-  POST /api/eval/report    화면이 보낸 평가 결과 → 엑셀 한 파일 (HR 만)
-                           시트 ① 요약 — 숫자 카드 · 본부별 등급 분포 · 평가 묶음별 분포와 정원 기준 · 본부별 그래프 (이름 없음, A4 세로 한 장)
-                           시트 ② 명단 — 한 사람 한 줄 (대외비). 칸 제목 사번 · 이름 · 최종등급은 연봉 인상 계산(RZ_GRADE)이 그대로 읽는다
+  GET  /api/eval/report?year=  실제 평가 (평가 3단계 ②): 서버가 그해 평가를 DB 에서 읽어 아래 엑셀을 만든다 (HR 만 · 공개 전에도 — 설계 9장)
+                           거절 순서: HR 403 → 해(2026~2100, ASCII 숫자 네 자리) 400 → FIRST_YEAR 전 · 시작 안 한 해 404 → 제외 안 된 사람이 없음 409.
+                           사람 줄은 evaluation._row_json 을 지난다(HR = full) — 칸 · 글자는 화면 evReportData 와 같고, clean() · build() 도 아래와 같다.
+                           파일 이름 "{year}년 인사평가 결과.xlsx", no-store. 감사로그 EVAL_REPORT (해뿐 — 등급 · 이름 없음)
+  POST /api/eval/report    화면이 보낸 평가 결과 → 같은 엑셀 (HR 만) — 시연 화면용 (가상 자료)
 
-지금 평가는 시연 자료(화면 안)라 화면이 결과를 보낸다 — 모양 · 범위만 본다. 실제 평가(설계 3단계)에서는 서버가 DB 에서 읽어
-같은 build() 로 만든다. 꾸민 표 · 그래프는 openpyxl 이 만든다(화면만으로는 그래프를 넣기 어렵다).
+  엑셀 시트 ① 요약 — 숫자 카드 · 본부별 등급 분포 · 평가 묶음별 분포와 정원 기준 · 본부별 그래프 (이름 없음, A4 세로 한 장)
+  엑셀 시트 ② 명단 — 한 사람 한 줄 (대외비). 칸 제목 사번 · 이름 · 최종등급은 연봉 인상 계산(RZ_GRADE)이 그대로 읽는다
+
+꾸민 표 · 그래프는 openpyxl 이 만든다(화면만으로는 그래프를 넣기 어렵다).
 """
 
 from __future__ import annotations
 
 import io
 import re
+import sqlite3
 from urllib.parse import quote
 
-from flask import Blueprint, Response, jsonify, request
+from flask import Blueprint, Response, g, jsonify, request
 from openpyxl import Workbook
 from openpyxl.chart import BarChart, Reference
 from openpyxl.chart.label import DataLabelList
@@ -26,8 +31,13 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
 import auth
+import evaluation
+import kpi
+from hr_eval.domain.models import Actor
+from hr_eval.domain.quota import QuotaMode, calculate_department_quota
 
 bp = Blueprint("eval_report", __name__)
+bp.register_error_handler(kpi._Refuse, kpi._refused)
 
 MAX_BYTES, MAX_PEOPLE, MAX_POOLS, MAX_TEXT = 1_000_000, 3_000, 30, 80
 GRADES, WAIT = ["S", "A", "B", "C", "D"], "처리 중"   # 처리 중 = 이의 처리 중이거나 아직 등급이 없음 (화면 evExportGrade 가 비워 보낸다)
@@ -44,6 +54,7 @@ BOX = Border(left=THIN, right=THIN, top=THIN, bottom=THIN)
 CENTER = Alignment(horizontal="center", vertical="center")
 LEFT = Alignment(horizontal="left", vertical="center", indent=1)
 ZERO_DASH = '0;-0;"-"'
+EV_STAGES = {"SELF": "자기평가 중", "SCORE": "평가자 점수 대기", "GRADE": "본부장 등급 대기", "HR": "HR 확정 대기", "CEO": "대표이사 확인 대기", "DONE": "확정"}   # 화면 EV_STAGES (public/index.html) 와 같은 글자
 
 
 # ----- 받은 값 검사 -----
@@ -267,6 +278,13 @@ def build(d: dict) -> bytes:
     return buf.getvalue()
 
 
+def _file(d: dict, data: bytes) -> Response:
+    """엑셀 응답 — 파일 이름은 한글 (filename* UTF-8)."""
+    resp = Response(data, mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    resp.headers["Content-Disposition"] = f"attachment; filename=eval_report_{d['year']}.xlsx; filename*=UTF-8''{quote(f"{d['year']}년 인사평가 결과.xlsx")}"
+    return resp
+
+
 @bp.post("/api/eval/report")
 def report() -> Response:
     if (denied := auth._hr_only()) is not None:
@@ -276,8 +294,65 @@ def report() -> Response:
     d = clean(request.get_json(silent=True))
     if isinstance(d, str):
         return jsonify(error=d), 400
-    resp = Response(build(d), mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-    resp.headers["Content-Disposition"] = f"attachment; filename=eval_report_{d['year']}.xlsx; filename*=UTF-8''{quote(f"{d['year']}년 인사평가 결과.xlsx")}"
+    return _file(d, build(d))
+
+
+# ----- 실제 평가: DB 에서 -----
+
+def _appeal_text(a: dict | None, grade: str | None) -> str:
+    """이의 신청 칸 글자 (화면 evReportData): 없음 "" · 처리 중 (지금 등급) · 대표이사 확인 대기 (전 → 후) · 등급이 바뀌었으면 "전 → 후 반영" · 그대로면 유지."""
+    if a is None:
+        return ""
+    if a["status"] == "OPEN":
+        return f"처리 중 (지금 {grade or ''})"
+    if a["status"] == "CEO":
+        return f"대표이사 확인 대기 ({a['before']} → {a['after']})"
+    return f"{a['before']} → {a['after']} 반영" if a["before"] != a["after"] else "유지"
+
+
+def _from_db(conn: sqlite3.Connection, year: int, me: Actor) -> dict:
+    """그해 평가를 DB 에서 읽어 clean() 이 받는 모양으로 — 칸 · 글자는 화면 evReportData 와 같다. 한 트랜잭션(읽는 사이에 단계가 바뀌지 않게).
+    사람 줄은 모두 evaluation._row_json 을 지난다 (공개 전 등급을 자르는 곳이 한 곳이게 — 여기는 HR 만 오므로 full 이라 등급이 든다)."""
+    with kpi._txn(conn):
+        ctx = evaluation._ctx(conn, year)
+        if not (ctx.round and ctx.round["started"]):
+            raise kpi._Refuse("평가를 시작한 해가 아닙니다.", 404)
+        rows = [r for r in sorted(ctx.rows.values(), key=lambda r: evaluation._order(ctx, r)) if r["out_at"] is None]   # 본부 → 팀 → 팀장 먼저 → 이름
+        shown = [j for r in rows if (j := evaluation._row_json(ctx, me, r)) is not None]
+        if not shown:
+            raise kpi._Refuse("보고서에 넣을 분이 없습니다.", 409)
+        no = dict(conn.execute("SELECT id, employee_no FROM users"))
+        pools = []
+        for k in sorted(ctx.pools, key=evaluation._pool_rank):
+            _, errors, _, _, members = evaluation._pool(ctx, k)
+            q = calculate_department_quota(len(members))
+            pools.append({"name": evaluation._pool_label(ctx, k), "quota": f"A·B 합계 {q.upper}명" if q.mode is QuotaMode.GROUPED else f"A·B·D 각 {q.a}명", "ok": not errors})
+    people = [{"div": j["div"], "team": j["team"] or evaluation.NO_TEAM, "no": no[j["pid"]] or "", "name": j["name"], "title": j["title"], "pool": j["poolName"],
+               "total": None if j["total"] is None else round(j["total"], 1),
+               "grade": "" if j["appeal"] and j["appeal"]["status"] != "DONE" else j["grade"] or "",   # 이의 처리 중이면 비운다 (화면 evExportGrade)
+               "stage": EV_STAGES[j["stage"]].replace("등급", "배정"),   # '등급' 글자가 첫 사람 줄에 오면 연봉 인상 계산이 그 줄까지 제목으로 읽는다
+               "appeal": _appeal_text(j["appeal"], j["grade"])} for j in shown]
+    rel = ctx.round["released"]
+    return {"year": year, "date": auth._today().isoformat(), "released": evaluation._day(rel).isoformat() if rel else None,
+            "appeals": sum(1 for j in shown if j["appeal"]), "open": sum(1 for j in shown if j["appeal"] and j["appeal"]["status"] != "DONE"),
+            "people": people, "pools": pools}
+
+
+@bp.get("/api/eval/report")
+def report_live() -> Response:
+    if (denied := auth._hr_only()) is not None:
+        return denied
+    year = evaluation._asked(request.args.get("year", ""))
+    if year < evaluation.FIRST_YEAR:   # 포털 밖에서 평가한 해
+        raise kpi._Refuse("평가를 시작한 해가 아닙니다.", 404)
+    conn = auth._db()
+    d = clean(_from_db(conn, year, g.actor))
+    if isinstance(d, str):   # 서버가 만든 자료라 일어나지 않아야 한다 — 그래도 500 대신 이유를 돌려준다
+        raise kpi._Refuse(d, 409)
+    data = build(d)
+    evaluation._log(conn, "EVAL_REPORT", "ev_round", year, year=year)   # 만든 뒤에 남긴다 — 해뿐 (등급 · 이름 없음)
+    resp = _file(d, data)
+    resp.headers["Cache-Control"] = "no-store"
     return resp
 
 

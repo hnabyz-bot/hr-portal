@@ -35,6 +35,8 @@ app.py 가 bp 를 붙인다. 세션 검사 · 같은 출처 검사는 auth._guar
                                           바꾸면 대표이사 확인 대기(CEO — 대표이사, 맡겼으면 신청한 사람 뺀 HR 에게 eval_appeal · 누른 사람은 빼고)
   POST /api/eval/appeals/<uid>/confirm    {"year"} 등급 변경 확인 — 고친 실행목표 등급 · 등급 반영 · 끝 (대표이사 · 맡김이면 그 답변을 쓰지 않은 HR) — 신청한 사람에게 eval_answer
   POST /api/eval/appeals/<uid>/back       {"year"} 등급 변경을 HR 로 돌려보낸다 (OPEN · 답변 글은 남김) — HR 전원(누른 사람 · 신청한 사람 빼고)에게 eval_appeal
+  GET  /api/eval/report?year=             평가 결과 보고서 엑셀 (HR 만 · 공개 전에도) — eval_report.py 가 같은 _ctx · _row_json 으로 DB 에서 만든다.
+                                          거절: HR 403 → 해 400 → 시작 안 한 해 404 → 제외 안 된 사람이 없음 409. 감사로그 EVAL_REPORT {year}
 
 보는 수준 (공개 전 등급은 어디에도 새지 않는다 — 사람 줄을 응답에 넣는 길은 모두 _row_json 하나를 지난다. 수준은 eval_rules.level):
   full 전부 (HR · 대표이사 · 배정자 · 점수를 내기 전의 평가자 · 공개 뒤) / mine 평가자가 낸 뒤 · 공개 전 — 자기가 낸 등급 · 항목 등급 · 총점만, 고쳤으면 edited 참(내용 글자 없음) /
@@ -118,7 +120,7 @@ HR 답변: HR 403 → 본인 403 → 해 400 → 이의 신청 없음 404 → OP
   HR 이 대신이면 on_behalf_of = 대표이사. 두 창의 두 번째는 409 (이미 처리했습니다 · HR 답변을 기다리는 이의 신청입니다).
 감사로그(R10): EVAL_ROUND_SET · EVAL_STARTED · EVAL_ATT_DONE · EVAL_ATTENDANCE(저장한 사람이 있을 때만) · EVAL_EXCLUDED · EVAL_INCLUDED · EVAL_SKIP_SELF · EVAL_RATER_SET · EVAL_SELF_SUBMITTED ·
   EVAL_SCORED · EVAL_POOL_CLOSED · EVAL_POOL_CONFIRMED · EVAL_POOL_RETURNED · EVAL_POOL_FINALIZED · EVAL_POOL_UNDONE · EVAL_RELEASED · EVAL_APPEALED · EVAL_APPEAL_ANSWERED ·
-  EVAL_APPEAL_CONFIRMED · EVAL_APPEAL_RETURNED — after_data 는 해 · 사람 수 · 평가자 번호 · 묶음 열쇠 · 되돌린 단계(from) · 등급을 바꾸는 답변인가(changed)뿐.
+  EVAL_APPEAL_CONFIRMED · EVAL_APPEAL_RETURNED · EVAL_REPORT(eval_report.py — 보고서 내려받기, 해뿐) — after_data 는 해 · 사람 수 · 평가자 번호 · 묶음 열쇠 · 되돌린 단계(from) · 등급을 바꾸는 답변인가(changed)뿐.
   사유 · 근태 숫자 · 등급 · 점수 · 글은 넣지 않는다 (공개 전 등급이 감사로그로 새지 않게). 이의 신청 넷의 대상은 신청한 사람(ev_appeal).
 """
 

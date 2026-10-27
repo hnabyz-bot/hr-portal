@@ -2102,7 +2102,10 @@ def check_contracts(hr) -> None:
 
 
 def check_eval_report(hr) -> None:
-    """평가 결과 보고용 엑셀 (2026-10-22): HR 만 · 받은 값 검사 · 시트 둘(요약 · 명단) · 연봉 인상 계산이 읽는 칸 제목 · '=' 글자는 수식이 아님."""
+    """평가 결과 보고용 엑셀 (2026-10-22): HR 만 · 받은 값 검사 · 시트 둘(요약 · 명단) · 연봉 인상 계산이 읽는 칸 제목 · '=' 글자는 수식이 아님.
+    보고서는_DB에서 (2026-10-27, 평가 3단계 ②): 실제 평가(시작한 해)는 GET /api/eval/report?year= 로 서버가 DB 에서 같은 build() 로 만든다 — HR 만 · 공개 전에도 ·
+    이의 처리 중인 사람은 등급 칸이 빔 · 요약에 이름 없음 · 사원코드 · 감사로그는 해뿐. 앞 평가 검사가 남긴 2027 회차 · 가상 조직을 이어 쓰고, 필요한 상태(확정 · 이의 신청 ·
+    사원코드 · 제외 · 공개)는 DB 에 바로 넣었다가 끝에 되돌린다."""
     import io
     import zipfile
     from urllib.parse import quote
@@ -2143,6 +2146,91 @@ def check_eval_report(hr) -> None:
     z = zipfile.ZipFile(io.BytesIO(r.data))
     charts = [n for n in z.namelist() if n.startswith("xl/charts/chart")]
     ok(len(charts) == 1 and "<f>'요약'!" in z.read(charts[0]).decode() and "Sheet" not in z.read(charts[0]).decode(), "요약에 그래프 하나 (요약 시트의 칸을 가리킴)")
+
+    # ---- 보고서는_DB에서 ----
+    import evaluation
+    Y = evaluation.FIRST_YEAR
+    LEAD, EMP, FIELD, EMPB, DIVD, LEADC, EMPC, EXEC = 102, 103, 104, 105, 106, 107, 108, 111   # check_eval_admin 의 가상 조직
+    get = lambda c, qs=f"?year={Y}": c.get(f"/api/eval/report{qs}", base_url=BASE)  # noqa: E731
+    audit = lambda: q("SELECT actor_user_id, entity_type, entity_id, after_data FROM audit_logs WHERE action = 'EVAL_REPORT' ORDER BY id")  # noqa: E731
+    seen = (LEAD, EMP, FIELD, EMPB, DIVD, LEADC, EMPC, EXEC)
+    cols = "stage, proposed, grade, out_at, out_reason, out_by"
+    before = {u: q(f"SELECT {cols} FROM ev_targets WHERE year = ? AND user_id = ?", Y, u)[0] for u in seen}
+    marks0 = q("SELECT rid, grade FROM ev_items WHERE year = ? AND user_id = ? ORDER BY rid", Y, EMP)
+    no0 = q("SELECT employee_no FROM users WHERE id = ?", EMPC)[0][0]
+    ok(q("SELECT started_at IS NOT NULL, released_at IS NULL FROM ev_rounds WHERE year = ?", Y) == [(1, 1)]
+       and q("SELECT COUNT(*) FROM ev_appeals WHERE year = ?", Y) == [(0,)] and q("SELECT COUNT(*) FROM ev_targets WHERE year = ? AND out_at IS NOT NULL", Y) == [(0,)]
+       and set(seen) <= {u for (u,) in q("SELECT user_id FROM ev_targets WHERE year = ?", Y)} and no0 is None and all(g_ is None for _, g_ in marks0),
+       "(앞 검사가 남긴 2027 회차: 시작함 · 공개 전 · 이의 신청 없음 · 제외 없음 · 등급 없음)")
+
+    ok(app.test_client().get(f"/api/eval/report?year={Y}", base_url=BASE).status_code == 401, "보고서는_DB에서: 로그인 없이는 401")
+    ok(all(get(lead, qs).status_code == 403 for qs in (f"?year={Y}", "?year=abc", "")), "보고서는_DB에서: HR 이 아니면 403 (팀장 — 해가 틀려도 403 먼저)")
+    ok(all((r := get(hr, qs)).status_code == 400 and r.json == {"error": "해가 올바르지 않습니다."}
+           for qs in ("", "?year=", "?year=abc", "?year=2025", "?year=2101", f"?year={Y}.0", "?year=" + quote("\u0662\u0660\u0662\u0667"))),
+       "보고서는_DB에서: 해가 없거나 ASCII 숫자 네 자리(2026~2100)가 아니면 400")
+    ok(all((r := get(hr, f"?year={y}")).status_code == 404 and r.json == {"error": "평가를 시작한 해가 아닙니다."} for y in (Y - 1, 2040)),
+       "보고서는_DB에서: 포털 평가 전 해 · 시작 안 한 해 404")
+    try:
+        x("UPDATE ev_targets SET out_at = '2027-12-01T03:00:00Z', out_reason = '가상 휴직', out_by = 1 WHERE year = ?", Y)
+        r = get(hr)
+        ok(r.status_code == 409 and r.json == {"error": "보고서에 넣을 분이 없습니다."}, "보고서는_DB에서: 모두 제외됐으면 409")
+    finally:
+        x("UPDATE ev_targets SET out_at = NULL, out_reason = NULL, out_by = NULL WHERE year = ?", Y)
+    ok(audit() == [], "보고서는_DB에서: 거절한 길은 감사로그를 남기지 않는다")
+
+    try:
+        for uid, grade in ((LEAD, "A"), (EMP, "B"), (EMPB, "A"), (LEADC, "C"), (DIVD, "S")):   # 확정까지 간 사람 (배정 이후엔 평가자 제안이 있어야 한다 — 표의 CHECK)
+            x("UPDATE ev_targets SET stage = 'DONE', proposed = ?, grade = ? WHERE year = ? AND user_id = ?", grade, grade, Y, uid)
+        x("UPDATE ev_targets SET stage = 'GRADE', proposed = 'C', grade = 'C' WHERE year = ? AND user_id = ?", Y, EMPC)   # 상태 글자의 '등급' 이 '배정' 으로
+        x("UPDATE ev_targets SET out_at = '2027-12-01T03:00:00Z', out_reason = '가상 휴직', out_by = 1 WHERE year = ? AND user_id = ?", Y, DIVD)   # 제외 — 명단에 없다
+        x("UPDATE ev_items SET grade = 'B' WHERE year = ? AND user_id = ?", Y, EMP)   # B · B · B = 90.0점
+        x("UPDATE users SET employee_no = 'V9001' WHERE id = ?", EMPC)
+        for uid, status, was, now in ((LEAD, "DONE", "S", "A"), (EMP, "OPEN", "B", None), (EMPB, "CEO", "A", "C"), (LEADC, "DONE", "C", "C")):
+            x("INSERT INTO ev_appeals (year, user_id, reason, at, status, before, after, answer, answered_by) VALUES (?, ?, '가상 사유', '2027-12-16T03:00:00Z', ?, ?, ?, ?, ?)",
+              Y, uid, status, was, now, None if status == "OPEN" else "가상 답변", None if status == "OPEN" else 1)
+
+        r = get(hr)
+        ok(r.status_code == 200 and r.mimetype.endswith("spreadsheetml.sheet") and r.headers["Cache-Control"] == "no-store"
+           and r.headers["Content-Disposition"].endswith("filename*=UTF-8''" + quote(f"{Y}년 인사평가 결과.xlsx")), "보고서는_DB에서: HR → 공개 전에도 엑셀 (파일 이름 한글 · no-store)")
+        wb = load_workbook(io.BytesIO(r.data))
+        sm, ro = wb["요약"], wb["명단"]
+        head = [c.value for c in ro[4]]
+        live = [dict(zip(head, [c.value for c in row])) for row in ro.iter_rows(min_row=5)]
+        by = {p["이름"]: p for p in live}
+        order = [n for (n,) in q("SELECT u.name FROM ev_targets t JOIN users u ON u.id = t.user_id WHERE t.year = ? AND t.out_at IS NULL"
+                                 " ORDER BY t.div_name, t.team_name, -t.is_leader, u.name, t.user_id", Y)]
+        ok(wb.sheetnames == ["요약", "명단"] and {"사번", "이름", "최종등급"} <= set(head) and [p["이름"] for p in live] == order and "가상E본부직속" not in by and len(order) > 8,
+           "보고서는_DB에서: 시트 요약 · 명단, 칸 제목(사번 · 이름 · 최종등급), 제외 안 된 사람만 본부 → 팀 → 팀장 먼저 → 이름 차례")
+        ok(by["가상E팀원"]["최종등급"] is None and by["가상E팀원B"]["최종등급"] is None
+           and [by[n]["최종등급"] for n in ("가상E팀장", "가상E팀장C", "가상E팀원C")] == ["A", "C", "C"],
+           "보고서는_DB에서: 이의 처리 중(OPEN · CEO)인 사람은 최종등급 칸이 비고 끝난 사람은 등급이 있다")
+        ok([by[n]["이의 신청"] for n in ("가상E팀원", "가상E팀원B", "가상E팀장", "가상E팀장C", "가상E팀원C")]
+           == ["처리 중 (지금 B)", "대표이사 확인 대기 (A → C)", "S → A 반영", "유지", None], "보고서는_DB에서: 이의 신청 칸 글자 (처리 중 · 확인 대기 · 반영 · 유지 · 없음)")
+        ok(by["가상E팀원C"]["사번"] == "V9001" and by["가상E팀원"]["사번"] is None, "보고서는_DB에서: 사원코드가 든 사람은 사번 칸에, 없는 사람은 빈 칸")
+        ok(by["가상E현장직"]["총점"] == "현장직" and by["가상E팀원"]["총점"] == 90.0 and by["가상E팀원"]["상태"] == "확정"
+           and by["가상E팀원C"]["상태"] == "본부장 배정 대기" and by["가상E현장직"]["상태"] == "평가자 점수 대기" and not any("등급" in p["상태"] for p in live),
+           "보고서는_DB에서: 총점 소수 한 자리 · 점수 없는 사람은 현장직 · 상태 글자 ('등급' 이 '배정' 으로)")
+        names = [n for (n,) in q("SELECT u.name FROM ev_targets t JOIN users u ON u.id = t.user_id WHERE t.year = ?", Y)]
+        text = [str(c.value) for row in sm.iter_rows() for c in row if c.value is not None]
+        ok(not any(n in t for n in names for t in text), "보고서는_DB에서: 요약 시트에는 사람 이름이 없다")
+        ok([sm[c].value for c in ("A5", "B5", "F5", "H5")] == [f"{len(order)}명", "4명", "4건", "2건"] and "공개 전" in sm["A2"].value,
+           "보고서는_DB에서: 요약 카드 (평가 대상 · 확정 · 이의 신청 · 처리 중) · 공개 전")
+        pools = {sm.cell(row=i, column=1).value: [sm.cell(row=i, column=c).value for c in (8, 9, 10)] for i in range(1, sm.max_row + 1)}
+        ok(pools["가상E본부 팀원"] == [4, "A·B 합계 1명", "확인 필요"] and pools["전사 팀장"][1] == "A·B 합계 1명",
+           "보고서는_DB에서: 묶음 줄 (제외된 사람 뺀 인원 · 정원 글자 · 규칙 검사 — A·B 정원 초과는 확인 필요)")
+        ok(audit() == [(1, "ev_round", Y, json.dumps({"year": Y}))], "보고서는_DB에서: 감사로그 EVAL_REPORT — 해뿐 (등급 · 이름 없음)")
+
+        x("UPDATE ev_rounds SET released_at = '2027-12-15T03:00:00Z' WHERE year = ?", Y)
+        r = get(hr)
+        ok(r.status_code == 200 and "2027-12-15" in load_workbook(io.BytesIO(r.data))["요약"]["A2"].value and len(audit()) == 2, "보고서는_DB에서: 공개한 뒤에는 공개일(한국 날짜)이 적힌다")
+    finally:
+        x("DELETE FROM ev_appeals WHERE year = ?", Y)
+        x("UPDATE ev_rounds SET released_at = NULL, released_by = NULL WHERE year = ?", Y)
+        for u, (s_, p_, g_, oa, orr, ob) in before.items():
+            x("UPDATE ev_targets SET stage = ?, proposed = ?, grade = ?, out_at = ?, out_reason = ?, out_by = ? WHERE year = ? AND user_id = ?", s_, p_, g_, oa, orr, ob, Y, u)
+        for rid, g_ in marks0:
+            x("UPDATE ev_items SET grade = ? WHERE year = ? AND user_id = ? AND rid = ?", g_, Y, EMP, rid)
+        x("UPDATE users SET employee_no = ? WHERE id = ?", no0, EMPC)
 
 
 def check_push_targets(hr) -> None:
