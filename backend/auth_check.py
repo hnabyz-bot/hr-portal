@@ -7743,14 +7743,15 @@ def check_eval_close(hr) -> None:
 def check_eval_appeal(hr) -> None:
     """인사평가 결과 읽기 · 이의 신청 (2026-10-27, 평가 3단계 ②): GET /api/eval/results — 본인 줄 · 보는 범위(팀장 = 자기 팀원 · 본부장 = 자기 본부 · 대표이사 · HR = 전원,
     HR 은 공개 전에도) · 처리할 이의 신청 · 공개한 해. 이의 신청은 공개일 + 7일(한국 23:59)까지 한 번 — HR 답변(등급 그대로면 바로 끝, 바꾸면 고친 점수와 함께 대표이사 확인) →
-    대표이사 확인 · 돌려보내기. 정원은 따지지 않고 점수 기준 · 연차만 본다. 맡겨도 HR 은 자기 이의를 확인하지 못한다. 처리할 일 e3 = 휴대폰 숫자(push.pending 의 e3 — e2 와 따로).
+    대표이사 확인 · 돌려보내기. 정원은 따지지 않고 점수 기준 · 연차만 본다. 맡겨도 HR 은 자기 이의도, 자기가 쓴 등급 변경 답변도 확인하지 못한다. 처리할 일 e3 = 휴대폰 숫자(push.pending 의 e3 — e2 와 따로).
     감사로그에는 해 · 바뀜(참/거짓)뿐 (사유 · 답변 · 등급 없음), 알림 글에 등급 · 이름이 없다.
     check_eval_close 가 되돌려 둔 회차와 가상 조직(부서 91~97 · 사람 101~116)을 쓴다 — 모두 확정(DONE)한 상태를 DB 에 바로 넣고 공개부터는 실제 길로 간다.
-    지난_해의 둘째 공개한 해(Y + 1)는 회차 · 한 사람 줄을 DB 에 바로 넣는다 (떠 둔 줄은 지울 수 없어 남고, 회차의 시작 · 공개는 되돌린다).
+    지난_해의 둘째 공개한 해(Y2 = 2098 — 어떤 검사도 시작하지 않는 먼 해)는 회차 · 한 사람 줄을 DB 에 바로 넣는다 (떠 둔 줄은 지울 수 없어 남고, 회차의 시작 · 공개는 되돌린다).
     끝에 시계 · 알림 · 대표이사 · 맡김 · 이의 신청 · 근태 마침 · 단계 · 등급 · 공개를 되돌린다."""
     import evaluation
     import push
     print("인사평가 결과 읽기 · 이의 신청 · HR 답변 · 대표이사 확인")
+    Y2 = 2098  # 지난_해의 둘째 공개한 해 — 떠 둔 줄이 남으므로 다른 검사가 시작할 일이 없는 먼 해 (YEARS · ev_rounds CHECK 안)
     HEAD, LEAD, EMP, FIELD, EMPB, DIVD, LEADC, EMPC, HRL, HR, EXEC, CEO = range(101, 113)
     NOCONF, HRA = 115, 1  # HRA = 평가 대상이 아닌 HR (처음 검사의 인사담당자)
     Y, real_now, real_send, real_sync = evaluation.FIRST_YEAR, auth._now, push.SEND, push.SYNC
@@ -7907,7 +7908,7 @@ def check_eval_appeal(hr) -> None:
         # ---- 유지는_바로_끝 (현장직 — KPI 없음 · 연차 초과 5일) ----
         ok(hit(ans(LEAD, FIELD, grade="C", answer="가상"), 403, HR_ONLY) and hit(ans(CEO, FIELD, grade="C", answer="가상"), 403, HR_ONLY), "답변: HR 이 아니면 403")
         ok(hit(ans(HR, HR, grade="C", answer="가상"), 403, SELF_HR) and hit(ans(HR, HR, year=None), 403, SELF_HR), "답변: HR 은 자기 이의에 답하지 못한다 403 (해 400 보다 먼저)")
-        ok(hit(ans(HRA, FIELD, year=None, grade="C", answer="가상"), 400, BAD_YEAR) and hit(ans(HRA, EMPB, grade="C", answer="가상"), 404, NO_APPEAL)
+        ok(hit(ans(HRA, FIELD, year=None, grade="C", answer="가상"), 400, BAD_YEAR) and hit(ans(HRA, NOCONF, grade="C", answer="가상"), 404, NO_APPEAL)
            and hit(ans(HRA, 999999, grade="C", answer="가상"), 404, NO_APPEAL), "답변: 해 400 · 이의 신청이 없으면 404")
         ok(all(hit(ans(HRA, FIELD, grade="C", **b), 400, m) for b, m in (({}, ANS), ({"answer": " "}, ANS), ({"answer": "가" * 501}, ANS), ({"answer": 1}, ANS),
                                                                             ({"answer": "가상\x07"}, ANS_CHAR)))
@@ -7923,6 +7924,13 @@ def check_eval_appeal(hr) -> None:
            "유지는_바로_끝: 결과 appeal.status DONE · 본인에게 답변이 보임")
         ok(hit(ans(HRA, FIELD, grade="C", answer="가상"), 409, ANSWERED) and audits("EVAL_APPEAL_ANSWERED") == [(FIELD, {"year": Y, "changed": False})],
            "또 답하면 409 '이미 답변했습니다.' · 감사로그 EVAL_APPEAL_ANSWERED {해, changed 거짓}")
+        ok(hit(ask(EMPB, reason="가상 이의 B"), 200, OK) and took() == [(HRA, *APPEAL), (HRL, *APPEAL), (HR, *APPEAL)], "(팀원B — 실행목표 B · B · B · 등급 B — 도 이의 신청)")
+        ok(hit(ans(HRA, EMPB, grade="B", answer="가상 2번 실적 반영 · 등급 유지", marks={"2": "A", "3": "B"}), 200, OK)
+           and ap(EMPB) == ("DONE", "B", "B", '{"2": "A"}', "가상 2번 실적 반영 · 등급 유지", HRA, HRA, None) and marks_of(EMPB) == ["B", "A", "B"] and grade_of(EMPB) == "B"
+           and took() == [(EMPB, *ANSWER)],
+           "유지는_바로_끝: 실행목표를 고쳐도 등급 그대로면 바로 DONE — 고친 실행목표 등급을 반영하고 이의 기록에도 marks(바뀐 것만)로 남김")
+        em = res(EMPB)["mine"]
+        ok(em["appeal"]["marks"] == {"2": "A"} and em["appeal"]["status"] == "DONE" and em["total"] == 93.0, "유지는_바로_끝: 본인에게는 끝난(DONE) 뒤 고친 실행목표가 보임 · 총점 93.0")
 
         # ---- 바꾸려면_점수와_대표이사 (팀장 — 실행목표 B · B · B = 90.0점 · 등급 C) ----
         ok(hit(ans(HRA, LEAD, grade="A", answer="가상 상향"), 400, {"error": "총점 90.0점으로는 A를 줄 수 없습니다. (A는 90점 초과) 점수를 다시 봐 주세요."}),
@@ -7945,7 +7953,7 @@ def check_eval_appeal(hr) -> None:
         ok(hit(ans(HRA, LEAD, grade="A", answer="가상"), 409, ANSWERED), "대표이사 확인을 기다리는 이의에 또 답하면 409")
         ok(all(hit(dec(who, LEAD, w), 403, NO_RIGHT) for who in (HEAD, HRA, HR, LEAD) for w in ("confirm", "back")),
            "확인 · 돌려보내기: 대표이사가 아니면 403 (본부장 · 맡기기 전 HR · 본인)")
-        ok(hit(dec(CEO, FIELD, "confirm"), 409, DONE_) and hit(dec(CEO, EMP, "confirm"), 409, WAIT) and hit(dec(CEO, EMPB, "back"), 404, NO_APPEAL)
+        ok(hit(dec(CEO, FIELD, "confirm"), 409, DONE_) and hit(dec(CEO, EMP, "confirm"), 409, WAIT) and hit(dec(CEO, NOCONF, "back"), 404, NO_APPEAL)
            and hit(dec(CEO, 999999, "confirm"), 404, NO_TARGET) and hit(dec(CEO, LEAD, "confirm", year=None), 400, BAD_YEAR),
            "확인 · 돌려보내기: 끝난 이의 409 · HR 답변 전 409 · 이의 없음 404 · 대상 아님 404 · 해 400")
         ok(hit(dec(CEO, LEAD, "back"), 200, OK) and ap(LEAD) == ("OPEN", "C", None, None, "가상 상향", HRA, None, None) and grade_of(LEAD) == "C",
@@ -7962,7 +7970,8 @@ def check_eval_appeal(hr) -> None:
         lm = res(LEAD)["mine"]
         ok(lm["grade"] == "A" and lm["total"] == 94.0 and lm["appeal"] == {**full, "status": "DONE", "answer": "가상 다시 상향"} and hit(dec(CEO, LEAD, "confirm"), 409, DONE_),
            "확인 뒤 본인 결과: 등급 A · 총점 94.0 · 답변 · 바뀐 등급 · 고친 실행목표가 보임 · 또 확인하면 409")
-        ok(audits("EVAL_APPEAL_ANSWERED") == [(FIELD, {"year": Y, "changed": False}), (LEAD, {"year": Y, "changed": True}), (LEAD, {"year": Y, "changed": True})],
+        ok(audits("EVAL_APPEAL_ANSWERED") == [(FIELD, {"year": Y, "changed": False}), (EMPB, {"year": Y, "changed": False}), (LEAD, {"year": Y, "changed": True}),
+                                               (LEAD, {"year": Y, "changed": True})],
            "감사로그 EVAL_APPEAL_ANSWERED {해, changed}")
 
         # ---- 정원은_따지지_않는다 · HR_본인_이의는_대신_확인_못_한다 ----
@@ -7971,11 +7980,14 @@ def check_eval_appeal(hr) -> None:
         x("INSERT INTO ceo_delegation (ceo_user_id, since) VALUES (?, ?)", CEO, z(12, 16))
         ok(hit(ans(HRL, HR, grade="B", answer="가상 HR 담당 상향"), 200, OK) and ap(HR)[:3] == ("CEO", "C", "B") and took() == [(HRA, *APPEAL)],
            "맡김 → 등급을 바꾸는 답변 알림은 HR 로 (신청한 HR 담당 · 답한 HR 팀장 빼고)")
-        ok((e3(HR), e3(HRA), e3(HRL), e3(CEO)) == (1, 2, 2, 2) and phone(HR) == (0, 1) and phone(HRA) == (0, 2) and phone(CEO) == (0, 2)
-           and pids(res(HR)["appeals"]) == [EMP] and pids(res(HRA)["appeals"]) == sorted([EMP, HR]),
-           "처리할 일 e3: 맡김 → HR 은 확인할 등급 변경 (자기 것 빼고 — HR 담당 1) · 대표이사 그대로 · 휴대폰 숫자 같음")
+        ok((e3(HR), e3(HRA), e3(HRL), e3(CEO)) == (1, 1, 1, 2) and phone(HR) == (0, 1) and phone(HRA) == (0, 1) and phone(HRL) == (0, 1) and phone(CEO) == (0, 2)
+           and pids(res(HR)["appeals"]) == [EMP] and pids(res(HRA)["appeals"]) == [HR] and pids(res(HRL)["appeals"]) == [EMP] and pids(res(CEO)["appeals"]) == sorted([EMP, HR]),
+           "처리할 일 e3: 맡김 → HR 은 확인할 등급 변경 — 자기 이의 · 자기가 쓴 답변은 빼고 (HR 담당 = 팀원 · 대상 아닌 HR = HR 담당 · HR 팀장 = 팀원) · 대표이사 둘 · 휴대폰 숫자 같음")
         ok(hit(dec(HR, HR, "confirm"), 403, NO_RIGHT) and hit(dec(HR, HR, "back"), 403, NO_RIGHT) and ap(HR)[0] == "CEO",
            "HR_본인_이의는_대신_확인_못_한다: 맡겨도 HR 담당자 본인이 자기 이의 확인 · 돌려보내기 403")
+        ANSWERER = {"error": "답변한 분은 확인할 수 없어요. 다른 HR이나 대표이사가 확인해요."}
+        ok(all(hit(dec(who, uid, w), 403, ANSWERER) for who, uid in ((HRA, EMP), (HRL, HR)) for w in ("confirm", "back")) and ap(EMP)[0] == ap(HR)[0] == "CEO" and not took(),
+           "답변한_HR은_확인_못_한다: 맡겨도 등급을 바꾸는 답변을 쓴 HR 은 그 이의를 대신 확인 · 돌려보내기 403 — 그대로 · 알림 없음")
         ok(hit(dec(HR, EMP, "confirm"), 200, OK) and grade_of(EMP) == "B" and ap(EMP)[6:] == (HR, CEO) and by("EVAL_APPEAL_CONFIRMED")[-1] == (HR, CEO) and took() == [(EMP, *ANSWER)]
            and q("SELECT COUNT(*) FROM ev_targets WHERE year = ? AND pool = 'DIV:91' AND out_at IS NULL AND grade = 'B'", Y) == [(2,)],
            "정원은_따지지_않는다: 맡은 HR 이 남의 이의를 대신 확인 200 (decided_behalf · on_behalf_of = 대표이사) → 그 묶음 B 둘")
@@ -8011,8 +8023,8 @@ def check_eval_appeal(hr) -> None:
            and set(texts) <= {"처리할 이의 신청이 있어요 PC에서 확인해 주세요", "이의 신청에 답변이 왔어요 PC에서 확인해 주세요", "인사평가 결과가 공개됐어요 PC에서 확인해 주세요"},
            "알림 글은 정해 둔 한 줄뿐 — 등급 · 이름 없음")
 
-        # ---- 지난_해 (Y + 1 도 공개 — 회차 · 한 사람 줄을 바로 넣는다) ----
-        y2 = Y + 1
+        # ---- 지난_해 (Y2 도 공개 — 회차 · 한 사람 줄을 바로 넣는다) ----
+        y2 = Y2
         x("INSERT INTO kpi_years (year, eval_start, updated_at, updated_by) VALUES (?, ?, ?, 1) ON CONFLICT (year) DO NOTHING", y2, f"{y2}-12-01", z(12, 1, y=y2))
         x("INSERT INTO ev_rounds (year, self_to, evid_due, score_to, grade_to, ceo_to, final_to, started_at, started_by, released_at, released_by, updated_at, updated_by)"
           " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", y2, f"{y2}-12-05", f"{y2}-12-05", f"{y2}-12-06", f"{y2}-12-07", f"{y2}-12-08", f"{y2}-12-09",
@@ -8029,7 +8041,7 @@ def check_eval_appeal(hr) -> None:
            and res(EMP, "?year=2040") == {"years": [y2, Y], "year": 2040, "offline": False, "released": None, "appealDue": None, "mine": None, "team": [], "appeals": []},
            "포털 평가 전 해는 offline 참 · 시작하지 않은 해는 빈 결과")
         ok(all(hit(get(EMP, f"/api/eval/results?year={v}"), 400, BAD_YEAR) for v in ("abc", "2025", "2101", "", "2027.0", "9" * 50)), "결과: 해가 정수(2026~2100)가 아니면 400")
-        at(3, 6, y=Y + 2)
+        at(3, 6, y=Y2 + 1)
         r = res(EMP)
         ok(r["year"] == y2 and r["mine"]["grade"] == "A", "기본 해: 보일 해(cur_year)가 시작 전이면 공개한 해 중 최근")
     finally:
@@ -8044,11 +8056,11 @@ def check_eval_appeal(hr) -> None:
             x("DELETE FROM push_subscriptions WHERE token_hash = ?", h)
             x("DELETE FROM sessions WHERE token_hash = ?", h)
         x("DELETE FROM ceo_delegation WHERE ceo_user_id = ?", CEO)
-        x("DELETE FROM ev_appeals WHERE year IN (?, ?)", Y, Y + 1)
+        x("DELETE FROM ev_appeals WHERE year IN (?, ?)", Y, Y2)
         x(RESET, Y)
         x("UPDATE ev_items SET note = '', self_grade = NULL, grade = NULL WHERE year = ?", Y)
         x("UPDATE ev_rounds SET released_at = NULL, released_by = NULL, att_done_at = ? WHERE year = ?", att0, Y)
-        x("UPDATE ev_rounds SET released_at = NULL, released_by = NULL, started_at = NULL, started_by = NULL WHERE year = ?", Y + 1)
+        x("UPDATE ev_rounds SET released_at = NULL, released_by = NULL, started_at = NULL, started_by = NULL WHERE year = ?", Y2)
         x("UPDATE users SET is_active = 0, deactivated_at = '2027-01-01T00:00:00Z' WHERE id = ?", CEO)
         for uid in other_ceos:
             x("UPDATE users SET is_active = 1, deactivated_at = NULL WHERE id = ?", uid)

@@ -33,7 +33,7 @@ app.py 가 bp 를 붙인다. 세션 검사 · 같은 출처 검사는 auth._guar
   POST /api/eval/me/appeal                {"year", "reason"} 이의 신청 (본인 · 공개일 + 7일 한국 23:59 까지 한 번) — HR 전원에게 알림(eval_appeal, 신청한 사람은 빼고)
   POST /api/eval/appeals/<uid>/answer     {"year", "grade", "answer", "marks"?: {"<rid>": 등급}} HR 답변 — 등급 그대로면 끝(DONE · 신청한 사람에게 eval_answer),
                                           바꾸면 대표이사 확인 대기(CEO — 대표이사, 맡겼으면 신청한 사람 뺀 HR 에게 eval_appeal · 누른 사람은 빼고)
-  POST /api/eval/appeals/<uid>/confirm    {"year"} 등급 변경 확인 — 고친 실행목표 등급 · 등급 반영 · 끝 (대표이사 · 맡김이면 HR) — 신청한 사람에게 eval_answer
+  POST /api/eval/appeals/<uid>/confirm    {"year"} 등급 변경 확인 — 고친 실행목표 등급 · 등급 반영 · 끝 (대표이사 · 맡김이면 그 답변을 쓰지 않은 HR) — 신청한 사람에게 eval_answer
   POST /api/eval/appeals/<uid>/back       {"year"} 등급 변경을 HR 로 돌려보낸다 (OPEN · 답변 글은 남김) — HR 전원(누른 사람 · 신청한 사람 빼고)에게 eval_appeal
 
 보는 수준 (공개 전 등급은 어디에도 새지 않는다 — 사람 줄을 응답에 넣는 길은 모두 _row_json 하나를 지난다. 수준은 eval_rules.level):
@@ -110,8 +110,10 @@ app.py 가 bp 를 붙인다. 세션 검사 · 같은 출처 검사는 auth._guar
   사유 1~500자 400 (_chars · 앞뒤 공백을 떼고 셈 · 뗀 글 저장). OPEN · before = 지금 등급 · EVAL_APPEALED.
 HR 답변: HR 403 → 본인 403 → 해 400 → 이의 신청 없음 404 → OPEN 아님 409 → 답변 1~500자 400 → 등급 SABCD 400 → marks 모양 400 (KPI 없는 사람은 null · 빠짐만,
   떠 둔 실행목표 · SABCD) → 고친 실행목표 등급으로 낸 총점 · 연차로 cap 보다 높음 400 (_within — 정원은 따지지 않는다: 공개된 다른 사람 등급을 건드리지 않고 대표이사 확인을 거친다).
-  등급 그대로 = 실행목표 등급 반영 · DONE · 결정한 사람 = 답한 HR / 바뀜 = CEO · after · marks(지금과 다른 실행목표만) — 점수 · 등급은 확인할 때. EVAL_APPEAL_ANSWERED {year, changed}.
-대표이사 확인 · 돌려보내기: 해 400 → 대상 아님 404 → 권한(_appeal_can — 활성 대표이사, 또는 맡김이고 자기 이의가 아닌 HR) 403 → 이의 신청 없음 404 → CEO 아님 409 →
+  marks = 보낸 실행목표 등급 중 지금과 다른 것 (없으면 null — 이의 기록에 무엇을 고쳤는지 남는다, 본인에게는 DONE 뒤에 보인다).
+  등급 그대로 = 실행목표 등급 반영 · DONE · after = 그 등급 · 결정한 사람 = 답한 HR / 바뀜 = CEO · after — 점수 · 등급은 확인할 때. EVAL_APPEAL_ANSWERED {year, changed}.
+대표이사 확인 · 돌려보내기: 해 400 → 대상 아님 404 → 권한(_appeal_can — 활성 대표이사, 또는 맡김이고 자기 이의가 아니며 그 등급 변경 답변을 쓴 사람(answered_by)이 아닌 HR —
+  HR 한 사람이 답하고 확인까지 해 등급을 정하지 않게. 답한 HR 에게는 "답변한 분은 확인할 수 없어요. …") 403 → 이의 신청 없음 404 → CEO 아님 409 →
   (확인) cap 다시 400 → 실행목표 등급 · 등급 = after · DONE · decided_at/by/behalf · EVAL_APPEAL_CONFIRMED / (돌려보내기) OPEN · after · marks 비움 · EVAL_APPEAL_RETURNED.
   HR 이 대신이면 on_behalf_of = 대표이사. 두 창의 두 번째는 409 (이미 처리했습니다 · HR 답변을 기다리는 이의 신청입니다).
 감사로그(R10): EVAL_ROUND_SET · EVAL_STARTED · EVAL_ATT_DONE · EVAL_ATTENDANCE(저장한 사람이 있을 때만) · EVAL_EXCLUDED · EVAL_INCLUDED · EVAL_SKIP_SELF · EVAL_RATER_SET · EVAL_SELF_SUBMITTED ·
@@ -757,9 +759,13 @@ def _pool_json(ctx: _Ctx, me: Actor, key: str) -> dict:
 
 
 def _appeal_can(ctx: _Ctx, me: Actor, row: sqlite3.Row) -> bool:
-    """이의 신청의 등급 변경을 확인 · 돌려보낼 사람인가 (access.can APPEAL_CONFIRM): 활성 대표이사, 또는 맡김이고 그 이의가 자기 것이 아닌 HR."""
-    return (_is_ceo(ctx, me.user_id) or (me.is_hr and ctx.deleg)) and bool(
-        can(me, Act.APPEAL_CONFIRM, _target(row), delegation=Delegation(ctx.ceo) if ctx.deleg else None))
+    """이의 신청의 등급 변경을 확인 · 돌려보낼 사람인가 (access.can APPEAL_CONFIRM) — e3 · appeals · 확인 · 돌려보내기가 모두 이것으로: 활성 대표이사, 또는 맡김이고
+    그 이의가 자기 것이 아니며 그 등급 변경 답변을 쓴 사람(answered_by)도 아닌 HR — HR 한 사람이 답하고 대신 확인까지 해 등급을 정하지 않게."""
+    if not _is_ceo(ctx, me.user_id):
+        a = ctx.appeals.get(row["user_id"])
+        if not (me.is_hr and ctx.deleg) or (a is not None and a["answered_by"] == me.user_id):
+            return False
+    return bool(can(me, Act.APPEAL_CONFIRM, _target(row), delegation=Delegation(ctx.ceo) if ctx.deleg else None))
 
 
 def _appeals_for(ctx: _Ctx, me: Actor) -> list[sqlite3.Row]:
@@ -1467,14 +1473,15 @@ def appeal_answer(uid: int) -> Response:
         marks, score = _marked(ctx, row, _over(ctx, row, b.get("marks")))
         _within(ctx, row, grade, score)  # 점수 기준 · 연차만 — 정원은 따지지 않는다
         now, me, changed = auth._iso(auth._now()), g.actor.user_id, grade != a["before"]
+        fixed = json.dumps({str(r): m for r, m in marks.items()}) if marks else None  # 고친 실행목표 (지금과 다른 것만) — 유지든 변경이든 이의 기록에 남긴다
         if changed:  # 등급을 바꾸는 답변은 대표이사 확인을 기다린다 — 실행목표 등급 · 등급은 확인할 때 반영
             conn.execute("UPDATE ev_appeals SET status = 'CEO', answer = ?, after = ?, marks = ?, answered_at = ?, answered_by = ? WHERE year = ? AND user_id = ?",
-                         (answer, grade, json.dumps({str(r): m for r, m in marks.items()}) if marks else None, now, me, year, uid))
+                         (answer, grade, fixed, now, me, year, uid))
             to, kind = _turn_to(ctx, uid, ctx.ceo), "eval_appeal"  # 대표이사 — 맡겼으면 신청한 사람 뺀 HR 전원
-        else:  # 유지는 바로 끝 — 고친 실행목표 등급만 반영
+        else:  # 유지는 바로 끝 — 고친 실행목표 등급을 반영하고 기록에도 남긴다
             _put_marks(ctx, uid, marks)
-            conn.execute("UPDATE ev_appeals SET status = 'DONE', answer = ?, after = ?, marks = NULL, answered_at = ?, answered_by = ?, decided_at = ?, decided_by = ?,"
-                         " decided_behalf = NULL WHERE year = ? AND user_id = ?", (answer, grade, now, me, now, me, year, uid))
+            conn.execute("UPDATE ev_appeals SET status = 'DONE', answer = ?, after = ?, marks = ?, answered_at = ?, answered_by = ?, decided_at = ?, decided_by = ?,"
+                         " decided_behalf = NULL WHERE year = ? AND user_id = ?", (answer, grade, fixed, now, me, now, me, year, uid))
             to, kind = [uid], "eval_answer"
         _log(conn, "EVAL_APPEAL_ANSWERED", "ev_appeal", uid, year=year, changed=changed)
     push.notify([u for u in to if u != me], kind)  # 저장(COMMIT)한 뒤 — 답한 사람 본인에게는 보내지 않는다
@@ -1483,7 +1490,7 @@ def appeal_answer(uid: int) -> Response:
 
 @contextmanager
 def _decide(uid: int) -> Iterator[tuple[_Ctx, sqlite3.Row, sqlite3.Row, int | None]]:
-    """대표이사가 이의 신청의 등급 변경을 확인 · 돌려보내는 틀: 해 400 → 그해 평가 대상 404 → 권한(_appeal_can) 403 → 이의 신청 없음 404 → CEO 단계 아님 409.
+    """대표이사가 이의 신청의 등급 변경을 확인 · 돌려보내는 틀: 해 400 → 그해 평가 대상 404 → 권한(_appeal_can — 답한 HR 은 따로 문구) 403 → 이의 신청 없음 404 → CEO 단계 아님 409.
     한 트랜잭션 — 돌려주는 것 = (ctx, 대상 줄, 이의 줄, on_behalf_of — HR 이 대신이면 대표이사)."""
     year = _year(_body().get("year"))
     conn = auth._db()
@@ -1492,9 +1499,10 @@ def _decide(uid: int) -> Iterator[tuple[_Ctx, sqlite3.Row, sqlite3.Row, int | No
         row = ctx.rows.get(uid)
         if row is None:
             raise _Refuse("평가 대상이 아닙니다.", 404)
-        if not _appeal_can(ctx, g.actor, row):
-            raise _Refuse("이 이의 신청을 확인할 권한이 없습니다.", 403)
         a = ctx.appeals.get(uid)
+        if not _appeal_can(ctx, g.actor, row):
+            wrote = g.actor.is_hr and ctx.deleg and a is not None and a["answered_by"] == g.actor.user_id  # 맡은 HR 이 자기가 쓴 답변을 — 문구만 가른다
+            raise _Refuse("답변한 분은 확인할 수 없어요. 다른 HR이나 대표이사가 확인해요." if wrote else "이 이의 신청을 확인할 권한이 없습니다.", 403)
         if a is None:
             raise _Refuse("이의 신청을 찾을 수 없습니다.", 404)
         if a["status"] != "CEO":  # 두 창의 두 번째 — 이미 확인했거나(DONE) 돌려보냈다(OPEN)
