@@ -1724,10 +1724,13 @@ def check_cards_table(conn: sqlite3.Connection) -> None:
     bad("reason IN", "없는 소식 이유(xmas)", kind="cheer", reason="xmas", sent_on="2027-03-05")
     for art, why in ((0, "0"), (21, "21"), ("1", "글자 '1'"), (1.5, "1.5"), (None, "비어 있음")):   # 판 22(022)부터 1~20 — 종류마다 고를 수 있는 번호는 서버 cards.arts_for 가 정한다
         bad("BETWEEN 1 AND 20" if art is not None else "NOT NULL", f"그림 번호 {why}", art=art, sent_on="2027-03-05")
+    refused = []
     for art in (5, 9, 20):
-        conn.execute(*row(CD, dict(art=art, sent_on="2027-03-06")))
+        no, msg = _rejects(conn, *row(CD, dict(art=art, sent_on="2027-03-06")))
+        if no:
+            refused.append(f"{art}: {msg}")
         conn.execute("DELETE FROM cards WHERE sent_on = '2027-03-06'")
-    _report(True, "그림 번호 5 · 9 · 20 저장됨 (판 22 — 생일 5 · 6, 입사 기념 연차 그림 5~9)")
+    _report(not refused, "그림 번호 5 · 9 · 20 저장됨 (판 22 — 생일 5 · 6, 입사 기념 연차 그림 5~9)", f"거부 {refused}")
     for body, why in (("가" * 40, "글자(BLOB 아님)"), (blob(28), "28바이트"), (b"", "빈 BLOB"), (None, "비어 있음")):
         bad("length(body)" if body is not None else "NOT NULL", f"글 {why}", body=body, sent_on="2027-03-05")
     for day, why in (("2027-02-30", "2027-02-30"), ("2027-13-01", "13월"), ("2027-3-5", "0 없는 날짜"), ("20270305", "하이픈 없는 날짜"), (None, "비어 있음")):

@@ -13677,7 +13677,7 @@ function cardDemoData(){   // 시연(서버 없음): 시안 IN · OUT 과 같은
   const gave = (id, kind, reason, i, ago, text, x)=>({ id, kind, reason, art:1, text, date:kpiDay(-ago), to:ppl[i], read:false, thanked:false, ...x });
   return {
     received:[
-      got(1, 'cheer', 'birthday', 1, 0, 0, '생일 축하해요! 오늘은 일 생각 말고 맛있는 거 많이 드세요.', { read:false }),
+      got(1, 'cheer', 'birthday', 5, 0, 0, '생일 축하해요! 오늘은 일 생각 말고 맛있는 거 많이 드세요.', { read:false }),
       got(2, 'praise', null, 2, 1, 2, '지난주 전시회 준비 정말 꼼꼼했어요. 덕분에 고객 반응이 좋았어요.', { read:false }),
       got(3, 'thanks', null, 3, 2, 4, '급하게 부탁한 자료 바로 챙겨 줘서 고마워요.', { read:false }),
       got(4, 'thanks', null, 1, 3, 11, '회의 자료 정리해 준 거 덕분에 보고가 금방 끝났어요.', { thanked:true }),
@@ -13926,7 +13926,7 @@ const cardTo = m=>({ id:AUTH.live ? m.uid : m.id, name:m.name, title:m.title || 
 const cardMourn = m=>celebItems('condol').some(x=>x.m.id===m.id);   // 지금 조사가 게시 중인 분 — 소식 · 조직도 단추도 위로 카드로 (창은 서버가 위로만 준다 — reasons_for)
 const cardOpt = ()=>CARD_S.opts && CARD_S.opts[CARD_S.sel] || CARD_BASE[0];   // 고른 종류 칩 { kind, reason, arts }
 function cardSendOrg(id, reason=null){ const m = orgFind(id); return cardCan(m) ? cardSend({ to:cardTo(m), reason }) : undefined; }   // 이번 주 소식 · 조직도 단추 — 화면 번호만 받는다(이름 없음)
-function cardPick(id){ const m = orgFind(id); return cardCan(m) ? cardFor(cardTo(m)) : undefined; }   // 이름 찾기에서 고름 — 고른 종류 · 쓴 글은 그대로
+function cardPick(id){ const m = orgFind(id); return cardCan(m) ? cardFor(cardTo(m)) : undefined; }   // 이름 찾기에서 고름 — 고른 종류 · 그림 · 쓴 글은 그대로 (그림은 그 종류의 목록에 있으면)
 function cardText(v){   // 서버 cards.clean_text 와 같은 규칙 → [다듬은 글, 안 되는 까닭('' = 됨)]. 글자 수는 코드 포인트로 센다 (그림 글자도 한 자)
   if([...v].length > 600) return [v, '글은 150자까지 쓸 수 있어요.'];   // 다듬기 전 600자(서버 RAW_MAX = 4 × 150)를 넘으면 바로 — 서버와 같은 순서
   if(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]|[\ud800-\udbff](?![\udc00-\udfff])|(^|[^\ud800-\udbff])[\udc00-\udfff]/.test(v)) return [v, '글에 쓸 수 없는 글자가 있어요.'];
@@ -13942,7 +13942,7 @@ function cardDemoOpts(id){   // 시연: 그 사람의 이번 주 소식(시연 �
   return [opts, '', CARD_DEMO.sent.some(c=>c.to.id===id && c.date===kpiDay(0))];
 }
 async function cardSend({ to=null, reason=null }={}){   // 카드 보내기 창. to 가 없으면 이름 찾기부터 · reason(birthday · welcome · anniv · joy)을 주면 그 축하 칩이 처음 골라진다
-  Object.assign(CARD_S, { to:null, reason, opts:CARD_BASE, sel:0, art:1, text:'', q:'', sentToday:false, err:'', busy:false });
+  Object.assign(CARD_S, { to:null, reason, opts:CARD_BASE, sel:0, art:to ? null : CARD_BASE[0].arts[0], text:'', q:'', sentToday:false, err:'', busy:false });   // 받는 분과 함께 열면 그림은 아직 안 고름 → 종류를 받으면 그 종류의 첫 그림
   if(to) return cardFor(to);
   const my = ++CARD_S.seq;
   cardDraw(); document.getElementById('cmFindIn').focus();
@@ -13950,7 +13950,7 @@ async function cardSend({ to=null, reason=null }={}){   // 카드 보내기 창.
 }
 async function cardFor(to){   // 받는 분이 정해짐 → 보낼 수 있는 종류 · 오늘 보냈나를 받아 칩을 그린다 (실제 로그인 GET /api/cards/options — 시연은 시연 소식으로)
   const S = CARD_S, my = ++S.seq, was = cardOpt();
-  Object.assign(S, { to, opts:null, sentToday:false, err:'', art:CARD_BASE[0].arts[0] });   // 묻는 동안은 칭찬 칩 모양 (cardOpt)
+  Object.assign(S, { to, opts:null, sentToday:false, err:'' });
   cardDraw();
   let opts = [], sentToday = false, err = '';
   if(AUTH.live){
@@ -13963,7 +13963,7 @@ async function cardFor(to){   // 받는 분이 정해짐 → 보낼 수 있는 �
   opts = opts.filter(o=>o && Object.hasOwn(CARD_K, o.kind) && (o.kind==='cheer' ? Object.hasOwn(CARD_WHY, o.reason) : !o.reason) && Array.isArray(o.arts) && o.arts.length && o.arts.every(cardArtOk));   // 아는 종류 · 그림 번호만 (예시 문구 · 그림이 있는 것)
   const at = f=>opts.findIndex(f), i = [at(o=>S.reason && o.reason===S.reason), at(o=>o.kind===was.kind && o.reason===was.reason), at(o=>o.kind!=='cheer')].find(n=>n>=0);   // 준 사유 → 고르던 칩 → 칭찬(조사면 위로)
   Object.assign(S, { opts, sel:i ?? 0, sentToday, err });
-  S.art = cardOpt().arts[0];   // 처음 골라진 그림 = 그 종류의 첫 그림
+  if(!cardOpt().arts.includes(S.art)) S.art = cardOpt().arts[0];   // 이름 찾기 전에 고른 그림은 그 종류의 목록에 있으면 그대로, 아니면(처음 열 때 포함) 그 종류의 첫 그림
   cardDraw();
 }
 function cardPv(){   // 미리 보기 카드 — 받는 분이 보는 모양 그대로: From. 내 이름 직급 · 오늘(M/D). 직급은 실제 로그인이면 조직도의 내 줄(아직 안 불렀으면 이름만), 시연은 시연 역할
@@ -14278,6 +14278,8 @@ async function cardSelfCheck(){   // 브라우저 콘솔에서 await cardSelfChe
     chips()[1].click(); type('고마워요'); await cardPick(ORG_ID + 5);
     ok(calls.at(-1)[0]==='/api/cards/options?to=5' && M().querySelector('.cm-to-row b').textContent==='가상받는이' && chips()[1].getAttribute('aria-pressed')==='true' && ta().value==='고마워요' && !btn().disabled, '고르면 서버 번호(uid)로 묻고, 고른 종류 · 쓴 글은 그대로');
     ok(M().querySelector('#cmPv .cm-from').textContent===`From. 가상나 프로 · ${kpiMd(kpiDay(0))}`, '미리 보기 = 받는 분이 보는 모양: From. 이름 직급(조직도의 내 줄) · M/D');
+    orgCloseModal(); await cardSend({}); M().querySelectorAll('.cm-arts button')[2].click(); await cardPick(ORG_ID + 5);
+    ok(chips()[0].getAttribute('aria-pressed')==='true' && arts()==='praise-1,praise-2,praise-3*,praise-4' && pvArt()==='img/cards/praise-3.jpg?v=1', '받는 분을 고르기 전에 고른 그림(칭찬 3)은 고른 뒤에도 그대로 — 그 종류의 그림 목록에 있으면');
     orgCloseModal();
     // 시연: 보내는 곳 — 이번 주 소식 · 조직도 이름 창 (사유는 배너에서, 단추에는 번호만)
     AUTH.live = false; kpiRole = 'emp'; Object.assign(CARD_DEMO, cardDemoData()); calls.length = 0;
