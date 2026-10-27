@@ -29,15 +29,16 @@ def connect(path: str) -> sqlite3.Connection:
     return conn
 
 
-def init_db(path: str) -> int:
-    """아직 안 넣은 스키마 파일을 넣고, 지금 DB 의 판 번호를 돌려준다."""
+def init_db(path: str, upto: int | None = None) -> int:
+    """아직 안 넣은 스키마 파일을 넣고, 지금 DB 의 판 번호를 돌려준다.
+    upto 를 주면 그 번호까지만 넣는다 — 검사(check_schema)가 옛 판 DB 를 만들어 다음 판이 줄을 그대로 옮기는지 볼 때만 쓴다(서버는 주지 않는다)."""
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     conn = connect(path)
     try:
         version = conn.execute("PRAGMA user_version").fetchone()[0]
         for f in sorted(SQL_DIR.glob("[0-9][0-9][0-9]_*.sql")):
             n = int(f.name[:3])
-            if n <= version:
+            if n <= version or (upto is not None and n > upto):
                 continue
             # 파일 하나를 한 트랜잭션으로 — 중간에 실패하면 그 파일 전체가 없던 일이 된다
             try:

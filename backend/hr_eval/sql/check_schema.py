@@ -1671,11 +1671,11 @@ def check_eval_tables(conn: sqlite3.Connection) -> None:
 
 
 def check_cards_table(conn: sqlite3.Connection) -> None:
-    """축하 · 칭찬 카드 표 (021 — 판 21). 한 장 = 한 줄 · 같은 사람에게 하루 한 장 · 본인에게 못 보냄 · 종류와 축하 소식의 짝 · 그림 1~4 · 글은 잠근 BLOB ·
+    """축하 · 칭찬 카드 표 (021 — 판 21). 한 장 = 한 줄 · 같은 사람에게 하루 한 장 · 본인에게 못 보냄 · 종류와 축하 소식의 짝 · 그림 1~20(판 22 — 022 에서 1~4 를 넓힘) · 글은 잠근 BLOB ·
     날짜는 실제 있는 날 · 읽기 전엔 고마워요 없음 · 내용 칸은 보낸 뒤 못 고침(트리거), 읽음 · 고마워요 · 숨김 칸만 고침 · 카드가 있는 직원은 못 지움 · 카드 줄 DELETE 는 막지 않음.
     사람은 전부 가상. 막힌 이유는 메시지의 규칙 토막(CHECK 식 · UNIQUE · FOREIGN KEY · READ_ONLY)까지 본다 — 표가 없어서 막힌 것이 통과로 세어지지 않게.
     쓴 카드 · 직원(T041 · T042 — T040 은 앞 절(32)이 쓰고 남긴다)은 끝에 지운다."""
-    print("33. 축하 · 칭찬 카드 (021)")
+    print("33. 축하 · 칭찬 카드 (021 · 그림 범위는 022)")
     ver = conn.execute("PRAGMA user_version").fetchone()[0]
     _report(ver >= 21, f"판 번호가 21 이상 — {ver}", f"실제 {ver}")
     got = [r[1] for r in conn.execute("PRAGMA table_info(cards)")]
@@ -1722,8 +1722,12 @@ def check_cards_table(conn: sqlite3.Connection) -> None:
     bad("(kind = 'cheer') = (reason IS NOT NULL)", "칭찬인데 소식 이유(birthday)", reason="birthday", sent_on="2027-03-05")
     bad("(kind = 'cheer') = (reason IS NOT NULL)", "위로인데 소식 이유(joy)", kind="comfort", reason="joy", sent_on="2027-03-05")
     bad("reason IN", "없는 소식 이유(xmas)", kind="cheer", reason="xmas", sent_on="2027-03-05")
-    for art, why in ((0, "0"), (5, "5"), ("1", "글자 '1'"), (1.5, "1.5"), (None, "비어 있음")):
-        bad("BETWEEN 1 AND 4" if art is not None else "NOT NULL", f"그림 번호 {why}", art=art, sent_on="2027-03-05")
+    for art, why in ((0, "0"), (21, "21"), ("1", "글자 '1'"), (1.5, "1.5"), (None, "비어 있음")):   # 판 22(022)부터 1~20 — 종류마다 고를 수 있는 번호는 서버 cards.arts_for 가 정한다
+        bad("BETWEEN 1 AND 20" if art is not None else "NOT NULL", f"그림 번호 {why}", art=art, sent_on="2027-03-05")
+    for art in (5, 9, 20):
+        conn.execute(*row(CD, dict(art=art, sent_on="2027-03-06")))
+        conn.execute("DELETE FROM cards WHERE sent_on = '2027-03-06'")
+    _report(True, "그림 번호 5 · 9 · 20 저장됨 (판 22 — 생일 5 · 6, 입사 기념 연차 그림 5~9)")
     for body, why in (("가" * 40, "글자(BLOB 아님)"), (blob(28), "28바이트"), (b"", "빈 BLOB"), (None, "비어 있음")):
         bad("length(body)" if body is not None else "NOT NULL", f"글 {why}", body=body, sent_on="2027-03-05")
     for day, why in (("2027-02-30", "2027-02-30"), ("2027-13-01", "13월"), ("2027-3-5", "0 없는 날짜"), ("20270305", "하이픈 없는 날짜"), (None, "비어 있음")):
@@ -1769,6 +1773,69 @@ def check_cards_table(conn: sqlite3.Connection) -> None:
     conn.execute("DELETE FROM users WHERE id IN (?, ?)", (a, b))
 
 
+def check_cards_migration() -> None:
+    """022(판 22 — 그림 번호 1~4 → 1~20)가 판 21 DB 의 카드 줄을 그대로 옮기는가. SQLite 는 CHECK 를 못 고쳐 표를 새로 만들어 옮기므로
+    운영 DB 에 이미 있는 줄 · 번호(id) · AUTOINCREMENT 순번 · 색인 · 트리거 · 외래키가 그대로인지 따로 만든 판 21 DB 에서 본다(앞 절들과 섞이지 않는다). 사람은 가상(T043 · T044)."""
+    print("34. 카드 그림 범위 넓히기 (022 — 판 21 의 줄을 그대로 옮김)")
+    with tempfile.TemporaryDirectory() as tmp:
+        path = str(Path(tmp) / "cards-21.db")
+        try:
+            v21 = init_db(path, upto=21)
+        except (sqlite3.Error, TypeError) as exc:
+            _report(False, "판 21 까지만 넣기 (init_db upto=21)", str(exc))
+            return
+        conn = connect(path)
+        try:
+            _report(v21 == 21, f"판 21 까지만 넣음 — {v21}", f"실제 {v21}")
+            conn.execute("INSERT INTO departments (code, name, level) VALUES ('DIV1', '가상본부', 'DIVISION')")
+            a, b = (conn.execute("INSERT INTO users (employee_no, name, email, department_id) VALUES (?, ?, ?, (SELECT id FROM departments WHERE code='DIV1')) RETURNING id",
+                                 (no, name, f"{no.lower()}@example.invalid")).fetchone()[0] for no, name in (("T043", "가상옮김보냄"), ("T044", "가상옮김받음")))
+            T = "2027-03-02T09:00:00Z"
+            put = ("INSERT INTO cards (sender_id, recipient_id, kind, reason, art, body, sent_on, created_at, read_at, thanked_at, hidden_at)"
+                   " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+            for args in ((a, b, "cheer", "birthday", 1, b"\x01" * 29, "2027-03-02", T, T, T, None),   # 옛 생일 그림 1 · 읽음 · 고마워요
+                         (b, a, "cheer", "anniv", 4, b"\x02" * 40, "2027-03-02", T, T, None, T),      # 옛 입사 기념 그림 4(메달) · 숨김
+                         (a, b, "praise", None, 3, b"\x03" * 33, "2027-03-03", T, None, None, None),
+                         (a, b, "thanks", None, 2, b"\x04" * 30, "2027-03-04", T, None, None, None)):
+                conn.execute(put, args)
+            conn.execute("DELETE FROM cards WHERE id = 4")   # 마지막 줄을 지워 순번(4)이 가장 큰 번호(3)보다 크게 — 옮긴 뒤에도 4 를 다시 쓰지 않아야 한다
+            cols = "id, sender_id, recipient_id, kind, reason, art, body, sent_on, created_at, read_at, thanked_at, hidden_at"
+            before = conn.execute(f"SELECT {cols} FROM cards ORDER BY id").fetchall()
+            info = conn.execute("PRAGMA table_info(cards)").fetchall()
+        finally:
+            conn.close()
+        try:
+            v22 = init_db(path)
+        except sqlite3.Error as exc:
+            _report(False, "판 21 DB 에 022 넣기", str(exc))
+            return
+        conn = connect(path)
+        try:
+            _report(v22 >= 22, f"판 21 DB 에 022 를 넣음 — 판 {v22}", f"실제 {v22}")
+            after = conn.execute(f"SELECT {cols} FROM cards ORDER BY id").fetchall()
+            _report(after == before and len(after) == 3, "카드 3줄이 번호(id) · 사람 · 종류 · 그림(옛 1 · 4 포함) · 잠근 글 · 날짜 · 읽음 · 고마워요 · 숨김까지 그대로", f"전 {before} / 뒤 {after}")
+            _report(conn.execute("PRAGMA table_info(cards)").fetchall() == info, "칸 12개의 이름 · 순서 · 비어 있음 허용이 그대로")
+            names = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE name LIKE '%cards%'")}
+            want = {"cards", "idx_cards_recipient", "idx_cards_sender", "trg_cards_content_readonly", "sqlite_autoindex_cards_1"}
+            _report(names == want, "표 cards 하나 · 색인 2개 · 하루 한 장(UNIQUE) 색인 · 트리거 — 옮기던 표가 남지 않음", f"실제 {sorted(names)}")
+            sql = conn.execute("SELECT sql FROM sqlite_master WHERE name = 'cards'").fetchone()[0]
+            _report("BETWEEN 1 AND 20" in sql and "BETWEEN 1 AND 4" not in sql, "그림 번호 CHECK 가 1~20", sql)
+            fks = sorted((r[2], r[3], r[4], r[6]) for r in conn.execute("PRAGMA foreign_key_list(cards)"))
+            _report(fks == [("users", "recipient_id", "id", "NO ACTION"), ("users", "sender_id", "id", "NO ACTION")] and not conn.execute("PRAGMA foreign_key_check(cards)").fetchall(),
+                    "외래키: 보낸 · 받는 사람 → users(id), ON DELETE 없음 · 어긋난 줄 없음", f"실제 {fks}")
+            ok, msg = _rejects(conn, "UPDATE cards SET art = 2 WHERE id = 1")
+            _report(ok and "READ_ONLY" in msg, "옮긴 뒤에도 보낸 카드의 내용 칸 고치기 거부 (트리거 살아 있음)", msg)
+            ok, msg = _rejects(conn, "DELETE FROM users WHERE id = ?", (a,))
+            _report(ok and "FOREIGN KEY" in msg, "옮긴 뒤에도 카드가 있는 직원은 지울 수 없음", msg)
+            seq = conn.execute("SELECT seq FROM sqlite_sequence WHERE name = 'cards'").fetchall()
+            new = conn.execute(put + " RETURNING id", (b, a, "cheer", "birthday", 5, b"\x05" * 29, "2027-03-05", T, None, None, None)).fetchone()[0]
+            _report(seq == [(4,)] and new == 5, "AUTOINCREMENT 순번을 이어받음 — 지운 4번을 다시 쓰지 않고 새 카드는 5번 · 새 생일 그림 5 저장됨", f"순번 {seq} · 새 번호 {new}")
+            ok, msg = _rejects(conn, put, (a, b, "praise", None, 21, b"\x06" * 29, "2027-03-06", T, None, None, None))
+            _report(ok and "BETWEEN 1 AND 20" in msg, "옮긴 표도 그림 21 거부", msg)
+        finally:
+            conn.close()
+
+
 def main() -> int:
     print("=" * 62)
     print("SQLite 스키마 적용 + 제약조건 동작 검사")
@@ -1802,6 +1869,7 @@ def main() -> int:
             check_cards_table(conn)
         finally:
             conn.close()
+    check_cards_migration()
 
     print("-" * 62)
     if _failures:

@@ -13650,7 +13650,11 @@ function msSee(id, err){   // err = 맡은 부서를 고르다 막힌 이유 (�
 const CARD_K = { cheer:{label:'축하', fg:'#B4232F', bg:'#FDECEC'}, praise:{label:'칭찬', fg:'#985A00', bg:'#FFF1D6'}, thanks:{label:'감사', fg:'#11734D', bg:'#E3F4EC'}, comfort:{label:'위로', fg:'#4D5566', bg:'#EEF0F4'} };   // 종류 색 (꼬리표 · 봉투)
 const CARD_WHY = { birthday:'생일', welcome:'새 식구', anniv:'입사 기념', joy:'경사' };   // 축하의 소식 — 꼬리표 "축하 · 생일"
 const CARD_HEART = '<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8l1 1.1L12 21l7.8-7.5 1-1.1a5.5 5.5 0 0 0 0-7.8z"/></svg>', CARD_HEART_SM = CARD_HEART.replace('<svg', '<svg width="11" height="11"');
-const CARD_SETS = ['birthday', 'welcome', 'anniv', 'joy', 'condol', 'praise', 'thanks'];   // 그림 묶음 (img/cards/{묶음}-{1~4}.jpg)
+const CARD_SETS = ['birthday', 'welcome', 'anniv', 'joy', 'condol', 'praise', 'thanks'];   // 그림 묶음 (img/cards/{묶음}-{번호}.jpg)
+const cardArtOk = n=>Number.isInteger(n) && n>=1 && n<=20;   // 그림 번호 = 표(022)의 범위 1~20 정수
+function cardArts(reason, y){   // 그 카드에 고를 수 있는 그림 번호 (보이는 순서 · 맨 앞이 처음 골라짐) — 서버 cards.arts_for 와 같은 규칙 (2026-10-27 인사담당자). 실제 로그인은 서버가 준 option.arts, 시연(cardDemoOpts)은 이 함수
+  return reason==='birthday' ? [5, 6, 3, 4] : reason==='anniv' ? [{ 1:5, 3:6, 5:7, 10:8 }[y] || 9, 1, 2] : [1, 2, 3, 4];   // 생일 5(남) · 6(여) · 3 · 4 / 입사 기념 = 연차 숫자 그림(1 · 3 · 5 · 10주년, 그 뒤 장기근속 9) + 꽃다발 1 · 트로피 2 / 나머지 1~4
+}
 function cardSet(kind, reason){   // 그림 묶음 — 축하는 소식 종류(birthday · welcome · anniv · joy)가 곧 묶음. 모르는 값이면 칭찬 묶음 (주소에 그대로 넣지 않는다)
   const s = { comfort:'condol', praise:'praise', thanks:'thanks', cheer:reason }[kind];
   return CARD_SETS.includes(s) ? s : 'praise';
@@ -13658,7 +13662,7 @@ function cardSet(kind, reason){   // 그림 묶음 — 축하는 소식 종류(b
 const cardK = k=>Object.hasOwn(CARD_K, k) ? CARD_K[k] : { label:'카드', fg:'#4D5566', bg:'#EEF0F4' };   // 모르는 종류는 회색 "카드" — 한 장 때문에 탭이 비지 않게
 const cardKv = k=>`--k-fg:${cardK(k).fg};--k-bg:${cardK(k).bg};`;
 const cardTag = c=>cardK(c.kind).label + (c.kind==='cheer' && Object.hasOwn(CARD_WHY, c.reason) ? ' · '+CARD_WHY[c.reason] : '');
-function cardArt(kind, reason, n){ return `<div class="cm-art"><img src="img/cards/${cardSet(kind, reason)}-${[1, 2, 3, 4].includes(n) ? n : 1}.jpg?v=1" alt="" loading="lazy"></div>`; }   // 그림을 바꾸면 ?v= 를 올린다 (설계 5장)
+function cardArt(kind, reason, n){ return `<div class="cm-art"><img src="img/cards/${cardSet(kind, reason)}-${cardArtOk(n) ? n : 1}.jpg?v=1" alt="" loading="lazy"></div>`; }   // 저장된 번호 그대로 — 이제 고를 수 없는 옛 그림(생일 1 · 2, 입사 기념 3 · 4)도 보인다. 그림을 바꾸면 ?v= 를 올린다 (설계 5장)
 function cardFace(c){   // 카드 한 장 (시안 face): 그림 · 꼬리표 / To. 받는 사람님 · 글 · From. 보낸 사람 · 날짜(M/D) — 손글씨
   return `<div class="cm-face" style="${cardKv(c.kind)}">${cardArt(c.kind, c.reason, c.art)}<div class="cm-face-body">
     <span class="cm-tag">${cardTag(c)}</span>
@@ -13911,7 +13915,7 @@ const CARD_EX = {   // 예시 문구 칩 (누르면 글 칸에) — 축하는 �
   comfort:['마음 깊이 위로를 전합니다.', '힘든 시간 잘 이겨 내시길 바랍니다.', '필요한 일 있으면 언제든 말씀해 주세요.'],
 };
 const CARD_NEWS = { birthday:'birthday', welcome:'welcome', anniversary:'anniv', joy:'joy' };   // 이번 주 소식 배너 → 축하 사유 (조사는 위로 카드). 서버 cards.reasons_for 와 같은 짝 — 생일 · 새 식구 · 입사 기념은 news_items(_NEWS_REASON), 경사는 celeb_events
-const CARD_BASE = [{ kind:'praise', reason:null }, { kind:'thanks', reason:null }];   // 받는 분을 고르기 전 칩 (시안처럼 칭찬 · 감사)
+const CARD_BASE = [{ kind:'praise', reason:null, arts:cardArts(null) }, { kind:'thanks', reason:null, arts:cardArts(null) }];   // 받는 분을 고르기 전 칩 (시안처럼 칭찬 · 감사)
 const CARD_FAIL = '지금은 할 수 없어요. 잠시 뒤 다시 해 주세요.';
 const CARD_NO_KEY = '서버 설정이 아직 끝나지 않아 카드를 보낼 수 없어요.';   // 서버 503 과 같은 문구
 const cardNoKey = ()=>AUTH.live && CARD_LIVE.state==='ok' && !CARD_LIVE.ready;   // 카드 상자가 서버 열쇠(HR_PAY_KEY)가 없다고 답했다 — 소식 · 조직도 · 답장 단추는 막힌 [카드 쓰기]를 거치지 않으므로 창에서 막는다. 아직 모르면(불러오기 전 · 실패) 막지 않는다 — 보내면 서버가 503
@@ -13920,7 +13924,7 @@ const cardStill = ()=>matchMedia('(prefers-reduced-motion: reduce)').matches;   
 const cardCan = m=>!!m && !m.me && m.active!==false && (AUTH.live ? Number.isInteger(m.uid) : m.name!==kpiOwner());   // 이 조직도 사람에게 카드 단추를 보이나 — 나 · 비활성은 아니다. 실제 로그인은 서버 번호(uid)가 있어야
 const cardTo = m=>({ id:AUTH.live ? m.uid : m.id, name:m.name, title:m.title || '', dept:m.team || m.division || '' });
 const cardMourn = m=>celebItems('condol').some(x=>x.m.id===m.id);   // 지금 조사가 게시 중인 분 — 소식 · 조직도 단추도 위로 카드로 (창은 서버가 위로만 준다 — reasons_for)
-const cardOpt = ()=>CARD_S.opts && CARD_S.opts[CARD_S.sel] || CARD_BASE[0];   // 고른 종류 칩 { kind, reason }
+const cardOpt = ()=>CARD_S.opts && CARD_S.opts[CARD_S.sel] || CARD_BASE[0];   // 고른 종류 칩 { kind, reason, arts }
 function cardSendOrg(id, reason=null){ const m = orgFind(id); return cardCan(m) ? cardSend({ to:cardTo(m), reason }) : undefined; }   // 이번 주 소식 · 조직도 단추 — 화면 번호만 받는다(이름 없음)
 function cardPick(id){ const m = orgFind(id); return cardCan(m) ? cardFor(cardTo(m)) : undefined; }   // 이름 찾기에서 고름 — 고른 종류 · 쓴 글은 그대로
 function cardText(v){   // 서버 cards.clean_text 와 같은 규칙 → [다듬은 글, 안 되는 까닭('' = 됨)]. 글자 수는 코드 포인트로 센다 (그림 글자도 한 자)
@@ -13933,8 +13937,8 @@ function cardText(v){   // 서버 cards.clean_text 와 같은 규칙 → [다듬
 function cardDemoOpts(id){   // 시연: 그 사람의 이번 주 소식(시연 명단) → [보낼 수 있는 카드, 오류, 오늘 보냈나] — 서버 cards.options 와 같은 규칙 (조사면 위로만)
   const m = orgMembers.find(x=>x.id===id);
   if(!cardCan(m)) return [[], '카드를 받을 수 없는 분이에요.', false];
-  const has = key=>celebList(key, orgMembers, celebEvents, new Date()).some(x=>x.m===m);
-  const opts = has('condol') ? [{ kind:'comfort', reason:null }] : [...Object.entries(CARD_NEWS).filter(([k])=>has(k)).map(([, r])=>({ kind:'cheer', reason:r })), ...CARD_BASE];
+  const has = key=>celebList(key, orgMembers, celebEvents, new Date()).some(x=>x.m===m), y = celebAnnivYears(m.hireDate, new Date());   // 입사 연차 = 소식의 입사 N주년 (입사 기념 그림)
+  const opts = has('condol') ? [{ kind:'comfort', reason:null, arts:cardArts(null) }] : [...Object.entries(CARD_NEWS).filter(([k])=>has(k)).map(([, r])=>({ kind:'cheer', reason:r, arts:cardArts(r, y) })), ...CARD_BASE];
   return [opts, '', CARD_DEMO.sent.some(c=>c.to.id===id && c.date===kpiDay(0))];
 }
 async function cardSend({ to=null, reason=null }={}){   // 카드 보내기 창. to 가 없으면 이름 찾기부터 · reason(birthday · welcome · anniv · joy)을 주면 그 축하 칩이 처음 골라진다
@@ -13946,7 +13950,7 @@ async function cardSend({ to=null, reason=null }={}){   // 카드 보내기 창.
 }
 async function cardFor(to){   // 받는 분이 정해짐 → 보낼 수 있는 종류 · 오늘 보냈나를 받아 칩을 그린다 (실제 로그인 GET /api/cards/options — 시연은 시연 소식으로)
   const S = CARD_S, my = ++S.seq, was = cardOpt();
-  Object.assign(S, { to, opts:null, sentToday:false, err:'' });
+  Object.assign(S, { to, opts:null, sentToday:false, err:'', art:CARD_BASE[0].arts[0] });   // 묻는 동안은 칭찬 칩 모양 (cardOpt)
   cardDraw();
   let opts = [], sentToday = false, err = '';
   if(AUTH.live){
@@ -13956,9 +13960,10 @@ async function cardFor(to){   // 받는 분이 정해짐 → 보낼 수 있는 �
     } catch(e){ err = CARD_FAIL; }
   } else [opts, err, sentToday] = cardDemoOpts(to.id);
   if(my!==S.seq || !document.querySelector('#orgModal .cm-send')) return;   // 그사이 창을 닫았거나 다른 분을 골랐다
-  opts = opts.filter(o=>o && Object.hasOwn(CARD_K, o.kind) && (o.kind==='cheer' ? Object.hasOwn(CARD_WHY, o.reason) : !o.reason));   // 아는 종류만 (예시 문구 · 그림이 있는 것)
+  opts = opts.filter(o=>o && Object.hasOwn(CARD_K, o.kind) && (o.kind==='cheer' ? Object.hasOwn(CARD_WHY, o.reason) : !o.reason) && Array.isArray(o.arts) && o.arts.length && o.arts.every(cardArtOk));   // 아는 종류 · 그림 번호만 (예시 문구 · 그림이 있는 것)
   const at = f=>opts.findIndex(f), i = [at(o=>S.reason && o.reason===S.reason), at(o=>o.kind===was.kind && o.reason===was.reason), at(o=>o.kind!=='cheer')].find(n=>n>=0);   // 준 사유 → 고르던 칩 → 칭찬(조사면 위로)
   Object.assign(S, { opts, sel:i ?? 0, sentToday, err });
+  S.art = cardOpt().arts[0];   // 처음 골라진 그림 = 그 종류의 첫 그림
   cardDraw();
 }
 function cardPv(){   // 미리 보기 카드 — 받는 분이 보는 모양 그대로: From. 내 이름 직급 · 오늘(M/D). 직급은 실제 로그인이면 조직도의 내 줄(아직 안 불렀으면 이름만), 시연은 시연 역할
@@ -13984,7 +13989,7 @@ function cardDraw(){   // 시안 draw 그대로 — 미리 보기는 PC만 (휴�
         ? `<div class="cm-to-row"><span class="cm-av">${escapeHtml(to.name.slice(0, 1))}</span><div><b>${escapeHtml(to.name)}</b> ${escapeHtml(to.title || '')}<small>${escapeHtml(to.dept || '')}</small></div></div>${why ? `<span class="cm-why">${escapeHtml(why)} 소식이 있어요</span>` : ''}`
         : `<input class="cm-text" id="cmFindIn" style="min-height:0;" placeholder="이름으로 찾기" aria-label="받는 사람 이름으로 찾기" autocomplete="off" value="${escapeHtml(S.q)}" oninput="CARD_S.q=this.value; cardSeek()"><div class="cm-found" id="cmFound">${cardFound()}</div>`}</div>
       <div class="field"><label>카드 종류</label><div class="cm-kinds">${kinds}</div></div>
-      <div class="field"><label>그림</label><div class="cm-arts">${[1, 2, 3, 4].map(n=>`<button type="button" aria-pressed="${n===S.art}" onclick="cardArtPick(${n})" aria-label="그림 ${n}">${cardArt(o.kind, o.reason, n)}</button>`).join('')}</div></div>
+      <div class="field"><label>그림</label><div class="cm-arts">${o.arts.map((n, i)=>`<button type="button" aria-pressed="${n===S.art}" onclick="cardArtPick(${n})" aria-label="그림 ${i + 1}">${cardArt(o.kind, o.reason, n)}</button>`).join('')}</div></div>
       <div class="field"><label for="cmText">글 <small id="cmLen"></small></label><textarea class="cm-text" id="cmText" placeholder="${o.kind==='comfort' ? '위로의 마음을 적어 주세요' : '전하고 싶은 마음을 적어 주세요'}" oninput="cardTyped(this.value)">${escapeHtml(S.text)}</textarea>
         <div class="cm-ex">${!S.opts || !S.opts.length ? '' : CARD_EX[o.kind==='cheer' ? o.reason : o.kind].map((t, i)=>`<button type="button" onclick="cardExPick(${i})">${t}</button>`).join('')}</div></div>
     </div>
@@ -14002,7 +14007,7 @@ function cardFoot(){   // 글자 수 · 붉은 줄 · [보내기] 켜기 — 창
   if(red.textContent!==msg) red.textContent = msg;   // role=alert — 같은 안내를 글자마다 다시 읽지 않게 바뀔 때만
   b.disabled = S.busy || cardNoKey() || !S.to || !S.opts || !S.opts.length || S.sentToday || !!bad;
 }
-function cardKindPick(i){ Object.assign(CARD_S, { sel:i, err:'' }); cardDraw(); }
+function cardKindPick(i){ Object.assign(CARD_S, { sel:i, err:'' }); CARD_S.art = cardOpt().arts[0]; cardDraw(); }   // 종류를 바꾸면 그 종류의 첫 그림
 function cardArtPick(n){ CARD_S.art = n; cardDraw(); }
 function cardExPick(i){ const o = cardOpt(); CARD_S.text = CARD_EX[o.kind==='cheer' ? o.reason : o.kind][i]; cardDraw(); }
 function cardTyped(v){ CARD_S.text = v; cardFoot(); const pv = document.getElementById('cmPv'); if(pv) pv.innerHTML = cardPv(); }
@@ -14103,7 +14108,12 @@ async function cardSelfCheck(){   // 브라우저 콘솔에서 await cardSelfChe
     ok(!w.querySelector('.cm-mini-meta i, .cm-msg b') && w.textContent.includes('<i>가상'), '이름 · 글은 글자 그대로');
     ok(w.querySelector('.cm-ktag').textContent==='축하 · 생일' && w.querySelector('.cm-mini img').getAttribute('src')==='img/cards/birthday-1.jpg?v=1', '꼬리표 "축하 · 생일" · 그림 주소');
     const src = html=>dom(html).querySelector('img').getAttribute('src');
-    ok(src(cardArt('cheer', null, 9))==='img/cards/praise-1.jpg?v=1' && src(cardArt('cheer', '../x"', '1"'))==='img/cards/praise-1.jpg?v=1' && src(cardArt('constructor', 'joy', 0))==='img/cards/praise-1.jpg?v=1' && src(cardArt('comfort', 'joy', 4))==='img/cards/condol-4.jpg?v=1', '모르는 묶음 · 번호는 알려진 그림(칭찬 1번)으로');
+    ok(src(cardArt('cheer', null, 21))==='img/cards/praise-1.jpg?v=1' && src(cardArt('cheer', '../x"', '1"'))==='img/cards/praise-1.jpg?v=1' && src(cardArt('constructor', 'joy', 0))==='img/cards/praise-1.jpg?v=1' && src(cardArt('comfort', 'joy', 4))==='img/cards/condol-4.jpg?v=1', '모르는 묶음 · 번호는 알려진 그림(칭찬 1번)으로');
+    ok(src(cardArt('cheer', 'birthday', 1))==='img/cards/birthday-1.jpg?v=1' && src(cardArt('cheer', 'anniv', 4))==='img/cards/anniv-4.jpg?v=1' && src(cardArt('cheer', 'birthday', 6))==='img/cards/birthday-6.jpg?v=1'
+      && src(cardArt('cheer', 'anniv', 9))==='img/cards/anniv-9.jpg?v=1' && src(cardArt('praise', null, 20))==='img/cards/praise-20.jpg?v=1' && [0, 21, 1.5, '5', null, -3].every(n=>src(cardArt('cheer', 'anniv', n))==='img/cards/anniv-1.jpg?v=1'),
+      '그림 번호는 1~20 정수면 그대로 — 받은 카드의 옛 번호(생일 1 · 입사 기념 4) · 새 번호(생일 6 · 장기근속 9)도, 그 밖은 1번');
+    CARD_LIVE.received.push(card(16, '2026-10-22', { kind:'cheer', reason:'anniv', art:4 })); w = dom(cardContent()); CARD_LIVE.received.pop();
+    ok([...w.querySelectorAll('.cm-mini img')].map(i=>i.getAttribute('src')).join()==='img/cards/anniv-4.jpg?v=1,img/cards/birthday-1.jpg?v=1,img/cards/praise-1.jpg?v=1,img/cards/praise-1.jpg?v=1', '받은 카드: 이제 고를 수 없는 옛 그림(입사 기념 4 메달 · 생일 1 케이크)도 저장된 번호 그대로 보인다');
     const bad = card(15, '2026-10-22', { kind:'nope', reason:'x', art:7 });
     CARD_LIVE.received.push(bad); w = dom(cardContent()); CARD_LIVE.received.pop();
     ok(w.querySelectorAll('.cm-wall .cm-mini').length===4 && [...w.querySelectorAll('.cm-ktag')].some(t=>t.textContent==='카드') && dom(cardFace({ ...bad, toName:'가', fromName:'나' })).querySelector('.cm-tag').textContent==='카드', '모르는 종류의 카드도 탭을 비우지 않고 회색 "카드"로');
@@ -14148,7 +14158,8 @@ async function cardSelfCheck(){   // 브라우저 콘솔에서 await cardSelfChe
     window.matchMedia = q=>/reduced-motion/.test(q) ? { matches:rm } : keep.mm.call(window, q);
     Element.prototype.animate = function(){ if(this.matches('.cm-fly')) flies++; return { finished:Promise.resolve(), cancel(){} }; };   // 움직임은 바로 끝난다
     AUTH.live = true; AUTH.me = { ...(keep.me || {}), name:'가상나' }; Object.assign(CARD_LIVE, { state:'ok', ready:true });
-    const OPT = (...ks)=>ks.map(k=>({ kind:k.split(' ')[0], reason:k.split(' ')[1] || null }));
+    const ARTS = { birthday:[5, 6, 3, 4], anniv:[6, 1, 2] };   // 서버 cards.arts_for 가 주는 그림 목록 (입사 기념은 3주년)
+    const OPT = (...ks)=>ks.map(k=>({ kind:k.split(' ')[0], reason:k.split(' ')[1] || null, arts:ARTS[k.split(' ')[1]] || [1, 2, 3, 4] }));
     let optR = { status:200, j:{ options:OPT('cheer birthday', 'cheer anniv', 'praise', 'thanks'), sentToday:false } }, postR = { status:201, j:{ id:77 } };
     const box = { ready:true, unread:0, received:[], sent:[] }, org = { divisions:[], hr:false, members:[
       { id:5, name:'가상받는이', title:'프로', division:'가상본부', team:'가상팀', lead:'', ext:'', email:'', mobile:null, mailNo:'', me:false },
@@ -14165,8 +14176,18 @@ async function cardSelfCheck(){   // 브라우저 콘솔에서 await cardSelfChe
     ok(M().querySelector('.cm-to-row').textContent.includes('<i>가상받는이') && !M().querySelector('.cm-to-row i') && M().querySelector('.cm-why').textContent==='생일 · 입사 기념 소식이 있어요', '받는 분 이름은 글자 그대로 · 소식 칩');
     ok(M().querySelector('.cm-note').textContent.trim()==='받는 분만 볼 수 있어요 · 같은 분께는 하루 한 장 · 보내면 휴대폰으로 알려 드려요' && M().querySelector('.cm-pv-label').textContent==='받는 분에게 이렇게 보여요' && btn().disabled, '안내 한 줄 · 미리 보기 · 글이 없으면 [보내기] 막힘');
     ok(ex()==='입사 기념일 축하해요. 늘 든든해요.|함께해 줘서 고마워요.|앞으로도 잘 부탁해요!', '예시 문구: 입사 기념');
+    const arts = ()=>[...M().querySelectorAll('.cm-arts button')].map(b=>b.querySelector('img').getAttribute('src').match(/cards\/(.+)\.jpg/)[1] + (b.getAttribute('aria-pressed')==='true' ? '*' : '')).join();
+    const pvArt = ()=>M().querySelector('#cmPv img').getAttribute('src'), boxes = ()=>[...M().querySelectorAll('.cm-arts button')].map(b=>{ const r = b.getBoundingClientRect(); return [Math.round(r.left), Math.round(r.width)]; });
+    ok(arts()==='anniv-6*,anniv-1,anniv-2' && pvArt()==='img/cards/anniv-6.jpg?v=1', '입사 기념(3주년): 그림 칸 = 서버 arts — 숫자 그림 6 · 꽃다발 1 · 트로피 2 · 처음 골라진 그림 6 · 미리 보기도 6');
+    const b3 = boxes();
     chips()[0].click(); ok(ex()==='생일 축하해요! 오늘은 맛있는 거 많이 드세요.|생일 축하해요. 늘 고마워요.|행복한 생일 보내세요!' && chips()[0].getAttribute('aria-pressed')==='true', '예시 문구: 생일');
+    const b4 = boxes();
+    ok(b3.length===3 && b4.length===4 && b4[0][1] > 0 && b3.every((x, i)=>x[0]===b4[i][0] && x[1]===b4[i][1]), `그림 3장(입사 기념)도 4장 칸과 같은 크기 · 같은 자리로 왼쪽부터 (${JSON.stringify(b3)} / ${JSON.stringify(b4)})`);
+    ok(arts()==='birthday-5*,birthday-6,birthday-3,birthday-4' && pvArt()==='img/cards/birthday-5.jpg?v=1', '생일: 그림 칸 5 · 6 · 3 · 4 — 종류를 바꾸면 그 종류의 첫 그림(5) · 미리 보기도');
+    M().querySelectorAll('.cm-arts button')[1].click();
+    ok(arts()==='birthday-5,birthday-6*,birthday-3,birthday-4' && pvArt()==='img/cards/birthday-6.jpg?v=1', '그림을 누르면 그 그림이 골라지고 미리 보기도 바뀐다 (생일 6)');
     chips()[2].click(); ok(ex()==='이번 일 정말 멋지게 해냈어요.|꼼꼼하게 챙겨 줘서 큰 도움이 됐어요.|늘 먼저 나서 줘서 든든해요.', '예시 문구: 칭찬');
+    ok(arts()==='praise-1*,praise-2,praise-3,praise-4', '칭찬: 그림 칸 1~4 · 첫 그림 1');
     chips()[3].click(); ok(ex()==='바쁜데도 도와줘서 고마워요.|덕분에 일이 잘 끝났어요.|오늘도 수고 많았어요.', '예시 문구: 감사');
     M().querySelectorAll('.cm-ex button')[1].click();
     ok(ta().value==='덕분에 일이 잘 끝났어요.' && M().querySelector('#cmPv .cm-msg').textContent==='덕분에 일이 잘 끝났어요.' && M().querySelector('#cmPv .cm-tag').textContent==='감사' && !btn().disabled, '예시 칩을 누르면 글 칸 · 미리 보기에 들어감');
@@ -14202,6 +14223,14 @@ async function cardSelfCheck(){   // 브라우저 콘솔에서 await cardSelfChe
     ok(calls[0][0]==='/api/cards' && calls[0][1]==='POST' && calls[0][2]==='{"to":9,"kind":"thanks","reason":null,"art":3,"text":"고마워요"}', 'POST: 받는 분 서버 번호 · 종류 · 그림 번호 · 다듬은 글');
     ok(!added.some(isFly) && !flies, '움직임 줄이기: .cm-fly 가 생기지 않는다');
     ok(!M() && kpiMsg.msg==='&lt;i&gt;가상받는이 님께 카드를 보냈어요.' && calls.some(c=>c[0]==='/api/cards' && !c[1]), '201: 창 닫고 알림 줄 (이름은 글자 그대로) → 카드 상자 다시 읽기');
+    const posted = ()=>JSON.parse(calls.find(c=>c[1]==='POST')[2]);
+    await cardSend({ to, reason:'anniv' }); M().querySelectorAll('.cm-arts button')[2].click(); type('축하해요'); calls.length = 0; await cardSent();
+    ok(posted().reason==='anniv' && posted().art===2, '보낼 때 art = 고른 그림 (입사 기념 셋째 칸 = 트로피 2)');
+    await cardSend({ to, reason:'birthday' }); type('축하해요'); calls.length = 0; await cardSent();
+    ok(posted().reason==='birthday' && posted().art===5, '그림을 고르지 않으면 그 종류의 첫 그림 (생일 5)');
+    optR = { status:200, j:{ options:[{ kind:'cheer', reason:'joy', arts:[1, 99] }, { kind:'cheer', reason:'welcome' }, ...OPT('praise', 'thanks')], sentToday:false } }; await cardSend({ to, reason:'joy' });
+    ok(names()==='칭찬,감사' && arts()==='praise-1*,praise-2,praise-3,praise-4', '서버 arts 가 없거나 1~20 정수가 아닌 종류는 칩에서 뺀다 (아는 그림만)');
+    optR = { status:200, j:{ options:OPT('cheer birthday', 'cheer anniv', 'praise', 'thanks'), sentToday:false } }; orgCloseModal();
     // 움직임: 봉투가 날아간 뒤 아무것도 남지 않는다 · 날아가는 중에 닫아도
     rm = false; await cardSend({ to }); type('고마워요'); added.length = 0; mo.observe(document.body, { childList:true, subtree:true });
     await cardSent();
@@ -14277,6 +14306,21 @@ async function cardSelfCheck(){   // 브라우저 콘솔에서 await cardSelfChe
     oth.active = false; orgShow(oth.id); const ok3 = document.querySelector('#orgModal [onclick^="cardSendOrg("]'); if(a0===undefined) delete oth.active; else oth.active = a0;
     ok(ok1 && ok1.textContent.trim()==='칭찬 · 감사 카드 보내기' && !ok2 && !ok3, 'orgShow: [칭찬 · 감사 카드 보내기] — 나 · 비활성에게는 없다');
     orgCloseModal();
+    ok([['birthday', 0], ['anniv', 1], ['anniv', 3], ['anniv', 5], ['anniv', 10], ['anniv', 15], ['anniv', 20], ['anniv', 35], ['welcome', 0], ['joy', 0], [null, 0]].map(([r, y])=>cardArts(r, y).join('·')).join()
+      ==='5·6·3·4,5·1·2,6·1·2,7·1·2,8·1·2,9·1·2,9·1·2,9·1·2,1·2·3·4,1·2·3·4,1·2·3·4', '그림 목록 표(cardArts)가 서버 cards.check 의 arts_for 표와 같다');
+    { const now = new Date(), mm = String(now.getMonth()+1).padStart(2, '0'), am = orgMembers.find(x=>cardCan(x) && !cardMourn(x)), h0 = am.hireDate;
+      try {
+        for(const [y, want] of [[3, '6,1,2'], [15, '9,1,2'], [4, '']]){
+          am.hireDate = `${now.getFullYear()-y}-${mm}-01`;
+          const an = cardDemoOpts(am.id)[0].find(o=>o.reason==='anniv');
+          ok(want ? an && an.arts.join()===want : !an, `시연: 입사 ${y}년인 분 — ${want ? '입사 기념 그림 '+want : '입사 기념 없음'} (시연 명단의 입사일로 센다)`);
+        }
+        am.hireDate = `${now.getFullYear()-15}-${mm}-01`; await cardSendOrg(am.id, 'anniv');
+        ok(chips().find(b=>b.getAttribute('aria-pressed')==='true').textContent==='축하 · 입사 기념' && arts()==='anniv-9*,anniv-1,anniv-2' && pvArt()==='img/cards/anniv-9.jpg?v=1', '시연 창: 15주년 그림 칸 9 · 1 · 2 (장기근속 9가 처음 골라짐)');
+        chips().find(b=>b.textContent==='칭찬').click(); ok(arts()==='praise-1*,praise-2,praise-3,praise-4', '시연 창: 칭찬으로 바꾸면 1~4 · 첫 그림 1');
+        orgCloseModal();
+      } finally { am.hireDate = h0; }
+    }
     // ---- 카드가 왔어요 (Task 7): 들어올 때 자동 창 · 넘겨 보면 읽음 · 고마워요 · 움직임 · 카드함 처음 열기 (움직임은 바로 끝나는 가짜 — 몇 번 움직였나만 센다) ----
     const tick = ()=>new Promise(r=>setTimeout(r)), A = ()=>document.getElementById('cmArrive'), cnt = ()=>A().querySelector('.cm-count').textContent, tb = ()=>A().querySelector('.cm-thanks');
     const bits = ()=>document.querySelectorAll('.cm-ep,.cm-p,.cm-fly,.cm-pop,.cm-fold,.cm-seal').length, title = ()=>document.querySelector('#orgModal .card-title')?.textContent || '';

@@ -7443,8 +7443,9 @@ def check_cards(hr) -> None:
     M_SHAPE, M_WHO, M_NOW = "보낸 내용의 모양이 올바르지 않아요.", "카드를 받을 수 없는 분이에요.", "지금은 이 카드를 보낼 수 없어요."
     M_ONCE, M_KEY, M_GONE = "오늘은 이미 이 분께 카드를 보냈어요. 내일 다시 보내 주세요.", "서버 설정이 아직 끝나지 않아 카드를 보낼 수 없어요.", "카드를 찾을 수 없어요."
     is_err = lambda r, code, msg: r.status_code == code and r.json == {"error": msg}  # noqa: E731
-    PRAISE, THANKS, COMFORT = ({"kind": k, "reason": None} for k in ("praise", "thanks", "comfort"))
-    cheer = lambda reason: {"kind": "cheer", "reason": reason}  # noqa: E731
+    FOUR = [1, 2, 3, 4]  # 고를 수 있는 그림 — 칭찬 · 감사 · 위로 · 새 식구 · 경사. 생일은 5 · 6 · 3 · 4, 입사 기념은 연차 숫자 그림 + 꽃다발 1 · 트로피 2 (2026-10-27 인사담당자)
+    PRAISE, THANKS, COMFORT = ({"kind": k, "reason": None, "arts": FOUR} for k in ("praise", "thanks", "comfort"))
+    cheer = lambda reason, arts=None: {"kind": "cheer", "reason": reason, "arts": arts or {"birthday": [5, 6, 3, 4]}.get(reason, FOUR)}  # noqa: E731
     get = lambda c, p="/api/cards": c.get(p, base_url=BASE)  # noqa: E731
     post = lambda c, p, body=None, headers=ORIGIN: c.post(p, base_url=BASE, headers=headers, json=body)  # noqa: E731
     form = lambda to=B, **kw: {"to": to, "kind": "praise", "reason": None, "art": 1, "text": "카드글 가상 칭찬이에요", **kw}  # noqa: E731
@@ -7528,14 +7529,17 @@ def check_cards(hr) -> None:
         print("  - 생일_사유")
         wipe()
         x("UPDATE users SET birthday = ?, birthday_public = 1 WHERE id = ?", today.strftime("%m-%d"), B)
-        ok(opts(a, B).json == {"options": [cheer("birthday"), PRAISE, THANKS], "sentToday": False}, "B 생일이 오늘이고 알림이 켜져 있으면 options 에 cheer/birthday")
+        ok(opts(a, B).json == {"options": [cheer("birthday"), PRAISE, THANKS], "sentToday": False},
+           "B 생일이 오늘이고 알림이 켜져 있으면 options 에 cheer/birthday — 그림 5 · 6 · 3 · 4 (칭찬 · 감사는 1~4)")
         x("UPDATE users SET birthday_public = 0 WHERE id = ?", B)
         ok(opts(a, B).json["options"] == [PRAISE, THANKS], "생일 알림을 끈 사람은 cheer 없음")
         ok(is_err(send(a, kind="cheer", reason="birthday"), 403, M_NOW) and is_err(send(c, kind="cheer", reason="welcome"), 403, M_NOW)
            and cnt(A, B) == 0 and cnt(C, B) == 0, "알림을 끈 사람에게 cheer/birthday · 사유가 없는 cheer/welcome 은 403 (문구) — 줄 없음")
         x("UPDATE users SET birthday_public = 1 WHERE id = ?", B)
-        r = send(a, kind="cheer", reason="birthday", art=4, text="카드글 생일 축하해요")
-        ok(r.status_code == 201 and row(r.json["id"])[0][2:5] == ("cheer", "birthday", 4)
+        ok(all(is_err(send(a, kind="cheer", reason="birthday", art=n), 400, M_SHAPE) for n in (1, 2, 7, 20)) and cnt(A, B) == 0,
+           "생일 카드에 옛 그림 1(케이크) · 2(선물 상자) · 목록에 없는 7 · 20 → 400 (모양 문구) — 줄 없음")
+        r = send(a, kind="cheer", reason="birthday", art=6, text="카드글 생일 축하해요")
+        ok(r.status_code == 201 and row(r.json["id"])[0][2:5] == ("cheer", "birthday", 6)
            and get(b).json["received"][0]["kind"] == "cheer" and get(b).json["received"][0]["reason"] == "birthday", "알림을 켜면 cheer/birthday 201 — 종류 · 사유 · 그림 번호가 그대로 남음")
         ok(is_err(send(c, kind="cheer", reason="anniv"), 403, M_NOW), "해당 없는 사유(입사 기념)는 그래도 403")
 
@@ -7545,7 +7549,16 @@ def check_cards(hr) -> None:
         x("UPDATE users SET hire_date = ? WHERE id = ?", (today - timedelta(days=10)).isoformat(), B)
         ok(opts(a, B).json["options"] == [cheer("welcome"), PRAISE, THANKS], "입사 10일 전 → cheer/welcome")
         x("UPDATE users SET hire_date = ? WHERE id = ?", date(today.year - 3, today.month, 1).isoformat(), B)
-        ok(opts(a, B).json["options"] == [cheer("anniv"), PRAISE, THANKS], "3년 전 이번 달 입사 → cheer/anniv")
+        ok(opts(a, B).json["options"] == [cheer("anniv", [6, 1, 2]), PRAISE, THANKS], "3년 전 이번 달 입사 → cheer/anniv — 그림 6(3주년) · 1(꽃다발) · 2(트로피)")
+        for y, n in ((1, 5), (5, 7), (10, 8), (15, 9), (20, 9)):
+            x("UPDATE users SET hire_date = ? WHERE id = ?", date(today.year - y, today.month, 1).isoformat(), B)
+            ok(opts(a, B).json["options"] == [cheer("anniv", [n, 1, 2]), PRAISE, THANKS], f"{y}년 전 이번 달 입사 → cheer/anniv 그림 {n} · 1 · 2")
+        x("UPDATE users SET hire_date = ? WHERE id = ?", date(today.year - 3, today.month, 1).isoformat(), B)
+        ok(all(is_err(send(a, kind="cheer", reason="anniv", art=n), 400, M_SHAPE) for n in (3, 4, 5, 7, 9)) and cnt(A, B) == 0,
+           "3주년에게 화초 3 · 메달 4 · 다른 연차 숫자 그림 5 · 7 · 9 → 400 (모양 문구) — 줄 없음")
+        r = send(a, kind="cheer", reason="anniv", art=6, text="카드글 3주년 축하해요")
+        ok(r.status_code == 201 and row(r.json["id"])[0][2:5] == ("cheer", "anniv", 6) and send(c, kind="cheer", reason="anniv", art=2).status_code == 201,
+           "3주년 숫자 그림 6 → 201 (그림 번호 그대로) · 트로피 2 도 201")
         x("UPDATE users SET hire_date = ? WHERE id = ?", date(today.year - 4, today.month, 1).isoformat(), B)
         ok(opts(a, B).json["options"] == [PRAISE, THANKS], "4년 전 입사는 기념이 아님")
         reset_b()
@@ -7645,12 +7658,12 @@ def check_cards(hr) -> None:
         ok(all(is_err(send(a, text=t), 400, m) for t, m in bad), "글 검사: 151자 · 줄바꿈 3번(\\r\\n 도) · 빈칸만 · 글이 아님 · 쓸 수 없는 글자(NUL · DEL · 서로게이트) → 400 (각 문구)")
         no_text = form()
         del no_text["text"]
-        shapes = [(f"art={v!r}", form(art=v)) for v in (0, 5, "1", 1.5, True, None, [1])] + [("art 없음", {k: v for k, v in form().items() if k != "art"})]
+        shapes = [(f"art={v!r}", form(art=v)) for v in (0, 5, 21, 2**40, "1", 1.5, True, None, [1])] + [("art 없음", {k: v for k, v in form().items() if k != "art"})]
         shapes += [(f"kind={v!r}", form(kind=v)) for v in ("foo", None, ["praise"], 5, "")]
         shapes += [("cheer 인데 사유 없음", form(kind="cheer")), ("praise 인데 사유 있음", form(reason="birthday")), ("없는 사유", form(kind="cheer", reason="bogus")), ("사유가 글이 아님", form(kind="cheer", reason=7))]
         shapes += [(f"to={v!r}", form(v)) for v in (str(B), True, 0, -1, 1.5, 2**40, None, [B])] + [("to 없음", {k: v for k, v in form().items() if k != "to"})]
         shapes += [("본문이 목록", [1]), ("본문이 글", "x")]
-        ok(all(is_err(post(a, "/api/cards", body), 400, M_SHAPE) for _, body in shapes), f"모양 검사: art 0/5/\"1\"/실수/true/없음 · 종류 이상 · cheer 와 사유가 안 맞음 · to 이상 · 본문이 객체가 아님 → 모두 400 ({len(shapes)}가지)")
+        ok(all(is_err(post(a, "/api/cards", body), 400, M_SHAPE) for _, body in shapes), f"모양 검사: art 0/5/21/큰 수(칭찬 그림 1~4 밖)/\"1\"/실수/true/없음 · 종류 이상 · cheer 와 사유가 안 맞음 · to 이상 · 본문이 객체가 아님 → 모두 400 ({len(shapes)}가지)")
         ok(is_err(a.post("/api/cards", base_url=BASE, headers=ORIGIN, data="{", content_type="application/json"), 400, M_SHAPE) and is_err(post(a, "/api/cards", no_text), 400, "글을 적어 주세요."),
            "깨진 JSON 은 400 · text 가 없으면 글 문구 400")
         ok(total() == 0, "거부된 것은 한 줄도 남기지 않음")
