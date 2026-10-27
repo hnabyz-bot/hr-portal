@@ -9,8 +9,9 @@ app.py 가 bp 를 붙인다. 세션 검사 · 같은 출처 검사는 auth._guar
   POST /api/eval/admin/attendance         {"year", "rows": [{"userId", "late"?, "leaveOver"?}]} 지각 · 연차 초과 → {"ok", "done", "locked", "missing"} (HR)
   POST /api/eval/admin/<uid>/exclude      {"year", "reason"} 이번 평가에서 뺀다 (HR)
   POST /api/eval/admin/<uid>/include      {"year"} 제외를 되돌린다 (HR)
-  POST /api/eval/admin/<uid>/skip-self    {"year"} 자기평가 없이 평가자에게 넘긴다 (HR) — 평가자에게 알림
+  POST /api/eval/admin/<uid>/skip-self    {"year"} 자기평가 없이 평가자에게 넘긴다 (HR) — 평가자에게 알림 (누른 HR 은 빼고)
   POST /api/eval/admin/<uid>/rater        {"year", "raterId"} 평가자를 바꾼다 (HR)
+  POST /api/eval/admin/release            {"year"} 결과 공개 — 제외 안 된 대상 전원에게 알림(eval_open) (HR)
   GET  /api/eval/state?year=              보는 사람에 맞춘 그해 평가 (year 가 없으면 cur_year) → {"year", "offline", "round", "deleg", "ceoId", "me", "people", "pools", "todo"}
   GET  /api/eval/files/<fid>              증빙 내려받기 (본인 · HR — 자기평가를 낸 뒤에는 평가자 · 배정자 · 그 본부의 본부장 · 대표이사도)
   POST /api/eval/me/self                  {"year", "entries": [{"rid", "note"?, "selfGrade"?}]} 자기평가 임시 저장 — 보낸 줄 · 칸만 바꾼다 → {"ok", "me"} (본인 — 사람 번호는 세션에서만)
@@ -23,6 +24,10 @@ app.py 가 bp 를 붙인다. 세션 검사 · 같은 출처 검사는 auth._guar
   POST /api/eval/people/<uid>/seen        {"year"} 평가자가 '윗사람이 고침' 안내를 확인 → {"ok", "editSeen"}
   POST /api/eval/pools/close              {"year", "pool"} 본부 팀원 묶음 마감 (배정자) — 대표이사(맡겼으면 빼고) · HR 전원에게 알림
   POST /api/eval/pools/seen               {"year", "pool"} 마감 알림을 확인 (HR)
+  POST /api/eval/pools/confirm            {"year", "pools": [열쇠…]} 대표이사 확인 — 묶음째로 HR 확정 대기로 → {"ok", "done"} (대표이사 · 맡김이면 HR) — HR 전원에게 알림
+  POST /api/eval/pools/back               {"year", "pool", "reason"} 본부 팀원 묶음을 배정자에게 돌려보낸다 (대표이사 · 맡김이면 HR) — 배정자에게 알림
+  POST /api/eval/pools/finalize           {"year", "pools": [열쇠…]} HR 확정 → {"ok", "done"} (HR)
+  POST /api/eval/pools/undo               {"year", "pool"} 한 단계 되돌린다 — 확정 → 확정 대기 / 확정 대기 → 대표이사 확인 전 (HR)
 
 보는 수준 (공개 전 등급은 어디에도 새지 않는다 — 사람 줄을 응답에 넣는 길은 모두 _row_json 하나를 지난다. 수준은 eval_rules.level):
   full 전부 (HR · 대표이사 · 배정자 · 점수를 내기 전의 평가자 · 공개 뒤) / mine 평가자가 낸 뒤 · 공개 전 — 자기가 낸 등급 · 항목 등급 · 총점만, 고쳤으면 edited 참(내용 글자 없음) /
@@ -30,8 +35,8 @@ app.py 가 bp 를 붙인다. 세션 검사 · 같은 출처 검사는 auth._guar
   자기평가를 내기 전(SELF)의 초안은 본인 · HR 만 본다 — 그 밖 사람(평가자 · 배정자 · 대표이사 · 본부장)의 줄에서는 ev[] 의 note · selfGrade · files 를 뺀다 (증빙 내려받기도 403).
   people = HR · 대표이사는 전원, 그 밖은 자기가 평가자이거나 배정자인 사람 (본인 줄은 me) · pools = HR · 대표이사는 전부, 그 밖은 자기가 배정자인 묶음만.
   배정자(R6) = 본부 팀원 묶음은 떠 둔 본부장이 활성이면 그 사람, 아니면 대표이사 · 그 밖 묶음은 대표이사. 판단 칸(can)은 _can — 쓰기 길도 같은 함수로 막는다.
-  맡김(R11)이면 HR 이 대표이사 몫을 대신하되 자기 줄과 자기가 든 묶음의 사람은 대신 못 한다 — 점수 · 배정 · 묶음 마감 모두 (can.behalf — 화면의 "대리 입력" 표시).
-  todo = 처리할 일 숫자 (화면 evTodo — eval_todo 로 휴대폰 숫자도 같은 셈). 상태: 해(2026~2100 정수) 400 · FIRST_YEAR 전 해는 offline 참에 빈 명단.
+  맡김(R11)이면 HR 이 대표이사 몫을 대신하되 자기 줄과 자기가 든 묶음의 사람은 대신 못 한다 — 점수 · 배정 · 묶음 마감 · 확인 · 돌려보내기 모두 (can.behalf — 화면의 "대리 입력" 표시).
+  todo = 처리할 일 숫자 (_todo — 화면은 실제 로그인이면 이 숫자를 그대로, 휴대폰 숫자도 eval_todo 로 같은 셈). 상태: 해(2026~2100 정수) 400 · FIRST_YEAR 전 해는 offline 참에 빈 명단.
   증빙: 없는 번호 404 → 볼 권한(can.evidence) 아님 403 → 폴더에 파일이 없음 404. 내려받기는 attachment · nosniff · no-store, 감사로그는 남기지 않는다.
 
 거절 순서 (서버가 늘 같은 순서로 다시 본다. 확인하고 쓰는 일은 한 트랜잭션 — 두 번 눌러도 한 번만 통과):
@@ -50,7 +55,7 @@ app.py 가 bp 를 붙인다. 세션 검사 · 같은 출처 검사는 auth._guar
   연차 초과가 5일 이상이 되면 이미 준 S·A·B 등급을 지운다 (화면 evSetAttendance).
 명단 한 사람 (HR 403 → 본인 403 → 해 400 → 그해 평가 대상 404 → 아래). 본인 평가는 다른 HR 이 처리한다:
   제외: 이미 제외 409 → 평가자가 점수를 냄(SCORE 지남) 409 → 사유 1~100자 400 · 되돌림: 제외가 아님 409 → 그 묶음이 WAIT · FIX 가 아님 409 ·
-  자기평가 없이: 제외됨 409 → SELF 가 아님 409 → KPI 없음 409 (저장한 뒤 떠 둔 평가자에게 알림 — 받는 사람은 자기평가 제출과 같다) ·
+  자기평가 없이: 제외됨 409 → SELF 가 아님 409 → KPI 없음 409 (저장한 뒤 떠 둔 평가자에게 알림 — 받는 사람은 자기평가 제출과 같고 누른 HR 은 빼고) ·
   평가자 바꾸기: SELF · SCORE 가 아님 409 → 본인이 아니고 활성이며 포털을 쓰는(로그인해 점수를 낼 수 있는) 직원이 아님 400.
 자기평가 저장 · 제출 (본인): 해 400 → 그해 평가 대상 아님 404 → 쓸 수 없음 403 (can.self 거짓 — 자기평가 마감일이 지났으면 그 날짜를 알리는 문구, 그 밖은 "지금은 쓸 수 없습니다") →
   저장은 모양 400 (목록 · 없는 실행목표 · 같은 줄 두 번 · 실적 500자 · 쓸 수 없는 글자 · 등급 SABCD 또는 null, 실적은 앞뒤 공백을 떼고 센다 · 뗀 글을 저장, 하나라도 틀리면 아무것도 저장 안 함) /
@@ -75,8 +80,20 @@ app.py 가 bp 를 붙인다. 세션 검사 · 같은 출처 검사는 auth._guar
   이미 넘어감 409 → 전원 검사(check_pool full — 등급 누락 · 정원 · 점수 기준 · 연차) 오류 409 {"error": 첫 오류, "errors"}. 모두 CEO · closed_at/by · 돌려보낸 기록(back_*) 비움 · hr_seen [] ·
   EVAL_POOL_CLOSED (HR 이 대신이면 on_behalf_of). 알림: 대표이사(맡겼으면 빼고) + HR 전원 — 마감한 사람 본인은 빼고.
 마감 확인: HR 403 → 해 400 → 묶음 없음 404 → hr_seen 에 나를 더함 (이미 있으면 그대로).
+묶음 확인 · 돌려보내기 · 확정 · 되돌리기 (마감과 같은 모양 — _pools_ok): 해 400 → 열쇠 모양 400 (확인 · 확정은 글자 열쇠 하나 이상의 목록 · 같은 열쇠는 한 번) → 없는 묶음 404 →
+  권한(_pool_auth — 상태 · 공개는 빼고) 403 → 공개 뒤 409 → 묶음 상태(POOL_NEED — 확인 · 돌려보내기 CEO · 확정 HR · 되돌리기 HR · DONE)가 아님 409
+  (이미 넘어갔으면 "이미 …했습니다", 아직이면 그 까닭 · 등급을 맞춰야 하면(FIX) errors 도). 문구에 어느 묶음인지. 목록은 하나라도 걸리면 아무것도 안 바뀐다 — 두 창의 두 번째는 409.
+  권한: 확인 · 돌려보내기(본부 팀원 묶음만) = 활성 대표이사, 또는 맡김이고 그 묶음에 들지 않은(제외된 줄 포함) HR / 확정 · 되돌리기 = HR (HR 본인 일 — 자기가 든 묶음도 된다).
+  확인: 모두 HR · ceo_at/by · ceo_behalf(HR 이 대신이면 대표이사) · EVAL_POOL_CONFIRMED 묶음마다. 알림: HR 전원 — 누른 사람은 빼고.
+  돌려보내기: → 이유 1~200자 400 (_chars · 앞뒤 공백을 떼고 셈). 모두 GRADE · back_at/by/behalf/reason · 마감 기록(closed_at/by) 비움 (다시 마감하면 back_* 가 지워진다) ·
+    EVAL_POOL_RETURNED (이유 없음). 알림: 배정자(_turn_to — 대표이사이고 맡겼으면 HR 전원) — 누른 사람은 빼고.
+  확정: 모두 DONE · EVAL_POOL_FINALIZED 묶음마다 · 알림 없음. 되돌리기: DONE → HR (undo_from HR) / HR → ready_stage(직속 GRADE · 그 밖 CEO) · ceo_* 비움 (undo_from CEO) ·
+    undo_at/by/from · EVAL_POOL_UNDONE {from} · 알림 없음.
+결과 공개: HR 403 → 해 400 → FIRST_YEAR 403 → 시작 안 함 409 → 이미 공개 409 → 제외 안 된 사람 중 DONE 이 아닌 사람 409 → released_at/by · EVAL_RELEASED {count = 제외 안 된 대상 수}.
+  알림(eval_open): 제외 안 된 대상 전원 — 공개한 HR 도 대상이면 받는다 (남의 일을 한 사람이 아니라 자기 결과를 받는 사람). 공개 뒤에는 level 이 full 이라 _row_json 이 전부 보인다.
 감사로그(R10): EVAL_ROUND_SET · EVAL_STARTED · EVAL_ATT_DONE · EVAL_ATTENDANCE(저장한 사람이 있을 때만) · EVAL_EXCLUDED · EVAL_INCLUDED · EVAL_SKIP_SELF · EVAL_RATER_SET · EVAL_SELF_SUBMITTED ·
-  EVAL_SCORED · EVAL_POOL_CLOSED — after_data 는 해 · 사람 수 · 평가자 번호 · 묶음 열쇠뿐. 사유 · 근태 숫자 · 등급 · 점수 · 글은 넣지 않는다 (공개 전 등급이 감사로그로 새지 않게).
+  EVAL_SCORED · EVAL_POOL_CLOSED · EVAL_POOL_CONFIRMED · EVAL_POOL_RETURNED · EVAL_POOL_FINALIZED · EVAL_POOL_UNDONE · EVAL_RELEASED — after_data 는 해 · 사람 수 · 평가자 번호 · 묶음 열쇠 ·
+  되돌린 단계(from)뿐. 사유 · 근태 숫자 · 등급 · 점수 · 글은 넣지 않는다 (공개 전 등급이 감사로그로 새지 않게).
 """
 
 from __future__ import annotations
@@ -100,7 +117,7 @@ import kpi
 import push
 from hr_eval.domain.access import Target
 from hr_eval.domain.eval_rules import (APPEAL_DAYS, BANDS, BONUS_MAX_X2, FILE_MAX, FILES_PER_ITEM, GRADES, LEAVE_LIMIT_X2, TEXT_MAX, Member, _band_text, above,
-                                       after_score, assign_stage, at, cap, check_pool, edited, level, pool_key, pool_state, total)
+                                       after_score, assign_stage, at, cap, check_pool, edited, level, pool_key, pool_state, ready_stage, total)
 from hr_eval.domain.models import Actor, AuditEntry, Role
 from hr_eval.domain.org import led_dept, manager_of, target_of
 from hr_eval.domain.quota import QuotaMode, calculate_department_quota
@@ -522,7 +539,7 @@ def skip_self(uid: int) -> Response:
                      (auth._iso(auth._now()), g.actor.user_id, year, uid))
         _log(conn, "EVAL_SKIP_SELF", "ev_target", uid, year=year)
         to = _turn_to(_ctx(conn, year), uid, rater)  # 자기평가 제출과 같다 — 대표이사가 평가자이고 맡겼으면 그 사람 뺀 HR 전원
-    push.notify(to, "eval_turn")  # 저장한 뒤 (평가자가 없으면 아무도)
+    push.notify([u for u in to if u != g.actor.user_id], "eval_turn")  # 저장한 뒤 (평가자가 없으면 아무도) — 누른 HR 본인에게는 보내지 않는다
     return jsonify(ok=True)
 
 
@@ -646,14 +663,29 @@ def _turn_to(ctx: _Ctx, uid: int, who: int | None) -> list[int | None]:
     return [h for h in push.hr_admins(ctx.conn) if h != uid] if _is_ceo(ctx, who) and ctx.deleg else [who]
 
 
+def _pool_auth(ctx: _Ctx, me: Actor, key: str) -> dict[str, bool]:
+    """묶음 단추를 누를 사람인가 — 권한만 (공개 · 묶음 상태는 _pool_can 이 더한다. 쓰기 길의 403 은 이것으로).
+    close 마감 = 본부 팀원 묶음 · 배정자가 나, 또는 배정자가 대표이사이고 그 묶음에 들지 않은 맡은 HR /
+    confirm 확인 · back 돌려보내기(본부 팀원 묶음만) = 활성 대표이사, 또는 그 묶음에 들지 않은 맡은 HR (_behalf_ok — 제외된 줄도 든 것으로 본다) /
+    finalize 확정 · undo 되돌리기 = HR (HR 본인 일이라 자기가 든 묶음도 된다)."""
+    who, div = _pool_who(ctx, key), key.startswith("DIV:")
+    ceo = _is_ceo(ctx, me.user_id) or _behalf_ok(ctx, me, key)
+    return {"close": div and (who == me.user_id or (_is_ceo(ctx, who) and _behalf_ok(ctx, me, key))),
+            "confirm": ceo, "back": div and ceo, "finalize": me.is_hr, "undo": me.is_hr}
+
+
+POOL_NEED = {"confirm": ("CEO",), "back": ("CEO",), "finalize": ("HR",), "undo": ("HR", "DONE")}  # 단추마다 있어야 할 묶음 상태 (마감은 쓰기 길이 단계 · 정원을 따로 본다)
+
+
 def _pool_can(ctx: _Ctx, me: Actor, key: str) -> dict[str, bool]:
-    """묶음 단추 — 권한만 본다 (단계 · 정원은 state · errors 로 화면이 막고 쓰기 길이 409 로 다시 본다).
-    close 마감 = 본부 팀원 묶음 · 공개 전 · 배정자가 나, 또는 배정자가 대표이사이고 그 묶음에 들지 않은 맡은 HR.
-    confirm · back · finalize · undo 는 평가 3단계 ②가 채운다 (지금은 늘 거짓)."""
-    who = _pool_who(ctx, key)
-    close = (key.startswith("DIV:") and not ctx.round["released"]
-             and (who == me.user_id or (_is_ceo(ctx, who) and _behalf_ok(ctx, me, key))))
-    return {"close": close, "confirm": False, "back": False, "finalize": False, "undo": False}
+    """묶음 단추 (화면 can) = 권한(_pool_auth) · 공개 전 · 그 단추의 묶음 상태(POOL_NEED). 마감은 상태를 보지 않는다 — 단계 · 정원은 state · errors 로 화면이 막고 쓰기 길이 409 로 다시 본다."""
+    state, on = _pool(ctx, key)[0], not ctx.round["released"]
+    return {k: v and on and (k == "close" or state in POOL_NEED[k]) for k, v in _pool_auth(ctx, me, key).items()}
+
+
+def _pool_label(ctx: _Ctx, key: str) -> str:
+    """묶음 이름 ("<본부 이름> 팀원" · "전사 팀장" · "직속부서 팀원") — 묶음 줄이 있으면 떠 둔 사람도 있다 (제외된 줄 포함)."""
+    return _pool_name(key, next(r["div_name"] for r in ctx.rows.values() if r["pool"] == key))
 
 
 def _pool_json(ctx: _Ctx, me: Actor, key: str) -> dict:
@@ -664,7 +696,7 @@ def _pool_json(ctx: _Ctx, me: Actor, key: str) -> dict:
     def act(when: str, by: str) -> dict | None:
         return {"at": p[when], "by": _who(ctx, p[by])} if p[when] else None
 
-    return {"key": key, "name": _pool_name(key, next(r["div_name"] for r in ctx.rows.values() if r["pool"] == key)), "size": len(rows), "state": state,
+    return {"key": key, "name": _pool_label(ctx, key), "size": len(rows), "state": state,
             "counts": counts, "errors": errors, "warnings": warnings,
             "quota": (f"S 최대 {q.cap_s}명 · A {q.a}명 (S만큼 줄어듦) · B {q.b}명 · D {q.d}명 · C 나머지" if q.mode is QuotaMode.INDIVIDUAL
                       else f"S 최대 {q.cap_s}명 · A·B 합계 {q.upper}명 (S만큼 줄어듦) · C·D 나머지"),  # 화면 evGradeTable 의 정원 글자
@@ -675,26 +707,36 @@ def _pool_json(ctx: _Ctx, me: Actor, key: str) -> dict:
 
 
 def _todo(ctx: _Ctx, me: Actor) -> dict[str, int]:
-    """처리할 일 숫자 (화면 evTodo 와 같은 셈 — 시작 전 · 공개 뒤 0. 제외된 사람은 세지 않는다).
-    me = 낼 자기평가 + 점수 낼 사람(대신 아님) + 고친 것을 아직 확인 안 한 사람 + 배정할 본부 팀원 묶음(배정 단계 사람이 있는) + 대표이사로서 확인할 묶음(CEO · FIX) /
-    admin(HR 만) = 확정할 묶음(HR) + 확인 안 한 마감 알림 + 근태 안 마침 1 + 맡김이면 대표이사 몫(확인할 묶음 + 대표이사가 평가자인 점수 단계 사람 중 내가 대신할 수 있는 사람)."""
+    """처리할 일 숫자 — 한 곳: 화면은 실제 로그인이면 이 숫자를 그대로 보이고(EV_LIVE.todo), 휴대폰 숫자(push.pending 의 e2)도 eval_todo 로 이것을 더한다.
+    시작 전 · 공개 뒤 0. 제외된 사람은 세지 않는다. 묶음은 한 번만 센다 — 상태 CEO · FIX 면 '확인할 묶음': 대표이사 me, 맡김이면 그 묶음에 들지 않은 HR admin /
+    그 밖에 배정 단계(assign_stage) 사람이 있으면 '배정할 묶음': 배정자(_pool_who — 본부장, 본부장 없는 본부 · 직속 · 전사 팀장은 대표이사) me,
+    배정자가 대표이사이고 맡김이면 그 묶음에 들지 않은 HR admin.
+    me = 낼 자기평가 + 점수 낼 사람(대신 아님) + 고친 것을 아직 확인 안 한 사람 + 묶음(위) /
+    admin(HR 만) = 묶음(위) + 확정할 묶음(HR) + 확인 안 한 마감 알림 + 근태 안 마침 1 + 대표이사가 평가자인 점수 단계 사람 중 내가 대신할 수 있는 사람(맡김)."""
     rnd = ctx.round
     if not rnd or not rnd["started"] or rnd["released"]:
         return {"me": 0, "admin": 0}
     live = [r for r in ctx.rows.values() if r["out_at"] is None]
     state = {k: _pool(ctx, k)[0] for k in ctx.pools}
-    n = lambda *st: sum(s in st for s in state.values())  # noqa: E731
     mine = ctx.rows.get(me.user_id)
     todo_me = (int(mine is not None and _can(ctx, me, mine)["self"])
                + sum(r["stage"] == "SCORE" and r["rater_id"] == me.user_id for r in live)
-               + sum(r["rater_id"] == me.user_id and bool(ed := _edited(ctx, r)) and r["edit_seen"] != ed for r in live)
-               + sum(k.startswith("DIV:") and _pool_who(ctx, k) == me.user_id and any(r["pool"] == k and r["stage"] == assign_stage(k) for r in live) for k in ctx.pools)
-               + (n("CEO", "FIX") if _is_ceo(ctx, me.user_id) else 0))
+               + sum(r["rater_id"] == me.user_id and bool(ed := _edited(ctx, r)) and r["edit_seen"] != ed for r in live))
     admin = 0
+    for k, s in state.items():
+        if s in ("CEO", "FIX"):
+            who = ctx.ceo
+        elif any(r["pool"] == k and r["stage"] == assign_stage(k) for r in live):
+            who = _pool_who(ctx, k)
+        else:
+            continue
+        todo_me += who == me.user_id
+        admin += _is_ceo(ctx, who) and _behalf_ok(ctx, me, k)  # _behalf_ok = 맡김 · HR · 그 묶음에 들지 않음
     if me.is_hr:
-        admin = (n("HR") + sum(p["closed_at"] is not None and me.user_id not in json.loads(p["hr_seen"]) and state[k] == "CEO" for k, p in ctx.pools.items())
-                 + (0 if rnd["attDone"] else 1)
-                 + ((n("CEO", "FIX") + sum(r["stage"] == "SCORE" and _is_ceo(ctx, r["rater_id"]) and _behalf_ok(ctx, me, r["pool"]) for r in live)) if ctx.deleg else 0))
+        admin += (sum(s == "HR" for s in state.values())
+                  + sum(p["closed_at"] is not None and me.user_id not in json.loads(p["hr_seen"]) and state[k] == "CEO" for k, p in ctx.pools.items())
+                  + (0 if rnd["attDone"] else 1)
+                  + sum(r["stage"] == "SCORE" and _is_ceo(ctx, r["rater_id"]) and _behalf_ok(ctx, me, r["pool"]) for r in live))
     return {"me": todo_me, "admin": admin}
 
 
@@ -1062,7 +1104,7 @@ def pool_close() -> Response:
         ctx = _ctx(conn, year)
         if key not in ctx.pools:
             raise _Refuse("묶음을 찾을 수 없습니다.", 404)
-        if not _pool_can(ctx._replace(round={**ctx.round, "released": None}), g.actor, key)["close"]:  # 권한만 본다 — 공개는 다음 줄이 409 로 따로 알린다
+        if not _pool_auth(ctx, g.actor, key)["close"]:  # 권한만 본다 — 공개는 아래에서 409 로 따로 알린다
             raise _Refuse("이 묶음을 마감할 권한이 없습니다.", 403)
         _, errors, _, _, rows = _pool(ctx, key)
         if not rows:  # 모두 제외됐다 — 마감할 등급이 없다
@@ -1098,4 +1140,144 @@ def pool_seen() -> Response:
             raise _Refuse("묶음을 찾을 수 없습니다.", 404)
         if me not in (seen := json.loads(r[0])):
             conn.execute("UPDATE ev_pools SET hr_seen = ? WHERE year = ? AND pool = ?", (json.dumps([*seen, me]), year, key))
+    return jsonify(ok=True)
+
+
+# ---------------- 묶음 (대표이사 확인 · 돌려보내기 · HR 확정 · 되돌리기) ----------------
+POOL_VERB = {"confirm": "확인할", "back": "돌려보낼", "finalize": "확정할", "undo": "되돌릴"}
+
+
+def _keys(v: object) -> list[str]:
+    """묶음 열쇠 목록 — 글자 열쇠 하나 이상 (같은 열쇠는 한 번, 보낸 차례). 아니면 400. 한 묶음 길은 [열쇠] 로 부른다."""
+    if not (isinstance(v, list) and v and all(isinstance(k, str) for k in v)):
+        raise _Refuse("묶음을 골라 주세요.", 400)
+    return list(dict.fromkeys(v))
+
+
+def _not_now(ctx: _Ctx, key: str, act: str, state: str) -> str:
+    """상태가 맞지 않을 때의 까닭 — 이미 넘어갔으면 "이미 …", 아직이면 무엇을 기다리는지."""
+    if act == "finalize":
+        return "이미 확정했습니다." if state == "DONE" else "아직 대표이사 확인 전입니다."
+    if act == "undo":
+        return "되돌릴 수 있는 단계가 아닙니다."
+    if state in ("HR", "DONE"):
+        return "이미 확인했습니다."
+    if state == "FIX":
+        return "등급을 다시 맞춰야 합니다."
+    if act == "back" and ctx.pools[key]["back_at"]:  # 돌려보낸 뒤 아직 다시 마감하지 않았다 (마감하면 back_* 를 지운다)
+        return "이미 돌려보냈습니다."
+    return "아직 확인할 차례가 아닙니다." if act == "confirm" else "아직 마감 전입니다."
+
+
+def _pools_ok(ctx: _Ctx, keys: list[str], act: str) -> dict[str, str]:
+    """묶음 단추 길의 거절 (묶음 마감과 같은 모양 — 모듈 머리말): 없는 묶음 404 → 권한(_pool_auth) 403 → 공개 뒤 409 → 상태(POOL_NEED) 409.
+    목록은 하나라도 걸리면 거절한다 — 쓰기 전에 모두 보므로 아무것도 안 바뀐다. 돌려주는 것 = 열쇠 → 지금 상태."""
+    if any(k not in ctx.pools for k in keys):
+        raise _Refuse("묶음을 찾을 수 없습니다.", 404)
+    if bad := next((k for k in keys if not _pool_auth(ctx, g.actor, k)[act]), None):
+        raise _Refuse(f"{_pool_label(ctx, bad)} 묶음을 {POOL_VERB[act]} 권한이 없습니다.", 403)
+    if ctx.round["released"]:
+        raise _Refuse("결과를 공개한 평가는 바꿀 수 없습니다.", 409)
+    states = {}
+    for k in keys:
+        state, errors, *_ = _pool(ctx, k)
+        if state not in POOL_NEED[act]:
+            raise _Refuse(f"{_pool_label(ctx, k)} 묶음은 {_not_now(ctx, k, act, state)}", 409, **({"errors": errors} if state == "FIX" else {}))
+        states[k] = state
+    return states
+
+
+def _move(conn: sqlite3.Connection, year: int, key: str, stage: str) -> None:
+    """묶음의 제외 안 된 사람 모두를 그 단계로."""
+    conn.execute("UPDATE ev_targets SET stage = ? WHERE year = ? AND pool = ? AND out_at IS NULL", (stage, year, key))
+
+
+@bp.post("/api/eval/pools/confirm")
+def pool_confirm() -> Response:
+    b = _body()
+    year, keys = _year(b.get("year")), _keys(b.get("pools"))
+    conn = auth._db()
+    with _txn(conn):
+        ctx = _ctx(conn, year)
+        _pools_ok(ctx, keys, "confirm")
+        me, now = g.actor.user_id, auth._iso(auth._now())
+        behalf = None if _is_ceo(ctx, me) else ctx.ceo  # HR 이 대신이면 대표이사 (on_behalf_of)
+        for k in keys:
+            _move(conn, year, k, "HR")
+            conn.execute("UPDATE ev_pools SET ceo_at = ?, ceo_by = ?, ceo_behalf = ? WHERE year = ? AND pool = ?", (now, me, behalf, year, k))
+            _log(conn, "EVAL_POOL_CONFIRMED", "ev_pool", year, behalf=behalf, year=year, pool=k)
+        to = push.hr_admins(conn)
+    push.notify([u for u in to if u != me], "eval_turn")  # 저장(COMMIT)한 뒤 — 확정할 HR 전원에게 (묶음이 여럿이어도 한 사람에 한 통), 누른 사람은 빼고
+    return jsonify(ok=True, done=keys)
+
+
+@bp.post("/api/eval/pools/back")
+def pool_back() -> Response:
+    b = _body()
+    year, (key,) = _year(b.get("year")), _keys([b.get("pool")])
+    conn = auth._db()
+    with _txn(conn):
+        ctx = _ctx(conn, year)
+        _pools_ok(ctx, [key], "back")
+        v = b.get("reason")
+        why = _chars(v.strip() if isinstance(v, str) else "", "돌려보내는 이유")
+        if not 0 < len(why) <= TEXT_MAX["back"]:
+            raise _Refuse(f"돌려보내는 이유를 1~{TEXT_MAX['back']}자로 써 주세요.", 400)
+        me = g.actor.user_id
+        behalf = None if _is_ceo(ctx, me) else ctx.ceo
+        _move(conn, year, key, "GRADE")
+        conn.execute("UPDATE ev_pools SET back_at = ?, back_by = ?, back_behalf = ?, back_reason = ?, closed_at = NULL, closed_by = NULL WHERE year = ? AND pool = ?",
+                     (auth._iso(auth._now()), me, behalf, why, year, key))
+        _log(conn, "EVAL_POOL_RETURNED", "ev_pool", year, behalf=behalf, year=year, pool=key)  # 이유는 남기지 않는다 (글)
+        to = _turn_to(ctx, me, _pool_who(ctx, key))  # 다시 배정할 사람 — 대표이사이고 맡겼으면 HR 전원
+    push.notify([u for u in to if u != me], "eval_turn")  # 저장(COMMIT)한 뒤 — 누른 사람 본인에게는 보내지 않는다
+    return jsonify(ok=True)
+
+
+@bp.post("/api/eval/pools/finalize")
+def pool_finalize() -> Response:
+    b = _body()
+    year, keys = _year(b.get("year")), _keys(b.get("pools"))
+    conn = auth._db()
+    with _txn(conn):
+        ctx = _ctx(conn, year)
+        _pools_ok(ctx, keys, "finalize")
+        for k in keys:
+            _move(conn, year, k, "DONE")
+            _log(conn, "EVAL_POOL_FINALIZED", "ev_pool", year, year=year, pool=k)
+    return jsonify(ok=True, done=keys)
+
+
+@bp.post("/api/eval/pools/undo")
+def pool_undo() -> Response:
+    b = _body()
+    year, (key,) = _year(b.get("year")), _keys([b.get("pool")])
+    conn = auth._db()
+    with _txn(conn):
+        ctx = _ctx(conn, year)
+        done = _pools_ok(ctx, [key], "undo")[key] == "DONE"
+        _move(conn, year, key, "HR" if done else ready_stage(key))  # HR 확정을 되돌림 / 대표이사 확인을 되돌림 (직속은 GRADE — 대표이사가 정하면서 확인한다)
+        clear = "" if done else ", ceo_at = NULL, ceo_by = NULL, ceo_behalf = NULL"
+        src = "HR" if done else "CEO"
+        conn.execute(f"UPDATE ev_pools SET undo_at = ?, undo_by = ?, undo_from = ?{clear} WHERE year = ? AND pool = ?",
+                     (auth._iso(auth._now()), g.actor.user_id, src, year, key))
+        _log(conn, "EVAL_POOL_UNDONE", "ev_pool", year, year=year, pool=key, **{"from": src})
+    return jsonify(ok=True)
+
+
+# ---------------- 결과 공개 ----------------
+@bp.post("/api/eval/admin/release")
+def release() -> Response:
+    if (denied := auth._hr_only()) is not None:
+        return denied
+    year = _portal_year(_body().get("year"))
+    conn = auth._db()
+    with _txn(conn):
+        _open(conn, year)  # 시작 안 함 409 → 이미 공개 409
+        rows = conn.execute("SELECT user_id, stage FROM ev_targets WHERE year = ? AND out_at IS NULL", (year,)).fetchall()
+        if any(s != "DONE" for _, s in rows):
+            raise _Refuse("아직 확정되지 않은 분이 있습니다.", 409)
+        conn.execute("UPDATE ev_rounds SET released_at = ?, released_by = ? WHERE year = ?", (auth._iso(auth._now()), g.actor.user_id, year))
+        _log(conn, "EVAL_RELEASED", "ev_round", year, year=year, count=len(rows))
+    push.notify([u for u, _ in rows], "eval_open")  # 저장(COMMIT)한 뒤 — 제외 안 된 대상 전원 (공개한 HR 도 대상이면 자기 결과를 받는다)
     return jsonify(ok=True)

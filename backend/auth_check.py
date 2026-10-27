@@ -6484,8 +6484,8 @@ def check_eval_view(hr) -> None:
         cx = evaluation._ctx(db, Y)
         ok(evaluation._pool_can(cx, Actor(EMPC, None, True), "DIV:94")["close"] is False and evaluation._pool_can(cx, Actor(HRA, None, True), "DIV:94")["close"] is True
            and evaluation._pool_can(cx, Actor(HRA, None, True), "LEADERS")["close"] is False, "_pool_can: 그 묶음에 든 HR 은 맡겨도 마감 못 함 · 본부 팀원 묶음만 마감")
-        ok(st(HRA)["todo"] == {"me": 0, "admin": 1} and st(CEO)["todo"] == {"me": 1, "admin": 0},
-           "할_일_숫자: 맡김 → HR admin 에 대표이사가 평가자인 점수 단계 사람 1 · 대표이사 me 에도 1")
+        ok(st(HRA)["todo"] == {"me": 0, "admin": 2} and st(CEO)["todo"] == {"me": 2, "admin": 0},
+           "할_일_숫자: 맡김 → HR admin 에 대표이사가 평가자인 점수 단계 사람 1 + 대표이사가 배정할 묶음 1 (전사 팀장 — 대표이사 확인 단계 팀장이 있음) · 대표이사 me 에도 2")
         x("DELETE FROM ceo_delegation WHERE ceo_user_id = ?", CEO)
         put(LEADC, stage="SELF")
         put(HR, stage="SELF")
@@ -6936,8 +6936,8 @@ def check_eval_self(hr) -> None:
         ok(hit(sub(LEADC), 200, {"ok": True}) and took() == [(HRA, *TURN), (HRL, *TURN), (HR, *TURN)], "제출 알림: 맡겼으면 HR 아닌 사람의 제출은 HR 전원에게")
         skip = lambda uid: post(HRA, f"/api/eval/admin/{uid}/skip-self", {"year": Y})  # noqa: E731
         put(HRL, stage="SELF", self_at=None)
-        ok(hit(skip(HRL), 200, {"ok": True}) and took() == [(HRA, *TURN), (HR, *TURN)],
-           "자기평가 없이 진행 알림: 받는 사람은 제출과 같다 — 평가자가 대표이사이고 맡겼으면 HR 전원 (평가받는 HR 팀장 본인은 빼고, 대표이사에게는 안 감)")
+        ok(hit(skip(HRL), 200, {"ok": True}) and took() == [(HR, *TURN)],
+           "자기평가 없이 진행 알림: 받는 사람은 제출과 같다 — 평가자가 대표이사이고 맡겼으면 HR 전원 (평가받는 HR 팀장 본인 · 누른 HR 은 빼고, 대표이사에게는 안 감)")
         x("DELETE FROM ceo_delegation WHERE ceo_user_id = ?", CEO)
         ok(hit(skip(EXEC), 200, {"ok": True}) and took() == [(CEO, *TURN)], "자기평가 없이 진행 알림: 맡기지 않았으면 평가자(대표이사)에게만")
         ok(len(audits("EVAL_SELF_SUBMITTED")) == 6, "(자기평가 제출 감사로그: 제출마다 한 줄)")
@@ -7409,6 +7409,305 @@ def check_eval_score(hr) -> None:
         x("UPDATE ev_items SET note = '', self_grade = NULL, grade = NULL WHERE year = ?", Y)
         x(POOLS_RESET, Y)
         x("UPDATE ev_rounds SET released_at = NULL WHERE year = ?", Y)
+        x("UPDATE users SET is_active = 0, deactivated_at = '2027-01-01T00:00:00Z' WHERE id = ?", CEO)
+        for uid in other_ceos:
+            x("UPDATE users SET is_active = 1, deactivated_at = NULL WHERE id = ?", uid)
+
+def check_eval_close(hr) -> None:
+    """인사평가 대표이사 확인 · 돌려보내기 · HR 확정 · 되돌리기 · 결과 공개 (2026-10-27, 평가 3단계 ②): 대표이사(맡겼으면 그 묶음에 들지 않은 HR)가 묶음째로 확인해 HR 확정으로 넘기고,
+    본부 팀원 묶음은 이유를 적어 배정자(본부장)에게 돌려보낸다. HR 이 확정하고(자기가 든 묶음도 — HR 본인 일), 공개 전에는 한 단계씩 되돌린다. 모두 확정되면 공개 — 제외 안 된 대상에게 알림 · 그 뒤 등급이 보인다.
+    목록 요청은 하나라도 걸리면 아무것도 안 바뀌고, 두 번 누르면 두 번째는 409 (감사로그 · 알림 한 번). 감사로그에는 해 · 묶음 열쇠 · 되돌린 단계 · 사람 수뿐 (돌려보낸 이유 · 등급 없음).
+    check_eval_score 가 되돌려 둔 회차와 가상 조직(부서 91~97 · 사람 101~116)을 쓴다 — 묶음을 대표이사 확인 직전으로 바로 넣고(마감 길은 check_eval_score 가 본다) 그 뒤는 실제 길로 간다.
+    끝에 시계 · 알림 · 대표이사 · 맡김 · 근태 마침 · 묶음 기록 · 단계 · 등급 · 공개를 되돌린다."""
+    import evaluation
+    import push
+    print("인사평가 대표이사 확인 · 돌려보내기 · HR 확정 · 되돌리기 · 결과 공개")
+    HEAD, LEAD, EMP, FIELD, EMPB, DIVD, LEADC, EMPC, HRL, HR, EXEC, CEO = range(101, 113)
+    NOCONF, HRA = 115, 1  # HRA = 평가 대상이 아닌 HR (처음 검사의 인사담당자)
+    D1, D2, LD, DR = "DIV:91", "DIV:94", "LEADERS", "DIRECT"  # 본부 팀원(본부장 있음) · 본부 팀원(본부장 없음 — 배정자 대표이사) · 전사 팀장 · 직속부서 팀원
+    Y, real_now, real_send, real_sync = evaluation.FIRST_YEAR, auth._now, push.SEND, push.SYNC
+    z = lambda m, d, hh=3: f"{Y}-{m:02d}-{d:02d}T{hh:02d}:00:00Z"  # noqa: E731
+    jar: dict[int, object] = {}
+
+    def c(uid):
+        if uid not in jar:
+            jar[uid] = app.test_client()
+            login(jar[uid], new_token(f"HW-{uid}"))
+        return jar[uid]
+
+    get = lambda who, path: c(who).get(path, base_url=BASE)  # noqa: E731
+    post = lambda who, path, body: c(who).post(path, base_url=BASE, headers=ORIGIN, json=body)  # noqa: E731
+    hit = lambda r, code, body: r.status_code == code and r.json == body  # noqa: E731
+    st = lambda who: get(who, "/api/eval/state").json  # noqa: E731
+    row_of = lambda s, uid: next((p for p in s["people"] if p["pid"] == uid), None)  # noqa: E731
+    pool_of = lambda who, k: next(p for p in st(who)["pools"] if p["key"] == k)  # noqa: E731
+    cans = lambda who, what: {p["key"]: p["can"][what] for p in st(who)["pools"]}  # noqa: E731
+    act = lambda who, what, **body: post(who, f"/api/eval/pools/{what}", {"year": Y, **body})  # noqa: E731
+    release = lambda who, **over: post(who, "/api/eval/admin/release", {"year": Y, **over})  # noqa: E731
+    put = lambda uid, **cols: x(f"UPDATE ev_targets SET {', '.join(f'{k} = ?' for k in cols)} WHERE year = ? AND user_id = ?", *cols.values(), Y, uid)  # noqa: E731
+    stages = lambda k: [s for (s,) in q("SELECT stage FROM ev_targets WHERE year = ? AND pool = ? AND out_at IS NULL ORDER BY user_id", Y, k)]  # noqa: E731
+    prow = lambda k: q("SELECT closed_at, closed_by, ceo_at, ceo_by, ceo_behalf, back_at, back_by, back_behalf, back_reason, undo_at, undo_by, undo_from"  # noqa: E731
+                       " FROM ev_pools WHERE year = ? AND pool = ?", Y, k)[0]
+    audits = lambda action: [(e, json.loads(a)) for e, a in q("SELECT entity_id, after_data FROM audit_logs WHERE action = ? ORDER BY id", action)]  # noqa: E731
+    by = lambda action: q("SELECT actor_user_id, on_behalf_of FROM audit_logs WHERE action = ? ORDER BY id", action)  # noqa: E731
+
+    def setg(uid, *grades):  # 실행목표 등급을 rid 차례로 바로 넣는다
+        for (rid,), v in zip(q("SELECT rid FROM ev_items WHERE year = ? AND user_id = ? ORDER BY rid", Y, uid), grades):
+            x("UPDATE ev_items SET grade = ? WHERE year = ? AND user_id = ? AND rid = ?", v, Y, uid, rid)
+
+    def ready(k, stage):  # 묶음 사람(제외 안 된)을 그 단계로 — 실행목표 B · B · B (90.0점) · 낸 등급 = 등급 C (정원 · 점수 기준에 맞음)
+        for (uid,) in q("SELECT user_id FROM ev_targets WHERE year = ? AND pool = ? AND out_at IS NULL", Y, k):
+            setg(uid, "B", "B", "B")
+            put(uid, stage=stage, proposed="C", grade="C")
+
+    sent: list[tuple[int, str, str]] = []
+    texts: list[str] = []
+    owner: dict[str, int] = {}
+
+    def fake_send(info, payload, ks, ttl):  # 보낸 것을 적어 둔다 (받은 사람 · 제목 · 열 화면) — 글은 따로 모아 등급 · 이름이 없는지 본다
+        sent.append((owner[info["endpoint"]], payload["title"], payload["url"]))
+        texts.append(f"{payload['title']} {payload['body']}")
+        return 201
+
+    def took():
+        out = sorted(sent)
+        sent.clear()
+        return out
+
+    TURN, OPEN = ("인사평가에서 처리할 일이 있어요", "/?go=perf.e2"), ("인사평가 결과가 공개됐어요", "/?go=perf.e3")
+    OK = {"ok": True}
+    BAD_YEAR, HR_ONLY, RELEASED = {"error": "해가 올바르지 않습니다."}, {"error": "HR만 할 수 있습니다."}, {"error": "결과를 공개한 평가는 바꿀 수 없습니다."}
+    PICK, NO_POOL, NOT_DONE = {"error": "묶음을 골라 주세요."}, {"error": "묶음을 찾을 수 없습니다."}, {"error": "아직 확정되지 않은 분이 있습니다."}
+    WHY, WHY_CHAR = {"error": "돌려보내는 이유를 1~200자로 써 주세요."}, {"error": "돌려보내는 이유에 쓸 수 없는 글자가 있습니다."}
+    no = lambda name, verb: {"error": f"{name} 묶음을 {verb} 권한이 없습니다."}  # noqa: E731
+    is_ = lambda name, why: {"error": f"{name} 묶음은 {why}"}  # noqa: E731
+    N1, N2, NL, ND = "가상E본부 팀원", "가상E본부2 팀원", "전사 팀장", "직속부서 팀원"
+    RESET = ("UPDATE ev_targets SET stage = CASE WHEN kpi_version IS NULL THEN 'SCORE' ELSE 'SELF' END, proposed = NULL, grade = NULL, sub_score_x10 = NULL,"
+             " sub_marks = NULL, scored_at = NULL, scored_by = NULL, comment = '', head_comment = '', bonus_x2 = 0, bonus_reason = '', proxy_by = NULL, edit_seen = NULL,"
+             " late = 0, leave_x2 = 0, out_at = NULL, out_reason = NULL, out_by = NULL, no_self_at = NULL, no_self_by = NULL, self_at = NULL WHERE year = ?")
+    POOLS_RESET = ("UPDATE ev_pools SET closed_at = NULL, closed_by = NULL, hr_seen = '[]', ceo_at = NULL, ceo_by = NULL, ceo_behalf = NULL, back_at = NULL, back_by = NULL,"
+                   " back_behalf = NULL, back_reason = NULL, undo_at = NULL, undo_by = NULL, undo_from = NULL WHERE year = ?")
+
+    other_ceos = [r[0] for r in q("SELECT u.id FROM users u JOIN user_roles r ON r.user_id = u.id WHERE r.role = 'CEO' AND u.is_active = 1 AND u.id <> ?", CEO)]
+    att0 = q("SELECT att_done_at FROM ev_rounds WHERE year = ?", Y)[0][0]
+    env = {k: os.environ.get(k) for k in ("HR_PUSH_PUBLIC", "HR_PUSH_PRIVATE")}
+    hashes: list[str] = []
+    try:
+        for uid in other_ceos:  # 이 가상 조직의 대표이사는 check_eval_admin 이 만든 한 명뿐이게
+            x("UPDATE users SET is_active = 0, deactivated_at = '2027-01-01T00:00:00Z' WHERE id = ?", uid)
+        x("UPDATE users SET is_active = 1, deactivated_at = NULL WHERE id = ?", CEO)
+        x(RESET, Y)
+        x("UPDATE ev_items SET note = '', self_grade = NULL, grade = NULL WHERE year = ?", Y)
+        x(POOLS_RESET, Y)
+        x("UPDATE ev_rounds SET released_at = NULL, released_by = NULL, att_done_at = ? WHERE year = ?", z(12, 2), Y)
+        pub, priv = push.keygen()
+        os.environ.update(HR_PUSH_PUBLIC=pub, HR_PUSH_PRIVATE=priv)
+        push.SYNC, push.SEND = True, fake_send
+        for uid in (HEAD, LEAD, EMP, FIELD, EMPB, DIVD, LEADC, EMPC, HRL, HR, EXEC, CEO, NOCONF, HRA):  # 휴대폰을 등록한 사람 — 대상 전원(포털을 안 쓰는 임원 소속 포함) · 본부장 · 대표이사 · HR
+            h, ep = f"{uid:03d}" + "8" * 61, f"https://push.example.invalid/close-{uid}"
+            x("INSERT INTO sessions (token_hash, user_id, created_at, last_seen_at, expires_at, kind) VALUES (?, ?, ?, ?, ?, 'phone')", h, uid, z(11, 30), z(11, 30), z(12, 31))
+            x("INSERT INTO push_subscriptions (token_hash, user_id, endpoint, p256dh, auth, created_at) VALUES (?, ?, ?, 'k', 'a', ?)", h, uid, ep, z(11, 30))
+            owner[ep] = uid
+            hashes.append(h)
+        t = datetime(Y, 12, 7, 3, tzinfo=timezone.utc)  # 한국 12/7(화) 정오 — 근무시간이라 알림이 간다
+        auth._now = lambda: t
+        # 대표이사 확인 직전: 본부 팀원 둘 · 전사 팀장은 모두 CEO(마감함), 직속부서 팀원은 GRADE 인데 한 사람 등급이 빠져 FIX. 본부 직속은 제외됨
+        put(DIVD, out_at=z(12, 1), out_reason="가상 휴직", out_by=HRA)
+        for k, s in ((D1, "CEO"), (D2, "CEO"), (LD, "CEO"), (DR, "GRADE")):
+            ready(k, s)
+        put(EMP, proposed="B")  # 팀장이 낸 B 를 본부장이 C 로 고쳐 마감했다
+        put(EXEC, grade=None)
+        x("UPDATE ev_pools SET closed_at = ?, closed_by = ? WHERE year = ? AND pool = ?", z(12, 6), HEAD, Y, D1)
+        x("UPDATE ev_pools SET closed_at = ?, closed_by = ? WHERE year = ? AND pool = ?", z(12, 6), CEO, Y, D2)
+        audit0 = q("SELECT COALESCE(MAX(id), 0) FROM audit_logs")[0][0]
+        ok([(p["key"], p["state"]) for p in st(CEO)["pools"]] == [(D1, "CEO"), (D2, "CEO"), (LD, "CEO"), (DR, "FIX")],
+           "(묶음: 본부 팀원 둘 · 전사 팀장은 대표이사 확인 대기, 직속부서 팀원은 등급이 빠져 FIX)")
+
+        # ---- 로그인 · 해 ----
+        paths = ("/api/eval/pools/confirm", "/api/eval/pools/back", "/api/eval/pools/finalize", "/api/eval/pools/undo", "/api/eval/admin/release")
+        ok(all(app.test_client().post(p, base_url=BASE, headers=ORIGIN, json={}).status_code == 401 for p in paths), "로그인 없이는 401 (확인 · 돌려보내기 · 확정 · 되돌리기 · 공개)")
+        ok(all(hit(act(CEO, "confirm", year=v, pools=[D1]), 400, BAD_YEAR) and hit(act(CEO, "back", year=v, pool=D1, reason="가상"), 400, BAD_YEAR)
+               and hit(act(HRA, "finalize", year=v, pools=[D1]), 400, BAD_YEAR) and hit(act(HRA, "undo", year=v, pool=D1), 400, BAD_YEAR)
+               and hit(release(HRA, year=v), 400, BAD_YEAR) for v in (None, str(Y), float(Y), True, 2101)),
+           "해가 정수(2026~2100)가 아니면 400 (다섯 길)")
+        ok(hit(act(CEO, "confirm", year=Y + 1, pools=[D1]), 404, NO_POOL) and hit(act(HRA, "undo", year=Y + 1, pool=D1), 404, NO_POOL), "시작하지 않은 해에는 묶음이 없어 404")
+        ok(hit(release(LEAD), 403, HR_ONLY) and hit(release(CEO), 403, HR_ONLY) and hit(release(HRA, year=Y - 1), 403, {"error": f"{Y - 1}년 평가는 포털 밖에서 진행합니다."})
+           and hit(release(HRA, year=Y + 1), 409, {"error": "평가를 아직 시작하지 않았습니다."}),
+           "공개: HR 만 403 · 포털 평가 전 해 403 · 시작하지 않은 해 409")
+        ok(hit(release(HRA), 409, NOT_DONE) and q("SELECT released_at, released_by FROM ev_rounds WHERE year = ?", Y) == [(None, None)],
+           "공개는_모두_확정된_뒤: 확정 안 된 사람이 있으면 409 '아직 확정되지 않은 분이 있습니다.' · 그대로")
+
+        # ---- 돌려보내기는_본부_팀원만 ----
+        ok(cans(CEO, "back") == {D1: True, D2: True, LD: False, DR: False} and cans(CEO, "confirm") == {D1: True, D2: True, LD: True, DR: False}
+           and cans(HEAD, "back") == cans(HEAD, "confirm") == {D1: False} and not any(cans(HRA, "confirm").values()) and not any(cans(HRA, "back").values()),
+           "can: 대표이사는 대기 묶음 확인 · 본부 팀원 묶음만 돌려보내기 — 본부장 · 맡기기 전 HR 은 거짓")
+        ok(hit(act(CEO, "back", pool=LD, reason="가상"), 403, no(NL, "돌려보낼")) and hit(act(CEO, "back", pool=DR, reason="가상"), 403, no(ND, "돌려보낼"))
+           and all(hit(act(who, "back", pool=D1, reason="가상"), 403, no(N1, "돌려보낼")) for who in (HEAD, HRA, LEAD, EMP)),
+           "돌려보내기는_본부_팀원만: 팀장 · 직속부서 묶음 403 · 본부장 · 맡기기 전 HR · 팀장 · 직원 403 (어느 묶음인지 문구에)")
+        ok(all(hit(act(CEO, "back", pool=v, reason="가상"), 400, PICK) for v in (None, 91, [D1])) and hit(act(CEO, "back", pool="DIV:999", reason="가상"), 404, NO_POOL),
+           "돌려보내기: 묶음 열쇠가 글자가 아니면 400 · 없는 묶음 404")
+        ok(all(hit(act(CEO, "back", pool=D1, **b), 400, m) for b, m in (({}, WHY), ({"reason": "  \n "}, WHY), ({"reason": "가" * 201}, WHY), ({"reason": 5}, WHY),
+                                                                        ({"reason": "가상\x00"}, WHY_CHAR)))
+           and stages(D1) == ["CEO"] * 4 and prow(D1)[5] is None,
+           "돌려보내기는_본부_팀원만: 이유 없이 · 공백만 · 201자 · 글이 아님 · 쓸 수 없는 글자 400 — 그대로")
+        took()
+        ok(hit(act(CEO, "back", pool=D1, reason=" 가상 돌려보낸 이유 "), 200, OK) and stages(D1) == ["GRADE"] * 4 and stages(D2) == ["CEO"]
+           and prow(D1)[:2] == (None, None) and prow(D1)[5:9] == (z(12, 7), CEO, None, "가상 돌려보낸 이유"),
+           "돌려보내기는_본부_팀원만: 200 → 모두 GRADE · 마감 기록 비움 · back_at/by/reason (앞뒤 공백 뗌 · 대신 아님)")
+        ok(took() == [(HEAD, *TURN)], "돌려보내기는_본부_팀원만: 본부장(배정자)에게 알림 한 통")
+        ok(audits("EVAL_POOL_RETURNED") == [(Y, {"year": Y, "pool": D1})] and by("EVAL_POOL_RETURNED") == [(CEO, None)], "감사로그 EVAL_POOL_RETURNED (해 · 묶음 열쇠만 — 이유 없음)")
+        ok(hit(act(CEO, "back", pool=D1, reason="가상"), 409, is_(N1, "이미 돌려보냈습니다.")) and hit(act(CEO, "confirm", pools=[D1]), 409, is_(N1, "아직 확인할 차례가 아닙니다."))
+           and not took() and len(audits("EVAL_POOL_RETURNED")) == 1,
+           "또 돌려보내면 409 '이미 돌려보냈습니다.' · 돌려보낸 묶음 확인 409 · 알림 · 감사로그 없음")
+        hp = pool_of(HEAD, D1)
+        ok(hp["state"] == "WAIT" and hp["log"]["back"] == {"at": z(12, 7), "by": "가상E대표 가상직급", "reason": "가상 돌려보낸 이유"} and hp["log"]["closed"] is None
+           and st(HEAD)["todo"] == {"me": 1, "admin": 0} and row_of(st(HEAD), EMP)["can"]["assign"] is True,
+           "(본부장 화면: 돌려보낸 이유 · 다시 배정할 묶음 1 · 고칠 수 있음)")
+        ok(hit(post(HEAD, "/api/eval/pools/close", {"year": Y, "pool": D1}), 200, OK) and stages(D1) == ["CEO"] * 4 and prow(D1)[:2] == (z(12, 7), HEAD)
+           and prow(D1)[5:9] == (None,) * 4 and pool_of(HEAD, D1)["log"]["back"] is None,
+           "돌려보내기는_본부_팀원만: 본부장이 다시 마감하면 돌려보낸 기록(back_*)이 지워짐")
+        took()  # 마감 알림 — check_eval_score 가 본다
+        x("INSERT INTO ceo_delegation (ceo_user_id, since) VALUES (?, ?)", CEO, z(12, 7))
+        ok(hit(act(HRA, "back", pool=D2, reason="가상 대신 돌려보냄"), 200, OK) and stages(D2) == ["GRADE"] and prow(D2)[5:8] == (z(12, 7), HRA, CEO)
+           and took() == [(HRL, *TURN), (HR, *TURN)] and by("EVAL_POOL_RETURNED")[-1] == (HRA, CEO),
+           "맡김 → HR 이 본부장 없는 본부 묶음을 대신 돌려보냄 (back_behalf · on_behalf_of = 대표이사) → 배정자가 대표이사라 HR 전원 (누른 사람 빼고)")
+        ok(hit(post(HRA, "/api/eval/pools/close", {"year": Y, "pool": D2}), 200, OK) and stages(D2) == ["CEO"], "(맡은 HR 이 다시 마감)")
+        x("DELETE FROM ceo_delegation WHERE ceo_user_id = ?", CEO)
+        took()
+
+        # ---- 확인은_대표이사가_묶음째로 (본부 팀원 둘 · 전사 팀장 = CEO 대기, 직속부서 = FIX) ----
+        ok(st(CEO)["todo"] == {"me": 4, "admin": 0} and st(HRA)["todo"] == {"me": 0, "admin": 2} and st(HEAD)["todo"] == {"me": 0, "admin": 0},
+           "할_일_숫자: 대표이사 확인할 묶음 4 (CEO 셋 · FIX 하나) · HR 은 확인 안 한 마감 알림 2 · 본부장 0")
+        ok(all(hit(act(CEO, "confirm", pools=v), 400, PICK) for v in (None, D1, [], [91], [[D1]], {"0": D1})) and hit(act(CEO, "confirm", pools=[D1, "DIV:999"]), 404, NO_POOL),
+           "확인: 묶음이 목록이 아니거나 · 비었거나 · 글자가 아닌 열쇠 400 · 없는 묶음이 하나라도 있으면 404")
+        ok(all(hit(act(who, "confirm", pools=[D1]), 403, no(N1, "확인할")) for who in (HEAD, HRA, LEAD)) and hit(act(HEAD, "confirm", pools=[D2, D1]), 403, no(N2, "확인할")),
+           "확인은_대표이사가_묶음째로: 본부장 · 맡기기 전 HR · 팀장 403")
+        r = act(CEO, "confirm", pools=[D1, DR])
+        ok(r.status_code == 409 and r.json == {**is_(ND, "등급을 다시 맞춰야 합니다."), "errors": ["가상E임원직원 님의 등급이 없습니다."]} and stages(D1) == ["CEO"] * 4 and prow(D1)[2] is None,
+           "확인은_대표이사가_묶음째로: 상태가 CEO 가 아닌 묶음(FIX)을 섞으면 409 (어느 묶음 · 까닭) — 아무것도 안 바뀜")
+        ok(hit(act(CEO, "confirm", pools=[D1, D2, D1]), 200, {"ok": True, "done": [D1, D2]}) and stages(D1) == ["HR"] * 4 and stages(D2) == ["HR"] and stages(LD) == ["CEO"] * 3
+           and prow(D1)[2:5] == prow(D2)[2:5] == (z(12, 7), CEO, None) and prow(LD)[2] is None and q("SELECT stage FROM ev_targets WHERE year = ? AND user_id = ?", Y, DIVD) == [("SELF",)],
+           "확인은_대표이사가_묶음째로: 대표이사가 둘을 확인 → 둘 HR (제외된 사람은 그대로) · ceo_at/by · 하나(전사 팀장)는 그대로 · 같은 열쇠는 한 번")
+        ok(audits("EVAL_POOL_CONFIRMED") == [(Y, {"year": Y, "pool": D1}), (Y, {"year": Y, "pool": D2})] and by("EVAL_POOL_CONFIRMED") == [(CEO, None)] * 2,
+           "감사로그 EVAL_POOL_CONFIRMED 묶음마다 (해 · 묶음 열쇠만)")
+        ok(took() == [(HRA, *TURN), (HRL, *TURN), (HR, *TURN)], "확인 뒤 HR 전원에게 알림 한 통씩 (묶음이 둘이어도)")
+        ok(hit(act(CEO, "confirm", pools=[LD, D1]), 409, is_(N1, "이미 확인했습니다.")) and stages(LD) == ["CEO"] * 3 and not took() and len(audits("EVAL_POOL_CONFIRMED")) == 2,
+           "확인은_대표이사가_묶음째로: 이미 확인한 묶음을 섞으면 409 '이미 확인했습니다.' — 전사 팀장도 그대로 · 알림 · 감사로그 없음")
+        ok(hit(act(HRA, "finalize", pools=[D1, LD]), 409, is_(NL, "아직 대표이사 확인 전입니다.")) and stages(D1) == ["HR"] * 4,
+           "확정: 대표이사 확인 전 묶음을 섞으면 409 — 아무것도 안 바뀜")
+        ok(cans(CEO, "confirm") == {D1: False, D2: False, LD: True, DR: False} and cans(HRA, "finalize") == cans(HRA, "undo") == {D1: True, D2: True, LD: False, DR: False}
+           and not any(cans(CEO, "finalize").values()) and pool_of(CEO, D1)["log"]["ceo"] == {"at": z(12, 7), "by": "가상E대표 가상직급"},
+           "can: 확인한 묶음은 HR 확정 · 되돌리기 (HR 만) · 확인 기록")
+        ok(st(CEO)["todo"] == {"me": 2, "admin": 0} and st(HRA)["todo"] == {"me": 0, "admin": 2}, "할_일_숫자: 대표이사 남은 확인할 묶음 2 · HR 확정할 묶음 2 (확인한 묶음의 마감 알림은 안 셈)")
+
+        # ---- HR은_자기_묶음을_확인_못_한다 (맡김 — HR 담당자는 직속부서 · HR 팀장은 전사 팀장 묶음에 든다) ----
+        put(EXEC, grade="C")
+        x("INSERT INTO ceo_delegation (ceo_user_id, since) VALUES (?, ?)", CEO, z(12, 7))
+        ok(cans(HR, "confirm") == {D1: False, D2: False, LD: True, DR: False} and cans(HRL, "confirm") == {D1: False, D2: False, LD: False, DR: True}
+           and cans(HRA, "confirm") == {D1: False, D2: False, LD: True, DR: True} and cans(HR, "back") == {D1: False, D2: False, LD: False, DR: False},
+           "can.confirm: 맡김 → HR 은 자기가 들지 않은 대기 묶음만 (제외된 줄 포함)")
+        ok(st(HR)["todo"]["admin"] == 3 and st(HRL)["todo"]["admin"] == 3 and st(HRA)["todo"]["admin"] == 4 and st(CEO)["todo"]["me"] == 2,
+           "할_일_숫자: 맡김 → HR admin = 확정할 묶음 2 + 자기가 들지 않은 확인할 묶음 (HR 담당 1 · HR 팀장 1 · 대상 아닌 HR 2) · 대표이사 me 는 그대로 2")
+        ok(hit(act(HR, "confirm", pools=[DR]), 403, no(ND, "확인할")) and hit(act(HR, "confirm", pools=[LD, DR]), 403, no(ND, "확인할"))
+           and hit(act(HRL, "confirm", pools=[LD]), 403, no(NL, "확인할")) and stages(LD) == ["CEO"] * 3 and stages(DR) == ["GRADE"] * 2,
+           "HR은_자기_묶음을_확인_못_한다: 맡겨도 HR 담당자는 직속부서 묶음(본인 있음) 403 · 섞어도 403 · HR 팀장은 전사 팀장 묶음 403 — 그대로")
+        ok(hit(act(HR, "confirm", pools=[LD]), 200, {"ok": True, "done": [LD]}) and stages(LD) == ["HR"] * 3 and prow(LD)[2:5] == (z(12, 7), HR, CEO)
+           and by("EVAL_POOL_CONFIRMED")[-1] == (HR, CEO), "HR은_자기_묶음을_확인_못_한다: HR 담당자가 전사 팀장 묶음 200 — ceo_behalf · on_behalf_of = 대표이사")
+        ok(took() == [(HRA, *TURN), (HRL, *TURN)], "대신 확인해도 HR 전원(누른 사람 빼고)에게 알림")
+        ok(hit(act(CEO, "confirm", pools=[DR]), 200, {"ok": True, "done": [DR]}) and stages(DR) == ["HR"] * 2 and prow(DR)[2:5] == (z(12, 7), CEO, None)
+           and by("EVAL_POOL_CONFIRMED")[-1] == (CEO, None) and took() == [(HRA, *TURN), (HRL, *TURN), (HR, *TURN)],
+           "맡긴 동안에도 대표이사가 직접 확인 200 (대신 아님)")
+        x("DELETE FROM ceo_delegation WHERE ceo_user_id = ?", CEO)
+
+        # ---- 확정은_한_번 ----
+        ok(all(hit(act(who, "finalize", pools=[D1]), 403, no(N1, "확정할")) for who in (CEO, HEAD, LEAD)) and all(hit(act(HRA, "finalize", pools=v), 400, PICK) for v in (None, [], [1]))
+           and hit(act(HRA, "finalize", pools=["DIV:999"]), 404, NO_POOL), "확정: HR 이 아니면 403 · 목록 모양 400 · 없는 묶음 404")
+        twins = [app.test_client() for _ in range(2)]
+        for cl, uid in zip(twins, (HRA, HRL)):
+            login(cl, new_token(f"HW-{uid}"))
+        got, gate = [], threading.Barrier(2)
+
+        def race(cl):
+            gate.wait()
+            r = cl.post("/api/eval/pools/finalize", base_url=BASE, headers=ORIGIN, json={"year": Y, "pools": [D1]})
+            got.append((r.status_code, r.json))
+
+        threads = [threading.Thread(target=race, args=(cl,)) for cl in twins]
+        for th in threads:
+            th.start()
+        for th in threads:
+            th.join()
+        ok(sorted(got, key=lambda v: v[0]) == [(200, {"ok": True, "done": [D1]}), (409, is_(N1, "이미 확정했습니다."))] and stages(D1) == ["DONE"] * 4
+           and audits("EVAL_POOL_FINALIZED") == [(Y, {"year": Y, "pool": D1})] and not took(),
+           f"확정은_한_번: 두 HR 이 동시에 확정 → 하나 200 · 하나 409 '이미 확정했습니다.' · 감사로그 하나 · 알림 없음 ({[s for s, _ in got]})")
+        ok(hit(act(HR, "finalize", pools=[DR, LD, D2]), 200, {"ok": True, "done": [DR, LD, D2]}) and stages(DR) == ["DONE"] * 2 and stages(LD) == ["DONE"] * 3 and stages(D2) == ["DONE"]
+           and audits("EVAL_POOL_FINALIZED")[1:] == [(Y, {"year": Y, "pool": k}) for k in (DR, LD, D2)] and not took(),
+           "HR 확정은 HR 본인 일 — 자기가 든 묶음(직속부서)도 200 · 감사로그 묶음마다 · 알림 없음")
+
+        # ---- 되돌리기 ----
+        ok(all(hit(act(who, "undo", pool=DR), 403, no(ND, "되돌릴")) for who in (CEO, HEAD)) and hit(act(HRA, "undo", pool=None), 400, PICK)
+           and hit(act(HRA, "undo", pool="DIV:999"), 404, NO_POOL), "되돌리기: HR 이 아니면 403 · 열쇠 모양 400 · 없는 묶음 404")
+        ok(hit(act(HRA, "undo", pool=DR), 200, OK) and stages(DR) == ["HR"] * 2 and prow(DR)[2:5] == (z(12, 7), CEO, None) and prow(DR)[9:] == (z(12, 7), HRA, "HR"),
+           "되돌리기: 확정(DONE) → HR 확정 대기 · 대표이사 확인 기록은 그대로 · undo_at/by/from HR")
+        ok(hit(release(HRA), 409, NOT_DONE), "공개는_모두_확정된_뒤: 하나라도 DONE 이 아니면 409")
+        ok(hit(act(HRA, "undo", pool=DR), 200, OK) and stages(DR) == ["GRADE"] * 2 and prow(DR)[2:5] == (None, None, None) and prow(DR)[11] == "CEO",
+           "되돌리기: HR → (직속) GRADE — 대표이사 확인 기록 비움 · undo_from CEO")
+        ok(hit(act(HRA, "undo", pool=DR), 409, is_(ND, "되돌릴 수 있는 단계가 아닙니다.")) and stages(DR) == ["GRADE"] * 2
+           and pool_of(CEO, DR)["state"] == "CEO" and pool_of(HRA, DR)["log"]["undo"]["from"] == "CEO" and cans(CEO, "confirm")[DR] is True,
+           "되돌리기: 대표이사 확인 전 묶음은 409 · 직속부서 팀원은 다시 대표이사 확인 대기")
+        ok(hit(act(HR, "undo", pool=D1), 200, OK) and stages(D1) == ["HR"] * 4 and hit(act(HR, "undo", pool=D1), 200, OK) and stages(D1) == ["CEO"] * 4
+           and prow(D1)[:2] == (z(12, 7), HEAD) and prow(D1)[2] is None and prow(D1)[11] == "CEO",
+           "되돌리기: (본부) DONE → HR → CEO — 마감 기록은 그대로 · 다시 대표이사 확인 대기")
+        ok(audits("EVAL_POOL_UNDONE") == [(Y, {"year": Y, "pool": k, "from": f}) for k, f in ((DR, "HR"), (DR, "CEO"), (D1, "HR"), (D1, "CEO"))] and not took(),
+           "감사로그 EVAL_POOL_UNDONE {해 · 묶음 · 되돌린 단계} · 알림 없음")
+        ok(hit(act(CEO, "confirm", pools=[D1, DR]), 200, {"ok": True, "done": [D1, DR]}) and hit(act(HRA, "finalize", pools=[D1, DR]), 200, {"ok": True, "done": [D1, DR]}),
+           "(다시 확인 · 확정)")
+        took()
+
+        # ---- 공개하면_보인다 (공개 전) ----
+        lr, me = row_of(st(LEAD), EMP), st(EMP)["me"]
+        ok(lr["hidden"] is True and (lr["grade"], lr["edited"]) == ("B", True) and "grade" not in me, "(공개 전: 팀장에게는 낸 등급 B · 고쳤다는 사실만 · 본인 me 에는 등급 칸이 없음)")
+
+        # ---- 공개는_모두_확정된_뒤 ----
+        ok(hit(release(HRA), 200, OK) and q("SELECT released_at, released_by FROM ev_rounds WHERE year = ?", Y) == [(z(12, 7), HRA)]
+           and audits("EVAL_RELEASED") == [(Y, {"year": Y, "count": 10})] and by("EVAL_RELEASED") == [(HRA, None)],
+           "공개는_모두_확정된_뒤: 200 → released_at/by · 감사로그 EVAL_RELEASED (해 · 사람 수 — 제외된 사람 빼고 10)")
+        ok(took() == [(u, *OPEN) for u in (LEAD, EMP, FIELD, EMPB, LEADC, EMPC, HRL, HR, NOCONF)],
+           "공개 → 대상 휴대폰에 eval_open 한 통씩 (제외된 사람 · 포털을 안 쓰는 사람 · 대상이 아닌 본부장 · 대표이사 · HR 빼고 — HR 담당자는 대상이라 받음)")
+        ok(hit(release(HRA), 409, RELEASED) and hit(release(HRL), 409, RELEASED) and not took() and len(audits("EVAL_RELEASED")) == 1, "또 공개하면 409 · 알림 · 감사로그 없음")
+        ok(hit(act(HRA, "undo", pool=D1), 409, RELEASED) and hit(act(CEO, "confirm", pools=[LD]), 409, RELEASED) and hit(act(HRA, "finalize", pools=[D1]), 409, RELEASED)
+           and hit(act(CEO, "back", pool=D1, reason="가상"), 409, RELEASED) and hit(act(HEAD, "confirm", pools=[D1]), 403, no(N1, "확인할")),
+           "공개 뒤: 되돌리기 · 확인 · 확정 · 돌려보내기 409 (권한이 없으면 403 이 먼저)")
+        ok(not any(v for who in (HRA, CEO) for p in st(who)["pools"] for v in p["can"].values()), "공개 뒤 묶음 단추(can)는 모두 거짓")
+
+        # ---- 공개하면_보인다 ----
+        lr, me = row_of(st(LEAD), EMP), st(EMP)["me"]
+        ok(lr["hidden"] is False and (lr["grade"], lr["proposed"], lr["edited"]) == ("C", "B", "등급 B → C") and me["grade"] == "C" and me["hidden"] is False,
+           "공개하면_보인다: 팀장 응답의 그 사람 hidden 거짓 · 고친 등급 C 가 보임 · 본인 me 에 최종 등급 C")
+
+        # ---- 감사로그 · 알림 글 ----
+        logs = q("SELECT action, after_data, before_data, reason FROM audit_logs WHERE id > ? AND action GLOB 'EVAL_*'", audit0)
+        ok({a for a, *_ in logs} == {"EVAL_POOL_RETURNED", "EVAL_POOL_CLOSED", "EVAL_POOL_CONFIRMED", "EVAL_POOL_FINALIZED", "EVAL_POOL_UNDONE", "EVAL_RELEASED"}
+           and all(set(json.loads(a)) <= {"year", "pool", "from", "count"} and b is None and rs is None for _, a, b, rs in logs)
+           and not any(t in a for _, a, _, _ in logs for t in ("가상", '"B"', '"C"')),
+           "감사로그에_등급과_글이_없다: after_data 는 해 · 묶음 열쇠 · 되돌린 단계 · 사람 수뿐 (돌려보낸 이유 · 등급 없음)")
+        ok(set(texts) == {"인사평가에서 처리할 일이 있어요 PC에서 확인해 주세요", "인사평가 결과가 공개됐어요 PC에서 확인해 주세요"}, "알림 글은 두 가지 한 줄뿐 — 등급 · 이름 없음")
+    finally:
+        auth._now = real_now
+        push.SYNC, push.SEND = real_sync, real_send
+        for k, v in env.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+        for h in hashes:
+            x("DELETE FROM push_subscriptions WHERE token_hash = ?", h)
+            x("DELETE FROM sessions WHERE token_hash = ?", h)
+        x("DELETE FROM ceo_delegation WHERE ceo_user_id = ?", CEO)
+        x(RESET, Y)
+        x("UPDATE ev_items SET note = '', self_grade = NULL, grade = NULL WHERE year = ?", Y)
+        x(POOLS_RESET, Y)
+        x("UPDATE ev_rounds SET released_at = NULL, released_by = NULL, att_done_at = ? WHERE year = ?", att0, Y)
         x("UPDATE users SET is_active = 0, deactivated_at = '2027-01-01T00:00:00Z' WHERE id = ?", CEO)
         for uid in other_ceos:
             x("UPDATE users SET is_active = 1, deactivated_at = NULL WHERE id = ?", uid)
@@ -8032,6 +8331,7 @@ def main() -> int:
     check_eval_view(hr)
     check_eval_self(hr)
     check_eval_score(hr)
+    check_eval_close(hr)
     with pay_gate_off():  # 아래 검사들은 비밀번호 잠금 이전 동작을 본다 — 잠금은 check_pay_pin 이 켠 채로 본다
         check_payslips(hr)
         check_pay_ask(hr)
