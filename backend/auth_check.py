@@ -7479,6 +7479,7 @@ def check_eval_close(hr) -> None:
     BAD_YEAR, HR_ONLY, RELEASED = {"error": "해가 올바르지 않습니다."}, {"error": "HR만 할 수 있습니다."}, {"error": "결과를 공개한 평가는 바꿀 수 없습니다."}
     PICK, NO_POOL, NOT_DONE = {"error": "묶음을 골라 주세요."}, {"error": "묶음을 찾을 수 없습니다."}, {"error": "아직 확정되지 않은 분이 있습니다."}
     WHY, WHY_CHAR = {"error": "돌려보내는 이유를 1~200자로 써 주세요."}, {"error": "돌려보내는 이유에 쓸 수 없는 글자가 있습니다."}
+    SEEN = {"error": "되돌릴 단계(from: HR · DONE)를 보내 주세요."}
     no = lambda name, verb: {"error": f"{name} 묶음을 {verb} 권한이 없습니다."}  # noqa: E731
     is_ = lambda name, why: {"error": f"{name} 묶음은 {why}"}  # noqa: E731
     N1, N2, NL, ND = "가상E본부 팀원", "가상E본부2 팀원", "전사 팀장", "직속부서 팀원"
@@ -7527,10 +7528,10 @@ def check_eval_close(hr) -> None:
         paths = ("/api/eval/pools/confirm", "/api/eval/pools/back", "/api/eval/pools/finalize", "/api/eval/pools/undo", "/api/eval/admin/release")
         ok(all(app.test_client().post(p, base_url=BASE, headers=ORIGIN, json={}).status_code == 401 for p in paths), "로그인 없이는 401 (확인 · 돌려보내기 · 확정 · 되돌리기 · 공개)")
         ok(all(hit(act(CEO, "confirm", year=v, pools=[D1]), 400, BAD_YEAR) and hit(act(CEO, "back", year=v, pool=D1, reason="가상"), 400, BAD_YEAR)
-               and hit(act(HRA, "finalize", year=v, pools=[D1]), 400, BAD_YEAR) and hit(act(HRA, "undo", year=v, pool=D1), 400, BAD_YEAR)
+               and hit(act(HRA, "finalize", year=v, pools=[D1]), 400, BAD_YEAR) and hit(act(HRA, "undo", year=v, pool=D1, **{"from": "DONE"}), 400, BAD_YEAR)
                and hit(release(HRA, year=v), 400, BAD_YEAR) for v in (None, str(Y), float(Y), True, 2101)),
            "해가 정수(2026~2100)가 아니면 400 (다섯 길)")
-        ok(hit(act(CEO, "confirm", year=Y + 1, pools=[D1]), 404, NO_POOL) and hit(act(HRA, "undo", year=Y + 1, pool=D1), 404, NO_POOL), "시작하지 않은 해에는 묶음이 없어 404")
+        ok(hit(act(CEO, "confirm", year=Y + 1, pools=[D1]), 404, NO_POOL) and hit(act(HRA, "undo", year=Y + 1, pool=D1, **{"from": "DONE"}), 404, NO_POOL), "시작하지 않은 해에는 묶음이 없어 404")
         ok(hit(release(LEAD), 403, HR_ONLY) and hit(release(CEO), 403, HR_ONLY) and hit(release(HRA, year=Y - 1), 403, {"error": f"{Y - 1}년 평가는 포털 밖에서 진행합니다."})
            and hit(release(HRA, year=Y + 1), 409, {"error": "평가를 아직 시작하지 않았습니다."}),
            "공개: HR 만 403 · 포털 평가 전 해 403 · 시작하지 않은 해 409")
@@ -7574,6 +7575,17 @@ def check_eval_close(hr) -> None:
         ok(hit(post(HRA, "/api/eval/pools/close", {"year": Y, "pool": D2}), 200, OK) and stages(D2) == ["CEO"], "(맡은 HR 이 다시 마감)")
         x("DELETE FROM ceo_delegation WHERE ceo_user_id = ?", CEO)
         took()
+        put(EMPB, grade="B")  # 90.0점 B — 지금 기준(B 는 80점 초과)에는 맞는다
+        x("UPDATE ev_rounds SET band_a = 95, band_b = 90 WHERE year = ?", Y)  # 마감 뒤 HR 이 기준 점수를 올렸다 (회차 저장은 시작 뒤에도 기준을 바꿀 수 있다) → B 는 90점 초과라 어긋남
+        p = pool_of(CEO, D1)
+        ok(p["state"] == "FIX" and p["can"]["back"] is True and p["can"]["confirm"] is False and row_of(st(CEO), EMPB)["can"]["assign"] is False,
+           "(마감한 본부 묶음이 FIX — 대표이사는 확인도 등급 고치기도 못 하고 돌려보내기만 된다)")
+        ok(hit(act(CEO, "back", pool=D1, reason="가상 기준이 바뀌어 다시 배정"), 200, OK) and stages(D1) == ["GRADE"] * 4 and took() == [(HEAD, *TURN)],
+           "돌려보내기: 본부 묶음은 FIX 에서도 200 → 모두 GRADE · 본부장에게 알림 (빠져나갈 길)")
+        x("UPDATE ev_rounds SET band_a = 90, band_b = 80 WHERE year = ?", Y)
+        put(EMPB, grade="C")
+        ok(hit(post(HEAD, "/api/eval/pools/close", {"year": Y, "pool": D1}), 200, OK) and stages(D1) == ["CEO"] * 4, "(기준을 되돌리고 본부장이 다시 마감)")
+        took()
 
         # ---- 확인은_대표이사가_묶음째로 (본부 팀원 둘 · 전사 팀장 = CEO 대기, 직속부서 = FIX) ----
         ok(st(CEO)["todo"] == {"me": 4, "admin": 0} and st(HRA)["todo"] == {"me": 0, "admin": 2} and st(HEAD)["todo"] == {"me": 0, "admin": 0},
@@ -7595,6 +7607,8 @@ def check_eval_close(hr) -> None:
            "확인은_대표이사가_묶음째로: 이미 확인한 묶음을 섞으면 409 '이미 확인했습니다.' — 전사 팀장도 그대로 · 알림 · 감사로그 없음")
         ok(hit(act(HRA, "finalize", pools=[D1, LD]), 409, is_(NL, "아직 대표이사 확인 전입니다.")) and stages(D1) == ["HR"] * 4,
            "확정: 대표이사 확인 전 묶음을 섞으면 409 — 아무것도 안 바뀜")
+        ok(hit(act(HRA, "undo", pool=LD, **{"from": "HR"}), 409, is_(NL, "되돌릴 수 있는 단계가 아닙니다.")) and stages(LD) == ["CEO"] * 3,
+           "되돌리기: 확인한 적 없는 묶음은 409 '되돌릴 수 있는 단계가 아닙니다.'")
         ok(cans(CEO, "confirm") == {D1: False, D2: False, LD: True, DR: False} and cans(HRA, "finalize") == cans(HRA, "undo") == {D1: True, D2: True, LD: False, DR: False}
            and not any(cans(CEO, "finalize").values()) and pool_of(CEO, D1)["log"]["ceo"] == {"at": z(12, 7), "by": "가상E대표 가상직급"},
            "can: 확인한 묶음은 HR 확정 · 되돌리기 (HR 만) · 확인 기록")
@@ -7644,18 +7658,26 @@ def check_eval_close(hr) -> None:
            and audits("EVAL_POOL_FINALIZED")[1:] == [(Y, {"year": Y, "pool": k}) for k in (DR, LD, D2)] and not took(),
            "HR 확정은 HR 본인 일 — 자기가 든 묶음(직속부서)도 200 · 감사로그 묶음마다 · 알림 없음")
 
-        # ---- 되돌리기 ----
-        ok(all(hit(act(who, "undo", pool=DR), 403, no(ND, "되돌릴")) for who in (CEO, HEAD)) and hit(act(HRA, "undo", pool=None), 400, PICK)
-           and hit(act(HRA, "undo", pool="DIV:999"), 404, NO_POOL), "되돌리기: HR 이 아니면 403 · 열쇠 모양 400 · 없는 묶음 404")
-        ok(hit(act(HRA, "undo", pool=DR), 200, OK) and stages(DR) == ["HR"] * 2 and prow(DR)[2:5] == (z(12, 7), CEO, None) and prow(DR)[9:] == (z(12, 7), HRA, "HR"),
+        # ---- 되돌리기 (from = 화면이 본 묶음 상태) ----
+        ok(all(hit(act(who, "undo", pool=DR, **{"from": "DONE"}), 403, no(ND, "되돌릴")) for who in (CEO, HEAD)) and hit(act(HRA, "undo", pool=None, **{"from": "DONE"}), 400, PICK)
+           and hit(act(HRA, "undo", pool="DIV:999", **{"from": "DONE"}), 404, NO_POOL), "되돌리기: HR 이 아니면 403 · 열쇠 모양 400 · 없는 묶음 404")
+        ok(all(hit(act(HRA, "undo", pool=DR, **b), 400, SEEN) for b in ({}, {"from": None}, {"from": "CEO"}, {"from": "done"}, {"from": ["DONE"]}))
+           and hit(act(HRA, "undo", pool="DIV:999"), 400, SEEN) and stages(DR) == ["DONE"] * 2, "되돌리기: 본 상태(from)가 없거나 HR · DONE 이 아니면 400 (없는 묶음 404 보다 먼저) — 그대로")
+        ok(hit(act(HR, "undo", pool=D1, **{"from": "HR"}), 409, is_(N1, "그사이 확정됐습니다.")) and stages(D1) == ["DONE"] * 4,
+           "되돌리기: HR 확정 대기로 보고 눌렀는데 그사이 확정됐으면 409 — 그대로")
+        undo = lambda who, k, seen: act(who, "undo", pool=k, **{"from": seen})  # noqa: E731
+        ok(hit(undo(HRA, DR, "DONE"), 200, OK) and stages(DR) == ["HR"] * 2 and prow(DR)[2:5] == (z(12, 7), CEO, None) and prow(DR)[9:] == (z(12, 7), HRA, "HR"),
            "되돌리기: 확정(DONE) → HR 확정 대기 · 대표이사 확인 기록은 그대로 · undo_at/by/from HR")
+        ok(hit(undo(HRA, DR, "DONE"), 409, is_(ND, "이미 되돌렸습니다.")) and hit(undo(HRL, DR, "DONE"), 409, is_(ND, "이미 되돌렸습니다."))
+           and stages(DR) == ["HR"] * 2 and prow(DR)[2] == z(12, 7) and len(audits("EVAL_POOL_UNDONE")) == 1,
+           "되돌리기: 같은 요청(본 상태 DONE)을 또 보내면 409 '이미 되돌렸습니다.' — 한 단계만 내려감 · 대표이사 확인 기록 그대로 · 감사로그 하나")
         ok(hit(release(HRA), 409, NOT_DONE), "공개는_모두_확정된_뒤: 하나라도 DONE 이 아니면 409")
-        ok(hit(act(HRA, "undo", pool=DR), 200, OK) and stages(DR) == ["GRADE"] * 2 and prow(DR)[2:5] == (None, None, None) and prow(DR)[11] == "CEO",
+        ok(hit(undo(HRA, DR, "HR"), 200, OK) and stages(DR) == ["GRADE"] * 2 and prow(DR)[2:5] == (None, None, None) and prow(DR)[11] == "CEO",
            "되돌리기: HR → (직속) GRADE — 대표이사 확인 기록 비움 · undo_from CEO")
-        ok(hit(act(HRA, "undo", pool=DR), 409, is_(ND, "되돌릴 수 있는 단계가 아닙니다.")) and stages(DR) == ["GRADE"] * 2
+        ok(hit(undo(HRA, DR, "HR"), 409, is_(ND, "이미 되돌렸습니다.")) and stages(DR) == ["GRADE"] * 2 and len(audits("EVAL_POOL_UNDONE")) == 2
            and pool_of(CEO, DR)["state"] == "CEO" and pool_of(HRA, DR)["log"]["undo"]["from"] == "CEO" and cans(CEO, "confirm")[DR] is True,
-           "되돌리기: 대표이사 확인 전 묶음은 409 · 직속부서 팀원은 다시 대표이사 확인 대기")
-        ok(hit(act(HR, "undo", pool=D1), 200, OK) and stages(D1) == ["HR"] * 4 and hit(act(HR, "undo", pool=D1), 200, OK) and stages(D1) == ["CEO"] * 4
+           "되돌리기: 또 보내면 409 (대표이사 확인 전으로 한 번만) · 직속부서 팀원은 다시 대표이사 확인 대기")
+        ok(hit(undo(HR, D1, "DONE"), 200, OK) and stages(D1) == ["HR"] * 4 and hit(undo(HR, D1, "HR"), 200, OK) and stages(D1) == ["CEO"] * 4
            and prow(D1)[:2] == (z(12, 7), HEAD) and prow(D1)[2] is None and prow(D1)[11] == "CEO",
            "되돌리기: (본부) DONE → HR → CEO — 마감 기록은 그대로 · 다시 대표이사 확인 대기")
         ok(audits("EVAL_POOL_UNDONE") == [(Y, {"year": Y, "pool": k, "from": f}) for k, f in ((DR, "HR"), (DR, "CEO"), (D1, "HR"), (D1, "CEO"))] and not took(),
@@ -7669,13 +7691,18 @@ def check_eval_close(hr) -> None:
         ok(lr["hidden"] is True and (lr["grade"], lr["edited"]) == ("B", True) and "grade" not in me, "(공개 전: 팀장에게는 낸 등급 B · 고쳤다는 사실만 · 본인 me 에는 등급 칸이 없음)")
 
         # ---- 공개는_모두_확정된_뒤 ----
+        live = [u for (u,) in q("SELECT user_id FROM ev_targets WHERE year = ? AND out_at IS NULL", Y)]
+        x("UPDATE ev_targets SET out_at = ?, out_reason = '가상 제외' WHERE year = ? AND out_at IS NULL", z(12, 7), Y)
+        ok(hit(release(HRA), 409, {"error": "평가할 분이 없습니다."}) and q("SELECT released_at FROM ev_rounds WHERE year = ?", Y) == [(None,)] and not took(),
+           "공개: 제외 안 된 분이 한 명도 없으면 409 '평가할 분이 없습니다.' (공개는 되돌릴 수 없다) — 그대로")
+        x(f"UPDATE ev_targets SET out_at = NULL, out_reason = NULL WHERE year = ? AND user_id IN ({','.join('?' * len(live))})", Y, *live)
         ok(hit(release(HRA), 200, OK) and q("SELECT released_at, released_by FROM ev_rounds WHERE year = ?", Y) == [(z(12, 7), HRA)]
            and audits("EVAL_RELEASED") == [(Y, {"year": Y, "count": 10})] and by("EVAL_RELEASED") == [(HRA, None)],
            "공개는_모두_확정된_뒤: 200 → released_at/by · 감사로그 EVAL_RELEASED (해 · 사람 수 — 제외된 사람 빼고 10)")
         ok(took() == [(u, *OPEN) for u in (LEAD, EMP, FIELD, EMPB, LEADC, EMPC, HRL, HR, NOCONF)],
            "공개 → 대상 휴대폰에 eval_open 한 통씩 (제외된 사람 · 포털을 안 쓰는 사람 · 대상이 아닌 본부장 · 대표이사 · HR 빼고 — HR 담당자는 대상이라 받음)")
         ok(hit(release(HRA), 409, RELEASED) and hit(release(HRL), 409, RELEASED) and not took() and len(audits("EVAL_RELEASED")) == 1, "또 공개하면 409 · 알림 · 감사로그 없음")
-        ok(hit(act(HRA, "undo", pool=D1), 409, RELEASED) and hit(act(CEO, "confirm", pools=[LD]), 409, RELEASED) and hit(act(HRA, "finalize", pools=[D1]), 409, RELEASED)
+        ok(hit(act(HRA, "undo", pool=D1, **{"from": "DONE"}), 409, RELEASED) and hit(act(CEO, "confirm", pools=[LD]), 409, RELEASED) and hit(act(HRA, "finalize", pools=[D1]), 409, RELEASED)
            and hit(act(CEO, "back", pool=D1, reason="가상"), 409, RELEASED) and hit(act(HEAD, "confirm", pools=[D1]), 403, no(N1, "확인할")),
            "공개 뒤: 되돌리기 · 확인 · 확정 · 돌려보내기 409 (권한이 없으면 403 이 먼저)")
         ok(not any(v for who in (HRA, CEO) for p in st(who)["pools"] for v in p["can"].values()), "공개 뒤 묶음 단추(can)는 모두 거짓")

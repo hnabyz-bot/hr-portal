@@ -11,7 +11,7 @@ app.py 가 bp 를 붙인다. 세션 검사 · 같은 출처 검사는 auth._guar
   POST /api/eval/admin/<uid>/include      {"year"} 제외를 되돌린다 (HR)
   POST /api/eval/admin/<uid>/skip-self    {"year"} 자기평가 없이 평가자에게 넘긴다 (HR) — 평가자에게 알림 (누른 HR 은 빼고)
   POST /api/eval/admin/<uid>/rater        {"year", "raterId"} 평가자를 바꾼다 (HR)
-  POST /api/eval/admin/release            {"year"} 결과 공개 — 제외 안 된 대상 전원에게 알림(eval_open) (HR)
+  POST /api/eval/admin/release            {"year"} 결과 공개 — 제외 안 된 대상 전원에게 알림(eval_open) (HR · 되돌릴 수 없다)
   GET  /api/eval/state?year=              보는 사람에 맞춘 그해 평가 (year 가 없으면 cur_year) → {"year", "offline", "round", "deleg", "ceoId", "me", "people", "pools", "todo"}
   GET  /api/eval/files/<fid>              증빙 내려받기 (본인 · HR — 자기평가를 낸 뒤에는 평가자 · 배정자 · 그 본부의 본부장 · 대표이사도)
   POST /api/eval/me/self                  {"year", "entries": [{"rid", "note"?, "selfGrade"?}]} 자기평가 임시 저장 — 보낸 줄 · 칸만 바꾼다 → {"ok", "me"} (본인 — 사람 번호는 세션에서만)
@@ -27,7 +27,7 @@ app.py 가 bp 를 붙인다. 세션 검사 · 같은 출처 검사는 auth._guar
   POST /api/eval/pools/confirm            {"year", "pools": [열쇠…]} 대표이사 확인 — 묶음째로 HR 확정 대기로 → {"ok", "done"} (대표이사 · 맡김이면 HR) — HR 전원에게 알림
   POST /api/eval/pools/back               {"year", "pool", "reason"} 본부 팀원 묶음을 배정자에게 돌려보낸다 (대표이사 · 맡김이면 HR) — 배정자에게 알림
   POST /api/eval/pools/finalize           {"year", "pools": [열쇠…]} HR 확정 → {"ok", "done"} (HR)
-  POST /api/eval/pools/undo               {"year", "pool"} 한 단계 되돌린다 — 확정 → 확정 대기 / 확정 대기 → 대표이사 확인 전 (HR)
+  POST /api/eval/pools/undo               {"year", "pool", "from"} 한 단계 되돌린다 — from = 화면이 본 묶음 상태(DONE | HR): 확정 → 확정 대기 / 확정 대기 → 대표이사 확인 전 (HR)
 
 보는 수준 (공개 전 등급은 어디에도 새지 않는다 — 사람 줄을 응답에 넣는 길은 모두 _row_json 하나를 지난다. 수준은 eval_rules.level):
   full 전부 (HR · 대표이사 · 배정자 · 점수를 내기 전의 평가자 · 공개 뒤) / mine 평가자가 낸 뒤 · 공개 전 — 자기가 낸 등급 · 항목 등급 · 총점만, 고쳤으면 edited 참(내용 글자 없음) /
@@ -76,20 +76,23 @@ app.py 가 bp 를 붙인다. 세션 검사 · 같은 출처 검사는 auth._guar
     떠 두기: proposed = 등급 · sub_score_x10(KPI 있을 때) · sub_marks · scored_at/by · 단계 = after_score(묶음). EVAL_SCORED (대신이면 on_behalf_of = 대표이사).
     알림(저장한 뒤): 배정자(팀장 묶음은 대표이사) — 그가 대표이사이고 맡겼으면 평가받는 사람 뺀 HR 전원. 낸 사람 본인에게는 보내지 않는다.
   확인(seen): 평가자 본인 아님 403 → edit_seen = 지금 고친 내용 글자 (응답은 editSeen 참/거짓만 — 글자는 공개 전 평가자에게 가지 않는다).
-묶음 마감: 해 400 → 본부 팀원 묶음(DIV:) 아님 400 → 묶음 없음 404 → 권한(_pool_can.close — 공개 여부는 빼고) 403 → 제외 안 된 사람이 없음 409 → 공개 뒤 409 → 제외 안 된 사람 중 배정 단계(GRADE) 전인 사람 409 →
+묶음 마감: 해 400 → 본부 팀원 묶음(DIV:) 아님 400 → 묶음 없음 404 → 권한(_pool_auth.close — 공개 여부는 빼고) 403 → 제외 안 된 사람이 없음 409 → 공개 뒤 409 → 제외 안 된 사람 중 배정 단계(GRADE) 전인 사람 409 →
   이미 넘어감 409 → 전원 검사(check_pool full — 등급 누락 · 정원 · 점수 기준 · 연차) 오류 409 {"error": 첫 오류, "errors"}. 모두 CEO · closed_at/by · 돌려보낸 기록(back_*) 비움 · hr_seen [] ·
   EVAL_POOL_CLOSED (HR 이 대신이면 on_behalf_of). 알림: 대표이사(맡겼으면 빼고) + HR 전원 — 마감한 사람 본인은 빼고.
 마감 확인: HR 403 → 해 400 → 묶음 없음 404 → hr_seen 에 나를 더함 (이미 있으면 그대로).
-묶음 확인 · 돌려보내기 · 확정 · 되돌리기 (마감과 같은 모양 — _pools_ok): 해 400 → 열쇠 모양 400 (확인 · 확정은 글자 열쇠 하나 이상의 목록 · 같은 열쇠는 한 번) → 없는 묶음 404 →
-  권한(_pool_auth — 상태 · 공개는 빼고) 403 → 공개 뒤 409 → 묶음 상태(POOL_NEED — 확인 · 돌려보내기 CEO · 확정 HR · 되돌리기 HR · DONE)가 아님 409
+묶음 확인 · 돌려보내기 · 확정 · 되돌리기 (마감과 같은 모양 — _pools_ok): 해 400 → 열쇠 모양 400 (확인 · 확정은 글자 열쇠 하나 이상의 목록 · 같은 열쇠는 한 번) →
+  (되돌리기) 본 상태 from 이 HR · DONE 이 아님 400 → 없는 묶음 404 → 권한(_pool_auth — 상태 · 공개는 빼고) 403 → 공개 뒤 409 →
+  묶음 상태(POOL_NEED — 확인 CEO · 돌려보내기 CEO · FIX · 확정 HR / 되돌리기는 지금 상태가 from 과 같아야)가 아님 409
   (이미 넘어갔으면 "이미 …했습니다", 아직이면 그 까닭 · 등급을 맞춰야 하면(FIX) errors 도). 문구에 어느 묶음인지. 목록은 하나라도 걸리면 아무것도 안 바뀐다 — 두 창의 두 번째는 409.
   권한: 확인 · 돌려보내기(본부 팀원 묶음만) = 활성 대표이사, 또는 맡김이고 그 묶음에 들지 않은(제외된 줄 포함) HR / 확정 · 되돌리기 = HR (HR 본인 일 — 자기가 든 묶음도 된다).
   확인: 모두 HR · ceo_at/by · ceo_behalf(HR 이 대신이면 대표이사) · EVAL_POOL_CONFIRMED 묶음마다. 알림: HR 전원 — 누른 사람은 빼고.
   돌려보내기: → 이유 1~200자 400 (_chars · 앞뒤 공백을 떼고 셈). 모두 GRADE · back_at/by/behalf/reason · 마감 기록(closed_at/by) 비움 (다시 마감하면 back_* 가 지워진다) ·
     EVAL_POOL_RETURNED (이유 없음). 알림: 배정자(_turn_to — 대표이사이고 맡겼으면 HR 전원) — 누른 사람은 빼고.
+  돌려보내기는 FIX(마감 뒤 기준 점수가 바뀌어 등급이 어긋남)에서도 된다 — 대표이사는 본부 팀원 등급을 고치지 못하니 그것이 빠져나갈 길이다.
   확정: 모두 DONE · EVAL_POOL_FINALIZED 묶음마다 · 알림 없음. 되돌리기: DONE → HR (undo_from HR) / HR → ready_stage(직속 GRADE · 그 밖 CEO) · ceo_* 비움 (undo_from CEO) ·
-    undo_at/by/from · EVAL_POOL_UNDONE {from} · 알림 없음.
-결과 공개: HR 403 → 해 400 → FIRST_YEAR 403 → 시작 안 함 409 → 이미 공개 409 → 제외 안 된 사람 중 DONE 이 아닌 사람 409 → released_at/by · EVAL_RELEASED {count = 제외 안 된 대상 수}.
+    undo_at/by/from · EVAL_POOL_UNDONE {from} · 알림 없음. 본 상태(from)와 지금이 다르면 409 ("이미 되돌렸습니다" · "그사이 확정됐습니다") — 두 창이 눌러도 한 단계만.
+결과 공개: HR 403 → 해 400 → FIRST_YEAR 403 → 시작 안 함 409 → 이미 공개 409 → 제외 안 된 사람이 없음 409 (공개는 되돌릴 수 없다) → 제외 안 된 사람 중 DONE 이 아닌 사람 409 →
+  released_at/by · EVAL_RELEASED {count = 제외 안 된 대상 수}.
   알림(eval_open): 제외 안 된 대상 전원 — 공개한 HR 도 대상이면 받는다 (남의 일을 한 사람이 아니라 자기 결과를 받는 사람). 공개 뒤에는 level 이 full 이라 _row_json 이 전부 보인다.
 감사로그(R10): EVAL_ROUND_SET · EVAL_STARTED · EVAL_ATT_DONE · EVAL_ATTENDANCE(저장한 사람이 있을 때만) · EVAL_EXCLUDED · EVAL_INCLUDED · EVAL_SKIP_SELF · EVAL_RATER_SET · EVAL_SELF_SUBMITTED ·
   EVAL_SCORED · EVAL_POOL_CLOSED · EVAL_POOL_CONFIRMED · EVAL_POOL_RETURNED · EVAL_POOL_FINALIZED · EVAL_POOL_UNDONE · EVAL_RELEASED — after_data 는 해 · 사람 수 · 평가자 번호 · 묶음 열쇠 ·
@@ -674,7 +677,8 @@ def _pool_auth(ctx: _Ctx, me: Actor, key: str) -> dict[str, bool]:
             "confirm": ceo, "back": div and ceo, "finalize": me.is_hr, "undo": me.is_hr}
 
 
-POOL_NEED = {"confirm": ("CEO",), "back": ("CEO",), "finalize": ("HR",), "undo": ("HR", "DONE")}  # 단추마다 있어야 할 묶음 상태 (마감은 쓰기 길이 단계 · 정원을 따로 본다)
+POOL_NEED = {"confirm": ("CEO",), "back": ("CEO", "FIX"), "finalize": ("HR",), "undo": ("HR", "DONE")}  # 단추마다 있어야 할 묶음 상태 (마감은 쓰기 길이 단계 · 정원을 따로 본다)
+# 돌려보내기는 FIX 에서도 — 마감 뒤 기준 점수가 바뀌어 등급이 어긋나면 대표이사는 본부 팀원 등급을 못 고치니 돌려보내는 것이 빠져나갈 길이다.
 
 
 def _pool_can(ctx: _Ctx, me: Actor, key: str) -> dict[str, bool]:
@@ -1158,19 +1162,21 @@ def _not_now(ctx: _Ctx, key: str, act: str, state: str) -> str:
     """상태가 맞지 않을 때의 까닭 — 이미 넘어갔으면 "이미 …", 아직이면 무엇을 기다리는지."""
     if act == "finalize":
         return "이미 확정했습니다." if state == "DONE" else "아직 대표이사 확인 전입니다."
-    if act == "undo":
-        return "되돌릴 수 있는 단계가 아닙니다."
+    if act == "undo":  # 화면이 본 상태(from)와 다르다 — 그사이 누가 확정했거나, 이미 되돌렸다 (두 창의 두 번째)
+        if state == "DONE":
+            return "그사이 확정됐습니다."
+        return "이미 되돌렸습니다." if state == "HR" or ctx.pools[key]["undo_at"] else "되돌릴 수 있는 단계가 아닙니다."
     if state in ("HR", "DONE"):
         return "이미 확인했습니다."
-    if state == "FIX":
+    if state == "FIX":  # 확인만 — 돌려보내기는 FIX 에서도 된다
         return "등급을 다시 맞춰야 합니다."
     if act == "back" and ctx.pools[key]["back_at"]:  # 돌려보낸 뒤 아직 다시 마감하지 않았다 (마감하면 back_* 를 지운다)
         return "이미 돌려보냈습니다."
     return "아직 확인할 차례가 아닙니다." if act == "confirm" else "아직 마감 전입니다."
 
 
-def _pools_ok(ctx: _Ctx, keys: list[str], act: str) -> dict[str, str]:
-    """묶음 단추 길의 거절 (묶음 마감과 같은 모양 — 모듈 머리말): 없는 묶음 404 → 권한(_pool_auth) 403 → 공개 뒤 409 → 상태(POOL_NEED) 409.
+def _pools_ok(ctx: _Ctx, keys: list[str], act: str, need: tuple[str, ...] | None = None) -> dict[str, str]:
+    """묶음 단추 길의 거절 (묶음 마감과 같은 모양 — 모듈 머리말): 없는 묶음 404 → 권한(_pool_auth) 403 → 공개 뒤 409 → 상태(need — 없으면 POOL_NEED) 409.
     목록은 하나라도 걸리면 거절한다 — 쓰기 전에 모두 보므로 아무것도 안 바뀐다. 돌려주는 것 = 열쇠 → 지금 상태."""
     if any(k not in ctx.pools for k in keys):
         raise _Refuse("묶음을 찾을 수 없습니다.", 404)
@@ -1181,7 +1187,7 @@ def _pools_ok(ctx: _Ctx, keys: list[str], act: str) -> dict[str, str]:
     states = {}
     for k in keys:
         state, errors, *_ = _pool(ctx, k)
-        if state not in POOL_NEED[act]:
+        if state not in (need or POOL_NEED[act]):
             raise _Refuse(f"{_pool_label(ctx, k)} 묶음은 {_not_now(ctx, k, act, state)}", 409, **({"errors": errors} if state == "FIX" else {}))
         states[k] = state
     return states
@@ -1252,10 +1258,13 @@ def pool_finalize() -> Response:
 def pool_undo() -> Response:
     b = _body()
     year, (key,) = _year(b.get("year")), _keys([b.get("pool")])
+    seen = b.get("from")  # 화면이 본 묶음 상태 — 지금과 다르면 409 (두 창에서 눌러도 한 단계만 내려간다)
+    if seen not in POOL_NEED["undo"]:
+        raise _Refuse("되돌릴 단계(from: HR · DONE)를 보내 주세요.", 400)
     conn = auth._db()
     with _txn(conn):
         ctx = _ctx(conn, year)
-        done = _pools_ok(ctx, [key], "undo")[key] == "DONE"
+        done = _pools_ok(ctx, [key], "undo", (seen,))[key] == "DONE"
         _move(conn, year, key, "HR" if done else ready_stage(key))  # HR 확정을 되돌림 / 대표이사 확인을 되돌림 (직속은 GRADE — 대표이사가 정하면서 확인한다)
         clear = "" if done else ", ceo_at = NULL, ceo_by = NULL, ceo_behalf = NULL"
         src = "HR" if done else "CEO"
@@ -1275,6 +1284,8 @@ def release() -> Response:
     with _txn(conn):
         _open(conn, year)  # 시작 안 함 409 → 이미 공개 409
         rows = conn.execute("SELECT user_id, stage FROM ev_targets WHERE year = ? AND out_at IS NULL", (year,)).fetchall()
+        if not rows:  # 모두 제외됐다 — 공개는 되돌릴 수 없으니 빈 결과를 공개하지 않는다
+            raise _Refuse("평가할 분이 없습니다.", 409)
         if any(s != "DONE" for _, s in rows):
             raise _Refuse("아직 확정되지 않은 분이 있습니다.", 409)
         conn.execute("UPDATE ev_rounds SET released_at = ?, released_by = ? WHERE year = ?", (auth._iso(auth._now()), g.actor.user_id, year))
