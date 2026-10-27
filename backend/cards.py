@@ -2,8 +2,9 @@
 표는 021_cards.sql. 카드 글은 서버 .env 의 HR_PAY_KEY 로 잠가 둔다(급여명세서 · 연봉계약서와 같은 열쇠 — payslip.pay_key). 나머지 칸은 잠그지 않는다.
 
   KINDS · REASONS       카드 종류(cheer 축하 · praise 칭찬 · thanks 감사 · comfort 위로) · 축하 사유(birthday 생일 · welcome 새 식구 · anniv 입사 기념 · joy 경사)
-  reasons_for()         그 사람이 지금 받을 수 있는 축하 사유와, 조사 게시 중인지 — 홈 "이번 주 소식"(auth.news_items · celeb_events)과 같은 규칙
-  options()             그 사람에게 보낼 수 있는 카드 (조사 중이면 위로만)
+  reasons_for()         그 사람이 지금 받을 수 있는 축하 사유와, 조사 게시 중인지, 입사 연차 — 홈 "이번 주 소식"(auth.news_items · celeb_events)과 같은 규칙
+  arts_for()            그 카드에 고를 수 있는 그림 번호 (2026-10-27 인사담당자 — 생일 5 · 6 · 3 · 4 · 입사 기념은 연차 숫자 그림 + 1 · 2 · 나머지 1~4). 화면 cardArts 와 같은 규칙
+  options()             그 사람에게 보낼 수 있는 카드와 각 카드의 그림 번호 (조사 중이면 위로만)
   clean_text()          카드 글 검사 — 1~150자, 세 줄까지, 쓸 수 없는 글자 없음. 아니면 CardError(400)
   seal_text() · unseal_text()   글 잠그기 · 풀기. 잠근 글 = 12바이트 nonce + AES-GCM(내용, aad="card|보낸 사람|받는 사람|보낸 날") —
                         다른 날 · 다른 사람 자리로 옮겨 붙이면 풀리지 않는다(InvalidTag)
@@ -13,8 +14,8 @@
 app.py 가 bp 를 붙인다. 세션 검사 · 같은 출처 검사는 auth._guard 가 모든 /api/* 에 한다. 오류는 CardError(문구, 상태)를 던지면 blueprint 의 errorhandler 가 {"error": 문구} 로 답한다(트랜잭션 안에서도 같다). 카드 길은 급여 비밀번호 앞머리(paypin.PREFIXES)가 아니다.
   GET  /api/cards              {"ready", "unread", "received", "sent"} — 최근이 위, 각 LIST_MAX 장. 열쇠가 없으면 ready False · 빈 목록 · 안 읽음 0.
                                받은 줄 {id, kind, reason, art, text, date, from: {id, name, title, dept}, read, thanked, hidden} · 보낸 줄 {…, to: {…}, read, thanked}
-  GET  /api/cards/options?to=  {"options", "sentToday"} — 받을 수 없는 사람 404
-  POST /api/cards              {"to", "kind", "reason", "art", "text"} → 201 {"id"} — 모양 400 · 받을 수 없음 404 · 지금 못 보내는 종류 403 · 오늘 이미 보냄 409 · 열쇠 없음 503
+  GET  /api/cards/options?to=  {"options": [{kind, reason, arts}], "sentToday"} — 받을 수 없는 사람 404. arts = 고를 수 있는 그림 번호(보이는 순서, 처음 골라질 그림이 맨 앞)
+  POST /api/cards              {"to", "kind", "reason", "art", "text"} → 201 {"id"} — 모양 400(그 종류의 arts 에 없는 그림 포함) · 받을 수 없음 404 · 지금 못 보내는 종류 403 · 오늘 이미 보냄 409 · 열쇠 없음 503
   POST /api/cards/<id>/read | thanks | hide {"hidden"}   받은 사람만 → 200 {"unread"} (남의 카드는 HR 도 404). 고치는 칸은 read_at · thanked_at · hidden_at 뿐
 카드 일은 감사로그에 남기지 않는다(누가 누구에게 보냈는지가 새지 않게). 서버 로그에도 이름 · 글은 없다.
 알림: 보내기를 저장(commit)한 뒤 받는 사람에게 push "card", 처음 [고마워요]를 누른 뒤(이미 눌렀으면 아무것도 안 바뀌어 안 보냄) 보낸 사람에게 push "card_thanks" — push.notify 규칙 그대로(평일 9~18시 · 휴대폰 등록한 사람),
@@ -65,24 +66,41 @@ class CardError(Exception):
         self.msg, self.status = msg, status
 
 
-def reasons_for(conn: Connection, uid: int, today: date) -> tuple[list[str], bool]:
-    """(그 사람의 지금 축하 사유 — REASONS 순서, 조사 게시 중인가). 조직도에 보이는 사람(활성 · 조직도에서 안 뺌)만 — 아니면 ([], False)."""
+def reasons_for(conn: Connection, uid: int, today: date) -> tuple[list[str], bool, int]:
+    """(그 사람의 지금 축하 사유 — REASONS 순서, 조사 게시 중인가, 입사 연차). 조직도에 보이는 사람(활성 · 조직도에서 안 뺌)만 — 아니면 ([], False, 0).
+    입사 연차는 auth.news_items 의 입사 기념과 같은 셈(올해 - 입사한 해, 입사일이 없으면 0) — 입사 기념 그림(arts_for)에만 쓴다."""
     row = conn.execute("SELECT id, hire_date, birthday, birthday_public FROM users WHERE id = ? AND is_active = 1 AND org_hidden = 0", (uid,)).fetchone()
     if row is None:
-        return [], False
+        return [], False, 0
     got = {_NEWS_REASON[n["kind"]] for n in auth.news_items([tuple(row)], today)}
     kinds = {k for (k,) in conn.execute("SELECT kind FROM celeb_events WHERE user_id = ? AND removed_at IS NULL AND until_date >= ?",
                                         (uid, today.isoformat()))}
     if "joy" in kinds:
         got.add("joy")
-    return [r for r in REASONS if r in got], "condol" in kinds
+    years = today.year - date.fromisoformat(row[1]).year if row[1] else 0
+    return [r for r in REASONS if r in got], "condol" in kinds, years
 
 
-def options(reasons: list[str], condol: bool) -> list[dict]:
-    """보낼 수 있는 카드 목록. 조사 중이면 위로만, 아니면 사유마다 축하 + 칭찬 + 감사."""
+_ANNIV_ART = {1: 5, 3: 6, 5: 7, 10: 8}  # 입사 기념 연차 → 숫자 그림 (1 · 3 · 5 · 10주년). 그 뒤(11주년부터 해마다 — 입사 기념은 news_items 의 그 해들에만 뜬다)는 장기근속 그림 9 · 10 두 장
+
+
+def arts_for(reason: str | None, years: int) -> list[int]:
+    """그 카드에 고를 수 있는 그림 번호 — 보이는 순서이고 맨 앞이 처음 골라진다. 화면 cardArts 와 같은 규칙(cardSelfCheck 에 check() 와 같은 표).
+    생일 = 새 그림 5(남) · 6(여) + 3 · 4 / 입사 기념 = 연차 숫자 그림 + 꽃다발 1 · 트로피 2 (11주년부터는 숫자 그림 대신 장기근속 9 · 10) / 나머지(새 식구 · 경사 · 칭찬 · 감사 · 위로) = 1~4.
+    이제 고를 수 없는 옛 그림(생일 1 · 2, 입사 기념 3 · 4)도 이미 보낸 카드에는 저장된 번호 그대로 보인다(그림 파일은 지우지 않는다). 번호는 표(022)의 범위 1~20 안."""
+    if reason == "birthday":
+        return [5, 6, 3, 4]
+    if reason == "anniv":
+        return [_ANNIV_ART[years], 1, 2] if years in _ANNIV_ART else [9, 10, 1, 2]
+    return [1, 2, 3, 4]
+
+
+def options(reasons: list[str], condol: bool, years: int) -> list[dict]:
+    """보낼 수 있는 카드 목록과 각 카드의 그림 번호(arts). 조사 중이면 위로만, 아니면 사유마다 축하 + 칭찬 + 감사. years = 받는 사람의 입사 연차(reasons_for)."""
     if condol:
-        return [{"kind": "comfort", "reason": None}]
-    return [{"kind": "cheer", "reason": r} for r in reasons] + [{"kind": "praise", "reason": None}, {"kind": "thanks", "reason": None}]
+        return [{"kind": "comfort", "reason": None, "arts": arts_for(None, years)}]
+    return ([{"kind": "cheer", "reason": r, "arts": arts_for(r, years)} for r in reasons]
+            + [{"kind": k, "reason": None, "arts": arts_for(None, years)} for k in ("praise", "thanks")])
 
 
 def clean_text(v: object) -> str:
@@ -211,12 +229,15 @@ def options_of() -> Response:
 
 
 def _store(conn: Connection, key: bytes, me: int, to: int, kind: str, reason: str | None, art: int, text: str, today: date) -> int:
-    """BEGIN IMMEDIATE 안에서: 받을 수 있는 사람인가(404) → 지금 보낼 수 있는 종류인가(403) → 오늘 이미 보냈나(409) → 넣기. 새 카드 번호. 안 되면 CardError."""
+    """BEGIN IMMEDIATE 안에서: 받을 수 있는 사람인가(404) → 지금 보낼 수 있는 종류인가(403) → 그 종류에 고를 수 있는 그림인가(400) → 오늘 이미 보냈나(409) → 넣기. 새 카드 번호. 안 되면 CardError."""
     day = today.isoformat()
     if not _receivable(conn, me, to):
         raise CardError(MSG_WHO, 404)
-    if {"kind": kind, "reason": reason} not in options(*reasons_for(conn, to, today)):
+    opt = next((o for o in options(*reasons_for(conn, to, today)) if o["kind"] == kind and o["reason"] == reason), None)
+    if opt is None:
         raise CardError(MSG_NOT_NOW, 403)
+    if art not in opt["arts"]:  # 입사 기념은 그 순간 받는 사람의 연차로 센 그림 — 화면이 보여 준 칸을 믿지 않는다
+        raise CardError(MSG_SHAPE)
     if _sent_today(conn, me, to, day):
         raise CardError(MSG_ONCE, 409)
     try:
@@ -237,7 +258,7 @@ def send() -> Response:
     b = b if isinstance(b, dict) else {}
     to, kind, reason, art = b.get("to"), b.get("kind"), b.get("reason"), b.get("art")
     if not (type(to) is int and 0 < to < 2**31 and kind in KINDS and (reason is None or reason in REASONS) and (kind == "cheer") == (reason is not None)
-            and type(art) is int and 1 <= art <= 4):  # type() is int: True · 1.0 · "1" 을 정수로 치지 않는다
+            and type(art) is int):  # type() is int: True · 1.0 · "1" 을 정수로 치지 않는다. 그림 번호가 그 종류에 있는지는 _store 가 options 를 다시 셀 때 본다
         raise CardError(MSG_SHAPE)
     text = clean_text(b.get("text"))
     conn, today = auth._db(), auth._today()
@@ -307,10 +328,17 @@ def hide(cid: str) -> Response:
 
 
 def check() -> None:
-    assert options(["birthday", "anniv"], False) == [{"kind": "cheer", "reason": "birthday"}, {"kind": "cheer", "reason": "anniv"},
-                                                     {"kind": "praise", "reason": None}, {"kind": "thanks", "reason": None}]
-    assert options(["birthday"], True) == [{"kind": "comfort", "reason": None}]  # 조사면 위로만
-    assert options([], False) == [{"kind": "praise", "reason": None}, {"kind": "thanks", "reason": None}]
+    four = [1, 2, 3, 4]
+    assert options(["birthday", "anniv"], False, 3) == [{"kind": "cheer", "reason": "birthday", "arts": [5, 6, 3, 4]}, {"kind": "cheer", "reason": "anniv", "arts": [6, 1, 2]},
+                                                        {"kind": "praise", "reason": None, "arts": four}, {"kind": "thanks", "reason": None, "arts": four}]
+    assert options(["birthday"], True, 0) == [{"kind": "comfort", "reason": None, "arts": four}]  # 조사면 위로만
+    assert options([], False, 0) == [{"kind": "praise", "reason": None, "arts": four}, {"kind": "thanks", "reason": None, "arts": four}]
+    # 그림 목록 (2026-10-27 인사담당자): 생일 5 · 6 · 3 · 4 / 입사 기념 = 연차 숫자 그림(1 → 5 · 3 → 6 · 5 → 7 · 10 → 8) + 꽃다발 1 + 트로피 2, 11주년부터는 장기근속 9 · 10 + 1 · 2 / 나머지 1~4 — 화면 cardArts 와 같은 표 (cardSelfCheck)
+    got = [arts_for(r, y) for r, y in (("birthday", 0), ("anniv", 1), ("anniv", 3), ("anniv", 5), ("anniv", 10), ("anniv", 11), ("anniv", 15), ("anniv", 35),
+                                       ("welcome", 0), ("joy", 0), (None, 0))]
+    assert got == [[5, 6, 3, 4], [5, 1, 2], [6, 1, 2], [7, 1, 2], [8, 1, 2], [9, 10, 1, 2], [9, 10, 1, 2], [9, 10, 1, 2], four, four, four], got
+    assert all(type(n) is int and 1 <= n <= 20 for r in (*REASONS, None) for y in (1, 3, 5, 10, 15, 40) for n in arts_for(r, y))  # 표(022)의 그림 번호 범위 1~20 안
+    assert arts_for("anniv", 3) is not arts_for("anniv", 3)  # 부를 때마다 새 목록 (고쳐 써도 다른 응답에 번지지 않게)
     assert clean_text("  고마워요 \r\n덕분이에요 ") == "고마워요\n덕분이에요"
     assert clean_text("a\rb") == "a\nb"  # 혼자 있는 CR 도 줄바꿈
     assert clean_text("\n\n a \n\n b \n") == "a\n\nb"  # 줄마다 앞뒤 빈칸을 떼고, 맨 앞뒤 빈 줄도 뗀다
