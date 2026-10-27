@@ -6486,7 +6486,7 @@ def check_eval_view(hr) -> None:
             "hidden", "appeal"}  # 가점 칸(bonus · bonusReason)은 판 23부터 없다
     SELF_GONE = {"grade", "proposed", "subScore", "subMarks", "comment", "headComment", "total", "cap", "proxy", "edited", "editSeen", "rater", "raterIsCeo", "assignerIsCeo"}
     NO_CAN = dict.fromkeys(("self", "upload", "score", "assign", "head", "evidence", "behalf"), False)
-    NO_POOL_CAN = dict.fromkeys(("close", "confirm", "back", "finalize", "undo"), False)
+    NO_POOL_CAN = dict.fromkeys(("close", "confirm", "back", "extra", "finalize", "undo"), False)
     other_ceos = [r[0] for r in q("SELECT u.id FROM users u JOIN user_roles r ON r.user_id = u.id WHERE r.role = 'CEO' AND u.is_active = 1 AND u.id <> ?", CEO)]
     att_done = q("SELECT att_done_at FROM ev_rounds WHERE year = ?", Y)[0][0]
     fdir = Path(os.environ["HR_DB_PATH"]).parent / "eval_files"
@@ -6556,7 +6556,7 @@ def check_eval_view(hr) -> None:
         ok(row(st(HRA), EMPC)["rater"] == {"id": LEADC, "name": "가상E팀장C", "title": "가상직급", "canLogin": False}, "평가자가 포털을 못 쓰면 rater.canLogin 거짓 (HR 명단 경고)")
         x("UPDATE users SET portal_enabled = 1 WHERE id = ?", LEADC)
         P91 = {"key": "DIV:91", "name": "가상E본부 팀원", "size": 4, "state": "WAIT", "counts": {"S": 0, "A": 0, "B": 0, "C": 1, "D": 0}, "errors": [], "warnings": [],
-               "quota": "S 최대 1명 · A·B 합계 1명 (S만큼 줄어듦) · C·D 나머지", "log": {"closed": None, "ceo": None, "back": None, "undo": None}, "hrSeen": False,
+               "quota": "S 최대 1명 · A·B 합계 1명 (S만큼 줄어듦) · C·D 나머지", "extra": None, "log": {"closed": None, "ceo": None, "back": None, "undo": None}, "hrSeen": False,
                "can": NO_POOL_CAN}
         ok([p["key"] for p in hra["pools"]] == ["DIV:91", "DIV:94", "LEADERS", "DIRECT"] and hra["pools"][0] == P91 and all(p["can"] == NO_POOL_CAN for p in hra["pools"])
            and [p["size"] for p in hra["pools"]] == [4, 1, 3, 2], "대표이사와_HR은_전부: pools 넷 (제외된 사람 빼고 셈 · 배정 단계에 온 사람의 등급만 셈 · 정원 글자) · 맡김 전 HR 은 마감 못 함")
@@ -7513,7 +7513,15 @@ def check_eval_score(hr) -> None:
         put(FIELD, grade="C")
         LINE = "가상E팀원B 님(총점 94점)이 총점이 더 낮은 가상E본부직속 님(90점)보다 등급이 낮습니다."
         a = pool_of(HEAD, "DIV:91")
-        put(EMPB, head_comment="가상 밀린 이유")
+        x("UPDATE ev_targets SET stage = 'GRADE' WHERE year = ? AND pool = 'DIV:91' AND out_at IS NULL", Y)  # 배정 단계로 되돌려 마감 길로 본다
+        x("UPDATE ev_pools SET closed_at = NULL, closed_by = NULL WHERE year = ? AND pool = 'DIV:91'", Y)
+        NOTE = f"{LINE} 코멘트에 이유를 적어 주세요."
+        r = close(HEAD, "DIV:91")
+        ok(r.status_code == 409 and r.json == {"error": NOTE, "errors": [NOTE]} and pool_row("DIV:91")[0] is None and not took(),
+           "점수_역전은_윗사람_코멘트로: 밀린 사람에게 윗사람 코멘트가 없으면 마감 409 (그 문구가 첫 오류) · 그대로")
+        ok(edit(HEAD, EMPB, headComment="가상 밀린 이유").status_code == 200 and hit(close(HEAD, "DIV:91"), 200, OK) and tg(EMPB)[0] == "CEO",
+           "점수_역전은_윗사람_코멘트로: 본부장이 밀린 사람에게 코멘트를 쓰면 마감 200")
+        took()
         b = pool_of(HEAD, "DIV:91")
         ok((a["state"], a["errors"]) == ("FIX", [f"{LINE} 코멘트에 이유를 적어 주세요."]) and (b["state"], b["errors"]) == ("CEO", []) and LINE in b["warnings"],
            "점수_역전은_윗사람_코멘트로: 본부 팀원 묶음에서 밀린 사람에게 윗사람 코멘트가 없으면 오류(FIX) · 코멘트를 쓰면 경고만")
@@ -7616,7 +7624,9 @@ def check_eval_score(hr) -> None:
 def check_eval_close(hr) -> None:
     """인사평가 대표이사 확인 · 돌려보내기 · HR 확정 · 되돌리기 · 결과 공개 (2026-10-27, 평가 3단계 ②): 대표이사(맡겼으면 그 묶음에 들지 않은 HR)가 묶음째로 확인해 HR 확정으로 넘기고,
     본부 팀원 묶음은 이유를 적어 배정자(본부장)에게 돌려보낸다. HR 이 확정하고(자기가 든 묶음도 — HR 본인 일), 공개 전에는 한 단계씩 되돌린다. 모두 확정되면 공개 — 제외 안 된 대상에게 알림 · 그 뒤 등급이 보인다.
-    목록 요청은 하나라도 걸리면 아무것도 안 바뀌고, 두 번 누르면 두 번째는 409 (감사로그 · 알림 한 번). 감사로그에는 해 · 묶음 열쇠 · 되돌린 단계 · 사람 수뿐 (돌려보낸 이유 · 등급 없음).
+    목록 요청은 하나라도 걸리면 아무것도 안 바뀌고, 두 번 누르면 두 번째는 409 (감사로그 · 알림 한 번). 감사로그에는 해 · 묶음 열쇠 · 되돌린 단계 · 사람 수 · 늘린 정원 숫자뿐 (돌려보낸 이유 · 등급 없음).
+    대표이사는 돌려보내며 그 묶음 정원을 늘려 주고(본부장이 그만큼 더 주고 다시 마감), 자기가 등급을 정하는 묶음(본부장 없는 본부 · 전사 팀장 · 직속)은 바로 늘린다 (2026-10-27 평가 규칙 손질) —
+    늘린 정원은 묶음 인원을 넘지 못하고, 제외 · 되돌림으로 인원이 바뀌어 넘치게 되면 그 제외 · 되돌림을 막는다.
     check_eval_score 가 되돌려 둔 회차와 가상 조직(부서 91~97 · 사람 101~116)을 쓴다 — 묶음을 대표이사 확인 직전으로 바로 넣고(마감 길은 check_eval_score 가 본다) 그 뒤는 실제 길로 간다.
     끝에 시계 · 알림 · 대표이사 · 맡김 · 근태 마침 · 묶음 기록 · 단계 · 등급 · 공개를 되돌린다."""
     import evaluation
@@ -7650,6 +7660,12 @@ def check_eval_close(hr) -> None:
                        " FROM ev_pools WHERE year = ? AND pool = ?", Y, k)[0]
     audits = lambda action: [(e, json.loads(a)) for e, a in q("SELECT entity_id, after_data FROM audit_logs WHERE action = ? ORDER BY id", action)]  # noqa: E731
     by = lambda action: q("SELECT actor_user_id, on_behalf_of FROM audit_logs WHERE action = ? ORDER BY id", action)  # noqa: E731
+    xrow = lambda k: q("SELECT extra_sa, extra_b, extra_reason, extra_at, extra_by, extra_behalf FROM ev_pools WHERE year = ? AND pool = ?", Y, k)[0]  # noqa: E731
+    ext = lambda who, k, extra, **body: act(who, "extra", pool=k, extra=extra, **body)  # noqa: E731
+    edit = lambda who, uid, **body: post(who, f"/api/eval/people/{uid}/edit", {"year": Y, **body})  # noqa: E731
+    excl = lambda uid, **body: post(HRA, f"/api/eval/admin/{uid}/exclude", {"year": Y, "reason": "가상 제외", **body})  # noqa: E731
+    incl = lambda uid: post(HRA, f"/api/eval/admin/{uid}/include", {"year": Y})  # noqa: E731
+    out_of = lambda uid: q("SELECT out_at FROM ev_targets WHERE year = ? AND user_id = ?", Y, uid)[0][0]  # noqa: E731
 
     def setg(uid, *grades):  # 실행목표 등급을 rid 차례로 바로 넣는다
         for (rid,), v in zip(q("SELECT rid FROM ev_items WHERE year = ? AND user_id = ? ORDER BY rid", Y, uid), grades):
@@ -7680,6 +7696,12 @@ def check_eval_close(hr) -> None:
     PICK, NO_POOL, NOT_DONE = {"error": "묶음을 골라 주세요."}, {"error": "묶음을 찾을 수 없습니다."}, {"error": "아직 확정되지 않은 분이 있습니다."}
     WHY, WHY_CHAR = {"error": "돌려보내는 이유를 1~200자로 써 주세요."}, {"error": "돌려보내는 이유에 쓸 수 없는 글자가 있습니다."}
     SEEN = {"error": "되돌릴 단계(from: HR · DONE)를 보내 주세요."}
+    EXTRA_BAD, EXTRA_OVER = {"error": "늘린 정원은 0~5명 정수로 넣어 주세요."}, {"error": "늘린 정원이 묶음 인원보다 많습니다."}
+    NO_EXTRA, EXTRA_DONE = {"error": "이 묶음의 정원을 늘릴 권한이 없습니다."}, {"error": "대표이사 확인을 마친 묶음입니다."}
+    EXTRA_WHY, EXTRA_CHAR = {"error": "정원을 늘리는 이유를 1~200자로 써 주세요."}, {"error": "정원을 늘리는 이유에 쓸 수 없는 글자가 있습니다."}
+    EXCL_EXTRA = {"error": "대표이사가 늘린 정원이 묶음 인원보다 많아져 뺄 수 없습니다. 먼저 늘린 정원을 줄여 주세요."}
+    INCL_EXTRA = {"error": "대표이사가 늘린 정원이 묶음 인원보다 많아져 되돌릴 수 없습니다. 먼저 늘린 정원을 줄여 주세요."}
+    X1, NO_X = {"SA": 1, "B": 0}, (0, 0, None, None, None, None)
     no = lambda name, verb: {"error": f"{name} 묶음을 {verb} 권한이 없습니다."}  # noqa: E731
     is_ = lambda name, why: {"error": f"{name} 묶음은 {why}"}  # noqa: E731
     N1, N2, NL, ND = "가상E본부 팀원", "가상E본부2 팀원", "전사 팀장", "직속부서 팀원"
@@ -7687,7 +7709,8 @@ def check_eval_close(hr) -> None:
              " sub_marks = NULL, scored_at = NULL, scored_by = NULL, comment = '', head_comment = '', bonus_x2 = 0, bonus_reason = '', proxy_by = NULL, edit_seen = NULL,"
              " late = 0, leave_x2 = 0, out_at = NULL, out_reason = NULL, out_by = NULL, no_self_at = NULL, no_self_by = NULL, self_at = NULL WHERE year = ?")
     POOLS_RESET = ("UPDATE ev_pools SET closed_at = NULL, closed_by = NULL, hr_seen = '[]', ceo_at = NULL, ceo_by = NULL, ceo_behalf = NULL, back_at = NULL, back_by = NULL,"
-                   " back_behalf = NULL, back_reason = NULL, undo_at = NULL, undo_by = NULL, undo_from = NULL WHERE year = ?")
+                   " back_behalf = NULL, back_reason = NULL, undo_at = NULL, undo_by = NULL, undo_from = NULL,"
+                   " extra_sa = 0, extra_b = 0, extra_reason = NULL, extra_at = NULL, extra_by = NULL, extra_behalf = NULL WHERE year = ?")
 
     other_ceos = [r[0] for r in q("SELECT u.id FROM users u JOIN user_roles r ON r.user_id = u.id WHERE r.role = 'CEO' AND u.is_active = 1 AND u.id <> ?", CEO)]
     att0 = q("SELECT att_done_at FROM ev_rounds WHERE year = ?", Y)[0][0]
@@ -7787,6 +7810,107 @@ def check_eval_close(hr) -> None:
         ok(hit(post(HEAD, "/api/eval/pools/close", {"year": Y, "pool": D1}), 200, OK) and stages(D1) == ["CEO"] * 4, "(기준을 되돌리고 본부장이 다시 마감)")
         took()
 
+        # ---- 정원_늘려_주기 (대표이사가 돌려보내며 — 본부장 있는 본부 D1 · 4명이라 S·A·B 합쳐 1명) ----
+        close1 = lambda: post(HEAD, "/api/eval/pools/close", {"year": Y, "pool": D1})  # noqa: E731
+        n_back = len(audits("EVAL_POOL_RETURNED"))
+        ok(all(hit(act(CEO, "back", pool=D1, reason="가상", extra=v), 400, EXTRA_BAD)
+               for v in ({"SA": -1, "B": 0}, {"SA": 6, "B": 0}, {"SA": 0, "B": True}, {"SA": 1.5, "B": 0}, {"SA": "1", "B": 0}, {"SA": [1], "B": 0},
+                         {"SA": 1}, 6, True, "1", [1, 0], None))
+           and all(hit(act(CEO, "back", pool=D1, reason="가상", extra=v), 400, EXTRA_OVER) for v in ({"SA": 4, "B": 0}, {"SA": 3, "B": 1}, {"SA": 5, "B": 5}))
+           and hit(act(CEO, "back", pool=D1, extra={"SA": -1, "B": 0}), 400, WHY)
+           and stages(D1) == ["CEO"] * 4 and prow(D1)[5] is None and xrow(D1) == NO_X and len(audits("EVAL_POOL_RETURNED")) == n_back and not took(),
+           "정원_늘려_주기: 늘린 정원 모양(음수 · 6 · 참/거짓 · 소수 · 글자 · 목록 · 칸 빠짐 · 묶음이 아님 · null) 400 · 묶음 인원(4명)보다 많음 400 · "
+           "이유 400 이 먼저 — 돌려보내기도 안 됨 (단계 · 기록 · 감사로그 · 알림 그대로)")
+        r = act(CEO, "back", pool=D1, reason=" 가상 정원 늘림 ", extra=X1)
+        hp = pool_of(HEAD, D1)
+        ok(hit(r, 200, OK) and stages(D1) == ["GRADE"] * 4 and prow(D1)[8] == "가상 정원 늘림" and xrow(D1) == (1, 0, "가상 정원 늘림", z(12, 7), CEO, None)
+           and hp["extra"] == {"SA": 1, "B": 0, "reason": "가상 정원 늘림", "at": z(12, 7), "by": "가상E대표 가상직급"}
+           and hp["quota"] == "S 최대 2명 · A·B 합계 2명 (S만큼 줄어듦) · C·D 나머지 · 대표이사 허용 S·A +1명" and hp["can"]["extra"] is False,
+           "정원_늘려_주기: 돌려보내며 S·A +1 → 200 · 늘린 정원 칸(이유 = 돌려보낸 이유 · 때 · 사람 · 대신 아님) · 본부장 묶음 줄 extra · "
+           "정원 글자 끝 ' · 대표이사 허용 S·A +1명' · 본부장에게 늘리기 단추 없음")
+        ok(audits("EVAL_POOL_RETURNED")[-1] == (Y, {"year": Y, "pool": D1, "extra": [1, 0]}) and by("EVAL_POOL_RETURNED")[-1] == (CEO, None) and took() == [(HEAD, *TURN)],
+           "감사로그 EVAL_POOL_RETURNED 에 늘린 정원 숫자 extra [S·A, B] (이유 글 없음) · 본부장에게 알림")
+        ok(hit(act(CEO, "back", pool=D1, reason="가상", extra={"SA": 9, "B": 0}), 409, is_(N1, "이미 돌려보냈습니다.")) and xrow(D1)[:2] == (1, 0),
+           "(묶음 상태 409 가 늘린 정원 400 보다 먼저)")
+        ok(all(edit(HEAD, u, grade="B").status_code == 200 for u in (FIELD, EMPB)) and pool_of(HEAD, D1)["errors"] == [] and hit(close1(), 200, OK)
+           and stages(D1) == ["CEO"] * 4, "정원_늘려_주기: 본부장이 늘린 만큼 더 주고(B 2명) 마감 200")
+        took()
+        ok(hit(act(CEO, "back", pool=D1, reason="가상 다시 봄"), 200, OK) and xrow(D1) == (1, 0, "가상 정원 늘림", z(12, 7), CEO, None)
+           and audits("EVAL_POOL_RETURNED")[-1] == (Y, {"year": Y, "pool": D1}) and hit(close1(), 200, OK),
+           "정원_늘려_주기: 늘린 정원 없이 돌려보내면 늘린 정원은 그대로 (감사로그에도 extra 없음 · B 2명 그대로 다시 마감 200)")
+        took()
+        r = act(CEO, "back", pool=D1, reason="가상 되돌림", extra={"SA": 0, "B": 0})
+        hp = pool_of(HEAD, D1)
+        ok(hit(r, 200, OK) and xrow(D1) == NO_X and audits("EVAL_POOL_RETURNED")[-1] == (Y, {"year": Y, "pool": D1, "extra": [0, 0]})
+           and hp["extra"] is None and hp["quota"] == "S 최대 1명 · A·B 합계 1명 (S만큼 줄어듦) · C·D 나머지" and hp["errors"] == ["A·B 합계는 1명까지입니다. 현재 2명"],
+           "정원_늘려_주기: 0 · 0 으로 돌려보내면 늘린 정원을 지움 (이유 · 때 · 사람 칸도) · 정원 글자 원래대로 · B 2명은 다시 정원 초과")
+        ok(all(edit(HEAD, u, grade="C").status_code == 200 for u in (FIELD, EMPB)) and hit(close1(), 200, OK), "(본부장이 정원에 맞춰 다시 마감)")
+        took()
+
+        # ---- 정원_늘리기 (대표이사가 직접 등급을 정하는 묶음 — 본부장 없는 본부 D2 · 전사 팀장 LD · 직속부서 DR) ----
+        ok(cans(CEO, "extra") == {D1: False, D2: True, LD: True, DR: True} and cans(HEAD, "extra") == {D1: False} and not any(cans(HRA, "extra").values()),
+           "can.extra: 대표이사는 자기가 등급을 정하는 묶음(본부장 없는 본부 · 전사 팀장 · 직속 — FIX 도) · 본부장 있는 본부 · 본부장 · 맡기기 전 HR 은 거짓")
+        ok(app.test_client().post("/api/eval/pools/extra", base_url=BASE, headers=ORIGIN, json={}).status_code == 401
+           and all(hit(ext(CEO, LD, X1, reason="가상", year=v), 400, BAD_YEAR) for v in (None, str(Y), float(Y), True, 2101))
+           and all(hit(ext(CEO, v, X1, reason="가상"), 400, PICK) for v in (None, 91, [LD])) and hit(ext(CEO, "DIV:999", X1, reason="가상"), 404, NO_POOL)
+           and hit(ext(CEO, LD, X1, reason="가상", year=Y + 1), 404, NO_POOL),
+           "정원_늘리기: 로그인 없이 401 · 해 400 · 열쇠 400 · 없는 묶음 404")
+        ok(hit(ext(CEO, D1, X1, reason="가상"), 403, NO_EXTRA) and hit(ext(HEAD, D1, X1, reason="가상"), 403, NO_EXTRA)
+           and all(hit(ext(who, k, X1, reason="가상"), 403, NO_EXTRA) for who in (HEAD, HRA, HR, LEAD) for k in (D2, LD, DR))
+           and xrow(D1) == xrow(D2) == xrow(LD) == xrow(DR) == NO_X,
+           "정원_늘리기: 본부장 있는 본부(D1)는 대표이사 · 본부장도 403 (돌려보내기로) · 본부장 · 맡기기 전 HR · 팀장 403 — 그대로")
+        ok(all(hit(ext(CEO, DR, v, reason="가상"), 400, EXTRA_BAD) for v in ({"SA": -1, "B": 0}, {"SA": 6, "B": 0}, {"SA": True, "B": 0}, {"SA": 1.5, "B": 0},
+                                                                            {"SA": 0}, "1", [1, 0], None))
+           and hit(ext(CEO, DR, {"SA": 1, "B": 1}, reason="가상"), 400, EXTRA_OVER) and hit(ext(CEO, LD, {"SA": 3, "B": 0}, reason="가상"), 400, EXTRA_OVER)
+           and all(hit(ext(CEO, LD, X1, **b), 400, m) for b, m in (({}, EXTRA_WHY), ({"reason": "  \n "}, EXTRA_WHY), ({"reason": "가" * 201}, EXTRA_WHY),
+                                                                   ({"reason": 5}, EXTRA_WHY), ({"reason": "가상\x00"}, EXTRA_CHAR)))
+           and hit(ext(CEO, LD, {"SA": 9, "B": 0}), 400, EXTRA_BAD) and xrow(LD) == xrow(DR) == NO_X and not audits("EVAL_POOL_EXTRA"),
+           "정원_늘리기: 늘린 정원 모양 400 · 묶음 인원보다 많음 400 (직속 2명에 S·A +1 · B +1 · 전사 팀장 3명에 S·A +3) · "
+           "늘렸으면 이유 1~200자 400 (없음 · 공백만 · 201자 · 글 아님 · 쓸 수 없는 글자) · 모양 400 이 이유보다 먼저 — 그대로")
+        ok(hit(ext(CEO, LD, X1, reason=" 가상 팀장 정원 "), 200, OK) and hit(ext(CEO, DR, {"SA": 0, "B": 1}, reason="가상 직속 정원"), 200, OK)
+           and hit(ext(CEO, D2, X1, reason="가상 본부2 정원"), 200, OK)
+           and xrow(LD) == (1, 0, "가상 팀장 정원", z(12, 7), CEO, None) and xrow(DR) == (0, 1, "가상 직속 정원", z(12, 7), CEO, None) and xrow(D2)[:2] == (1, 0)
+           and stages(LD) == ["CEO"] * 3 and stages(D2) == ["CEO"] and pool_of(CEO, DR)["state"] == "FIX" and not took(),
+           "정원_늘리기: 대표이사가 전사 팀장 · 직속부서(FIX 여도) · 본부장 없는 본부(1명에 S·A +1) 200 — 단계 · 묶음 상태 그대로 · 알림 없음")
+        ok(audits("EVAL_POOL_EXTRA") == [(Y, {"year": Y, "pool": k, "extra": e}) for k, e in ((LD, [1, 0]), (DR, [0, 1]), (D2, [1, 0]))]
+           and by("EVAL_POOL_EXTRA") == [(CEO, None)] * 3, "감사로그 EVAL_POOL_EXTRA {해 · 묶음 · 늘린 정원 숫자} (이유 글 없음 · 대신 아님)")
+        ps = {p["key"]: p for p in st(CEO)["pools"]}
+        ok(ps[LD]["extra"] == {"SA": 1, "B": 0, "reason": "가상 팀장 정원", "at": z(12, 7), "by": "가상E대표 가상직급"}
+           and ps[LD]["quota"] == "S 최대 2명 · A·B 합계 2명 (S만큼 줄어듦) · C·D 나머지 · 대표이사 허용 S·A +1명"
+           and ps[DR]["quota"] == "S 최대 1명 · A·B 합계 2명 (S만큼 줄어듦) · C·D 나머지 · 대표이사 허용 B +1명"
+           and ps[D2]["quota"] == "S 최대 1명 · A·B 합계 1명 (S만큼 줄어듦) · C·D 나머지 · 대표이사 허용 S·A +1명" and ps[D1]["extra"] is None,
+           "정원_늘리기: 묶음 줄 extra {SA, B, 이유, 때, 사람} · 정원 글자 끝 '대표이사 허용 …' (0 인 쪽 뺌)")
+        ok(hit(ext(CEO, D2, {"SA": 0, "B": 0}), 200, OK) and xrow(D2) == NO_X and audits("EVAL_POOL_EXTRA")[-1] == (Y, {"year": Y, "pool": D2, "extra": [0, 0]})
+           and pool_of(CEO, D2)["extra"] is None, "정원_늘리기: 0 · 0 은 이유 없이 200 — 늘린 정원 · 이유 · 때 · 사람을 지움")
+        x("INSERT INTO ceo_delegation (ceo_user_id, since) VALUES (?, ?)", CEO, z(12, 7))
+        ok(cans(HR, "extra") == {D1: False, D2: True, LD: True, DR: False} and cans(HRL, "extra") == {D1: False, D2: True, LD: False, DR: True}
+           and hit(ext(HR, DR, X1, reason="가상"), 403, NO_EXTRA) and hit(ext(HRL, LD, X1, reason="가상"), 403, NO_EXTRA)
+           and hit(ext(HEAD, D2, X1, reason="가상"), 403, NO_EXTRA) and xrow(DR)[:2] == (0, 1) and xrow(LD)[:2] == (1, 0),
+           "정원_늘리기: 맡김 → HR 은 자기가 들지 않은 묶음만 (HR 담당자는 직속부서 · HR 팀장은 전사 팀장 403) · 본부장은 그래도 403")
+        ok(hit(ext(HR, LD, {"SA": 2, "B": 0}, reason="가상 대신 늘림"), 200, OK) and xrow(LD) == (2, 0, "가상 대신 늘림", z(12, 7), HR, CEO)
+           and by("EVAL_POOL_EXTRA")[-1] == (HR, CEO) and pool_of(CEO, LD)["extra"]["by"] == "가상EHR담당 가상직급" and not took(),
+           "정원_늘리기: 맡김 → HR 담당자가 전사 팀장 묶음을 대신 200 (extra_behalf · on_behalf_of = 대표이사) · 알림 없음")
+        x("DELETE FROM ceo_delegation WHERE ceo_user_id = ?", CEO)
+
+        # ---- 늘린_정원은_사람_수에_맞게 (제외 · 되돌림으로 인원이 바뀌어 정원 셈이 멈추지 않게 쓰기에서 막는다) ----
+        put(LEADC, stage="SCORE")  # 전사 팀장 3명(S·A +2 — S·A·B 합쳐 3명) 중 점수 단계인 사람을 빼면 2명이라 늘린 정원이 넘친다
+        ok(hit(excl(LEADC), 409, EXCL_EXTRA) and hit(excl(LEADC, reason=""), 400, {"error": "제외 사유를 1~100자로 써 주세요."}) and out_of(LEADC) is None,
+           "늘린_정원은_사람_수에_맞게: 빼면 늘린 정원이 묶음 인원보다 많아지는 사람은 제외 409 (사유 400 이 먼저) — 그대로")
+        ok(hit(ext(CEO, LD, {"SA": 0, "B": 0}), 200, OK) and hit(excl(LEADC), 200, OK) and pool_of(CEO, LD)["size"] == 2,
+           "늘린_정원은_사람_수에_맞게: 대표이사가 늘린 정원을 지우면 다시 제외 200")
+        put(LEADC, stage="CEO", out_at=None, out_reason=None, out_by=None)
+        x("UPDATE ev_targets SET stage = 'GRADE' WHERE year = ? AND pool = ? AND out_at IS NULL", Y, D1)  # 되돌리기는 묶음이 WAIT · FIX 일 때만
+        x("UPDATE ev_pools SET extra_sa = 3, extra_reason = '가상 늘린 이유' WHERE year = ? AND pool = ?", Y, D1)  # 4명에 S·A +3 — 5명이 되면 사람마다 정원(S·A 1+3 · B 1 · D 1)이라 넘친다
+        ok(hit(incl(DIVD), 409, INCL_EXTRA) and out_of(DIVD) == z(12, 1) and pool_of(CEO, D1)["size"] == 4,
+           "늘린_정원은_사람_수에_맞게: 되돌려 5명이 되면 늘린 정원이 넘치는 묶음(4명 · S·A +3)은 되돌림 409 — 그대로")
+        x("UPDATE ev_pools SET extra_sa = 0, extra_reason = NULL WHERE year = ? AND pool = ?", Y, D1)
+        ok(hit(incl(DIVD), 200, OK) and out_of(DIVD) is None, "늘린_정원은_사람_수에_맞게: 늘린 정원이 없으면 되돌림 200")
+        put(DIVD, out_at=z(12, 1), out_reason="가상 휴직", out_by=HRA)
+        x("UPDATE ev_targets SET stage = 'CEO' WHERE year = ? AND pool = ? AND out_at IS NULL", Y, D1)
+        ok(hit(ext(CEO, DR, {"SA": 0, "B": 0}), 200, OK) and all(xrow(k) == NO_X for k in (D1, D2, LD, DR))
+           and [(p["key"], p["state"]) for p in st(CEO)["pools"]] == [(D1, "CEO"), (D2, "CEO"), (LD, "CEO"), (DR, "FIX")],
+           "(늘린 정원을 모두 지움 — 묶음은 대표이사 확인 직전 그대로)")
+
         # ---- 확인은_대표이사가_묶음째로 (본부 팀원 둘 · 전사 팀장 = CEO 대기, 직속부서 = FIX) ----
         ok(st(CEO)["todo"] == {"me": 4, "admin": 0, "e3": 0} and st(HRA)["todo"] == {"me": 0, "admin": 2, "e3": 0} and st(HEAD)["todo"] == {"me": 0, "admin": 0, "e3": 0},
            "할_일_숫자: 대표이사 확인할 묶음 4 (CEO 셋 · FIX 하나) · HR 은 확인 안 한 마감 알림 2 · 본부장 0")
@@ -7813,6 +7937,9 @@ def check_eval_close(hr) -> None:
            and not any(cans(CEO, "finalize").values()) and pool_of(CEO, D1)["log"]["ceo"] == {"at": z(12, 7), "by": "가상E대표 가상직급"},
            "can: 확인한 묶음은 HR 확정 · 되돌리기 (HR 만) · 확인 기록")
         ok(st(CEO)["todo"] == {"me": 2, "admin": 0, "e3": 0} and st(HRA)["todo"] == {"me": 0, "admin": 2, "e3": 0}, "할_일_숫자: 대표이사 남은 확인할 묶음 2 · HR 확정할 묶음 2 (확인한 묶음의 마감 알림은 안 셈)")
+        ok(hit(ext(CEO, D2, X1, reason="가상"), 409, EXTRA_DONE) and hit(ext(HEAD, D2, X1, reason="가상"), 403, NO_EXTRA) and xrow(D2) == NO_X
+           and cans(CEO, "extra") == {D1: False, D2: False, LD: True, DR: True},
+           "정원_늘리기: 대표이사 확인을 마친 묶음(HR)은 409 '대표이사 확인을 마친 묶음입니다.' (권한이 없으면 403 이 먼저) · can.extra 거짓")
 
         # ---- HR은_자기_묶음을_확인_못_한다 (맡김 — HR 담당자는 직속부서 · HR 팀장은 전사 팀장 묶음에 든다) ----
         put(EXEC, grade="C")
@@ -7825,9 +7952,16 @@ def check_eval_close(hr) -> None:
         ok(hit(act(HR, "confirm", pools=[DR]), 403, no(ND, "확인할")) and hit(act(HR, "confirm", pools=[LD, DR]), 403, no(ND, "확인할"))
            and hit(act(HRL, "confirm", pools=[LD]), 403, no(NL, "확인할")) and stages(LD) == ["CEO"] * 3 and stages(DR) == ["GRADE"] * 2,
            "HR은_자기_묶음을_확인_못_한다: 맡겨도 HR 담당자는 직속부서 묶음(본인 있음) 403 · 섞어도 403 · HR 팀장은 전사 팀장 묶음 403 — 그대로")
+        put(LEAD, grade="B")  # 점수 역전: 94.0점 팀장C 가 C · 90.0점 팀장이 B — 전사 팀장 묶음은 윗사람 코멘트 칸이 없어 경고만
+        setg(LEADC, "A", "B", "B")
+        pl = pool_of(HR, LD)
+        ok((pl["state"], pl["errors"]) == ("CEO", []) and "가상E팀장C 님(총점 94점)이 총점이 더 낮은 가상E팀장 님(90점)보다 등급이 낮습니다." in pl["warnings"],
+           "점수_역전: 전사 팀장 묶음은 밀린 사람에게 코멘트가 없어도 대표이사 확인 대기 (경고만)")
         ok(hit(act(HR, "confirm", pools=[LD]), 200, {"ok": True, "done": [LD]}) and stages(LD) == ["HR"] * 3 and prow(LD)[2:5] == (z(12, 7), HR, CEO)
-           and by("EVAL_POOL_CONFIRMED")[-1] == (HR, CEO), "HR은_자기_묶음을_확인_못_한다: HR 담당자가 전사 팀장 묶음 200 — ceo_behalf · on_behalf_of = 대표이사")
+           and by("EVAL_POOL_CONFIRMED")[-1] == (HR, CEO), "HR은_자기_묶음을_확인_못_한다: HR 담당자가 전사 팀장 묶음 200 (점수 역전 경고가 있어도) — ceo_behalf · on_behalf_of = 대표이사")
         ok(took() == [(HRA, *TURN), (HRL, *TURN)], "대신 확인해도 HR 전원(누른 사람 빼고)에게 알림")
+        setg(LEADC, "B", "B", "B")
+        put(LEAD, grade="C")
         ok(hit(act(CEO, "confirm", pools=[DR]), 200, {"ok": True, "done": [DR]}) and stages(DR) == ["HR"] * 2 and prow(DR)[2:5] == (z(12, 7), CEO, None)
            and by("EVAL_POOL_CONFIRMED")[-1] == (CEO, None) and took() == [(HRA, *TURN), (HRL, *TURN), (HR, *TURN)],
            "맡긴 동안에도 대표이사가 직접 확인 200 (대신 아님)")
@@ -7905,6 +8039,8 @@ def check_eval_close(hr) -> None:
         ok(hit(act(HRA, "undo", pool=D1, **{"from": "DONE"}), 409, RELEASED) and hit(act(CEO, "confirm", pools=[LD]), 409, RELEASED) and hit(act(HRA, "finalize", pools=[D1]), 409, RELEASED)
            and hit(act(CEO, "back", pool=D1, reason="가상"), 409, RELEASED) and hit(act(HEAD, "confirm", pools=[D1]), 403, no(N1, "확인할")),
            "공개 뒤: 되돌리기 · 확인 · 확정 · 돌려보내기 409 (권한이 없으면 403 이 먼저)")
+        ok(hit(ext(CEO, LD, {"SA": 0, "B": 0}), 409, RELEASED) and hit(ext(HEAD, D1, {"SA": 0, "B": 0}), 403, NO_EXTRA),
+           "공개 뒤: 정원 늘리기 409 (권한이 없으면 403 이 먼저)")
         ok(not any(v for who in (HRA, CEO) for p in st(who)["pools"] for v in p["can"].values()), "공개 뒤 묶음 단추(can)는 모두 거짓")
 
         # ---- 공개하면_보인다 ----
@@ -7914,10 +8050,11 @@ def check_eval_close(hr) -> None:
 
         # ---- 감사로그 · 알림 글 ----
         logs = q("SELECT action, after_data, before_data, reason FROM audit_logs WHERE id > ? AND action GLOB 'EVAL_*'", audit0)
-        ok({a for a, *_ in logs} == {"EVAL_POOL_RETURNED", "EVAL_POOL_CLOSED", "EVAL_POOL_CONFIRMED", "EVAL_POOL_FINALIZED", "EVAL_POOL_UNDONE", "EVAL_RELEASED"}
-           and all(set(json.loads(a)) <= {"year", "pool", "from", "count"} and b is None and rs is None for _, a, b, rs in logs)
+        ok({a for a, *_ in logs} == {"EVAL_POOL_RETURNED", "EVAL_POOL_CLOSED", "EVAL_POOL_CONFIRMED", "EVAL_POOL_FINALIZED", "EVAL_POOL_UNDONE", "EVAL_RELEASED",
+                                     "EVAL_POOL_EXTRA", "EVAL_EXCLUDED", "EVAL_INCLUDED"}
+           and all(set(json.loads(a)) <= {"year", "pool", "from", "count", "extra"} and b is None and rs is None for _, a, b, rs in logs)
            and not any(t in a for _, a, _, _ in logs for t in ("가상", '"B"', '"C"')),
-           "감사로그에_등급과_글이_없다: after_data 는 해 · 묶음 열쇠 · 되돌린 단계 · 사람 수뿐 (돌려보낸 이유 · 등급 없음)")
+           "감사로그에_등급과_글이_없다: after_data 는 해 · 묶음 열쇠 · 되돌린 단계 · 사람 수 · 늘린 정원 숫자뿐 (돌려보낸 이유 · 늘린 이유 · 등급 없음)")
         ok(set(texts) == {"인사평가에서 처리할 일이 있어요 PC에서 확인해 주세요", "인사평가 결과가 공개됐어요 PC에서 확인해 주세요"}, "알림 글은 두 가지 한 줄뿐 — 등급 · 이름 없음")
     finally:
         auth._now = real_now

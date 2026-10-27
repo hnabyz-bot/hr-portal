@@ -27,7 +27,10 @@ app.py 가 bp 를 붙인다. 세션 검사 · 같은 출처 검사는 auth._guar
   POST /api/eval/pools/close              {"year", "pool"} 본부 팀원 묶음 마감 (배정자) — 대표이사(맡겼으면 빼고) · HR 전원에게 알림
   POST /api/eval/pools/seen               {"year", "pool"} 마감 알림을 확인 (HR)
   POST /api/eval/pools/confirm            {"year", "pools": [열쇠…]} 대표이사 확인 — 묶음째로 HR 확정 대기로 → {"ok", "done"} (대표이사 · 맡김이면 HR) — HR 전원에게 알림
-  POST /api/eval/pools/back               {"year", "pool", "reason"} 본부 팀원 묶음을 배정자에게 돌려보낸다 (대표이사 · 맡김이면 HR) — 배정자에게 알림
+  POST /api/eval/pools/back               {"year", "pool", "reason", "extra"?: {"SA", "B"}} 본부 팀원 묶음을 배정자에게 돌려보낸다 (대표이사 · 맡김이면 HR) — 배정자에게 알림.
+                                          extra = 그 묶음의 그해 정원을 S·A · B 몇 명 늘림 (0 · 0 이면 지움 · 보내지 않으면 그대로 — 본부장이 그만큼 더 주고 다시 마감)
+  POST /api/eval/pools/extra              {"year", "pool", "extra": {"SA", "B"}, "reason"} 대표이사가 직접 등급을 정하는 묶음(전사 팀장 · 직속부서 · 본부장 없는 본부)의 정원을 늘린다
+                                          (대표이사 · 맡김이면 그 묶음에 들지 않은 HR — 0 · 0 이면 지우고 이유가 없어도 된다 · 알림 없음) → {"ok"}
   POST /api/eval/pools/finalize           {"year", "pools": [열쇠…]} HR 확정 → {"ok", "done"} (HR)
   POST /api/eval/pools/undo               {"year", "pool", "from"} 한 단계 되돌린다 — from = 화면이 본 묶음 상태(DONE | HR): 확정 → 확정 대기 / 확정 대기 → 대표이사 확인 전 (HR)
   GET  /api/eval/results?year=            평가 결과 (year 가 없으면 cur_year — 그해가 시작 전이면 공개한 해 중 최근)
@@ -47,7 +50,8 @@ app.py 가 bp 를 붙인다. 세션 검사 · 같은 출처 검사는 auth._guar
   자기평가를 내기 전(SELF)의 초안은 본인 · HR 만 본다 — 그 밖 사람(평가자 · 배정자 · 대표이사 · 본부장)의 줄에서는 ev[] 의 note · selfGrade · files 를 뺀다 (증빙 내려받기도 403).
   people = HR · 대표이사는 전원, 그 밖은 자기가 평가자이거나 배정자인 사람 (본인 줄은 me) · pools = HR · 대표이사는 전부, 그 밖은 자기가 배정자인 묶음만.
   round = _round (마감일 · 기준 점수 bands · 등급 비율 ratio — 보는 사람과 상관없이 같다). 묶음 quota = 정원 글자(화면 evQuotaText — 그해 비율 · 그 묶음의 늘린 정원,
-  늘렸으면 뒤에 " · 대표이사 허용 …"). 사람 줄에 가점 칸은 없다 (판 23 — can 에도 bonus 가 없다).
+  늘렸으면 뒤에 " · 대표이사 허용 …") · 묶음 extra = 늘린 정원 {"SA", "B", "reason", "at", "by"} (안 늘렸으면 null — 묶음 줄은 배정자 · 대표이사 · HR 에게만 가서
+  이유 글도 넣는다, 돌려보낸 이유와 같다) · 묶음 can.extra = 정원 늘리기 단추. 사람 줄에 가점 칸은 없다 (판 23 — can 에도 bonus 가 없다).
   배정자(R6) = 본부 팀원 묶음은 떠 둔 본부장이 활성이면 그 사람, 아니면 대표이사 · 그 밖 묶음은 대표이사. 판단 칸(can)은 _can — 쓰기 길도 같은 함수로 막는다.
   맡김(R11)이면 HR 이 대표이사 몫을 대신하되 자기 줄과 자기가 든 묶음의 사람은 대신 못 한다 — 점수 · 배정 · 묶음 마감 · 확인 · 돌려보내기 모두 (can.behalf — 화면의 "대리 입력" 표시).
   todo = 처리할 일 숫자 {me, admin, e3} (_todo — 화면은 실제 로그인이면 이 숫자를 그대로, 휴대폰 숫자도 eval_todo 로 같은 셈: e2 = me + admin · e3).
@@ -77,7 +81,9 @@ app.py 가 bp 를 붙인다. 세션 검사 · 같은 출처 검사는 auth._guar
   본인 줄은 다른 HR 이 넣는다 (자기 연차 초과를 5일 밑으로 낮춰 S·A·B 제한을 피하지 못하게 — HR 이 명단 전체를 붙여 넣으므로 400 이 아니라 locked).
   연차 초과가 5일 이상이 되면 이미 준 S·A·B 등급을 지운다 (화면 evSetAttendance).
 명단 한 사람 (HR 403 → 본인 403 → 해 400 → 그해 평가 대상 404 → 아래). 본인 평가는 다른 HR 이 처리한다:
-  제외: 이미 제외 409 → 평가자가 점수를 냄(SCORE 지남) 409 → 사유 1~100자 400 · 되돌림: 제외가 아님 409 → 그 묶음이 WAIT · FIX 가 아님 409 ·
+  제외: 이미 제외 409 → 평가자가 점수를 냄(SCORE 지남) 409 → 사유 1~100자 400 → 한 사람 빠진 인원에 그 묶음의 늘린 정원이 맞지 않음 409 ·
+  되돌림: 제외가 아님 409 → 그 묶음이 WAIT · FIX 가 아님 409 → 한 사람 늘어난 인원에 늘린 정원이 맞지 않음 409 (4명 → 5명이면 사람마다 정원이 되어 넘칠 수 있다) —
+  정원 셈(quota.py)은 늘린 정원이 인원을 넘으면 멈추므로 읽을 때 깎지 않고 인원을 바꾸는 쓰기에서 막는다 ·
   자기평가 없이: 제외됨 409 → SELF 가 아님 409 → KPI 없음 409 (저장한 뒤 떠 둔 평가자에게 알림 — 받는 사람은 자기평가 제출과 같고 누른 HR 은 빼고) ·
   평가자 바꾸기: SELF · SCORE 가 아님 409 → 본인이 아니고 활성이며 포털을 쓰는(로그인해 점수를 낼 수 있는) 직원이 아님 400.
 자기평가 저장 · 제출 (본인): 해 400 → 그해 평가 대상 아님 404 → 쓸 수 없음 403 (can.self 거짓 — 자기평가 마감일이 지났으면 그 날짜를 알리는 문구, 그 밖은 "지금은 쓸 수 없습니다") →
@@ -108,11 +114,17 @@ app.py 가 bp 를 붙인다. 세션 검사 · 같은 출처 검사는 auth._guar
   (되돌리기) 본 상태 from 이 HR · DONE 이 아님 400 → 없는 묶음 404 → 권한(_pool_auth — 상태 · 공개는 빼고) 403 → 공개 뒤 409 →
   묶음 상태(POOL_NEED — 확인 CEO · 돌려보내기 CEO · FIX · 확정 HR / 되돌리기는 지금 상태가 from 과 같아야)가 아님 409
   (이미 넘어갔으면 "이미 …했습니다", 아직이면 그 까닭 · 등급을 맞춰야 하면(FIX) errors 도). 문구에 어느 묶음인지. 목록은 하나라도 걸리면 아무것도 안 바뀐다 — 두 창의 두 번째는 409.
-  권한: 확인 · 돌려보내기(본부 팀원 묶음만) = 활성 대표이사, 또는 맡김이고 그 묶음에 들지 않은(제외된 줄 포함) HR / 확정 · 되돌리기 = HR (HR 본인 일 — 자기가 든 묶음도 된다).
+  권한: 확인 · 돌려보내기(본부 팀원 묶음만) = 활성 대표이사, 또는 맡김이고 그 묶음에 들지 않은(제외된 줄 포함) HR / 확정 · 되돌리기 = HR (HR 본인 일 — 자기가 든 묶음도 된다) /
+    정원 늘리기 = 확인과 같은 사람 · 배정자가 대표이사인 묶음만 (본부장이 있는 본부는 돌려보내기의 extra 로).
   확인: 모두 HR · ceo_at/by · ceo_behalf(HR 이 대신이면 대표이사) · EVAL_POOL_CONFIRMED 묶음마다. 알림: HR 전원 — 누른 사람은 빼고.
-  돌려보내기: → 이유 1~200자 400 (_chars · 앞뒤 공백을 떼고 셈). 모두 GRADE · back_at/by/behalf/reason · 마감 기록(closed_at/by) 비움 (다시 마감하면 back_* 가 지워진다) ·
-    EVAL_POOL_RETURNED (이유 없음). 알림: 배정자(_turn_to — 대표이사이고 맡겼으면 HR 전원) — 누른 사람은 빼고.
+  돌려보내기: → 이유 1~200자 400 (_chars · 앞뒤 공백을 떼고 셈) → (extra 를 보냈으면) 늘린 정원 400 (_extra — {"SA", "B"} 0~5 정수(참/거짓 · 소수 아님) ·
+    제외 안 된 인원으로 센 정원 합이 인원을 넘음). 모두 GRADE · back_at/by/behalf/reason · 마감 기록(closed_at/by) 비움 (다시 마감하면 back_* 가 지워진다) ·
+    (extra 를 보냈으면) extra_sa/b · extra_reason = 돌려보낸 이유 · extra_at/by/behalf (0 · 0 이면 모두 비움 — 늘린 정원은 다시 마감해도 남는다) ·
+    EVAL_POOL_RETURNED (이유 없음 · extra 를 보냈으면 extra [S·A, B]). 알림: 배정자(_turn_to — 대표이사이고 맡겼으면 HR 전원) — 누른 사람은 빼고.
   돌려보내기는 FIX(마감 뒤 기준 점수가 바뀌어 등급이 어긋남)에서도 된다 — 대표이사는 본부 팀원 등급을 고치지 못하니 그것이 빠져나갈 길이다.
+  정원 늘리기 (한 묶음 — 마감과 같은 모양): 해 400 → 열쇠 400 → 없는 묶음 404 → 권한(_pool_auth.extra) 403 → 공개 뒤 409 → 묶음 상태 HR · DONE 409 (대표이사 확인을 마침) →
+    늘린 정원 400 (_extra) → 하나라도 늘렸으면 이유 1~200자 400 (_chars · 앞뒤 공백을 떼고 셈). extra_* 를 쓴다 (0 · 0 이면 모두 비움 — 이유는 보지 않는다) ·
+    EVAL_POOL_EXTRA {year, pool, extra} (HR 이 대신이면 on_behalf_of) · 알림 없음 · 단계는 그대로 (대표이사가 그만큼 더 주고 확인한다).
   확정: 모두 DONE · EVAL_POOL_FINALIZED 묶음마다 · 알림 없음. 되돌리기: DONE → HR (undo_from HR) / HR → ready_stage(직속 GRADE · 그 밖 CEO) · ceo_* 비움 (undo_from CEO) ·
     undo_at/by/from · EVAL_POOL_UNDONE {from} · 알림 없음. 본 상태(from)와 지금이 다르면 409 ("이미 되돌렸습니다" · "그사이 확정됐습니다" · "되돌릴 수 있는 단계가 아닙니다") — 두 창이 눌러도 한 단계만.
 결과 공개: HR 403 → 해 400 → FIRST_YEAR 403 → 시작 안 함 409 → 이미 공개 409 → 제외 안 된 사람이 없음 409 (공개는 되돌릴 수 없다) → 제외 안 된 사람 중 DONE 이 아닌 사람 409 →
@@ -129,9 +141,10 @@ HR 답변: HR 403 → 본인 403 → 해 400 → 이의 신청 없음 404 → OP
   (확인) cap 다시 400 → 실행목표 등급 · 등급 = after · DONE · decided_at/by/behalf · EVAL_APPEAL_CONFIRMED / (돌려보내기) OPEN · after · marks 비움 · EVAL_APPEAL_RETURNED.
   HR 이 대신이면 on_behalf_of = 대표이사. 두 창의 두 번째는 409 (이미 처리했습니다 · HR 답변을 기다리는 이의 신청입니다).
 감사로그(R10): EVAL_ROUND_SET · EVAL_STARTED · EVAL_ATT_DONE · EVAL_ATTENDANCE(저장한 사람이 있을 때만) · EVAL_EXCLUDED · EVAL_INCLUDED · EVAL_SKIP_SELF · EVAL_RATER_SET · EVAL_SELF_SUBMITTED ·
-  EVAL_SCORED · EVAL_POOL_CLOSED · EVAL_POOL_CONFIRMED · EVAL_POOL_RETURNED · EVAL_POOL_FINALIZED · EVAL_POOL_UNDONE · EVAL_RELEASED · EVAL_APPEALED · EVAL_APPEAL_ANSWERED ·
-  EVAL_APPEAL_CONFIRMED · EVAL_APPEAL_RETURNED · EVAL_REPORT(eval_report.py — 보고서 내려받기, 해뿐) — after_data 는 해 · 사람 수 · 평가자 번호 · 묶음 열쇠 · 되돌린 단계(from) · 등급을 바꾸는 답변인가(changed)뿐.
-  사유 · 근태 숫자 · 등급 · 점수 · 등급 비율 · 글은 넣지 않는다 (공개 전 등급이 감사로그로 새지 않게 — EVAL_ROUND_SET 은 해만). 이의 신청 넷의 대상은 신청한 사람(ev_appeal).
+  EVAL_SCORED · EVAL_POOL_CLOSED · EVAL_POOL_CONFIRMED · EVAL_POOL_RETURNED · EVAL_POOL_EXTRA · EVAL_POOL_FINALIZED · EVAL_POOL_UNDONE · EVAL_RELEASED · EVAL_APPEALED ·
+  EVAL_APPEAL_ANSWERED · EVAL_APPEAL_CONFIRMED · EVAL_APPEAL_RETURNED · EVAL_REPORT(eval_report.py — 보고서 내려받기, 해뿐) — after_data 는 해 · 사람 수 · 평가자 번호 · 묶음 열쇠 ·
+  되돌린 단계(from) · 등급을 바꾸는 답변인가(changed) · 늘린 정원 숫자(extra [S·A, B] — 묶음 단위)뿐.
+  사유 · 근태 숫자 · 등급 · 점수 · 등급 비율 · 글(돌려보낸 · 늘린 이유 포함)은 넣지 않는다 (공개 전 등급이 감사로그로 새지 않게 — EVAL_ROUND_SET 은 해만). 이의 신청 넷의 대상은 신청한 사람(ev_appeal).
 """
 
 from __future__ import annotations
@@ -158,7 +171,7 @@ from hr_eval.domain.eval_rules import (APPEAL_DAYS, BANDS, FILE_MAX, FILES_PER_I
                                        after_score, assign_stage, at, cap, check_pool, edited, level, pool_key, pool_state, ready_stage, total)
 from hr_eval.domain.models import Actor, AuditEntry, Role
 from hr_eval.domain.org import led_dept, manager_of, target_of
-from hr_eval.domain.quota import DEFAULT_RATIOS, RATIO_SUM_MAX, QuotaMode, calculate_department_quota
+from hr_eval.domain.quota import DEFAULT_RATIOS, EXTRA_MAX, RATIO_SUM_MAX, QuotaMode, calculate_department_quota
 from kpi import UID, YEARS, _Refuse, _body, _chars, _txn
 
 bp = Blueprint("evaluation", __name__)
@@ -386,6 +399,25 @@ def _ratios(v: object) -> tuple[int, int, int]:
     return r
 
 
+def _fits(size: int, ratios: tuple[int, int, int], extra: tuple[int, int]) -> bool:
+    """늘린 정원을 더한 정원 합이 묶음 인원(size) 안인가 — quota.py 는 넘으면 ValueError 로 멈춘다."""
+    try:
+        calculate_department_quota(size, ratios, extra)
+    except ValueError:
+        return False
+    return True
+
+
+def _extra(v: object, size: int, ratios: tuple[int, int, int]) -> tuple[int, int]:
+    """늘린 정원 {"SA", "B"} (명) — 0~EXTRA_MAX 정수(참/거짓 · 소수 아님) 400 → 그 묶음의 제외 안 된 인원(size)으로 센 정원 합이 인원을 넘음 400."""
+    e = tuple(v.get(k) for k in ("SA", "B")) if isinstance(v, dict) else ()
+    if not (len(e) == 2 and all(type(n) is int and 0 <= n <= EXTRA_MAX for n in e)):
+        raise _Refuse(f"늘린 정원은 0~{EXTRA_MAX}명 정수로 넣어 주세요.", 400)
+    if not _fits(size, ratios, e):
+        raise _Refuse("늘린 정원이 묶음 인원보다 많습니다.", 400)
+    return e
+
+
 def _att_rows(v: object) -> list[tuple[int, int | None, int | None]]:
     """근태 줄 → [(번호, 지각, 연차 초과 × 2)] (보내지 않은 칸은 None). 지각 0~999 정수 · 연차 초과 0~365 이고 0.5 단위 (참/거짓 아님).
     하나라도 모양이 틀리면 400 — 아무것도 저장하지 않는다."""
@@ -568,7 +600,7 @@ def _person(uid: int) -> Iterator[tuple[sqlite3.Connection, int, tuple]]:
 def exclude(uid: int) -> Response:
     if (denied := auth._hr_only()) is not None:
         return denied
-    with _person(uid) as (conn, year, (stage, out_at, *_)):
+    with _person(uid) as (conn, year, (stage, out_at, pool, *_)):
         if out_at is not None:
             raise _Refuse("이미 평가에서 제외했습니다.", 409)
         if at(stage, "SCORE") > 0:
@@ -577,6 +609,9 @@ def exclude(uid: int) -> Response:
         why = _chars(v.strip() if isinstance(v, str) else "", "제외 사유")
         if not 0 < len(why) <= TEXT_MAX["out"]:
             raise _Refuse(f"제외 사유를 1~{TEXT_MAX['out']}자로 써 주세요.", 400)
+        ctx = _ctx(conn, year)
+        if not _fits(len(_pool(ctx, pool)[4]) - 1, _ratios_of(ctx), _extra_of(ctx, pool)):  # 빼고 나서도 늘린 정원이 맞아야 — 아니면 읽기 길의 정원 셈이 멈춘다
+            raise _Refuse("대표이사가 늘린 정원이 묶음 인원보다 많아져 뺄 수 없습니다. 먼저 늘린 정원을 줄여 주세요.", 409)
         conn.execute("UPDATE ev_targets SET out_at = ?, out_reason = ?, out_by = ? WHERE year = ? AND user_id = ?",
                      (auth._iso(auth._now()), why, g.actor.user_id, year, uid))
         _log(conn, "EVAL_EXCLUDED", "ev_target", uid, year=year)
@@ -590,8 +625,12 @@ def include(uid: int) -> Response:
     with _person(uid) as (conn, year, (_, out_at, pool, *_)):
         if out_at is None:
             raise _Refuse("평가에서 제외한 사람이 아닙니다.", 409)
-        if _pool(_ctx(conn, year), pool)[0] not in ("WAIT", "FIX"):  # 이 사람을 빼고 센 묶음 상태 (화면 evInclude)
+        ctx = _ctx(conn, year)
+        state, *_, rows = _pool(ctx, pool)  # 이 사람을 빼고 센 묶음 (화면 evInclude)
+        if state not in ("WAIT", "FIX"):
             raise _Refuse("이 묶음은 이미 다음 단계로 넘어가 되돌릴 수 없습니다. 먼저 묶음을 되돌려 주세요.", 409)
+        if not _fits(len(rows) + 1, _ratios_of(ctx), _extra_of(ctx, pool)):  # 한 사람 늘어도 늘린 정원이 맞아야 (4명 → 5명이면 사람마다 정원이 된다)
+            raise _Refuse("대표이사가 늘린 정원이 묶음 인원보다 많아져 되돌릴 수 없습니다. 먼저 늘린 정원을 줄여 주세요.", 409)
         conn.execute("UPDATE ev_targets SET out_at = NULL, out_reason = NULL, out_by = NULL WHERE year = ? AND user_id = ?", (year, uid))
         _log(conn, "EVAL_INCLUDED", "ev_target", uid, year=year)
     return jsonify(ok=True)
@@ -756,15 +795,17 @@ def _pool_auth(ctx: _Ctx, me: Actor, key: str) -> dict[str, bool]:
     """묶음 단추를 누를 사람인가 — 권한만 (공개 · 묶음 상태는 _pool_can 이 더한다. 쓰기 길의 403 은 이것으로).
     close 마감 = 본부 팀원 묶음 · 배정자가 나, 또는 배정자가 대표이사이고 그 묶음에 들지 않은 맡은 HR /
     confirm 확인 · back 돌려보내기(본부 팀원 묶음만) = 활성 대표이사, 또는 그 묶음에 들지 않은 맡은 HR (_behalf_ok — 제외된 줄도 든 것으로 본다) /
+    extra 정원 늘리기 = 확인과 같은 사람 · 배정자가 대표이사인 묶음만 (전사 팀장 · 직속부서 · 본부장 없는 본부 — 본부장이 있으면 돌려보내기의 extra 로) /
     finalize 확정 · undo 되돌리기 = HR (HR 본인 일이라 자기가 든 묶음도 된다)."""
     who, div = _pool_who(ctx, key), key.startswith("DIV:")
     ceo = _is_ceo(ctx, me.user_id) or _behalf_ok(ctx, me, key)
     return {"close": div and (who == me.user_id or (_is_ceo(ctx, who) and _behalf_ok(ctx, me, key))),
-            "confirm": ceo, "back": div and ceo, "finalize": me.is_hr, "undo": me.is_hr}
+            "confirm": ceo, "back": div and ceo, "extra": ceo and _is_ceo(ctx, who), "finalize": me.is_hr, "undo": me.is_hr}
 
 
-POOL_NEED = {"confirm": ("CEO",), "back": ("CEO", "FIX"), "finalize": ("HR",), "undo": ("HR", "DONE")}  # 단추마다 있어야 할 묶음 상태 (마감은 쓰기 길이 단계 · 정원을 따로 본다)
+POOL_NEED = {"confirm": ("CEO",), "back": ("CEO", "FIX"), "extra": ("WAIT", "FIX", "CEO"), "finalize": ("HR",), "undo": ("HR", "DONE")}  # 단추마다 있어야 할 묶음 상태 (마감은 쓰기 길이 단계 · 정원을 따로 본다)
 # 돌려보내기는 FIX 에서도 — 마감 뒤 기준 점수가 바뀌어 등급이 어긋나면 대표이사는 본부 팀원 등급을 못 고치니 돌려보내는 것이 빠져나갈 길이다.
+# 정원 늘리기는 대표이사 확인(HR · DONE) 전까지 — 등급을 정하는 중(WAIT)에도 확인 대기(CEO · FIX)에도 늘린다.
 
 
 def _pool_can(ctx: _Ctx, me: Actor, key: str) -> dict[str, bool]:
@@ -780,7 +821,7 @@ def _pool_label(ctx: _Ctx, key: str) -> str:
 
 def _pool_json(ctx: _Ctx, me: Actor, key: str) -> dict:
     """묶음 한 줄 — 배정자 · 대표이사 · HR 에게만 보낸다 (오류 문구에 이름 · 총점 · 등급이 든다). quota = 정원 글자 (그해 비율 · 늘린 정원이 들어간 숫자,
-    늘렸으면 뒤에 " · 대표이사 허용 S·A +x명 · B +y명" — 0 인 쪽은 뺀다)."""
+    늘렸으면 뒤에 " · 대표이사 허용 S·A +x명 · B +y명" — 0 인 쪽은 뺀다) · extra = 늘린 정원 {"SA", "B", "reason", "at", "by"} (둘 다 0 이면 None)."""
     state, errors, warnings, counts, rows = _pool(ctx, key)
     p, extra = ctx.pools[key], _extra_of(ctx, key)
     q = calculate_department_quota(len(rows), _ratios_of(ctx), extra)
@@ -793,6 +834,7 @@ def _pool_json(ctx: _Ctx, me: Actor, key: str) -> dict:
             "counts": counts, "errors": errors, "warnings": warnings,
             "quota": (f"S 최대 {q.cap_s}명 · A {q.a}명 (S만큼 줄어듦) · B {q.b}명 · D {q.d}명 · C 나머지" if q.mode is QuotaMode.INDIVIDUAL
                       else f"S 최대 {q.cap_s}명 · A·B 합계 {q.upper}명 (S만큼 줄어듦) · C·D 나머지") + (f" · 대표이사 허용 {more}" if more else ""),  # 화면 evQuotaText
+            "extra": {"SA": extra[0], "B": extra[1], "reason": p["extra_reason"], "at": p["extra_at"], "by": _who(ctx, p["extra_by"])} if any(extra) else None,
             "log": {"closed": act("closed_at", "closed_by"), "ceo": act("ceo_at", "ceo_by"),
                     "back": p["back_at"] and {**act("back_at", "back_by"), "reason": p["back_reason"]},
                     "undo": p["undo_at"] and {**act("undo_at", "undo_by"), "from": p["undo_from"]}},
@@ -1352,14 +1394,53 @@ def pool_back() -> Response:
         why = _chars(v.strip() if isinstance(v, str) else "", "돌려보내는 이유")
         if not 0 < len(why) <= TEXT_MAX["back"]:
             raise _Refuse(f"돌려보내는 이유를 1~{TEXT_MAX['back']}자로 써 주세요.", 400)
+        extra = _extra(b["extra"], len(_pool(ctx, key)[4]), _ratios_of(ctx)) if "extra" in b else None  # 보내지 않으면 늘린 정원은 그대로
         me = g.actor.user_id
         behalf = None if _is_ceo(ctx, me) else ctx.ceo
         _move(conn, year, key, "GRADE")
         conn.execute("UPDATE ev_pools SET back_at = ?, back_by = ?, back_behalf = ?, back_reason = ?, closed_at = NULL, closed_by = NULL WHERE year = ? AND pool = ?",
                      (auth._iso(auth._now()), me, behalf, why, year, key))
-        _log(conn, "EVAL_POOL_RETURNED", "ev_pool", year, behalf=behalf, year=year, pool=key)  # 이유는 남기지 않는다 (글)
+        if extra is not None:
+            _put_extra(conn, year, key, extra, why, behalf)  # 늘린 이유 = 돌려보낸 이유
+        _log(conn, "EVAL_POOL_RETURNED", "ev_pool", year, behalf=behalf, year=year, pool=key,
+             **({} if extra is None else {"extra": list(extra)}))  # 이유는 남기지 않는다 (글) — 늘린 정원은 숫자만
         to = _turn_to(ctx, me, _pool_who(ctx, key))  # 다시 배정할 사람 — 대표이사이고 맡겼으면 HR 전원
     push.notify([u for u in to if u != me], "eval_turn")  # 저장(COMMIT)한 뒤 — 누른 사람 본인에게는 보내지 않는다
+    return jsonify(ok=True)
+
+
+def _put_extra(conn: sqlite3.Connection, year: int, key: str, extra: tuple[int, int], why: str | None, behalf: int | None) -> None:
+    """묶음의 늘린 정원을 쓴다 — 둘 다 0 이면 이유 · 때 · 사람 칸까지 비운다 (DB 트리거: 늘렸으면 이유가 있어야 한다)."""
+    vals = (*extra, why, auth._iso(auth._now()), g.actor.user_id, behalf) if any(extra) else (0, 0, None, None, None, None)
+    conn.execute("UPDATE ev_pools SET extra_sa = ?, extra_b = ?, extra_reason = ?, extra_at = ?, extra_by = ?, extra_behalf = ? WHERE year = ? AND pool = ?",
+                 (*vals, year, key))
+
+
+@bp.post("/api/eval/pools/extra")
+def pool_extra() -> Response:
+    b = _body()
+    year, (key,) = _year(b.get("year")), _keys([b.get("pool")])
+    conn = auth._db()
+    with _txn(conn):
+        ctx = _ctx(conn, year)
+        if key not in ctx.pools:
+            raise _Refuse("묶음을 찾을 수 없습니다.", 404)
+        if not _pool_auth(ctx, g.actor, key)["extra"]:  # 권한만 본다 — 공개 · 상태는 아래에서 409 로 따로 알린다
+            raise _Refuse("이 묶음의 정원을 늘릴 권한이 없습니다.", 403)
+        if ctx.round["released"]:
+            raise _Refuse("결과를 공개한 평가는 바꿀 수 없습니다.", 409)
+        state, *_, rows = _pool(ctx, key)
+        if state not in POOL_NEED["extra"]:
+            raise _Refuse("대표이사 확인을 마친 묶음입니다.", 409)
+        extra, why = _extra(b.get("extra"), len(rows), _ratios_of(ctx)), None
+        if any(extra):  # 0 · 0 은 지우기 — 이유를 보지 않는다
+            v = b.get("reason")
+            why = _chars(v.strip() if isinstance(v, str) else "", "정원을 늘리는 이유")
+            if not 0 < len(why) <= TEXT_MAX["back"]:  # 돌려보낸 이유와 같은 한도 (DB extra_reason 도 200자)
+                raise _Refuse(f"정원을 늘리는 이유를 1~{TEXT_MAX['back']}자로 써 주세요.", 400)
+        behalf = None if _is_ceo(ctx, g.actor.user_id) else ctx.ceo  # HR 이 대신이면 대표이사 (on_behalf_of)
+        _put_extra(conn, year, key, extra, why, behalf)
+        _log(conn, "EVAL_POOL_EXTRA", "ev_pool", year, behalf=behalf, year=year, pool=key, extra=list(extra))  # 이유는 남기지 않는다 (글)
     return jsonify(ok=True)
 
 
