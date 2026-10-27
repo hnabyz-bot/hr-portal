@@ -3,7 +3,7 @@
 서버가 연말 평가(자기평가 → 점수 → 등급 배정 → 대표이사 확인 → HR 확정)를 다룰 때 화면(public/index.html 의
 evScore · evBand · evCap · evValidate · evPoolState · evEdited)과 같은 규칙을 쓰도록 따로 떼어놨다. 입출력(DB · 시계)은 없다.
 
-- 총점 = 가중치 × 등급 비율(S110 · A100 · B90 · C80 · D70) 합, 소수 첫째 자리 사사오입, 상한 110. 가점은 없다(2026-10-27 — 서버는 `total` 에 늘 0 을 넘긴다).
+- 총점 = 가중치 × 등급 비율(S110 · A100 · B90 · C80 · D70) 합, 소수 첫째 자리 사사오입, 상한 110. 가점은 없다(2026-10-27).
 - 점수 기준은 "초과"다: 100 초과 S · 90 초과 A · 80 초과 B · 70 초과 C · 그 밖 D. 90.5점은 A, 딱 90점은 B.
 - 연차 초과가 5일(x2 단위 10) 이상이면 S·A·B 를 못 준다. 반일이 있어 연차는 2배 숫자(x2)로 다룬다.
 - 점수가 없는 사람(KPI 없는 현장직)은 점수 기준을 따지지 않고 연차 규칙만 본다.
@@ -40,10 +40,10 @@ FILE_MAX = 10 * 1024 * 1024  # 증빙 파일 하나의 크기
 FILES_PER_ITEM = 5  # 실행목표 하나에 올릴 수 있는 증빙 수
 
 
-def total(rows: Sequence[tuple[object, str | None]], bonus_x2: int) -> Decimal:
-    """총점. rows 는 (가중치, 등급) 줄 — 등급이 없는 줄은 0점. bonus_x2 는 가점의 2배 (가점은 없어져 서버는 늘 0)."""
+def total(rows: Sequence[tuple[object, str | None]]) -> Decimal:
+    """총점. rows 는 (가중치, 등급) 줄 — 등급이 없는 줄은 0점. 가점은 없다 (2026-10-27)."""
     base = sum((Decimal(str(w)) * PCT[g] / 100 for w, g in rows if g), Decimal(0))
-    return min((base + Decimal(bonus_x2) / 2).quantize(Decimal("0.1"), rounding=ROUND_HALF_UP), TOTAL_MAX)
+    return min(base.quantize(Decimal("0.1"), rounding=ROUND_HALF_UP), TOTAL_MAX)
 
 
 def band(score: Decimal, bands: tuple[int, int, int]) -> str:
@@ -187,7 +187,7 @@ def check_pool(
         y = min(lower, key=lambda y: (GRADES.index(y.grade), -y.score))  # 등급이 가장 높은 사람 → 점수가 높은 사람 → 명단 차례(min 은 앞선 것을 고른다)
         line = f"{x.name} 님(총점 {_num(x.score)}점)이 총점이 더 낮은 {y.name} 님({_num(y.score)}점)보다 등급이 낮습니다."
         if need_note and not x.note:
-            errors.append(f"{line} 코멘트에 이유를 적어 주세요.")
+            errors.append(f"{line} 코멘트(직원에게 공개)에 이유를 적어 주세요.")
         else:
             warnings.append(line)
     return errors, warnings, cnt

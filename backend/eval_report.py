@@ -6,10 +6,12 @@ app.py 가 bp 를 붙인다. 세션 검사는 auth._guard 가 모든 /api/* 에 
                            거절 순서: HR 403 → 해(2026~2100, ASCII 숫자 네 자리) 400 → FIRST_YEAR 전 · 시작 안 한 해 404 → 제외 안 된 사람이 없음 409.
                            사람 줄은 evaluation._row_json 을 지난다(HR = full) — 칸 · 글자는 화면 evReportData 와 같고, clean() · build() 도 아래와 같다.
                            파일 이름 "{year}년 인사평가 결과.xlsx", no-store. 감사로그 EVAL_REPORT (해뿐 — 등급 · 이름 없음)
-  POST /api/eval/report    화면이 보낸 평가 결과 → 같은 엑셀 (HR 만) — 시연 화면용 (가상 자료). 몸통의 ratio {"SA", "B", "D"}(0~70 정수)는 없으면 10 · 10 · 10
+  POST /api/eval/report    화면이 보낸 평가 결과 → 같은 엑셀 (HR 만) — 시연 화면용 (가상 자료). 몸통의 ratio {"SA", "B", "D"}(0~70 정수)는 없으면 10 · 10 · 10,
+                           묶음 줄의 why(대표이사가 늘린 이유 — 1~200자 글자)는 늘렸을 때만 보낸다
 
   엑셀 시트 ① 요약 — 숫자 카드 · 본부별 등급 분포 · 평가 묶음별 분포와 정원 기준 · 본부별 그래프 (이름 없음, A4 세로 한 장)
-                  정원 기준 칸 = 그해 비율 · 늘린 정원이 들어간 숫자, 대표이사가 늘렸으면 뒤에 "(대표이사 허용 +n명 · 늘린 이유)" — 300자까지 받고 칸 폭보다 길면 줄을 바꾼다
+                  정원 기준 칸 = 그해 비율 · 늘린 정원이 들어간 숫자, 대표이사가 늘렸으면 뒤에 "(대표이사 허용 +n명)" (칸 폭보다 길면 줄을 바꾼다).
+                  늘린 이유는 표 밖 — 아래 설명 줄 뒤에 묶음마다 "· 대표이사가 늘린 정원 — {묶음}: {이유}" (한 장 인쇄가 작아지지 않게)
   엑셀 시트 ② 명단 — 한 사람 한 줄 (대외비). 칸 제목 사번 · 이름 · 최종등급은 연봉 인상 계산(RZ_GRADE)이 그대로 읽는다
 
 꾸민 표 · 그래프는 openpyxl 이 만든다(화면만으로는 그래프를 넣기 어렵다).
@@ -41,7 +43,6 @@ bp = Blueprint("eval_report", __name__)
 bp.register_error_handler(kpi._Refuse, kpi._refused)
 
 MAX_BYTES, MAX_PEOPLE, MAX_POOLS, MAX_TEXT = 1_000_000, 3_000, 30, 80
-MAX_QUOTA = 300   # 정원 기준 글자 — 늘린 이유(200자 — eval_rules.TEXT_MAX["back"])가 들어간다
 GRADES, WAIT = ["S", "A", "B", "C", "D"], "처리 중"   # 처리 중 = 이의 처리 중이거나 아직 등급이 없음 (화면 evExportGrade 가 비워 보낸다)
 TEXT_KEYS = ("div", "team", "no", "name", "title", "pool", "stage", "appeal")
 DAY = re.compile(r"\d{4}-\d{2}-\d{2}")
@@ -99,10 +100,13 @@ def clean(body: object) -> dict | str:
         out.append({**row, "total": total, "grade": grade})
     pl = []
     for k in pools:
-        name, quota = (_text(k.get("name")), _text(k.get("quota"), MAX_QUOTA)) if isinstance(k, dict) else (None, None)
-        if not name or quota is None or not isinstance(k.get("ok"), bool):
+        if not isinstance(k, dict):
             return "묶음에 맞지 않는 값이 있습니다."
-        pl.append({"name": name, "quota": quota, "ok": k["ok"]})
+        name, quota = _text(k.get("name")), _text(k.get("quota"))
+        why = _text(k["why"], evaluation.TEXT_MAX["back"]) if "why" in k else None   # 대표이사가 늘린 이유 (늘렸을 때만 · 1~200자) — 요약 아래 주석 줄
+        if not name or quota is None or not isinstance(k.get("ok"), bool) or ("why" in k and not why):
+            return "묶음에 맞지 않는 값이 있습니다."
+        pl.append({"name": name, "quota": quota, "ok": k["ok"], "why": why})
     return {"year": year, "date": day, "released": released, "ratio": ratio, "appeals": appeals, "open": open_, "people": out, "pools": pl}
 
 
@@ -201,7 +205,7 @@ def _summary(ws, d: dict) -> None:
     r += 2
     for pool in d["pools"]:
         sub = [p for p in ppl if p["pool"] == pool["name"]]
-        wrap = len(pool["quota"]) > 14   # 정원 기준 칸(폭 14)보다 긴 글자(늘린 정원 · 이유)는 줄을 바꿔 다 보이게 — 줄 높이는 엑셀이 맞춘다
+        wrap = len(pool["quota"]) > 14   # 정원 기준 칸(폭 14)보다 긴 글자(늘린 정원)는 줄을 바꿔 다 보이게 — 줄 높이는 엑셀이 맞춘다
         for i, v in enumerate([pool["name"], *_counts(sub), len(sub), pool["quota"], "충족" if pool["ok"] else "확인 필요"], 1):
             c = ws.cell(row=r, column=i, value=v)
             c.border, c.alignment, c.number_format = BOX, LEFT if i == 1 else WRAP if i == 9 and wrap else CENTER, ZERO_DASH
@@ -239,6 +243,8 @@ def _summary(ws, d: dict) -> None:
     rt = d["ratio"]
     ws.cell(row=note + 1, column=1, value=f"· 정원 기준 = 묶음 인원의 S·A {rt['SA']}% · B {rt['B']}% · D {rt['D']}%(반올림), 4명 이하 묶음은 S·A·B 합계 1명."
                                           " 대표이사가 늘린 정원은 묶음 줄에 적습니다.").font = _f(9, color=SUB)
+    for i, pool in enumerate([p for p in d["pools"] if p["why"]], note + 2):   # 늘린 이유 — 표 칸이 아니라 설명 줄 뒤에 묶음마다 한 줄
+        ws.cell(row=i, column=1, value=f"· 대표이사가 늘린 정원 — {pool['name']}: {pool['why']}").font = _f(9, color=SUB)
     ws.print_options.horizontalCentered = True
     _print(ws, landscape=False, one_page=True)
 
@@ -335,13 +341,14 @@ def _from_db(conn: sqlite3.Connection, year: int, me: Actor) -> dict:
             raise kpi._Refuse("보고서에 넣을 분이 없습니다.", 409)
         no = dict(conn.execute("SELECT id, employee_no FROM users"))
         pools = []
-        for k in sorted(ctx.pools, key=evaluation._pool_rank):   # 정원 글자 = 그해 비율 · 늘린 정원이 들어간 숫자 (늘렸으면 뒤에 "(대표이사 허용 +n명 · 늘린 이유)" — 이유의 줄바꿈 · 겹친 빈칸은 한 칸)
+        for k in sorted(ctx.pools, key=evaluation._pool_rank):   # 정원 글자 = 그해 비율 · 늘린 정원이 들어간 숫자 (늘렸으면 뒤에 "(대표이사 허용 +n명)") · why = 늘린 이유 (줄바꿈 · 겹친 빈칸은 한 칸)
             _, errors, _, _, members = evaluation._pool(ctx, k)
             extra = evaluation._extra_of(ctx, k)
             q = calculate_department_quota(len(members), evaluation._ratios_of(ctx), extra)
             quota = f"S·A·B 합계 {q.upper}명" if q.mode is QuotaMode.GROUPED else f"S·A {q.a}명 · B {q.b}명 · D {q.d}명"
             why = " ".join((ctx.pools[k]["extra_reason"] or "").split())   # 늘렸으면 이유가 있다 (DB 트리거)
-            pools.append({"name": evaluation._pool_label(ctx, k), "quota": quota + (f" (대표이사 허용 +{sum(extra)}명 · {why})" if any(extra) else ""), "ok": not errors})
+            pools.append({"name": evaluation._pool_label(ctx, k), "quota": quota + (f" (대표이사 허용 +{sum(extra)}명)" if any(extra) else ""), "ok": not errors,
+                          **({"why": why} if any(extra) else {})})
     people = [{"div": j["div"], "team": j["team"] or evaluation.NO_TEAM, "no": no[j["pid"]] or "", "name": j["name"], "title": j["title"], "pool": j["poolName"],
                "total": None if j["total"] is None else round(j["total"], 1),
                "grade": "" if j["appeal"] and j["appeal"]["status"] != "DONE" else j["grade"] or "",   # 이의 처리 중이면 비운다 (화면 evExportGrade)

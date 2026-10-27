@@ -2127,14 +2127,18 @@ def check_eval_report(hr) -> None:
     ok(post(lead, body).status_code == 403, "HR 이 아니면 403 (팀장)")
     bad = [{**body, "year": "2026"}, {**body, "people": []}, {**body, "people": [man("가상", "가상본부", "X")]},
            {**body, "people": [man("가\n상", "가상본부", "A")]}, {**body, "people": [man("가상", "가상본부", "A", 900)]},
-           {**body, "pools": [{"name": "묶음", "quota": "", "ok": "yes"}]}, {**body, "pools": [{"name": "가상본부 팀원", "quota": "가" * 301, "ok": True}]}, [1, 2]]
+           {**body, "pools": [{"name": "묶음", "quota": "", "ok": "yes"}]}, {**body, "pools": [{"name": "가상본부 팀원", "quota": "가" * 81, "ok": True}]}, [1, 2]]
+    bad += [{**body, "pools": [{"name": "가상본부 팀원", "quota": "A·B 합계 1명", "ok": True, "why": v}]} for v in ("", "  ", "가" * 201, 5, None, "가\n상", ["가"])]
     bad += [{**body, "ratio": v} for v in ({"SA": 71, "B": 10, "D": 10}, {"SA": True, "B": 10, "D": 10}, {"SA": 10.0, "B": 10, "D": 10}, {"SA": 10, "B": 10}, [10, 10, 10], None)]
-    ok(all(post(hr, b).status_code == 400 for b in bad), "형식 · 등급 · 줄바꿈 글자 · 총점 범위 · 묶음 값(정원 글자 300자까지) · 등급 비율(0~70 정수 세 칸)이 틀리면 400")
-    long_q = "S·A 3명 · B 2명 · D 1명 (대표이사 허용 +10명 · " + "가" * 200 + ")"
-    r = post(hr, {**body, "pools": [{"name": "가상본부 팀원", "quota": long_q, "ok": True}]})
+    ok(all(post(hr, b).status_code == 400 for b in bad), "형식 · 등급 · 줄바꿈 글자 · 총점 범위 · 묶음 값(정원 글자 80자까지 · 늘린 이유 why 는 있으면 1~200자 글자) · 등급 비율(0~70 정수 세 칸)이 틀리면 400")
+    long_q, why200 = "S·A 3명 · B 2명 · D 1명 (대표이사 허용 +2명)", ("가상 늘린 이유 " + "가" * 200)[:200]
+    r = post(hr, {**body, "pools": [{"name": "가상본부 팀원", "quota": long_q, "ok": True, "why": why200}, {"name": "가상지원 팀원", "quota": "A·B 합계 1명", "ok": True}]})
     sl = load_workbook(io.BytesIO(r.data))["요약"] if r.status_code == 200 else None
     cq = sl and next(sl.cell(row=i, column=9) for i in range(1, sl.max_row + 1) if sl.cell(row=i, column=1).value == "가상본부 팀원")
-    ok(r.status_code == 200 and cq.value == long_q and cq.alignment.wrap_text, "정원 글자에 늘린 이유(200자)가 들어가도 받는다 · 정원 기준 칸은 줄을 바꿔 다 보이게")
+    at_ = lambda ws, head: [i for i in range(1, ws.max_row + 1) if str(ws.cell(row=i, column=1).value or "").startswith(head)]  # noqa: E731
+    ok(r.status_code == 200 and cq.value == long_q and cq.alignment.wrap_text and at_(sl, "· 대표이사가 늘린 정원") == [at_(sl, "· 정원 기준")[0] + 1]
+       and sl.cell(row=at_(sl, "· 정원 기준")[0] + 1, column=1).value == f"· 대표이사가 늘린 정원 — 가상본부 팀원: {why200}",
+       "늘린 이유(200자)는 정원 칸이 아니라 요약 아래 설명 줄 뒤에 묶음마다 한 줄 (늘리지 않은 묶음은 없음) · 정원 기준 칸은 길면 줄을 바꾼다")
     ok(post(hr, {**body, "people": [man("가상", "가상본부", "A")] * 3001}).status_code in (400, 413), "인원이 너무 많으면 거절")
 
     r = post(hr, body)
@@ -2258,9 +2262,11 @@ def check_eval_report(hr) -> None:
         x("UPDATE ev_pools SET extra_sa = 0, extra_b = 0, extra_reason = NULL WHERE year = ? AND pool = 'DIV:91'", Y3)
         sm4 = load_workbook(io.BytesIO(get(hr, f"?year={Y3}").data))["요약"]
         p4 = {sm4.cell(row=i, column=1).value: sm4.cell(row=i, column=9).value for i in range(1, sm4.max_row + 1)}
-        ok(r.status_code == 200 and p3["가상E본부 팀원"] == [10, "S·A 3명 · B 2명 · D 1명 (대표이사 허용 +2명 · 가상 늘린 이유)", "충족"] and p4["가상E본부 팀원"] == "S·A 2명 · B 1명 · D 1명"
-           and rule(sm3) == RULE.format(20, 10, 10),
-           f"보고서는_DB에서: {Y3}년(비율 20 · 10 · 10) 5명 이상 묶음 정원 글자 — 늘린 정원이 있으면 늘린 숫자 · '(대표이사 허용 +n명 · 늘린 이유)'(줄바꿈 · 겹친 빈칸은 한 칸) · 설명 줄도 그 비율 ({p3} / {p4})")
+        notes = lambda ws: [c.value for row in ws.iter_rows() for c in row if isinstance(c.value, str) and c.value.startswith("· 대표이사가 늘린 정원")]  # noqa: E731
+        ok(r.status_code == 200 and p3["가상E본부 팀원"] == [10, "S·A 3명 · B 2명 · D 1명 (대표이사 허용 +2명)", "충족"] and p4["가상E본부 팀원"] == "S·A 2명 · B 1명 · D 1명"
+           and rule(sm3) == RULE.format(20, 10, 10) and notes(sm3) == ["· 대표이사가 늘린 정원 — 가상E본부 팀원: 가상 늘린 이유"] and notes(sm4) == [],
+           f"보고서는_DB에서: {Y3}년(비율 20 · 10 · 10) 5명 이상 묶음 정원 글자 — 늘린 정원이 있으면 늘린 숫자 · '(대표이사 허용 +n명)' · 늘린 이유는 요약 아래 주석 줄"
+           f"(줄바꿈 · 겹친 빈칸은 한 칸) · 설명 줄도 그 비율 ({p3} / {p4})")
     finally:
         x("UPDATE ev_pools SET extra_sa = 0, extra_b = 0, extra_reason = NULL WHERE year = 2097")
         x("DELETE FROM ev_appeals WHERE year = ?", Y)
@@ -7520,7 +7526,7 @@ def check_eval_score(hr) -> None:
         a = pool_of(HEAD, "DIV:91")
         x("UPDATE ev_targets SET stage = 'GRADE' WHERE year = ? AND pool = 'DIV:91' AND out_at IS NULL", Y)  # 배정 단계로 되돌려 마감 길로 본다
         x("UPDATE ev_pools SET closed_at = NULL, closed_by = NULL WHERE year = ? AND pool = 'DIV:91'", Y)
-        NOTE = f"{LINE} 코멘트에 이유를 적어 주세요."
+        NOTE = f"{LINE} 코멘트(직원에게 공개)에 이유를 적어 주세요."
         r = close(HEAD, "DIV:91")
         ok(r.status_code == 409 and r.json == {"error": NOTE, "errors": [NOTE]} and pool_row("DIV:91")[0] is None and not took(),
            "점수_역전은_윗사람_코멘트로: 밀린 사람에게 윗사람 코멘트가 없으면 마감 409 (그 문구가 첫 오류) · 그대로")
@@ -7528,7 +7534,7 @@ def check_eval_score(hr) -> None:
            "점수_역전은_윗사람_코멘트로: 본부장이 밀린 사람에게 코멘트를 쓰면 마감 200")
         took()
         b = pool_of(HEAD, "DIV:91")
-        ok((a["state"], a["errors"]) == ("FIX", [f"{LINE} 코멘트에 이유를 적어 주세요."]) and (b["state"], b["errors"]) == ("CEO", []) and LINE in b["warnings"],
+        ok((a["state"], a["errors"]) == ("FIX", [NOTE]) and (b["state"], b["errors"]) == ("CEO", []) and LINE in b["warnings"],
            "점수_역전은_윗사람_코멘트로: 본부 팀원 묶음에서 밀린 사람에게 윗사람 코멘트가 없으면 오류(FIX) · 코멘트를 쓰면 경고만")
         setg(LEADC, "A", "B", "B")  # 전사 팀장: 94.0점 팀장C 가 C · 90.0점 팀장이 B — 팀장 묶음은 윗사람 코멘트 칸이 없다
         p = pool_of(CEO, "LEADERS")
@@ -7581,10 +7587,12 @@ def check_eval_score(hr) -> None:
         A_OVER = {"error": "A는 1명까지입니다. 현재 2명", "errors": ["A는 1명까지입니다. 현재 2명"]}
         ok(p3()["quota"] == "S 최대 1명 · A 1명 (S만큼 줄어듦) · B 1명 · D 1명 · C 나머지" and hit(close(HEAD, "DIV:91", year=Y3), 409, A_OVER),
            f"비율은_정원에: {Y3}년 10명 묶음 — 기본 비율(10 · 10 · 10)이면 정원 글자 A 1명 · A 2명으로 마감 409")
-        x("UPDATE ev_rounds SET ratio_sa = 20 WHERE year = ?", Y3)
+        x("UPDATE ev_rounds SET ratio_sa = 20, band_a = 85 WHERE year = ?", Y3)
+        r3 = get(EMP, f"/api/eval/results?year={Y3}").json
         ok(p3()["quota"] == "S 최대 2명 · A 2명 (S만큼 줄어듦) · B 1명 · D 1명 · C 나머지" and p3()["errors"] == []
-           and get(EMP, f"/api/eval/results?year={Y3}").json["ratio"] == {"SA": 20, "B": 10, "D": 10},
-           "비율은_정원에: 그해 회차 비율 S·A 20 → 정원 글자 S 최대 2 · A 2 · 오류 없음 · 결과 응답 맨 위 ratio 도 그 비율")
+           and r3["ratio"] == {"SA": 20, "B": 10, "D": 10} and r3.get("bands") == {"A": 85, "B": 80, "C": 70},
+           "비율은_정원에: 그해 회차 비율 S·A 20 → 정원 글자 S 최대 2 · A 2 · 오류 없음 · 결과 응답 맨 위 ratio · bands 도 그해 회차 값 (지난 해 결과 카드)")
+        x("UPDATE ev_rounds SET band_a = 90 WHERE year = ?", Y3)
         x("UPDATE ev_pools SET extra_sa = 1, extra_b = 1, extra_reason = '가상 늘린 이유' WHERE year = ? AND pool = 'DIV:91'", Y3)
         both = p3()["quota"]
         x("UPDATE ev_pools SET extra_sa = 0 WHERE year = ? AND pool = 'DIV:91'", Y3)
@@ -7704,8 +7712,8 @@ def check_eval_close(hr) -> None:
     EXTRA_BAD, EXTRA_OVER = {"error": "늘린 정원은 0~5명 정수로 넣어 주세요."}, {"error": "늘린 정원이 묶음 인원보다 많습니다."}
     NO_EXTRA, EXTRA_DONE = {"error": "이 묶음의 정원을 늘릴 권한이 없습니다."}, {"error": "대표이사 확인을 마친 묶음입니다."}
     EXTRA_WHY, EXTRA_CHAR = {"error": "정원을 늘리는 이유를 1~200자로 써 주세요."}, {"error": "정원을 늘리는 이유에 쓸 수 없는 글자가 있습니다."}
-    EXCL_EXTRA = {"error": "대표이사가 늘린 정원이 묶음 인원보다 많아져 뺄 수 없습니다. 먼저 늘린 정원을 줄여 주세요."}
-    INCL_EXTRA = {"error": "대표이사가 늘린 정원이 묶음 인원보다 많아져 되돌릴 수 없습니다. 먼저 늘린 정원을 줄여 주세요."}
+    EXCL_EXTRA = {"error": "대표이사가 늘린 정원이 묶음 인원보다 많아져 뺄 수 없습니다. 대표이사가 늘린 정원을 먼저 줄여야 합니다."}
+    INCL_EXTRA = {"error": "대표이사가 늘린 정원이 묶음 인원보다 많아져 되돌릴 수 없습니다. 대표이사가 늘린 정원을 먼저 줄여야 합니다."}
     X1, NO_X = {"SA": 1, "B": 0}, (0, 0, None, None, None, None)
     no = lambda name, verb: {"error": f"{name} 묶음을 {verb} 권한이 없습니다."}  # noqa: E731
     is_ = lambda name, why: {"error": f"{name} 묶음은 {why}"}  # noqa: E731
@@ -7830,9 +7838,9 @@ def check_eval_close(hr) -> None:
         hp = pool_of(HEAD, D1)
         ok(hit(r, 200, OK) and stages(D1) == ["GRADE"] * 4 and prow(D1)[8] == "가상 정원 늘림" and xrow(D1) == (1, 0, "가상 정원 늘림", z(12, 7), CEO, None)
            and hp["extra"] == {"SA": 1, "B": 0, "reason": "가상 정원 늘림", "at": z(12, 7), "by": "가상E대표 가상직급"}
-           and hp["quota"] == "S 최대 2명 · A·B 합계 2명 (S만큼 줄어듦) · C·D 나머지 · 대표이사 허용 S·A +1명" and hp["can"]["extra"] is False,
+           and hp["quota"] == "S 최대 2명 · A·B 합계 2명 (S만큼 줄어듦) · C·D 나머지 · 대표이사 허용 S·A·B +1명" and hp["can"]["extra"] is False,
            "정원_늘려_주기: 돌려보내며 S·A +1 → 200 · 늘린 정원 칸(이유 = 돌려보낸 이유 · 때 · 사람 · 대신 아님) · 본부장 묶음 줄 extra · "
-           "정원 글자 끝 ' · 대표이사 허용 S·A +1명' · 본부장에게 늘리기 단추 없음")
+           "정원 글자 끝 ' · 대표이사 허용 S·A·B +1명'(4명 이하 묶음은 S·A·B 합쳐) · 본부장에게 늘리기 단추 없음")
         ok(audits("EVAL_POOL_RETURNED")[-1] == (Y, {"year": Y, "pool": D1, "extra": [1, 0]}) and by("EVAL_POOL_RETURNED")[-1] == (CEO, None) and took() == [(HEAD, *TURN)],
            "감사로그 EVAL_POOL_RETURNED 에 늘린 정원 숫자 extra [S·A, B] (이유 글 없음) · 본부장에게 알림")
         ok(hit(act(CEO, "back", pool=D1, reason="가상", extra={"SA": 9, "B": 0}), 409, is_(N1, "이미 돌려보냈습니다.")) and xrow(D1)[:2] == (1, 0),
@@ -7850,6 +7858,14 @@ def check_eval_close(hr) -> None:
            and hp["extra"] is None and hp["quota"] == "S 최대 1명 · A·B 합계 1명 (S만큼 줄어듦) · C·D 나머지" and hp["errors"] == ["A·B 합계는 1명까지입니다. 현재 2명"],
            "정원_늘려_주기: 0 · 0 으로 돌려보내면 늘린 정원을 지움 (이유 · 때 · 사람 칸도) · 정원 글자 원래대로 · B 2명은 다시 정원 초과")
         ok(all(edit(HEAD, u, grade="C").status_code == 200 for u in (FIELD, EMPB)) and hit(close1(), 200, OK), "(본부장이 정원에 맞춰 다시 마감)")
+        took()
+        x("INSERT INTO ceo_delegation (ceo_user_id, since) VALUES (?, ?)", CEO, z(12, 7))
+        ok(hit(act(HRA, "back", pool=D1, reason="가상 대신 늘림", extra=X1), 200, OK) and xrow(D1) == (1, 0, "가상 대신 늘림", z(12, 7), HRA, CEO)
+           and by("EVAL_POOL_RETURNED")[-1] == (HRA, CEO) and audits("EVAL_POOL_RETURNED")[-1] == (Y, {"year": Y, "pool": D1, "extra": [1, 0]}),
+           "정원_늘려_주기: 맡김 → HR 이 돌려보내며 늘리면 extra_by = 그 HR · extra_behalf = 대표이사 · 감사로그 on_behalf_of = 대표이사")
+        x("DELETE FROM ceo_delegation WHERE ceo_user_id = ?", CEO)
+        ok(hit(close1(), 200, OK), "(본부장이 다시 마감)")
+        x("UPDATE ev_pools SET extra_sa = 0, extra_b = 0, extra_reason = NULL, extra_at = NULL, extra_by = NULL, extra_behalf = NULL WHERE year = ? AND pool = ?", Y, D1)
         took()
 
         # ---- 정원_늘리기 (대표이사가 직접 등급을 정하는 묶음 — 본부장 없는 본부 D2 · 전사 팀장 LD · 직속부서 DR) ----
@@ -7881,10 +7897,10 @@ def check_eval_close(hr) -> None:
            and by("EVAL_POOL_EXTRA") == [(CEO, None)] * 3, "감사로그 EVAL_POOL_EXTRA {해 · 묶음 · 늘린 정원 숫자} (이유 글 없음 · 대신 아님)")
         ps = {p["key"]: p for p in st(CEO)["pools"]}
         ok(ps[LD]["extra"] == {"SA": 1, "B": 0, "reason": "가상 팀장 정원", "at": z(12, 7), "by": "가상E대표 가상직급"}
-           and ps[LD]["quota"] == "S 최대 2명 · A·B 합계 2명 (S만큼 줄어듦) · C·D 나머지 · 대표이사 허용 S·A +1명"
-           and ps[DR]["quota"] == "S 최대 1명 · A·B 합계 2명 (S만큼 줄어듦) · C·D 나머지 · 대표이사 허용 B +1명"
-           and ps[D2]["quota"] == "S 최대 1명 · A·B 합계 1명 (S만큼 줄어듦) · C·D 나머지 · 대표이사 허용 S·A +1명" and ps[D1]["extra"] is None,
-           "정원_늘리기: 묶음 줄 extra {SA, B, 이유, 때, 사람} · 정원 글자 끝 '대표이사 허용 …' (0 인 쪽 뺌)")
+           and ps[LD]["quota"] == "S 최대 2명 · A·B 합계 2명 (S만큼 줄어듦) · C·D 나머지 · 대표이사 허용 S·A·B +1명"
+           and ps[DR]["quota"] == "S 최대 1명 · A·B 합계 2명 (S만큼 줄어듦) · C·D 나머지 · 대표이사 허용 S·A·B +1명"
+           and ps[D2]["quota"] == "S 최대 1명 · A·B 합계 1명 (S만큼 줄어듦) · C·D 나머지 · 대표이사 허용 S·A·B +1명" and ps[D1]["extra"] is None,
+           "정원_늘리기: 묶음 줄 extra {SA, B, 이유, 때, 사람} · 정원 글자 끝 '대표이사 허용 S·A·B +n명' (4명 이하 묶음 — 늘린 S·A · B 합계)")
         ok(hit(ext(CEO, D2, {"SA": 0, "B": 0}), 200, OK) and xrow(D2) == NO_X and audits("EVAL_POOL_EXTRA")[-1] == (Y, {"year": Y, "pool": D2, "extra": [0, 0]})
            and pool_of(CEO, D2)["extra"] is None, "정원_늘리기: 0 · 0 은 이유 없이 200 — 늘린 정원 · 이유 · 때 · 사람을 지움")
         x("INSERT INTO ceo_delegation (ceo_user_id, since) VALUES (?, ?)", CEO, z(12, 7))
@@ -7996,6 +8012,8 @@ def check_eval_close(hr) -> None:
         ok(hit(act(HR, "finalize", pools=[DR, LD, D2]), 200, {"ok": True, "done": [DR, LD, D2]}) and stages(DR) == ["DONE"] * 2 and stages(LD) == ["DONE"] * 3 and stages(D2) == ["DONE"]
            and audits("EVAL_POOL_FINALIZED")[1:] == [(Y, {"year": Y, "pool": k}) for k in (DR, LD, D2)] and not took(),
            "HR 확정은 HR 본인 일 — 자기가 든 묶음(직속부서)도 200 · 감사로그 묶음마다 · 알림 없음")
+        ok(hit(ext(CEO, LD, X1, reason="가상"), 409, EXTRA_DONE) and xrow(LD) == NO_X and cans(CEO, "extra")[LD] is False,
+           "정원_늘리기: 확정(DONE)한 묶음도 409 '대표이사 확인을 마친 묶음입니다.' · can.extra 거짓 — 그대로")
 
         # ---- 되돌리기 (from = 화면이 본 묶음 상태) ----
         ok(all(hit(act(who, "undo", pool=DR, **{"from": "DONE"}), 403, no(ND, "되돌릴")) for who in (CEO, HEAD)) and hit(act(HRA, "undo", pool=None, **{"from": "DONE"}), 400, PICK)
@@ -8208,7 +8226,8 @@ def check_eval_appeal(hr) -> None:
            "이의_신청은_7일: 공개 전 403 '아직 결과가 공개되지 않았습니다.' (제외된 사람도 — 공개 전이 먼저)")
         r = res(LEAD)
         ok(r["year"] == Y and r["years"] == [] and r["offline"] is False and r["released"] is None and r["appealDue"] is None and r["team"] == [] and r["appeals"] == []
-           and r["mine"]["pid"] == LEAD and "grade" not in r["mine"] and r["mine"]["appeal"] is None and r["ratio"] == {"SA": 10, "B": 10, "D": 10},
+           and r["mine"]["pid"] == LEAD and "grade" not in r["mine"] and r["mine"]["appeal"] is None and r["ratio"] == {"SA": 10, "B": 10, "D": 10}
+           and r.get("bands") == {"A": 90, "B": 80, "C": 70},
            "결과를_보는_범위: 공개 전 팀장 — team 빈 목록 · 본인 줄은 자기평가만(등급 칸 없음) · 기본 해 = 시작한 해(공개 전이어도)")
         r = res(HRA)
         ok(pids(r["team"]) == everyone and row_of(r["team"], EMP)["grade"] == "C" and r["mine"] is None,
@@ -8392,9 +8411,9 @@ def check_eval_appeal(hr) -> None:
            and old["mine"]["appeal"]["status"] == "DONE" and old["years"] == [y2, Y],
            "지난_해: 공개한 두 해 → years 둘(최근부터) · 기본은 올해 · ?year= 지난해 결과(이의로 바뀐 등급 B)")
         ok(res(LEAD)["team"] and pids(res(LEAD)["team"]) == [EMP] and pids(res(LEAD, f"?year={Y}")["team"]) == [EMP, FIELD], "지난_해: 팀원 결과도 그해 떠 둔 줄로")
-        none = {"released": None, "appealDue": None, "mine": None, "team": [], "appeals": [], "ratio": {"SA": 10, "B": 10, "D": 10}}
+        none = {"released": None, "appealDue": None, "mine": None, "team": [], "appeals": [], "ratio": {"SA": 10, "B": 10, "D": 10}, "bands": {"A": 90, "B": 80, "C": 70}}
         ok(res(EMP, "?year=2026") == {"years": [y2, Y], "year": 2026, "offline": True, **none} and res(EMP, "?year=2040") == {"years": [y2, Y], "year": 2040, "offline": False, **none},
-           "포털 평가 전 해는 offline 참 · 시작하지 않은 해는 빈 결과 · 회차가 없으면 ratio 10 · 10 · 10")
+           "포털 평가 전 해는 offline 참 · 시작하지 않은 해는 빈 결과 · 회차가 없으면 ratio 10 · 10 · 10 · bands 90 · 80 · 70")
         ok(all(hit(get(EMP, f"/api/eval/results?year={v}"), 400, BAD_YEAR) for v in ("abc", "2025", "2101", "", "2027.0", "9" * 50)), "결과: 해가 정수(2026~2100)가 아니면 400")
         at(3, 6, y=Y2 + 1)
         r = res(EMP)

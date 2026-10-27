@@ -34,8 +34,9 @@ app.py 가 bp 를 붙인다. 세션 검사 · 같은 출처 검사는 auth._guar
   POST /api/eval/pools/finalize           {"year", "pools": [열쇠…]} HR 확정 → {"ok", "done"} (HR)
   POST /api/eval/pools/undo               {"year", "pool", "from"} 한 단계 되돌린다 — from = 화면이 본 묶음 상태(DONE | HR): 확정 → 확정 대기 / 확정 대기 → 대표이사 확인 전 (HR)
   GET  /api/eval/results?year=            평가 결과 (year 가 없으면 cur_year — 그해가 시작 전이면 공개한 해 중 최근)
-                                          → {"years": 공개한 해(최근부터), "year", "offline", "released", "appealDue", "ratio", "mine", "team", "appeals"}
-                                          (ratio = 그해 회차 등급 비율 {"SA", "B", "D"} — 회차가 없으면 10 · 10 · 10. 화면의 등급 안내가 쓴다)
+                                          → {"years": 공개한 해(최근부터), "year", "offline", "released", "appealDue", "ratio", "bands", "mine", "team", "appeals"}
+                                          (ratio = 그해 회차 등급 비율 {"SA", "B", "D"} · bands = 그해 기준 점수 {"A", "B", "C"} — 회차가 없으면 10 · 10 · 10 · 90 · 80 · 70.
+                                          화면의 등급 안내가 쓴다 — 지난 해 결과 카드도 그 해 값)
   POST /api/eval/me/appeal                {"year", "reason"} 이의 신청 (본인 · 공개일 + 7일 한국 23:59 까지 한 번) — HR 전원에게 알림(eval_appeal, 신청한 사람은 빼고)
   POST /api/eval/appeals/<uid>/answer     {"year", "grade", "answer", "marks"?: {"<rid>": 등급}} HR 답변 — 등급 그대로면 끝(DONE · 신청한 사람에게 eval_answer),
                                           바꾸면 대표이사 확인 대기(CEO — 대표이사, 맡겼으면 신청한 사람 뺀 HR 에게 eval_appeal · 누른 사람은 빼고, 남는 HR 이 없으면 대표이사)
@@ -310,7 +311,7 @@ def _total(ctx: _Ctx, row: sqlite3.Row) -> Decimal | None:
     if row["kpi_version"] is None:
         return None
     uid = row["user_id"]
-    return total([(it["weight"], ctx.entries[(uid, it["rid"])]["grade"]) for it in ctx.items[uid]], 0)
+    return total([(it["weight"], ctx.entries[(uid, it["rid"])]["grade"]) for it in ctx.items[uid]])
 
 
 def _edited(ctx: _Ctx, row: sqlite3.Row) -> str:
@@ -611,7 +612,7 @@ def exclude(uid: int) -> Response:
             raise _Refuse(f"제외 사유를 1~{TEXT_MAX['out']}자로 써 주세요.", 400)
         ctx = _ctx(conn, year)
         if not _fits(len(_pool(ctx, pool)[4]) - 1, _ratios_of(ctx), _extra_of(ctx, pool)):  # 빼고 나서도 늘린 정원이 맞아야 — 아니면 읽기 길의 정원 셈이 멈춘다
-            raise _Refuse("대표이사가 늘린 정원이 묶음 인원보다 많아져 뺄 수 없습니다. 먼저 늘린 정원을 줄여 주세요.", 409)
+            raise _Refuse("대표이사가 늘린 정원이 묶음 인원보다 많아져 뺄 수 없습니다. 대표이사가 늘린 정원을 먼저 줄여야 합니다.", 409)
         conn.execute("UPDATE ev_targets SET out_at = ?, out_reason = ?, out_by = ? WHERE year = ? AND user_id = ?",
                      (auth._iso(auth._now()), why, g.actor.user_id, year, uid))
         _log(conn, "EVAL_EXCLUDED", "ev_target", uid, year=year)
@@ -630,7 +631,7 @@ def include(uid: int) -> Response:
         if state not in ("WAIT", "FIX"):
             raise _Refuse("이 묶음은 이미 다음 단계로 넘어가 되돌릴 수 없습니다. 먼저 묶음을 되돌려 주세요.", 409)
         if not _fits(len(rows) + 1, _ratios_of(ctx), _extra_of(ctx, pool)):  # 한 사람 늘어도 늘린 정원이 맞아야 (4명 → 5명이면 사람마다 정원이 된다)
-            raise _Refuse("대표이사가 늘린 정원이 묶음 인원보다 많아져 되돌릴 수 없습니다. 먼저 늘린 정원을 줄여 주세요.", 409)
+            raise _Refuse("대표이사가 늘린 정원이 묶음 인원보다 많아져 되돌릴 수 없습니다. 대표이사가 늘린 정원을 먼저 줄여야 합니다.", 409)
         conn.execute("UPDATE ev_targets SET out_at = NULL, out_reason = NULL, out_by = NULL WHERE year = ? AND user_id = ?", (year, uid))
         _log(conn, "EVAL_INCLUDED", "ev_target", uid, year=year)
     return jsonify(ok=True)
@@ -821,11 +822,12 @@ def _pool_label(ctx: _Ctx, key: str) -> str:
 
 def _pool_json(ctx: _Ctx, me: Actor, key: str) -> dict:
     """묶음 한 줄 — 배정자 · 대표이사 · HR 에게만 보낸다 (오류 문구에 이름 · 총점 · 등급이 든다). quota = 정원 글자 (그해 비율 · 늘린 정원이 들어간 숫자,
-    늘렸으면 뒤에 " · 대표이사 허용 S·A +x명 · B +y명" — 0 인 쪽은 뺀다) · extra = 늘린 정원 {"SA", "B", "reason", "at", "by"} (둘 다 0 이면 None)."""
+    늘렸으면 뒤에 " · 대표이사 허용 S·A +x명 · B +y명" — 0 인 쪽은 뺀다. 4명 이하 묶음은 S·A·B 합쳐 하나라 " · 대표이사 허용 S·A·B +n명") ·
+    extra = 늘린 정원 {"SA", "B", "reason", "at", "by"} (둘 다 0 이면 None)."""
     state, errors, warnings, counts, rows = _pool(ctx, key)
     p, extra = ctx.pools[key], _extra_of(ctx, key)
     q = calculate_department_quota(len(rows), _ratios_of(ctx), extra)
-    more = " · ".join(f"{g} +{n}명" for g, n in zip(("S·A", "B"), extra) if n)
+    more = "" if not any(extra) else f"S·A·B +{sum(extra)}명" if q.mode is QuotaMode.GROUPED else " · ".join(f"{g} +{n}명" for g, n in zip(("S·A", "B"), extra) if n)
 
     def act(when: str, by: str) -> dict | None:
         return {"at": p[when], "by": _who(ctx, p[by])} if p[when] else None
@@ -935,7 +937,8 @@ def results() -> Response:
                 year = years[0]
         ctx = None if year < FIRST_YEAR else _ctx(conn, year)
         body = {"years": years, "year": year, "offline": year < FIRST_YEAR, "released": None, "appealDue": None,
-                "ratio": ctx.round["ratio"] if ctx and ctx.round else dict(zip(RATIO_KEYS, DEFAULT_RATIOS)), "mine": None, "team": [], "appeals": []}
+                "ratio": ctx.round["ratio"] if ctx and ctx.round else dict(zip(RATIO_KEYS, DEFAULT_RATIOS)),
+                "bands": ctx.round["bands"] if ctx and ctx.round else dict(zip("ABC", BANDS)), "mine": None, "team": [], "appeals": []}
         if ctx and ctx.round and ctx.round["started"]:
             rel, mine = ctx.round["released"], ctx.rows.get(me.user_id)
             seen = [r for r in sorted(ctx.rows.values(), key=lambda r: _order(ctx, r)) if r["user_id"] != me.user_id
@@ -1204,7 +1207,7 @@ def person_edit(uid: int) -> Response:
                 marks[rid] = _grade(v)
         comment = _words(b["comment"], "평가자 코멘트", TEXT_MAX["comment"]) if "comment" in b else row["comment"]
         head = _words(b["headComment"], "윗사람 코멘트", TEXT_MAX["head"]) if "headComment" in b else row["head_comment"]
-        score = total([(it["weight"], marks[it["rid"]]) for it in ctx.items[uid]], 0) if kpi_on else None
+        score = total([(it["weight"], marks[it["rid"]]) for it in ctx.items[uid]]) if kpi_on else None
         grade = row["grade"]
         if "grade" in b:  # 보낸 등급이 이긴다 — 검사는 아래 _within
             grade = _grade(b["grade"], "등급")
@@ -1552,7 +1555,7 @@ def _marked(ctx: _Ctx, row: sqlite3.Row, over: dict[int, str]) -> tuple[dict[int
     diff = {r: v for r, v in over.items() if v != cur[r]}
     if row["kpi_version"] is None:
         return diff, None
-    return diff, total([(it["weight"], diff.get(it["rid"], cur[it["rid"]])) for it in ctx.items[uid]], 0)
+    return diff, total([(it["weight"], diff.get(it["rid"], cur[it["rid"]])) for it in ctx.items[uid]])
 
 
 def _put_marks(ctx: _Ctx, uid: int, marks: dict[int, str]) -> None:

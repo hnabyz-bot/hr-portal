@@ -2355,10 +2355,10 @@ def 보는_대상_모양():
 
 
 @check
-def 총점은_가중치와_가점():
+def 총점은_가중치와_등급():  # 가점은 없다 (2026-10-27)
     rows = [(40, "S"), (30, "A"), (30, "B")]
-    assert total(rows, 0) == Decimal("101.0") and total(rows, 40) == Decimal("110") and total([(100, None)], 0) == 0
-    assert total([(33.3, "A"), (33.3, "B"), (33.4, "C")], 1) == Decimal("90.5")  # 33.3 + 29.97 + 26.72 + 0.5 = 90.49 → 90.5 (둘째 자리에서 사사오입)
+    assert total(rows) == Decimal("101.0") and total([(60, "S"), (60, "S")]) == Decimal("110") and total([(100, None)]) == 0  # 상한 110
+    assert total([(33.3, "A"), (33.3, "B"), (33.4, "C")]) == Decimal("90.0")  # 33.3 + 29.97 + 26.72 = 89.99 → 90.0 (둘째 자리에서 사사오입)
 
 
 @check
@@ -2418,7 +2418,7 @@ def 점수_역전은_코멘트가_없으면_오류_있으면_경고():
     R += [EvMember(i, f"p{i}", Decimal(str(90 - i)), "C", 0) for i in range(3, 7)]  # 6명 묶음 — 기본 비율이면 A·B·D 각 1명
     줄 = "가 님(총점 95점)이 총점이 더 낮은 나 님(91점)보다 등급이 낮습니다."
     e, w, _ = check_pool(R, BANDS, False)
-    assert e == [줄 + " 코멘트에 이유를 적어 주세요."] and w == [], (e, w)
+    assert e == [줄 + " 코멘트(직원에게 공개)에 이유를 적어 주세요."] and w == [], (e, w)
     e, w, _ = check_pool([replace(R[0], note=True), *R[1:]], BANDS, False)
     assert e == [] and w == [줄], (e, w)  # 코멘트가 있으면 경고만
     e, w, _ = check_pool(R, BANDS, False, need_note=False)
@@ -2428,7 +2428,7 @@ def 점수_역전은_코멘트가_없으면_오류_있으면_경고():
     e, w, _ = check_pool(R2, BANDS, False)
     assert e[0] == "A는 1명까지입니다. 현재 2명" and len(e) == 2 and e[1].startswith("가 님(총점 95점)이 총점이 더 낮은 나 님(91점)"), e
     e, w, _ = check_pool(R2, BANDS, True)
-    assert e[-1].endswith("코멘트에 이유를 적어 주세요.") and w[:2] == ["B가 정원보다 1명 적습니다.", "D가 정원보다 1명 적습니다."], (e, w)
+    assert e[-1].endswith("코멘트(직원에게 공개)에 이유를 적어 주세요.") and w[:2] == ["B가 정원보다 1명 적습니다.", "D가 정원보다 1명 적습니다."], (e, w)
 
 
 @check
