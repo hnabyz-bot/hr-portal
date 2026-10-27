@@ -28,6 +28,13 @@ app.py 가 bp 를 붙인다. 세션 검사 · 같은 출처 검사는 auth._guar
   POST /api/eval/pools/back               {"year", "pool", "reason"} 본부 팀원 묶음을 배정자에게 돌려보낸다 (대표이사 · 맡김이면 HR) — 배정자에게 알림
   POST /api/eval/pools/finalize           {"year", "pools": [열쇠…]} HR 확정 → {"ok", "done"} (HR)
   POST /api/eval/pools/undo               {"year", "pool", "from"} 한 단계 되돌린다 — from = 화면이 본 묶음 상태(DONE | HR): 확정 → 확정 대기 / 확정 대기 → 대표이사 확인 전 (HR)
+  GET  /api/eval/results?year=            평가 결과 (year 가 없으면 cur_year — 그해가 시작 전이면 공개한 해 중 최근)
+                                          → {"years": 공개한 해(최근부터), "year", "offline", "released", "appealDue", "mine", "team", "appeals"}
+  POST /api/eval/me/appeal                {"year", "reason"} 이의 신청 (본인 · 공개일 + 7일 한국 23:59 까지 한 번) — HR 전원에게 알림(eval_appeal, 신청한 사람은 빼고)
+  POST /api/eval/appeals/<uid>/answer     {"year", "grade", "answer", "marks"?: {"<rid>": 등급}} HR 답변 — 등급 그대로면 끝(DONE · 신청한 사람에게 eval_answer),
+                                          바꾸면 대표이사 확인 대기(CEO — 대표이사, 맡겼으면 신청한 사람 뺀 HR 에게 eval_appeal · 누른 사람은 빼고)
+  POST /api/eval/appeals/<uid>/confirm    {"year"} 등급 변경 확인 — 고친 실행목표 등급 · 등급 반영 · 끝 (대표이사 · 맡김이면 HR) — 신청한 사람에게 eval_answer
+  POST /api/eval/appeals/<uid>/back       {"year"} 등급 변경을 HR 로 돌려보낸다 (OPEN · 답변 글은 남김) — HR 전원(누른 사람 · 신청한 사람 빼고)에게 eval_appeal
 
 보는 수준 (공개 전 등급은 어디에도 새지 않는다 — 사람 줄을 응답에 넣는 길은 모두 _row_json 하나를 지난다. 수준은 eval_rules.level):
   full 전부 (HR · 대표이사 · 배정자 · 점수를 내기 전의 평가자 · 공개 뒤) / mine 평가자가 낸 뒤 · 공개 전 — 자기가 낸 등급 · 항목 등급 · 총점만, 고쳤으면 edited 참(내용 글자 없음) /
@@ -36,7 +43,12 @@ app.py 가 bp 를 붙인다. 세션 검사 · 같은 출처 검사는 auth._guar
   people = HR · 대표이사는 전원, 그 밖은 자기가 평가자이거나 배정자인 사람 (본인 줄은 me) · pools = HR · 대표이사는 전부, 그 밖은 자기가 배정자인 묶음만.
   배정자(R6) = 본부 팀원 묶음은 떠 둔 본부장이 활성이면 그 사람, 아니면 대표이사 · 그 밖 묶음은 대표이사. 판단 칸(can)은 _can — 쓰기 길도 같은 함수로 막는다.
   맡김(R11)이면 HR 이 대표이사 몫을 대신하되 자기 줄과 자기가 든 묶음의 사람은 대신 못 한다 — 점수 · 배정 · 묶음 마감 · 확인 · 돌려보내기 모두 (can.behalf — 화면의 "대리 입력" 표시).
-  todo = 처리할 일 숫자 (_todo — 화면은 실제 로그인이면 이 숫자를 그대로, 휴대폰 숫자도 eval_todo 로 같은 셈). 상태: 해(2026~2100 정수) 400 · FIRST_YEAR 전 해는 offline 참에 빈 명단.
+  todo = 처리할 일 숫자 {me, admin, e3} (_todo — 화면은 실제 로그인이면 이 숫자를 그대로, 휴대폰 숫자도 eval_todo 로 같은 셈: e2 = me + admin · e3).
+  상태: 해(2026~2100 정수) 400 · FIRST_YEAR 전 해는 offline 참에 빈 명단.
+  결과(results — 한 트랜잭션): mine = 본인 줄 / team = HR 은 공개 전에도 전원(제외된 사람 포함), 그 밖은 공개 뒤에만 access.can VIEW_RESULT 범위(팀장 = 자기 팀원 ·
+  본부장 = 자기 본부 · 대표이사 = 전원)의 제외 안 된 사람 — 평가자 · 배정자라서가 아니라 조직 위치로 / appeals = 처리할 이의 신청(_appeals_for — todo.e3 와 같은 셈).
+  줄의 appeal(_appeal_json) = 본인 · HR · 대표이사에게 {"reason", "at", "status", "before", "answer", "after", "marks"} — 본인에게는 끝나기(DONE) 전 answer · after · marks 가 null
+  (대표이사 확인을 기다리는 변경 · 돌려보내져 HR 이 고칠 답변 — 화면 evAppealBox 의 full), 그 밖 사람에게는 {"status"}만. 해 모양 400 은 상태와 같다.
   증빙: 없는 번호 404 → 볼 권한(can.evidence) 아님 403 → 폴더에 파일이 없음 404. 내려받기는 attachment · nosniff · no-store, 감사로그는 남기지 않는다.
 
 거절 순서 (서버가 늘 같은 순서로 다시 본다. 확인하고 쓰는 일은 한 트랜잭션 — 두 번 눌러도 한 번만 통과):
@@ -94,9 +106,18 @@ app.py 가 bp 를 붙인다. 세션 검사 · 같은 출처 검사는 auth._guar
 결과 공개: HR 403 → 해 400 → FIRST_YEAR 403 → 시작 안 함 409 → 이미 공개 409 → 제외 안 된 사람이 없음 409 (공개는 되돌릴 수 없다) → 제외 안 된 사람 중 DONE 이 아닌 사람 409 →
   released_at/by · EVAL_RELEASED {count = 제외 안 된 대상 수}.
   알림(eval_open): 제외 안 된 대상 전원 — 공개한 HR 도 대상이면 받는다 (남의 일을 한 사람이 아니라 자기 결과를 받는 사람). 공개 뒤에는 level 이 full 이라 _row_json 이 전부 보인다.
+이의 신청 (본인 — 사람 번호는 세션에서만): 해 400 → 그해 평가 대상 아님 404 → 공개 전 403 → 제외됨 403 → 오늘(한국) > 공개일(한국) + APPEAL_DAYS 403 → 이미 신청 409 →
+  사유 1~500자 400 (_chars · 앞뒤 공백을 떼고 셈 · 뗀 글 저장). OPEN · before = 지금 등급 · EVAL_APPEALED.
+HR 답변: HR 403 → 본인 403 → 해 400 → 이의 신청 없음 404 → OPEN 아님 409 → 답변 1~500자 400 → 등급 SABCD 400 → marks 모양 400 (KPI 없는 사람은 null · 빠짐만,
+  떠 둔 실행목표 · SABCD) → 고친 실행목표 등급으로 낸 총점 · 연차로 cap 보다 높음 400 (_within — 정원은 따지지 않는다: 공개된 다른 사람 등급을 건드리지 않고 대표이사 확인을 거친다).
+  등급 그대로 = 실행목표 등급 반영 · DONE · 결정한 사람 = 답한 HR / 바뀜 = CEO · after · marks(지금과 다른 실행목표만) — 점수 · 등급은 확인할 때. EVAL_APPEAL_ANSWERED {year, changed}.
+대표이사 확인 · 돌려보내기: 해 400 → 대상 아님 404 → 권한(_appeal_can — 활성 대표이사, 또는 맡김이고 자기 이의가 아닌 HR) 403 → 이의 신청 없음 404 → CEO 아님 409 →
+  (확인) cap 다시 400 → 실행목표 등급 · 등급 = after · DONE · decided_at/by/behalf · EVAL_APPEAL_CONFIRMED / (돌려보내기) OPEN · after · marks 비움 · EVAL_APPEAL_RETURNED.
+  HR 이 대신이면 on_behalf_of = 대표이사. 두 창의 두 번째는 409 (이미 처리했습니다 · HR 답변을 기다리는 이의 신청입니다).
 감사로그(R10): EVAL_ROUND_SET · EVAL_STARTED · EVAL_ATT_DONE · EVAL_ATTENDANCE(저장한 사람이 있을 때만) · EVAL_EXCLUDED · EVAL_INCLUDED · EVAL_SKIP_SELF · EVAL_RATER_SET · EVAL_SELF_SUBMITTED ·
-  EVAL_SCORED · EVAL_POOL_CLOSED · EVAL_POOL_CONFIRMED · EVAL_POOL_RETURNED · EVAL_POOL_FINALIZED · EVAL_POOL_UNDONE · EVAL_RELEASED — after_data 는 해 · 사람 수 · 평가자 번호 · 묶음 열쇠 ·
-  되돌린 단계(from)뿐. 사유 · 근태 숫자 · 등급 · 점수 · 글은 넣지 않는다 (공개 전 등급이 감사로그로 새지 않게).
+  EVAL_SCORED · EVAL_POOL_CLOSED · EVAL_POOL_CONFIRMED · EVAL_POOL_RETURNED · EVAL_POOL_FINALIZED · EVAL_POOL_UNDONE · EVAL_RELEASED · EVAL_APPEALED · EVAL_APPEAL_ANSWERED ·
+  EVAL_APPEAL_CONFIRMED · EVAL_APPEAL_RETURNED — after_data 는 해 · 사람 수 · 평가자 번호 · 묶음 열쇠 · 되돌린 단계(from) · 등급을 바꾸는 답변인가(changed)뿐.
+  사유 · 근태 숫자 · 등급 · 점수 · 글은 넣지 않는다 (공개 전 등급이 감사로그로 새지 않게). 이의 신청 넷의 대상은 신청한 사람(ev_appeal).
 """
 
 from __future__ import annotations
@@ -118,7 +139,7 @@ from flask import Blueprint, Response, g, jsonify, request
 import auth
 import kpi
 import push
-from hr_eval.domain.access import Target
+from hr_eval.domain.access import Act, Delegation, Target, can
 from hr_eval.domain.eval_rules import (APPEAL_DAYS, BANDS, BONUS_MAX_X2, FILE_MAX, FILES_PER_ITEM, GRADES, LEAVE_LIMIT_X2, TEXT_MAX, Member, _band_text, above,
                                        after_score, assign_stage, at, cap, check_pool, edited, level, pool_key, pool_state, ready_stage, total)
 from hr_eval.domain.models import Actor, AuditEntry, Role
@@ -191,6 +212,7 @@ class _Ctx(NamedTuple):
     names: dict[int, tuple[str, str]]  # 사람 → (이름, 지금 직급) — 비활성 포함
     active: set[int]  # 활성인 사람
     login: set[int]  # 로그인할 수 있는 사람 (활성 · 포털 사용)
+    appeals: dict[int, sqlite3.Row]  # 사람 → ev_appeals 줄 (이의 신청)
 
 
 def _ctx(conn: sqlite3.Connection, year: int) -> _Ctx:
@@ -212,7 +234,8 @@ def _ctx(conn: sqlite3.Connection, year: int) -> _Ctx:
     return _Ctx(conn, year, _round(conn, year), ceo, _deleg(conn, ceo), targets, items,
                 {(e["user_id"], e["rid"]): e for e in rows("SELECT * FROM ev_items WHERE year = ?")}, files,
                 {p["pool"]: p for p in rows("SELECT * FROM ev_pools WHERE year = ?")},
-                {u[0]: (u[1], u[2] or "") for u in users}, {u[0] for u in users if u[3]}, {u[0] for u in users if u[3] and u[4]})
+                {u[0]: (u[1], u[2] or "") for u in users}, {u[0] for u in users if u[3]}, {u[0] for u in users if u[3] and u[4]},
+                {a["user_id"]: a for a in rows("SELECT * FROM ev_appeals WHERE year = ?")})
 
 
 def _is_ceo(ctx: _Ctx, uid: int | None) -> bool:
@@ -287,6 +310,11 @@ def _portal_year(v: object) -> int:
     if year < FIRST_YEAR:
         raise _Refuse(f"{year}년 평가는 포털 밖에서 진행합니다.", 403)
     return year
+
+
+def _asked(raw: str) -> int:
+    """?year= 글자 → 해 (ASCII 숫자 네 자리 · 2026~2100 — 아니면 400). 상태 · 결과가 함께 쓴다."""
+    return _year(int(raw) if raw.isascii() and raw.isdigit() and len(raw) == 4 else None)
 
 
 def _dates(year: int, b: dict) -> dict[str, str]:
@@ -588,6 +616,24 @@ def _num(d: Decimal | None) -> float | None:
     return None if d is None else float(d)
 
 
+def _target(row: sqlite3.Row) -> Target:
+    """떠 둔 줄 → access 의 대상 (팀 · 본부 · 팀장인가 · 직속 묶음인가 — 보는 수준 · 결과 범위 · 이의 확인 권한이 쓴다)."""
+    return Target(row["user_id"], row["team_id"], row["division_id"], Role.TEAM_LEADER if row["is_leader"] else None, direct=row["pool"] == "DIRECT")
+
+
+def _appeal_json(ctx: _Ctx, me: Actor, uid: int) -> dict | None:
+    """줄의 이의 신청 (없으면 None): 본인 · HR · 대표이사 = 전부 — 본인에게는 끝나기(DONE) 전 답변 · 바뀔 등급 · 고친 실행목표 등급을 null 로
+    (대표이사 확인을 기다리는 변경 · 돌려보내져 HR 이 고칠 답변 — 화면 evAppealBox 의 full) / 그 밖(팀장 · 본부장 …) = 상태만."""
+    a = ctx.appeals.get(uid)
+    if a is None:
+        return None
+    if not (uid == me.user_id or me.is_hr or me.position is Role.CEO):
+        return {"status": a["status"]}
+    cut = uid == me.user_id and a["status"] != "DONE"
+    return {"reason": a["reason"], "at": a["at"], "status": a["status"], "before": a["before"], "answer": None if cut else a["answer"],
+            "after": None if cut else a["after"], "marks": None if cut or a["marks"] is None else json.loads(a["marks"])}
+
+
 def _can(ctx: _Ctx, me: Actor, row: sqlite3.Row) -> dict[str, bool]:
     """화면이 쓰는 판단 — 서버의 쓰기 길도 이 함수로 막는다 (같은 판단을 두 벌 두지 않는다). 대상 줄은 평가를 시작해야 생긴다.
     self 자기평가(본인 · SELF · 오늘 ≤ 자기평가 마감) · upload 증빙(본인 · 평가 시작일 ≤ 오늘 ≤ 증빙 마감 · SELF/SCORE) — 둘 다 제외 안 됨 · KPI 있음 /
@@ -621,14 +667,14 @@ def _row_json(ctx: _Ctx, me: Actor, row: sqlite3.Row) -> dict | None:
     full = 전부 (edited 는 고친 내용 글자) / mine = 평가자가 낸 뒤 · 공개 전: 자기가 낸 등급 · 항목 등급 · 총점만 — 지금 등급 · 항목 등급 · 가점 · 윗사람 코멘트 ·
     대리 입력 · 고친 내용 글자는 어디에도 없고 고쳤으면 edited 참 / self = 본인 · 공개 전: 자기평가(실적 · 자기 등급 · 증빙)만 — 평가 칸은 null 이 아니라 열쇠째 뺀다.
     자기평가를 내기 전(SELF)에는 본인 · HR 이 아니면 ev[] 에서 실적 · 자기 등급 · 증빙을 열쇠째 뺀다 (초안 — 번호 · 평가자 등급 칸만).
-    assignerIsCeo = 등급을 배정하는 사람이 대표이사인가 (화면의 '본부장' · '대표이사' 글자 — 등급 · 점수와 상관없다)."""
+    assignerIsCeo = 등급을 배정하는 사람이 대표이사인가 (화면의 '본부장' · '대표이사' 글자 — 등급 · 점수와 상관없다). appeal = _appeal_json (공개 뒤에만 생긴다)."""
     uid, key = row["user_id"], row["pool"]
-    t = Target(uid, row["team_id"], row["division_id"], Role.TEAM_LEADER if row["is_leader"] else None, direct=key == "DIRECT")
+    t = _target(row)
     who = _assigner(ctx, row)
     lv = level(me, t, rater=row["rater_id"], assigner=who, stage=row["stage"], released=bool(ctx.round["released"]))
     if lv == "none":
         return None
-    can, score, ed, rater, bands = _can(ctx, me, row), _total(ctx, row), _edited(ctx, row), row["rater_id"], _bands_of(ctx)
+    acts, score, ed, rater, bands = _can(ctx, me, row), _total(ctx, row), _edited(ctx, row), row["rater_id"], _bands_of(ctx)
     draft = row["stage"] == "SELF" and uid != me.user_id and not me.is_hr  # 내기 전 자기평가 — 본인 · HR 만 본다
     sub = None if row["sub_score_x10"] is None else Decimal(row["sub_score_x10"]) / 10
     marks = json.loads(row["sub_marks"]) if row["sub_marks"] else None
@@ -637,7 +683,7 @@ def _row_json(ctx: _Ctx, me: Actor, row: sqlite3.Row) -> dict | None:
         e = ctx.entries[(uid, it["rid"])]
         ev.append({"rid": it["rid"], "grade": e["grade"]} if draft else
                   {"rid": it["rid"], "note": e["note"], "selfGrade": e["self_grade"], "grade": e["grade"],
-                   "files": [{"id": f["id"], "name": f["name"], "size": f["size"]} for f in ctx.files.get((uid, it["rid"]), [])] if can["evidence"] else []})
+                   "files": [{"id": f["id"], "name": f["name"], "size": f["size"]} for f in ctx.files.get((uid, it["rid"]), [])] if acts["evidence"] else []})
     out = {"pid": uid, "name": ctx.names[uid][0], "title": row["title"] or "", "team": row["team_name"], "div": row["div_name"],
            "poolKey": key, "poolName": _pool_name(key, row["div_name"]), "kpi": row["kpi_version"] is not None, "stage": row["stage"],
            "out": {"at": row["out_at"], "why": row["out_reason"]} if row["out_at"] else None,
@@ -648,7 +694,7 @@ def _row_json(ctx: _Ctx, me: Actor, row: sqlite3.Row) -> dict | None:
            "total": _num(score), "cap": cap(score, row["leave_x2"], bands), "proxy": _who(ctx, row["proxy_by"]),
            "edited": ed, "editSeen": bool(ed) and row["edit_seen"] == ed,
            "rater": None if rater is None else {"id": rater, "name": ctx.names[rater][0], "title": ctx.names[rater][1], "canLogin": rater in ctx.login},
-           "raterIsCeo": _is_ceo(ctx, rater), "assignerIsCeo": _is_ceo(ctx, who), "can": can, "hidden": lv == "mine", "appeal": None}  # appeal 은 평가 3단계 ②가 채운다
+           "raterIsCeo": _is_ceo(ctx, rater), "assignerIsCeo": _is_ceo(ctx, who), "can": acts, "hidden": lv == "mine", "appeal": _appeal_json(ctx, me, uid)}
     if lv == "mine":
         out.update(grade=row["proposed"], total=_num(sub), cap=cap(sub, row["leave_x2"], bands), bonus=0, bonusReason="", headComment="", proxy="",
                    edited=True if ed else "")
@@ -710,16 +756,30 @@ def _pool_json(ctx: _Ctx, me: Actor, key: str) -> dict:
             "hrSeen": me.is_hr and me.user_id in json.loads(p["hr_seen"]), "can": _pool_can(ctx, me, key)}
 
 
+def _appeal_can(ctx: _Ctx, me: Actor, row: sqlite3.Row) -> bool:
+    """이의 신청의 등급 변경을 확인 · 돌려보낼 사람인가 (access.can APPEAL_CONFIRM): 활성 대표이사, 또는 맡김이고 그 이의가 자기 것이 아닌 HR."""
+    return (_is_ceo(ctx, me.user_id) or (me.is_hr and ctx.deleg)) and bool(
+        can(me, Act.APPEAL_CONFIRM, _target(row), delegation=Delegation(ctx.ceo) if ctx.deleg else None))
+
+
+def _appeals_for(ctx: _Ctx, me: Actor) -> list[sqlite3.Row]:
+    """보는 사람이 처리할 이의 신청 (신청한 사람의 ev_targets 줄, 명단 차례) — 처리할 일 e3 와 결과의 appeals 가 함께 쓴다:
+    HR = 남의 OPEN(답변할 것) · 대표이사(맡겼으면 HR) = 확인할 수 있는 CEO(등급 변경 확인 — _appeal_can)."""
+    rows = [ctx.rows[u] for u, a in ctx.appeals.items()
+            if (a["status"] == "OPEN" and me.is_hr and u != me.user_id) or (a["status"] == "CEO" and _appeal_can(ctx, me, ctx.rows[u]))]
+    return sorted(rows, key=lambda r: _order(ctx, r))
+
+
 def _todo(ctx: _Ctx, me: Actor) -> dict[str, int]:
-    """처리할 일 숫자 — 한 곳: 화면은 실제 로그인이면 이 숫자를 그대로 보이고(EV_LIVE.todo), 휴대폰 숫자(push.pending 의 e2)도 eval_todo 로 이것을 더한다.
-    시작 전 · 공개 뒤 0. 제외된 사람은 세지 않는다. 묶음은 한 번만 센다 — 상태 CEO · FIX 면 '확인할 묶음': 대표이사 me, 맡김이면 그 묶음에 들지 않은 HR admin /
+    """처리할 일 숫자 {me, admin, e3} — 한 곳: 화면은 실제 로그인이면 이 숫자를 그대로 보이고(EV_LIVE.todo), 휴대폰 숫자(push.pending 의 e2 = me + admin · e3)도
+    eval_todo 로 같은 셈. e3 = 처리할 이의 신청 수(_appeals_for) — 공개 뒤에도 센다. me · admin 은 시작 전 · 공개 뒤 0. 제외된 사람은 세지 않는다. 묶음은 한 번만 센다 — 상태 CEO · FIX 면 '확인할 묶음': 대표이사 me, 맡김이면 그 묶음에 들지 않은 HR admin /
     그 밖에 배정 단계(assign_stage) 사람이 있으면 '배정할 묶음': 배정자(_pool_who — 본부장, 본부장 없는 본부 · 직속 · 전사 팀장은 대표이사) me,
     배정자가 대표이사이고 맡김이면 그 묶음에 들지 않은 HR admin.
     me = 낼 자기평가 + 점수 낼 사람(대신 아님) + 고친 것을 아직 확인 안 한 사람 + 묶음(위) /
     admin(HR 만) = 묶음(위) + 확정할 묶음(HR) + 확인 안 한 마감 알림 + 근태 안 마침 1 + 대표이사가 평가자인 점수 단계 사람 중 내가 대신할 수 있는 사람(맡김)."""
-    rnd = ctx.round
+    rnd, e3 = ctx.round, len(_appeals_for(ctx, me))
     if not rnd or not rnd["started"] or rnd["released"]:
-        return {"me": 0, "admin": 0}
+        return {"me": 0, "admin": 0, "e3": e3}
     live = [r for r in ctx.rows.values() if r["out_at"] is None]
     state = {k: _pool(ctx, k)[0] for k in ctx.pools}
     mine = ctx.rows.get(me.user_id)
@@ -741,11 +801,12 @@ def _todo(ctx: _Ctx, me: Actor) -> dict[str, int]:
                   + sum(p["closed_at"] is not None and me.user_id not in json.loads(p["hr_seen"]) and state[k] == "CEO" for k, p in ctx.pools.items())
                   + (0 if rnd["attDone"] else 1)
                   + sum(r["stage"] == "SCORE" and _is_ceo(ctx, r["rater_id"]) and _behalf_ok(ctx, me, r["pool"]) for r in live))
-    return {"me": todo_me, "admin": admin}
+    return {"me": todo_me, "admin": admin, "e3": e3}
 
 
 def eval_todo(conn: sqlite3.Connection, actor: Actor) -> dict[str, int]:
-    """지금 보일 해(cur_year)의 처리할 일 숫자 {"me", "admin"} — 휴대폰 숫자(push.pending)가 쓴다. 포털 평가 전 해 · 회차 없음 · 시작 전 · 공개 뒤는 0."""
+    """지금 보일 해(cur_year)의 처리할 일 숫자 {"me", "admin", "e3"} — 휴대폰 숫자(push.pending 의 e2 = me + admin · e3)가 쓴다.
+    포털 평가 전 해 · 회차 없음은 모두 0, 시작 전 · 공개 뒤는 me · admin 0 (e3 는 공개 뒤에도 센다)."""
     return _todo(_ctx(conn, cur_year(conn)), actor)
 
 
@@ -753,10 +814,10 @@ def eval_todo(conn: sqlite3.Connection, actor: Actor) -> dict[str, int]:
 @bp.get("/api/eval/state")
 def state() -> Response:
     conn, me, raw = auth._db(), g.actor, request.args.get("year")
-    year = cur_year(conn) if raw is None else _year(int(raw) if raw.isascii() and raw.isdigit() and len(raw) == 4 else None)
+    year = cur_year(conn) if raw is None else _asked(raw)
     if year < FIRST_YEAR:  # 포털 밖에서 평가하는 해 — 화면은 안내만 (R2)
         ceo = _ceo(conn)
-        return jsonify(year=year, offline=True, round=None, deleg=_deleg(conn, ceo), ceoId=ceo, me=None, people=[], pools=[], todo={"me": 0, "admin": 0})
+        return jsonify(year=year, offline=True, round=None, deleg=_deleg(conn, ceo), ceoId=ceo, me=None, people=[], pools=[], todo={"me": 0, "admin": 0, "e3": 0})
     everyone = me.is_hr or me.position is Role.CEO
     with _txn(conn):  # 한 번에 읽는다 — 읽는 사이에 단계가 바뀌어 보는 수준과 칸이 어긋나지 않게
         ctx = _ctx(conn, year)
@@ -768,6 +829,31 @@ def state() -> Response:
                 "pools": [_pool_json(ctx, me, k) for k in sorted(ctx.pools, key=_pool_rank)
                           if everyone or _pool_who(ctx, k) == me.user_id],
                 "todo": _todo(ctx, me)}
+    return jsonify(body)
+
+
+@bp.get("/api/eval/results")
+def results() -> Response:
+    """평가 결과 (머리말의 '결과') — 기본 해는 보일 해(cur_year)가 시작돼 있으면 그해(공개 전이어도 — 본인 '아직 공개 전' · HR 공개 화면), 아니면 공개한 해 중 최근."""
+    conn, me, raw = auth._db(), g.actor, request.args.get("year")
+    asked = None if raw is None else _asked(raw)
+    with _txn(conn):  # 한 번에 읽는다 (상태와 같다)
+        years = [y for (y,) in conn.execute("SELECT year FROM ev_rounds WHERE released_at IS NOT NULL ORDER BY year DESC")]
+        year = asked
+        if year is None:
+            year = cur_year(conn)
+            if years and not conn.execute("SELECT 1 FROM ev_rounds WHERE year = ? AND started_at IS NOT NULL", (year,)).fetchone():
+                year = years[0]
+        body = {"years": years, "year": year, "offline": year < FIRST_YEAR, "released": None, "appealDue": None, "mine": None, "team": [], "appeals": []}
+        ctx = None if year < FIRST_YEAR else _ctx(conn, year)
+        if ctx and ctx.round and ctx.round["started"]:
+            rel, mine = ctx.round["released"], ctx.rows.get(me.user_id)
+            seen = [r for r in sorted(ctx.rows.values(), key=lambda r: _order(ctx, r)) if r["user_id"] != me.user_id
+                    and (me.is_hr or (rel and r["out_at"] is None and can(me, Act.VIEW_RESULT, _target(r))))]  # 조직 위치로 — 평가자 · 배정자라서가 아니라
+            body.update(released=rel, appealDue=(_day(rel) + timedelta(days=APPEAL_DAYS)).isoformat() if rel else None,
+                        mine=None if mine is None else _row_json(ctx, me, mine),
+                        team=[j for r in seen if (j := _row_json(ctx, me, r)) is not None],
+                        appeals=[j for r in _appeals_for(ctx, me) if (j := _row_json(ctx, me, r)) is not None])
     return jsonify(body)
 
 
@@ -1291,4 +1377,151 @@ def release() -> Response:
         conn.execute("UPDATE ev_rounds SET released_at = ?, released_by = ? WHERE year = ?", (auth._iso(auth._now()), g.actor.user_id, year))
         _log(conn, "EVAL_RELEASED", "ev_round", year, year=year, count=len(rows))
     push.notify([u for u, _ in rows], "eval_open")  # 저장(COMMIT)한 뒤 — 제외 안 된 대상 전원 (공개한 HR 도 대상이면 자기 결과를 받는다)
+    return jsonify(ok=True)
+
+
+# ---------------- 이의 신청 (본인) · HR 답변 · 대표이사 확인 · 돌려보내기 ----------------
+@bp.post("/api/eval/me/appeal")
+def appeal() -> Response:
+    b = _body()
+    year = _year(b.get("year"))
+    conn = auth._db()
+    with _txn(conn):
+        ctx, row = _mine(conn, year)  # 사람 번호는 세션에서만 — 남의 것을 신청할 길이 없다
+        uid, rel = row["user_id"], ctx.round["released"]
+        if not rel:
+            raise _Refuse("아직 결과가 공개되지 않았습니다.", 403)
+        if row["out_at"] is not None:
+            raise _Refuse("평가에서 제외되어 이의 신청할 결과가 없습니다.", 403)
+        if auth._today() > _day(rel) + timedelta(days=APPEAL_DAYS):  # 공개일(한국) + 7일 그날 23:59:59 까지
+            raise _Refuse("이의 신청 기간이 끝났습니다.", 403)
+        if uid in ctx.appeals:
+            raise _Refuse("이미 이의 신청을 했습니다.", 409)
+        v = b.get("reason")
+        why = _chars(v.strip() if isinstance(v, str) else "", "이의 신청 사유")
+        if not 0 < len(why) <= TEXT_MAX["appeal"]:
+            raise _Refuse(f"이의 신청 사유를 1~{TEXT_MAX['appeal']}자로 써 주세요.", 400)
+        conn.execute("INSERT INTO ev_appeals (year, user_id, reason, at, status, before) VALUES (?, ?, ?, ?, 'OPEN', ?)",
+                     (year, uid, why, auth._iso(auth._now()), row["grade"]))
+        _log(conn, "EVAL_APPEALED", "ev_appeal", uid, year=year)  # 사유는 남기지 않는다 (글)
+        to = push.hr_admins(conn)
+    push.notify([u for u in to if u != uid], "eval_appeal")  # 저장(COMMIT)한 뒤 — HR 전원 (신청한 HR 본인은 빼고)
+    return jsonify(ok=True)
+
+
+def _over(ctx: _Ctx, row: sqlite3.Row, v: object) -> dict[int, str]:
+    """HR 답변의 실행목표 등급 {"<번호>": 등급} → {번호: 등급}. KPI 없는 사람은 null · 빠짐만, 떠 둔 실행목표 · SABCD (비우기 없음). 아니면 400."""
+    if v is None:
+        return {}
+    if row["kpi_version"] is None:
+        raise _Refuse("KPI가 없는 분은 등급만 매깁니다.", 400)
+    if not isinstance(v, dict):
+        raise _Refuse("실행목표별 등급을 실행목표 번호마다 보내 주세요.", 400)
+    rids, out = {it["rid"] for it in ctx.items[row["user_id"]]}, {}
+    for k, grade in v.items():
+        if (rid := _digits(k)) not in rids:
+            raise _Refuse("실행목표를 찾을 수 없습니다.", 400)
+        if grade not in GRADES:
+            raise _Refuse("달성 등급은 S · A · B · C · D 중에서 골라 주세요.", 400)
+        out[rid] = grade
+    return out
+
+
+def _marked(ctx: _Ctx, row: sqlite3.Row, over: dict[int, str]) -> tuple[dict[int, str], Decimal | None]:
+    """over 중 지금 실행목표 등급과 다른 것 · 그것을 덮어 낸 총점 (KPI 없는 사람은 None — 연차 규칙만)."""
+    uid = row["user_id"]
+    cur = {it["rid"]: ctx.entries[(uid, it["rid"])]["grade"] for it in ctx.items[uid]}
+    diff = {r: v for r, v in over.items() if v != cur[r]}
+    if row["kpi_version"] is None:
+        return diff, None
+    return diff, total([(it["weight"], diff.get(it["rid"], cur[it["rid"]])) for it in ctx.items[uid]], row["bonus_x2"])
+
+
+def _put_marks(ctx: _Ctx, uid: int, marks: dict[int, str]) -> None:
+    ctx.conn.executemany("UPDATE ev_items SET grade = ? WHERE year = ? AND user_id = ? AND rid = ?", [(v, ctx.year, uid, r) for r, v in marks.items()])
+
+
+@bp.post(f"/api/eval/appeals/{UID}/answer")
+def appeal_answer(uid: int) -> Response:
+    if (denied := auth._hr_only()) is not None:
+        return denied
+    if uid == g.actor.user_id:  # 자기 이의는 다른 HR 이 (명단 한 사람 · _person 과 같다)
+        raise _Refuse("본인 것은 다른 HR이 처리해요.", 403)
+    b = _body()
+    year = _year(b.get("year"))
+    conn = auth._db()
+    with _txn(conn):
+        ctx = _ctx(conn, year)
+        a, row = ctx.appeals.get(uid), ctx.rows.get(uid)
+        if a is None:
+            raise _Refuse("이의 신청을 찾을 수 없습니다.", 404)
+        if a["status"] != "OPEN":
+            raise _Refuse("이미 답변했습니다.", 409)
+        v = b.get("answer")
+        answer = _chars(v.strip() if isinstance(v, str) else "", "답변")
+        if not 0 < len(answer) <= TEXT_MAX["answer"]:
+            raise _Refuse(f"답변을 1~{TEXT_MAX['answer']}자로 써 주세요.", 400)
+        grade = b.get("grade")
+        if grade not in GRADES:
+            raise _Refuse("등급은 S · A · B · C · D 중에서 골라 주세요.", 400)
+        marks, score = _marked(ctx, row, _over(ctx, row, b.get("marks")))
+        _within(ctx, row, grade, score)  # 점수 기준 · 연차만 — 정원은 따지지 않는다
+        now, me, changed = auth._iso(auth._now()), g.actor.user_id, grade != a["before"]
+        if changed:  # 등급을 바꾸는 답변은 대표이사 확인을 기다린다 — 실행목표 등급 · 등급은 확인할 때 반영
+            conn.execute("UPDATE ev_appeals SET status = 'CEO', answer = ?, after = ?, marks = ?, answered_at = ?, answered_by = ? WHERE year = ? AND user_id = ?",
+                         (answer, grade, json.dumps({str(r): m for r, m in marks.items()}) if marks else None, now, me, year, uid))
+            to, kind = _turn_to(ctx, uid, ctx.ceo), "eval_appeal"  # 대표이사 — 맡겼으면 신청한 사람 뺀 HR 전원
+        else:  # 유지는 바로 끝 — 고친 실행목표 등급만 반영
+            _put_marks(ctx, uid, marks)
+            conn.execute("UPDATE ev_appeals SET status = 'DONE', answer = ?, after = ?, marks = NULL, answered_at = ?, answered_by = ?, decided_at = ?, decided_by = ?,"
+                         " decided_behalf = NULL WHERE year = ? AND user_id = ?", (answer, grade, now, me, now, me, year, uid))
+            to, kind = [uid], "eval_answer"
+        _log(conn, "EVAL_APPEAL_ANSWERED", "ev_appeal", uid, year=year, changed=changed)
+    push.notify([u for u in to if u != me], kind)  # 저장(COMMIT)한 뒤 — 답한 사람 본인에게는 보내지 않는다
+    return jsonify(ok=True)
+
+
+@contextmanager
+def _decide(uid: int) -> Iterator[tuple[_Ctx, sqlite3.Row, sqlite3.Row, int | None]]:
+    """대표이사가 이의 신청의 등급 변경을 확인 · 돌려보내는 틀: 해 400 → 그해 평가 대상 404 → 권한(_appeal_can) 403 → 이의 신청 없음 404 → CEO 단계 아님 409.
+    한 트랜잭션 — 돌려주는 것 = (ctx, 대상 줄, 이의 줄, on_behalf_of — HR 이 대신이면 대표이사)."""
+    year = _year(_body().get("year"))
+    conn = auth._db()
+    with _txn(conn):
+        ctx = _ctx(conn, year)
+        row = ctx.rows.get(uid)
+        if row is None:
+            raise _Refuse("평가 대상이 아닙니다.", 404)
+        if not _appeal_can(ctx, g.actor, row):
+            raise _Refuse("이 이의 신청을 확인할 권한이 없습니다.", 403)
+        a = ctx.appeals.get(uid)
+        if a is None:
+            raise _Refuse("이의 신청을 찾을 수 없습니다.", 404)
+        if a["status"] != "CEO":  # 두 창의 두 번째 — 이미 확인했거나(DONE) 돌려보냈다(OPEN)
+            raise _Refuse("이미 처리했습니다." if a["status"] == "DONE" else "HR 답변을 기다리는 이의 신청입니다.", 409)
+        yield ctx, row, a, None if _is_ceo(ctx, g.actor.user_id) else ctx.ceo
+
+
+@bp.post(f"/api/eval/appeals/{UID}/confirm")
+def appeal_confirm(uid: int) -> Response:
+    with _decide(uid) as (ctx, row, a, behalf):
+        marks, score = _marked(ctx, row, {int(r): m for r, m in json.loads(a["marks"] or "{}").items()})
+        _within(ctx, row, a["after"], score)  # 답할 때 본 것을 다시 (점수 기준 · 연차)
+        _put_marks(ctx, uid, marks)
+        conn = ctx.conn
+        conn.execute("UPDATE ev_targets SET grade = ? WHERE year = ? AND user_id = ?", (a["after"], ctx.year, uid))
+        conn.execute("UPDATE ev_appeals SET status = 'DONE', decided_at = ?, decided_by = ?, decided_behalf = ? WHERE year = ? AND user_id = ?",
+                     (auth._iso(auth._now()), g.actor.user_id, behalf, ctx.year, uid))
+        _log(conn, "EVAL_APPEAL_CONFIRMED", "ev_appeal", uid, behalf=behalf, year=ctx.year)
+    push.notify([uid], "eval_answer")  # 저장(COMMIT)한 뒤 — 신청한 사람 (확인한 사람일 수 없다: 대표이사는 대상이 아니고 HR 은 자기 것을 못 한다)
+    return jsonify(ok=True)
+
+
+@bp.post(f"/api/eval/appeals/{UID}/back")
+def appeal_back(uid: int) -> Response:
+    with _decide(uid) as (ctx, row, a, behalf):
+        ctx.conn.execute("UPDATE ev_appeals SET status = 'OPEN', after = NULL, marks = NULL WHERE year = ? AND user_id = ?", (ctx.year, uid))  # 답변 글은 HR 이 고치게 남긴다
+        _log(ctx.conn, "EVAL_APPEAL_RETURNED", "ev_appeal", uid, behalf=behalf, year=ctx.year)
+        to = push.hr_admins(ctx.conn)
+    push.notify([u for u in to if u not in (g.actor.user_id, uid)], "eval_appeal")  # 저장(COMMIT)한 뒤 — 다시 답할 HR 전원 (누른 사람 · 신청한 사람 빼고)
     return jsonify(ok=True)
