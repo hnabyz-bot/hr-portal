@@ -2127,9 +2127,14 @@ def check_eval_report(hr) -> None:
     ok(post(lead, body).status_code == 403, "HR 이 아니면 403 (팀장)")
     bad = [{**body, "year": "2026"}, {**body, "people": []}, {**body, "people": [man("가상", "가상본부", "X")]},
            {**body, "people": [man("가\n상", "가상본부", "A")]}, {**body, "people": [man("가상", "가상본부", "A", 900)]},
-           {**body, "pools": [{"name": "묶음", "quota": "", "ok": "yes"}]}, [1, 2]]
+           {**body, "pools": [{"name": "묶음", "quota": "", "ok": "yes"}]}, {**body, "pools": [{"name": "가상본부 팀원", "quota": "가" * 301, "ok": True}]}, [1, 2]]
     bad += [{**body, "ratio": v} for v in ({"SA": 71, "B": 10, "D": 10}, {"SA": True, "B": 10, "D": 10}, {"SA": 10.0, "B": 10, "D": 10}, {"SA": 10, "B": 10}, [10, 10, 10], None)]
-    ok(all(post(hr, b).status_code == 400 for b in bad), "형식 · 등급 · 줄바꿈 글자 · 총점 범위 · 묶음 값 · 등급 비율(0~70 정수 세 칸)이 틀리면 400")
+    ok(all(post(hr, b).status_code == 400 for b in bad), "형식 · 등급 · 줄바꿈 글자 · 총점 범위 · 묶음 값(정원 글자 300자까지) · 등급 비율(0~70 정수 세 칸)이 틀리면 400")
+    long_q = "S·A 3명 · B 2명 · D 1명 (대표이사 허용 +10명 · " + "가" * 200 + ")"
+    r = post(hr, {**body, "pools": [{"name": "가상본부 팀원", "quota": long_q, "ok": True}]})
+    sl = load_workbook(io.BytesIO(r.data))["요약"] if r.status_code == 200 else None
+    cq = sl and next(sl.cell(row=i, column=9) for i in range(1, sl.max_row + 1) if sl.cell(row=i, column=1).value == "가상본부 팀원")
+    ok(r.status_code == 200 and cq.value == long_q and cq.alignment.wrap_text, "정원 글자에 늘린 이유(200자)가 들어가도 받는다 · 정원 기준 칸은 줄을 바꿔 다 보이게")
     ok(post(hr, {**body, "people": [man("가상", "가상본부", "A")] * 3001}).status_code in (400, 413), "인원이 너무 많으면 거절")
 
     r = post(hr, body)
@@ -2246,16 +2251,16 @@ def check_eval_report(hr) -> None:
         Y3 = 2097
         ok(q("SELECT ratio_sa, ratio_b, ratio_d FROM ev_rounds WHERE year = ?", Y3) == [(20, 10, 10)] and q("SELECT COUNT(*) FROM ev_targets WHERE year = ?", Y3) == [(10,)],
            f"(check_eval_score 가 남긴 {Y3} 회차: 비율 20 · 10 · 10 · 10명 묶음 하나)")
-        x("UPDATE ev_pools SET extra_sa = 1, extra_b = 1, extra_reason = '가상 늘린 이유' WHERE year = ? AND pool = 'DIV:91'", Y3)
+        x("UPDATE ev_pools SET extra_sa = 1, extra_b = 1, extra_reason = ? WHERE year = ? AND pool = 'DIV:91'", "가상 늘린\n  이유", Y3)
         r = get(hr, f"?year={Y3}")
         sm3 = load_workbook(io.BytesIO(r.data))["요약"]
         p3 = {sm3.cell(row=i, column=1).value: [sm3.cell(row=i, column=c).value for c in (8, 9, 10)] for i in range(1, sm3.max_row + 1)}
         x("UPDATE ev_pools SET extra_sa = 0, extra_b = 0, extra_reason = NULL WHERE year = ? AND pool = 'DIV:91'", Y3)
         sm4 = load_workbook(io.BytesIO(get(hr, f"?year={Y3}").data))["요약"]
         p4 = {sm4.cell(row=i, column=1).value: sm4.cell(row=i, column=9).value for i in range(1, sm4.max_row + 1)}
-        ok(r.status_code == 200 and p3["가상E본부 팀원"] == [10, "S·A 3명 · B 2명 · D 1명 (대표이사 허용 +2명)", "충족"] and p4["가상E본부 팀원"] == "S·A 2명 · B 1명 · D 1명"
+        ok(r.status_code == 200 and p3["가상E본부 팀원"] == [10, "S·A 3명 · B 2명 · D 1명 (대표이사 허용 +2명 · 가상 늘린 이유)", "충족"] and p4["가상E본부 팀원"] == "S·A 2명 · B 1명 · D 1명"
            and rule(sm3) == RULE.format(20, 10, 10),
-           f"보고서는_DB에서: {Y3}년(비율 20 · 10 · 10) 5명 이상 묶음 정원 글자 — 늘린 정원이 있으면 늘린 숫자 · '(대표이사 허용 +n명)' · 설명 줄도 그 비율 ({p3} / {p4})")
+           f"보고서는_DB에서: {Y3}년(비율 20 · 10 · 10) 5명 이상 묶음 정원 글자 — 늘린 정원이 있으면 늘린 숫자 · '(대표이사 허용 +n명 · 늘린 이유)'(줄바꿈 · 겹친 빈칸은 한 칸) · 설명 줄도 그 비율 ({p3} / {p4})")
     finally:
         x("UPDATE ev_pools SET extra_sa = 0, extra_b = 0, extra_reason = NULL WHERE year = 2097")
         x("DELETE FROM ev_appeals WHERE year = ?", Y)

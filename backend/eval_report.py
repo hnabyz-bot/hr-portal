@@ -9,6 +9,7 @@ app.py 가 bp 를 붙인다. 세션 검사는 auth._guard 가 모든 /api/* 에 
   POST /api/eval/report    화면이 보낸 평가 결과 → 같은 엑셀 (HR 만) — 시연 화면용 (가상 자료). 몸통의 ratio {"SA", "B", "D"}(0~70 정수)는 없으면 10 · 10 · 10
 
   엑셀 시트 ① 요약 — 숫자 카드 · 본부별 등급 분포 · 평가 묶음별 분포와 정원 기준 · 본부별 그래프 (이름 없음, A4 세로 한 장)
+                  정원 기준 칸 = 그해 비율 · 늘린 정원이 들어간 숫자, 대표이사가 늘렸으면 뒤에 "(대표이사 허용 +n명 · 늘린 이유)" — 300자까지 받고 칸 폭보다 길면 줄을 바꾼다
   엑셀 시트 ② 명단 — 한 사람 한 줄 (대외비). 칸 제목 사번 · 이름 · 최종등급은 연봉 인상 계산(RZ_GRADE)이 그대로 읽는다
 
 꾸민 표 · 그래프는 openpyxl 이 만든다(화면만으로는 그래프를 넣기 어렵다).
@@ -40,6 +41,7 @@ bp = Blueprint("eval_report", __name__)
 bp.register_error_handler(kpi._Refuse, kpi._refused)
 
 MAX_BYTES, MAX_PEOPLE, MAX_POOLS, MAX_TEXT = 1_000_000, 3_000, 30, 80
+MAX_QUOTA = 300   # 정원 기준 글자 — 늘린 이유(200자 — eval_rules.TEXT_MAX["back"])가 들어간다
 GRADES, WAIT = ["S", "A", "B", "C", "D"], "처리 중"   # 처리 중 = 이의 처리 중이거나 아직 등급이 없음 (화면 evExportGrade 가 비워 보낸다)
 TEXT_KEYS = ("div", "team", "no", "name", "title", "pool", "stage", "appeal")
 DAY = re.compile(r"\d{4}-\d{2}-\d{2}")
@@ -52,6 +54,7 @@ SERIES = {"S": "1F6B47", "A": "4CA57A", "B": "A7DBC0", "C": "F2B8A0", "D": "C855
 THIN = Side(style="thin", color=LINE)
 BOX = Border(left=THIN, right=THIN, top=THIN, bottom=THIN)
 CENTER = Alignment(horizontal="center", vertical="center")
+WRAP = Alignment(horizontal="center", vertical="center", wrap_text=True)
 LEFT = Alignment(horizontal="left", vertical="center", indent=1)
 ZERO_DASH = '0;-0;"-"'
 EV_STAGES = {"SELF": "자기평가 중", "SCORE": "평가자 점수 대기", "GRADE": "본부장 등급 대기", "HR": "HR 확정 대기", "CEO": "대표이사 확인 대기", "DONE": "확정"}   # 화면 EV_STAGES (public/index.html) 와 같은 글자
@@ -59,8 +62,8 @@ EV_STAGES = {"SELF": "자기평가 중", "SCORE": "평가자 점수 대기", "GR
 
 # ----- 받은 값 검사 -----
 
-def _text(v: object) -> str | None:
-    return v.strip() if isinstance(v, str) and len(v) <= MAX_TEXT and not CTRL.search(v) else None
+def _text(v: object, most: int = MAX_TEXT) -> str | None:
+    return v.strip() if isinstance(v, str) and len(v) <= most and not CTRL.search(v) else None
 
 
 def _int(v: object, lo: int, hi: int) -> int | None:
@@ -96,7 +99,7 @@ def clean(body: object) -> dict | str:
         out.append({**row, "total": total, "grade": grade})
     pl = []
     for k in pools:
-        name, quota = (_text(k.get("name")), _text(k.get("quota"))) if isinstance(k, dict) else (None, None)
+        name, quota = (_text(k.get("name")), _text(k.get("quota"), MAX_QUOTA)) if isinstance(k, dict) else (None, None)
         if not name or quota is None or not isinstance(k.get("ok"), bool):
             return "묶음에 맞지 않는 값이 있습니다."
         pl.append({"name": name, "quota": quota, "ok": k["ok"]})
@@ -198,11 +201,13 @@ def _summary(ws, d: dict) -> None:
     r += 2
     for pool in d["pools"]:
         sub = [p for p in ppl if p["pool"] == pool["name"]]
+        wrap = len(pool["quota"]) > 14   # 정원 기준 칸(폭 14)보다 긴 글자(늘린 정원 · 이유)는 줄을 바꿔 다 보이게 — 줄 높이는 엑셀이 맞춘다
         for i, v in enumerate([pool["name"], *_counts(sub), len(sub), pool["quota"], "충족" if pool["ok"] else "확인 필요"], 1):
             c = ws.cell(row=r, column=i, value=v)
-            c.border, c.alignment, c.number_format = BOX, LEFT if i == 1 else CENTER, ZERO_DASH
+            c.border, c.alignment, c.number_format = BOX, LEFT if i == 1 else WRAP if i == 9 and wrap else CENTER, ZERO_DASH
             c.font = _f(10, i == 8, ("1F6B47" if pool["ok"] else "C8553A") if i == 10 else INK)
-        ws.row_dimensions[r].height = 20
+        if not wrap:
+            ws.row_dimensions[r].height = 20
         r += 1
 
     # 3. 그래프 — 숨은 칸(L~Q)에서 그린다: 0명은 비워 둬야 막대 위에 '-'가 안 나온다 (표의 서식이 글자로 따라온다)
@@ -330,12 +335,13 @@ def _from_db(conn: sqlite3.Connection, year: int, me: Actor) -> dict:
             raise kpi._Refuse("보고서에 넣을 분이 없습니다.", 409)
         no = dict(conn.execute("SELECT id, employee_no FROM users"))
         pools = []
-        for k in sorted(ctx.pools, key=evaluation._pool_rank):   # 정원 글자 = 그해 비율 · 늘린 정원이 들어간 숫자 (늘렸으면 뒤에 "(대표이사 허용 +n명)")
+        for k in sorted(ctx.pools, key=evaluation._pool_rank):   # 정원 글자 = 그해 비율 · 늘린 정원이 들어간 숫자 (늘렸으면 뒤에 "(대표이사 허용 +n명 · 늘린 이유)" — 이유의 줄바꿈 · 겹친 빈칸은 한 칸)
             _, errors, _, _, members = evaluation._pool(ctx, k)
             extra = evaluation._extra_of(ctx, k)
             q = calculate_department_quota(len(members), evaluation._ratios_of(ctx), extra)
             quota = f"S·A·B 합계 {q.upper}명" if q.mode is QuotaMode.GROUPED else f"S·A {q.a}명 · B {q.b}명 · D {q.d}명"
-            pools.append({"name": evaluation._pool_label(ctx, k), "quota": quota + (f" (대표이사 허용 +{sum(extra)}명)" if any(extra) else ""), "ok": not errors})
+            why = " ".join((ctx.pools[k]["extra_reason"] or "").split())   # 늘렸으면 이유가 있다 (DB 트리거)
+            pools.append({"name": evaluation._pool_label(ctx, k), "quota": quota + (f" (대표이사 허용 +{sum(extra)}명 · {why})" if any(extra) else ""), "ok": not errors})
     people = [{"div": j["div"], "team": j["team"] or evaluation.NO_TEAM, "no": no[j["pid"]] or "", "name": j["name"], "title": j["title"], "pool": j["poolName"],
                "total": None if j["total"] is None else round(j["total"], 1),
                "grade": "" if j["appeal"] and j["appeal"]["status"] != "DONE" else j["grade"] or "",   # 이의 처리 중이면 비운다 (화면 evExportGrade)
