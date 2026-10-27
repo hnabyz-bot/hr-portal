@@ -9,6 +9,7 @@ evScore · evBand · evCap · evValidate · evPoolState · evEdited)과 같은 �
 - 점수가 없는 사람(KPI 없는 현장직)은 점수 기준을 따지지 않고 연차 규칙만 본다.
 - 묶음 열쇠: 전사 팀장 "LEADERS" · 대표이사 직속부서 팀원 "DIRECT" · 본부 팀원 "DIV:본부번호".
 - 정원은 묶음 인원과 등급 비율(해마다 HR 이 정한다)·늘린 정원(대표이사가 묶음마다 늘려 준다)으로 정한다. quota.py 참고.
+- D 정원은 본부장이 점수보다 낮춰 D 를 줄 수 있는 최대 인원이다: 총점이 C 기준 이하라 점수로 D 인 사람은 D 초과 검사에서 센다고 치지 않는다(미달 경고 · 등급별 인원은 모든 D).
 - 점수 역전: 점수가 더 높은 사람이 더 낮은 등급을 받고, 그 등급을 받을 수도 있었으면(점수 기준 · 연차) 윗사람 코멘트(이유)가 꼭 있어야 한다. 동점 · 점수 없음은 따지지 않는다.
 - 정원 검사 문구에는 이름 · 총점 · 등급이 든다. 이 결과는 배정자 · 대표이사 · HR 에게만 보낸다.
 """
@@ -134,6 +135,7 @@ def check_pool(
 
     full 이 거짓이면(배정하는 중) 등급 누락 · 정원 미달은 따지지 않는다. 마감 · 확정은 full.
     정원은 묶음 인원(len(members))과 ratios(S·A · B · D %) · extra(S·A +명 · B +명)로 정한다.
+    D 초과는 점수로 D 인 사람(점수가 있고 점수 기준이 D — D 밖에 못 받는다)을 빼고 센다. 미달 경고와 등급별 인원은 모든 D.
     점수 역전 줄은 정원 줄 뒤에 붙고 full 과 상관없이 낸다: need_note 이고 note 가 없으면 오류, 아니면 경고."""
     errors: list[str] = []
     warnings: list[str] = []
@@ -159,8 +161,10 @@ def check_pool(
             errors.append(f"A는 {qa}명까지입니다{f' (S {k}명만큼 줄어듦)' if k else ''}. 현재 {cnt['A']}명")
         if cnt["B"] > quota.b:
             errors.append(f"B는 {quota.b}명까지입니다. 현재 {cnt['B']}명")
-        if cnt["D"] > quota.d:
-            errors.append(f"D는 {quota.d}명까지입니다. 현재 {cnt['D']}명")
+        forced = sum(1 for m in members if m.grade == "D" and m.score is not None and band(m.score, bands) == "D")  # 점수로 D 인 사람은 D 정원에 세지 않는다
+        chosen = cnt["D"] - forced
+        if chosen > quota.d:
+            errors.append(f"D는 {quota.d}명까지입니다. 현재 {chosen}명" + (f" (점수로 D인 {forced}명은 세지 않음)" if forced else ""))
         if full:
             if cnt["A"] < qa:
                 warnings.append(f"A가 정원보다 {qa - cnt['A']}명 적습니다.")

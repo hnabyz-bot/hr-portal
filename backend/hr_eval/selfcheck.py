@@ -2464,6 +2464,26 @@ def 정원_검사가_비율과_늘린_정원을_쓴다():
 
 
 @check
+def 점수로_D인_사람은_D_정원에_세지_않는다():  # S7 — 10명 묶음 기본 비율이면 S·A 1 · B 1 · D 1 · C 7
+    def 검사(*d, ratios=(10, 10, 10)):  # d = D를 받은 사람들의 점수(None 은 KPI 없음) — A 95 · B 85 가 한 명씩, 나머지는 C(75점)
+        ms = [EvMember(1, "p1", Decimal("95"), "A", 0), EvMember(2, "p2", Decimal("85"), "B", 0)]
+        ms += [EvMember(3 + i, f"d{i}", None if s is None else Decimal(s), "D", 0) for i, s in enumerate(d)]
+        ms += [EvMember(20 + i, f"c{i}", Decimal("75"), "C", 0) for i in range(8 - len(d))]
+        return check_pool(ms, BANDS, True, ratios=ratios, need_note=False)  # 역전 줄은 경고라 오류만 따진다
+    D미달 = lambda w: [x for x in w if x.startswith("D가")]  # noqa: E731
+    e, w, n = 검사("65", "68")
+    assert e == [] and w == [] and n["D"] == 2, (e, w, n)  # 점수로 D인 둘은 정원 밖 · 미달 경고도 없다(경고는 모든 D로 센다)
+    e, w, n = 검사("85", "65", "68")
+    assert e == [] and D미달(w) == [] and n["D"] == 3, (e, w, n)  # 85점 D 한 명 = 정원 1명
+    assert 검사("85", "88", "65")[0] == ["D는 1명까지입니다. 현재 2명 (점수로 D인 1명은 세지 않음)"]  # 점수보다 낮춰 준 D 둘
+    assert 검사("85", "88")[0] == ["D는 1명까지입니다. 현재 2명"]  # 점수로 D인 사람이 없으면 문구가 그대로
+    assert 검사(None, None)[0] == ["D는 1명까지입니다. 현재 2명"] and 검사(None, "65")[0] == []  # 점수 없는 사람(KPI 없음) D는 센다
+    assert 검사(None, None, "65")[0] == ["D는 1명까지입니다. 현재 2명 (점수로 D인 1명은 세지 않음)"]
+    assert 검사("65", ratios=(10, 10, 0))[0] == [] and 검사("85", ratios=(10, 10, 0))[0] == ["D는 0명까지입니다. 현재 1명"]  # D 비율 0 — 점수로 D인 사람만 받는다
+    assert 검사("70", "70")[0] == [] and 검사("70.1", "70.2")[0] == ["D는 1명까지입니다. 현재 2명"]  # 점수 기준은 '초과' — 70점은 D · 70.1점은 C까지 받을 수 있다
+
+
+@check
 def 묶음_상태():
     assert pool_state([], "DIRECT", False) == "WAIT"
     assert pool_state(["GRADE", "GRADE"], "DIRECT", False) == "CEO" and pool_state(["GRADE", "GRADE"], "DIV:3", False) == "WAIT"
