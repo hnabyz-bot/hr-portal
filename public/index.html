@@ -4226,7 +4226,7 @@ function kpiNative(k){ return KPI_USERS[k].approvers[kpiSheets[k].pending.step]=
 function hrTodo(){   // [내 화면에서 처리할 일, 관리 화면에서 처리할 일] — 평가·성과의 세 탭을 합친 수
   const wait = kpiWaiting(), mine = wait.filter(kpiNative).length, ap = AUTH.live ? [] : evPeople.filter(p=>p.appeal), proxy = KPI_LIVE.inbox.filter(i=>i.proxy).length;   // 실제 로그인: KPI 몫은 처리함(계획서 · 일정 변경) — 대신 처리할 것은 관리 화면
   return [(AUTH.live ? TODO.e1() - proxy : mine + (kpiSheets[kpiRole]?.rejectNote ? 1 : 0) + kvMemoTodo(kvMe())) + evTodo('me'),
-    (AUTH.live ? proxy : wait.length - mine) + evTodo('admin') + ap.filter(p=>p.appeal.status==='OPEN').length + ap.filter(p=>p.appeal.status==='CEO' && evCeoActs(p)).length];
+    (AUTH.live ? proxy + TODO.e3() : wait.length - mine) + evTodo('admin') + ap.filter(p=>p.appeal.status==='OPEN').length + ap.filter(p=>p.appeal.status==='CEO' && evCeoActs(p)).length];
 }
 function hrSwitch(){   // HR에게만: 두 화면을 오가는 단추. 숫자 = 그 화면에서 처리할 일
   if(!kpiIsHr()) return '';
@@ -11326,8 +11326,8 @@ let evAttDone = null;   // HR이 "근태 입력을 마쳤습니다"를 누른 �
    AUTH.live 면 평가 진행 탭은 서버(GET /api/eval/state — backend/evaluation.py)다. 화면 조각(ev*)은 시연과 같고, evPeople 자리에 서버 줄을 넣는다(evFromLive).
    판단은 서버 칸을 그대로 읽는다(can · hidden · cap · total · edited · pools[].state · errors) — 총점 · 줄 수 있는 등급을 화면이 다시 셈하지 않는다(서버는 Decimal 사사오입).
    공개 전 숨김은 서버가 줄에서 칸을 뺀다(본인 줄은 평가 칸이 열쇠째 없고, 평가자가 낸 뒤의 줄은 낸 것만). 동작은 서버로 보내고 다시 읽는다(evLiveDo).
-   적고 저장 안 한 글 · 날짜는 EV_LIVE.typed — 다시 그려도 남고 창을 닫기 전에 묻는다. 대표이사 확인 · HR 확정 · 돌려보내기 · 되돌리기 · 평가 결과 탭은 ②에서 붙인다(지금은 상태만). */
-const EV_LIVE = { state:'', year:null, offline:false, round:null, pools:[], todo:{ me:0, admin:0 }, deleg:false, ceoId:null, busy:false, typed:{}, prog:{} };   // state: '' 아직 · loading · ok · err. typed: 적고 저장 안 한 것 { 'self-<rid>' 실적 · 'cmt-<pid>' 평가자 코멘트 · 'd-<kpiPeriod 칸>' 마감일 · 'b-<A|B|C>' 기준 점수 }. prog: 사람마다 받아 둔 진행 기록 { pid: 응답 | null(못 봄 · 없음) }
+   적고 저장 안 한 글 · 날짜는 EV_LIVE.typed — 다시 그려도 남고 창을 닫기 전에 묻는다. 대표이사 확인 · HR 확정 · 돌려보내기 · 되돌리기(②)는 서버 pools[].can 대로 단추를 그리고, 평가 결과 탭(②)은 GET /api/eval/results (EV_RES — 평가 결과 칸). */
+const EV_LIVE = { state:'', year:null, offline:false, round:null, pools:[], todo:{ me:0, admin:0, e3:0 }, deleg:false, ceoId:null, busy:false, typed:{}, prog:{} };   // state: '' 아직 · loading · ok · err. typed: 적고 저장 안 한 것 { 'self-<rid>' 실적 · 'cmt-<pid>' 평가자 코멘트 · 'd-<kpiPeriod 칸>' 마감일 · 'b-<A|B|C>' 기준 점수 }. prog: 사람마다 받아 둔 진행 기록 { pid: 응답 | null(못 봄 · 없음) }
 const evProgOpen = new Set();   // 펼친 진행 기록 '<pid>-<rid>' — 다시 그려도 펼친 채로
 function evYear(){ return AUTH.live ? EV_LIVE.year : KPI_YEAR; }   // 평가하는 해 (실제 로그인은 서버 — 1~2월에는 지난해일 수 있다)
 function evKind(k){ return !AUTH.live ? k : k==='LEADERS' ? 'lead' : k==='DIRECT' ? 'direct' : 'div'; }   // 묶음 열쇠 → 시연 이름 (서버 열쇠 LEADERS · DIRECT · DIV:<본부>)
@@ -11341,6 +11341,7 @@ function evFromLive(row){   // 서버 줄 → 시연 줄 모양. 빠진 칸은 �
   const items = row.items || [];
   return { comment:'', headComment:'', bonus:0, bonusReason:'', grade:null, proposed:null, subScore:null, cap:'S', proxy:'', edited:'', rater:null, raterIsCeo:false, hidden:false, ...row,
     key:row.pid===AUTH.me.user_id ? kpiRole : null, line:'', noSelf:row.noSelf || false, out:row.out ? { at:kpiYmd(row.out.at), why:row.out.why } : null,
+    appeal:row.appeal?.at ? { ...row.appeal, at:kpiYmd(row.appeal.at) } : row.appeal ?? null,   // 이의 신청일은 한국 날짜 (서버는 UTC 시각 · 상태만 받는 분은 at 이 없다)
     subMarks:row.subMarks ? items.map(it=>row.subMarks[it.rid] ?? null) : null,   // 실행목표 번호 → 차례 (evScorePanel 이 차례로 읽는다)
     evaluator:row.raterIsCeo ? 'ceo' : row.rater ? row.rater.id : null,   // 단계 이름(evSteps) — 본인 줄은 평가자 칸이 없어 null ('평가자 평가')
     editSeen:row.editSeen ? evEdited({ edited:row.edited }) : '',   // evEditLine 이 견주는 글자와 같게
@@ -11353,7 +11354,7 @@ async function evLiveLoad(year=EV_LIVE.year){   // GET /api/eval/state → evPeo
     if(!r.ok) throw new Error(r.status);
     const j = await r.json(), rd = j.round || {}, day = t=>t ? kpiYmd(t) : null, at = a=>a ? { ...a, at:day(a.at) } : null;
     const rows = [j.me, ...j.people].filter(Boolean).map(evFromLive), logs = j.pools.map(x=>{ const l = x.log;   // 먼저 다 바꿔 본다 — 줄 하나가 틀리면 아래로 가지 않는다(전에 읽은 것 그대로)
-      return [x.key, { head:l.closed && { ...at(l.closed), seen:{ [kpiRole]:x.hrSeen } }, ceo:at(l.ceo), back:at(l.back), undo:at(l.undo) }]; });
+      return [x.key, { head:l.closed && { ...at(l.closed), seen:{ [kpiRole]:x.hrSeen } }, ceo:at(l.ceo), back:at(l.back), undo:l.undo && { ...at(l.undo), from:l.undo.from==='HR' ? 'HR 확정' : '대표이사 확인' } }]; });   // 되돌린 단계: 서버 HR(확정을 되돌림) · CEO(대표이사 확인을 되돌림) → evPoolText 글자
     Object.assign(EV_LIVE, { state:'ok', year:j.year, offline:j.offline, round:j.round, pools:j.pools, todo:j.todo, deleg:j.deleg, ceoId:j.ceoId });
     evPeople.length = 0; evPeople.push(...rows);   // ponytail: 시연 명단 자리를 그대로 쓴다 (평가 결과 탭은 ①에서 안내만 — ②에서 서버로)
     Object.assign(kpiPeriod, { evalFrom:rd.evalStart || '', selfTo:rd.selfTo || '', evidDue:rd.evidDue || '', scoreTo:rd.scoreTo || '', gradeTo:rd.gradeTo || '', ceoTo:rd.ceoTo || '', evalTo:rd.finalTo || '' });
@@ -11364,6 +11365,7 @@ async function evLiveLoad(year=EV_LIVE.year){   // GET /api/eval/state → evPeo
     Object.assign(evPoolLog, Object.fromEntries(logs));
     evLivePrune();
   } catch(e){ if(EV_LIVE.state!=='ok') EV_LIVE.state = 'err'; }   // 전에 읽은 것이 있으면 그대로 둔다
+  if(EV_RES.state) await evResLoad();   // 평가 결과 탭을 연 적이 있으면 그것도 — 동작 뒤 · 창으로 돌아올 때 (확정 · 공개 · 이의 신청이 함께 바뀐다)
   evLiveShow();
 }
 function evLivePrune(){   // 다시 읽은 뒤: 서버 것과 같아졌거나 이제 적을 수 없는 칸의 적던 것은 버린다 — 보이지 않는 칸이 나가기 확인을 붙잡지 않게
@@ -11371,12 +11373,12 @@ function evLivePrune(){   // 다시 읽은 뒤: 서버 것과 같아졌거나 �
   for(const k of Object.keys(T)){
     const kind = k.slice(0, k.indexOf('-')), id = k.slice(k.indexOf('-')+1), v = String(T[k]).trim(), p = kind==='cmt' && evFind(+id);
     const i = kind==='self' && me?.can.self ? evKpi(me).findIndex(x=>x.rid===+id) : -1, same = s=>String(s ?? '').trim()===v;
-    if(!(kind==='self' ? i>=0 && !same(evEntry(me, i).note) : kind==='cmt' ? p && p.can.score && !same(p.comment) : kind==='d' ? !evRelease.at && !same(kpiPeriod[id]) : !evRelease.at && +v!==evBands[id])) delete T[k];
+    if(!(kind==='self' ? i>=0 && !same(evEntry(me, i).note) : kind==='cmt' ? p && p.can.score && !same(p.comment) : kind==='d' ? !evRelease.at && !same(kpiPeriod[id]) : kind==='b' ? !evRelease.at && +v!==evBands[id] : true)) delete T[k];   // 평가 결과 탭 칸(ap · ans · ansg · ansm)은 evResPrune 이 본다
   }
 }
-function evLiveShow(){   // 다 받은 뒤 다시 그린다 — 평가 진행 탭 · 홈만. 글 칸에 적는 중이면 메뉴 숫자만 (다른 탭에서 적는 중인 칸 · 한글 조합을 건드리지 않게)
+function evLiveShow(){   // 다 받은 뒤 다시 그린다 — 평가 진행 · 평가 결과 탭 · 홈만. 글 칸에 적는 중이면 메뉴 숫자만 (다른 탭에서 적는 중인 칸 · 한글 조합을 건드리지 않게)
   const a = document.activeElement, typing = !!a?.closest?.('#contentArea') && a.matches('textarea, input:not([type=checkbox])');
-  if(!typing && (currentTab.id==='e2' || currentNav.id==='home')) renderContent(); else { renderSidebar(); renderSubtabs(); }
+  if(!typing && (currentTab.id==='e2' || currentTab.id==='e3' || currentNav.id==='home')) renderContent(); else { renderSidebar(); renderSubtabs(); }
 }
 function evLiveGate(){   // 평가 진행 탭 맨 위(실제 로그인): 불러오는 중 · 못 불러옴 · 포털 밖에서 평가하는 해(설계 §7.1 안내 그대로 — 해는 서버 year)
   if(!EV_LIVE.state) evLiveLoad();
@@ -11725,7 +11727,7 @@ function evSelfCard(p){
   return `<div class="card" id="evSelf" style="margin-bottom:14px;">
     <div class="card-title"><span>나의 ${evYear()}년 자기평가</span>${evStageBadge(p)}</div>${evSteps(p)}
     ${!evStarted() ? kpiNote(`아직 평가 기간이 아닙니다. (${kpiPeriod.evalFrom}부터)`) : p.stage!=='SELF' ? '' : !evSelfOpen() ? kpiNote(`자기평가 마감일(${kpiPeriod.selfTo})이 지났습니다. HR 담당자에게 문의해 주세요.`, 'danger') : kpiNote(`자기평가 마감일은 <b>${kpiPeriod.selfTo}</b>입니다. 제출한 뒤에는 고칠 수 없습니다.`)}
-    <div class="list-sub" style="margin-bottom:8px;">증빙자료는 선택이며 <b>${kpiPeriod.evidDue}</b>까지 올리고 고칠 수 있습니다 (자기평가를 낸 뒤에도, 평가자가 점수를 내기 전까지). 평가자·본부장·HR만 볼 수 있습니다. 연차를 ${EV_LEAVE_LIMIT}일 이상 초과 사용하면 S·A·B 등급을 받을 수 없습니다${p.leaveOver ? ` (지금 연차 초과 ${p.leaveOver}일)` : ''}.</div>
+    <div class="list-sub" style="margin-bottom:8px;">증빙자료는 선택이며 <b>${kpiPeriod.evidDue}</b>까지 올리고 고칠 수 있습니다 (자기평가를 낸 뒤에도, 평가자가 점수를 내기 전까지). ${L ? '제출하기 전에는 본인과 HR만, 제출한 뒤에는 평가자 · 본부장 · 대표이사도 볼 수 있습니다.' : '평가자·본부장·HR만 볼 수 있습니다.'} 연차를 ${EV_LEAVE_LIMIT}일 이상 초과 사용하면 S·A·B 등급을 받을 수 없습니다${p.leaveOver ? ` (지금 연차 초과 ${p.leaveOver}일)` : ''}.</div>
     <div class="ct-tbl"><table class="ev-table"><thead><tr><th style="width:44%;">확정 KPI · 달성 기준</th><th>실적 · 스스로 매긴 등급</th><th style="width:24%;">증빙자료</th></tr></thead><tbody>${rows}</tbody></table></div>
     ${editable ? `<div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; margin-top:12px;"><span class="list-sub" style="margin:0;">S 110% · A 100% · B 90% · C 80% · D 70%</span>${L ? `<span style="display:flex; gap:8px;"><button class="btn" onclick="evSaveSelf(${p.pid})">임시 저장</button><button class="btn primary" onclick="evSubmitSelf(${p.pid})">자기평가 제출</button></span>` : `<button class="btn primary" onclick="evSubmitSelf(${p.pid})">자기평가 제출</button>`}</div>` : ''}
   </div>`;
@@ -11824,25 +11826,25 @@ function evPoolText(k, st, mode){   // 목록 한 줄의 설명
   const wait = evPoolList(k).filter(p=>evAt(p, kind==='direct' ? 'GRADE' : 'CEO')<0).length;
   return (kind==='div' && log.back ? `본부장에게 돌려보냈습니다 (${log.back.at}) · ` : '') + `아직 ${wait}명이 이전 단계에 있습니다`;
 }
-function evPoolCard(mode){   // 'ceo' = 대표이사 확인(또는 대신 입력하는 HR) → HR로 / 'hr' = HR 확정. 묶음(본부 팀원 · 전사 팀장 · 직속부서 팀원)을 체크해 한 번에 넘긴다
-  const ceo = mode==='ceo', need = ceo ? 'CEO' : 'HR', sel = evPoolSel[mode], actor = (ceo ? evCeoActs(null) : kpiIsHr()) && evStarted(), act = !AUTH.live;   // act: 체크 · 확인 · 확정 · 돌려보내기 · 되돌리기 — 실제 로그인은 ②에서 연다 (지금은 상태만)
-  const st = Object.fromEntries(evPoolKeys().map(k=>[k, evPoolState(k)])), ready = evPoolKeys().filter(k=>st[k]===need);
-  [...sel].forEach(k=>{ if(st[k]!==need) sel.delete(k); });   // 이미 넘어간 묶음은 체크에서 뺀다
+function evPoolCard(mode){   // 'ceo' = 대표이사 확인(또는 대신 입력하는 HR) → HR로 / 'hr' = HR 확정. 묶음(본부 팀원 · 전사 팀장 · 직속부서 팀원)을 체크해 한 번에 넘긴다. 실제 로그인: 체크 · 단추는 서버 pools[].can (confirm · finalize · back · undo)
+  const ceo = mode==='ceo', sel = evPoolSel[mode], L = AUTH.live, actor = L || (ceo ? evCeoActs(null) : kpiIsHr()) && evStarted();   // 실제 로그인은 묶음마다 서버 can 이 정한다
+  const st = Object.fromEntries(evPoolKeys().map(k=>[k, evPoolState(k)])), can = k=>evLivePool(k)?.can || {}, ready = evPoolKeys().filter(k=>evPoolReady(k, mode));
+  [...sel].forEach(k=>{ if(!ready.includes(k)) sel.delete(k); });   // 이미 넘어간 묶음은 체크에서 뺀다
   const BADGE = { WAIT:['neutral','진행 중'], FIX:['warning','등급 조정 필요'], CEO:['warning','대표이사 확인 대기'], HR:['warning','HR 확정 대기'], DONE:['success','확정'] };
   const rows = evPoolKeys().map(k=>{ const list = evPoolList(k), open = evPoolOpen[mode]===k, [cls, label] = BADGE[st[k]], cnt = { S:0, A:0, B:0, C:0, D:0 };
     list.forEach(p=>{ if(p.grade && evAt(p, evAssignStage(k))>=0) cnt[p.grade]++; });
-    return `<tr>${act ? `<td class="c"><input class="ms-ck" type="checkbox" ${sel.has(k)?'checked':''} ${st[k]===need && actor ? '' : 'disabled'} aria-label="${evPoolName(k)} 선택" onchange="evPoolPick('${mode}','${k}',this.checked)"></td>` : ''}
+    return `<tr><td class="c"><input class="ms-ck" type="checkbox" ${sel.has(k)?'checked':''} ${ready.includes(k) && actor ? '' : 'disabled'} aria-label="${evPoolName(k)} 선택" onchange="evPoolPick('${mode}','${k}',this.checked)"></td>
       <td><b>${evPoolName(k)}</b> ${list.length}명<div class="list-sub">${evPoolText(k, st[k], mode)}</div></td>
       <td><span class="badge ${cls}">${label}</span></td><td><span class="ev-counts">${evCounts(cnt)}</span></td>
-      <td style="white-space:nowrap; text-align:right;">${ceo && evKind(k)==='div' && st[k]==='CEO' && actor && act ? `<button class="btn sm" onclick="evReturnAsk('${k}')">돌려보내기</button> ` : ''}${!ceo && (st[k]==='HR' || st[k]==='DONE') && actor && act && !evRelease.at ? `<button class="btn sm" onclick="evUndo('${k}')">되돌리기</button> ` : ''}<button class="btn sm" onclick="evPoolOpen.${mode}=${open ? 'null' : `'${k}'`}; evOpen=null; kpiFlash(null)" aria-expanded="${open}">${open ? '명단 닫기' : '명단 보기'}</button></td></tr>`; }).join('');
+      <td style="white-space:nowrap; text-align:right;">${ceo && (L ? can(k).back : evKind(k)==='div' && st[k]==='CEO' && actor) ? `<button class="btn sm" onclick="evReturnAsk('${k}')">돌려보내기</button> ` : ''}${!ceo && (L ? can(k).undo : (st[k]==='HR' || st[k]==='DONE') && actor && !evRelease.at) ? `<button class="btn sm" onclick="evUndo('${k}')">되돌리기</button> ` : ''}<button class="btn sm" onclick="evPoolOpen.${mode}=${open ? 'null' : `'${k}'`}; evOpen=null; kpiFlash(null)" aria-expanded="${open}">${open ? '명단 닫기' : '명단 보기'}</button></td></tr>`; }).join('');
   const openK = evPoolOpen[mode], all = ready.length>0 && ready.every(k=>sel.has(k));
   return `<div class="card" style="margin-bottom:14px;">
     <div class="card-title"><span>${ceo ? '대표이사 확인' : 'HR 확정'} <span style="font-weight:500; color:var(--text-secondary);">${ceo ? (kpiRole==='ceo' ? '' : '대표이사가 맡김 · ')+'확인한 묶음은 HR 확정으로 넘어갑니다' : '대표이사가 확인한 묶음을 확정합니다'}</span></span></div>
-    <div class="ct-tbl"><table class="ev-table ev-pools"><thead><tr>${act ? `<th class="c"><input class="ms-ck" type="checkbox" ${all?'checked':''} ${ready.length && actor ? '' : 'disabled'} aria-label="${ceo ? '확인' : '확정'}할 수 있는 묶음 모두 선택" onchange="evPoolPickAll('${mode}',this.checked)"></th>` : ''}<th>묶음</th><th>상태</th><th>등급 분포</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
-    ${act ? `<div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; margin-top:10px;">
+    <div class="ct-tbl"><table class="ev-table ev-pools"><thead><tr><th class="c"><input class="ms-ck" type="checkbox" ${all?'checked':''} ${ready.length && actor ? '' : 'disabled'} aria-label="${ceo ? '확인' : '확정'}할 수 있는 묶음 모두 선택" onchange="evPoolPickAll('${mode}',this.checked)"></th><th>묶음</th><th>상태</th><th>등급 분포</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
+    <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; margin-top:10px;">
       <span class="list-sub" style="margin:0;">${ready.length && evLate(ceo ? 'ceoTo' : 'evalTo') ? '<span class="badge danger">기한 지남</span> ' : ''}${ready.length ? `${ceo ? '확인' : '확정'}할 수 있는 묶음 ${ready.length}개 — 체크해서 한 번에 넘깁니다.` : ceo ? '지금 확인할 수 있는 묶음이 없습니다.' : '대표이사 확인이 끝난 묶음이 없습니다.'}</span>
       <button class="btn primary" ${sel.size && actor ? '' : 'disabled'} onclick="evPoolDone('${mode}')">${ceo ? `선택한 ${sel.size}개 확인 (HR로)` : `선택한 ${sel.size}개 확정`}</button>
-    </div>` : '<div class="list-sub" style="margin:10px 0 0;">묶음마다 어디까지 왔는지 보여요. 확인 · 확정 단추는 다음 단계에서 열려요.</div>'}
+    </div>
   </div>
   ${openK ? `<div class="card" style="margin-bottom:14px;"><div class="card-title"><span>${evPoolName(openK)} 명단 <span style="font-weight:500; color:var(--text-secondary);">${evPoolList(openK).length}명</span></span><button type="button" class="x-btn" onclick="evPoolOpen.${mode}=null; evOpen=null; kpiFlash(null)" aria-label="명단 닫기">${icon('x')}</button></div>${evGradeTable(openK, mode).html}</div>` : ''}`;
 }
@@ -11883,7 +11885,7 @@ function evBoard(){   // HR: 인사평가 진행표 — 단계별 마감일을 �
         <td>${d('evalFrom', '평가 시작일')}<div class="list-sub" style="margin:2px 0 0;">평가 시작일</div></td><td class="num">연차 초과 ${evActive().filter(p=>p.leaveOver>0).length}명</td>
         <td>${evAttDone ? `<span class="badge success">입력 끝남</span><div class="list-sub" style="margin:2px 0 0;">${evAttDone}</div>` : started ? '<span class="badge warning">입력 필요</span>' : '<span class="badge neutral">시작 전</span>'}</td></tr>
       ${steps.map(row).join('')}
-      <tr><td class="c">끝</td><td><b>결과 공개 · 이의 신청</b><div class="list-sub" style="margin:2px 0 0;">${L ? '모든 묶음이 확정되면 공개합니다.' : `모든 묶음이 확정되면 <span class="more" onclick="goTo('perf','e3')">평가 결과 탭</span>에서 공개합니다.`}</div></td><td>${evRelease.at ? `공개 ${evRelease.at}` : '—'}</td><td class="num">${evRelease.at ? `이의 신청 ${evActive().filter(p=>p.appeal).length}건` : '—'}</td>
+      <tr><td class="c">끝</td><td><b>결과 공개 · 이의 신청</b><div class="list-sub" style="margin:2px 0 0;">모든 묶음이 확정되면 <span class="more" onclick="goTo('perf','e3')">평가 결과 탭</span>에서 공개합니다.</div></td><td>${evRelease.at ? `공개 ${evRelease.at}` : '—'}</td><td class="num">${evRelease.at ? `이의 신청 ${evActive().filter(p=>p.appeal).length}건` : '—'}</td>
         <td>${evRelease.at ? '<span class="badge success">공개함</span>' : '<span class="badge neutral">공개 전</span>'}</td></tr>
     </tbody></table></div>
     ${sorted ? '' : kpiNote('마감일의 앞뒤 순서가 맞지 않습니다. 평가 시작일 → 자기평가 → 평가자 평가 → 등급 배정 → 대표이사 확인 → HR 확정 순으로 넣어 주세요.', 'danger')}
@@ -11909,6 +11911,7 @@ function evSetBand(g, v){
 function evUndo(k){   // HR: 결과 공개 전에 묶음을 한 단계 되돌린다
   const st = evPoolState(k);
   if(!kpiIsHr() || !confirm(`${evPoolRaw(k)}의 ${st==='DONE' ? 'HR 확정' : '대표이사 확인'}을 되돌릴까요? 되돌린 기록이 남습니다.`)) return;
+  if(AUTH.live) return evLiveDo('/api/eval/pools/undo', { pool:k, from:st }, ()=>{ evPoolSel.hr.delete(k); return `${evPoolName(k)}을(를) 한 단계 되돌렸어요. ${st==='DONE' ? '다시 확정할 수 있어요.' : '대표이사가 다시 확인해야 해요.'}`; });   // from = 화면이 본 상태 — 그사이 바뀌었으면 서버가 409 (두 창에서 눌러도 한 단계만)
   const err = evPoolUndo(k, `${KPI_USERS[kpiRole].name} ${KPI_USERS[kpiRole].title}`);
   if(err) return kpiFlash(escapeHtml(err), 'danger');
   evPoolSel.hr.delete(k); kpiFlash(`${evPoolName(k)}을(를) 한 단계 되돌렸습니다. ${st==='DONE' ? '다시 확정할 수 있습니다.' : '대표이사가 다시 확인해야 합니다.'}`);
@@ -11991,13 +11994,18 @@ function evSubmitGrades(k){   // 본부장: 본부 팀원 등급 배정 마감 �
 function evEditSeen(pid){ if(AUTH.live) return evLiveDo(`/api/eval/people/${+pid}/seen`, {}, null); const p = evFind(pid); p.editSeen = evEdited(p); kpiFlash(null); }
 function evNewsSeen(k){ if(AUTH.live) return evLiveDo('/api/eval/pools/seen', { pool:k }, null); evPoolLog[k].head.seen[kpiRole] = true; kpiFlash(null); }
 function evPoolPick(mode, k, on){ evPoolSel[mode][on ? 'add' : 'delete'](k); kpiFlash(null); }
-function evPoolPickAll(mode, on){ const need = mode==='ceo' ? 'CEO' : 'HR'; evPoolSel[mode].clear(); if(on) evPoolKeys().filter(k=>evPoolState(k)===need).forEach(k=>evPoolSel[mode].add(k)); kpiFlash(null); }
+function evPoolReady(k, mode){ return AUTH.live ? !!evLivePool(k)?.can[mode==='ceo' ? 'confirm' : 'finalize'] : evPoolState(k)===(mode==='ceo' ? 'CEO' : 'HR'); }   // 체크해 넘길 수 있는 묶음 (실제 로그인: 서버 can)
+function evPoolPickAll(mode, on){ evPoolSel[mode].clear(); if(on) evPoolKeys().filter(k=>evPoolReady(k, mode)).forEach(k=>evPoolSel[mode].add(k)); kpiFlash(null); }
 function evActor(){ const me = `${KPI_USERS[kpiRole].name} ${KPI_USERS[kpiRole].title}`; return kpiRole==='ceo' ? me : me+' (대표이사 대신 입력)'; }   // 대표이사의 일을 한 사람
 function evPoolDone(mode){   // 체크한 묶음을 한 번에: 대표이사 확인(→ HR) / HR 확정(→ 확정)
   const ceo = mode==='ceo', ks = [...evPoolSel[mode]];
   if(!ks.length || !evStarted() || !(ceo ? evCeoActs(null) : kpiIsHr())) return;
   const names = ks.map(k=>evPoolRaw(k)).join(', ');
-  if(!confirm(ceo ? `${names}의 등급을 확인하고 HR 확정으로 넘길까요?` : `${names}의 평가 결과를 확정할까요? 확정 후에는 고칠 수 없습니다. 직원 공개는 평가 결과 탭에서 따로 합니다.`)) return;
+  if(!confirm(ceo ? `${names}의 등급을 확인하고 HR 확정으로 넘길까요?` : AUTH.live ? `${names}의 평가 결과를 확정할까요? 결과를 공개하기 전까지는 되돌릴 수 있어요. 직원 공개는 평가 결과 탭에서 따로 해요.`
+    : `${names}의 평가 결과를 확정할까요? 확정 후에는 고칠 수 없습니다. 직원 공개는 평가 결과 탭에서 따로 합니다.`)) return;
+  if(AUTH.live) return evLiveDo(ceo ? '/api/eval/pools/confirm' : '/api/eval/pools/finalize', { pools:ks }, j=>{ evPoolSel[mode].clear(); evPoolOpen[mode] = null; evOpen = null;   // 하나라도 걸리면 아무것도 안 바뀐다 (409 — 어느 묶음인지 서버 문구, 고른 것은 그대로)
+    return ceo ? `${j.done.length}개 묶음을 확인했어요. HR 확정으로 넘어가요.` : EV_LIVE.pools.every(x=>x.state==='DONE') ? `모든 묶음을 확정했어요. <span class="more" onclick="goTo('perf','e3')">평가 결과 탭</span>에서 공개하면 직원이 결과를 봐요.`
+      : `${j.done.length}개 묶음을 확정했어요. 나머지 묶음도 확정해야 결과를 공개할 수 있어요.`; });
   const done = evPoolMove(ks, mode, evActor());
   evPoolSel[mode].clear(); evPoolOpen[mode] = null; evOpen = null;
   kpiFlash(ceo ? `${done.length}개 묶음을 확인했습니다. HR 확정으로 넘어갑니다.`
@@ -12011,6 +12019,9 @@ function evReturnAsk(k){
     <div style="display:flex; gap:8px;"><button class="btn primary" onclick="evReturn('${k}')">돌려보내기</button><button class="btn" onclick="orgCloseModal()">취소</button></div>`);
 }
 function evReturn(k){
+  if(AUTH.live){ const why = document.getElementById('evRetWhy').value.trim();   // 권한 · 상태(CEO · FIX) · 글자 수(200)는 서버가 다시 본다
+    if(!why) return document.getElementById('evErr').innerHTML = kpiNote('돌려보내는 이유를 적어 주세요.', 'danger');
+    return evLiveDo('/api/eval/pools/back', { pool:k, reason:why }, ()=>{ evPoolSel.ceo.delete(k); return `${evPoolName(k)} 등급 배정을 돌려보냈어요. 다시 마감하면 목록에 돌아와요.`; }); }
   if(!evCeoActs(null)) return;
   const err = evPoolBack(k, document.getElementById('evRetWhy').value, evActor());
   if(err) return document.getElementById('evErr').innerHTML = kpiNote(escapeHtml(err), 'danger');
@@ -12057,7 +12068,8 @@ async function evLiveSelfCheck(){   // 브라우저 콘솔에서 await evLiveSel
   // 평가 화면 · 평가 숫자
   const said = e=>[...e.querySelectorAll('.center-note h3, .center-note p')].map(x=>x.innerHTML.replace('<br>', ' ')).join(' '), NOTE = '올해도 고생 많으셨습니다 2026년도 평가는 기존 방식으로 진행됩니다. 감사합니다.';
   const keep = { live:AUTH.live, me:AUTH.me, role:kpiRole, view:hrView, ap:evPeople[0].appeal, people:[...evPeople], period:{ ...kpiPeriod }, bands:{ ...evBands }, att:evAttDone, rel:evRelease.at, proxy:evProxy,
-    log:kpiClone(evPoolLog), ev:kpiClone(EV_LIVE), msg:kpiMsg, open:evOpen, fetch:window.fetch, rc:renderContent, ms:{ ...MS_LIVE } };
+    log:kpiClone(evPoolLog), ev:kpiClone(EV_LIVE), msg:kpiMsg, open:evOpen, fetch:window.fetch, rc:renderContent, ms:{ ...MS_LIVE },
+    res:kpiClone(EV_RES), rz:rzSave, cf:window.confirm, sel:{ ceo:[...evPoolSel.ceo], hr:[...evPoolSel.hr] }, rv:evResView };
   const leave = ()=>{ const e = new Event('beforeunload', { cancelable:true }); dispatchEvent(e); return e.defaultPrevented; };
   try {
     kpiPeriod.evalFrom = kpiDay(-1); kpiRole = 'hr'; hrView = 'admin';   // 오늘이 평가 시작일 뒤 · HR (근태 입력을 안 마쳐 늘 +1) · 이의 신청 한 건
@@ -12107,8 +12119,7 @@ async function evLiveSelfCheck(){   // 브라우저 콘솔에서 await evLiveSel
     state = { ...state, people:[row()] };
     await evLiveLoad();
     ok(evUpper(evFind(3))==='본부장' && evSteps(evFind(3)).includes('>본부장 등급<'), '⑩ 본부장이 있는 본부는 "본부장" 그대로');
-    const r2 = evResultContent(), dr = dom(r2);
-    ok(said(dr).trim()==='포털에서 공개한 평가 결과가 아직 없어요.' && !dr.querySelector('table, button') && !r2.includes('가상직원') && !r2.includes('시연') && TODO.e3()===0, '실제 로그인: 평가 결과 탭은 안내 한 줄만 (표 · 단추 · 실제 이름 없음 — ②에서 서버로) · 숫자 0');
+    ok(TODO.e3()===0, '② 서버 todo 에 e3 가 없으면 평가 결과 숫자 0');
     // ③ 본인 줄 (공개 전 — 평가 칸은 열쇠째 없다)
     const me3 = { pid:3, name:'가상직원', title:'사원', team:'국내영업팀', div:'전략마케팅본부', poolKey:'DIV:1', poolName:'전략마케팅본부 팀원', kpi:true, stage:'SELF', out:null, noSelf:'', late:0, leaveOver:0, items:[it(11), it(12)],
       ev:[{ rid:11, note:'', selfGrade:null, files:[] }, { rid:12, note:'적던 실적', selfGrade:'B', files:[{ id:5, name:'가상증빙.pdf', size:10 }] }], can:can({ self:true, upload:true }), hidden:false, appeal:null };
@@ -12118,6 +12129,8 @@ async function evLiveSelfCheck(){   // 브라우저 콘솔에서 await evLiveSel
     const e3 = evContent(), d3 = dom(e3);
     ok(d3.querySelector('#evSelf button[onclick^="evSaveSelf"]') && d3.querySelector('#evSelf button[onclick^="evSubmitSelf"]') && d3.querySelectorAll('#evSelf textarea').length===2 && d3.querySelector('#evSelf a[href="/api/eval/files/5"]')
       && !d3.querySelector('.ev-panel, .ev-final, .ev-total') && !/총점|등급 의견|평가자 코멘트/.test(e3) && TOURS.ev.steps().some(x=>x.el==='#evSelf button[onclick^="evSaveSelf"]'), '③ 본인 줄: 자기평가 카드만 ([임시 저장] · 증빙 내려받기 · 사이트 둘러보기 단계), 등급 · 총점 글자 없음');
+    ok(d3.querySelector('#evSelf').textContent.includes('제출하기 전에는 본인과 HR만, 제출한 뒤에는 평가자 · 본부장 · 대표이사도 볼 수 있습니다.') && !e3.includes('평가자·본부장·HR만')
+      && TOURS.ev.steps().find(x=>x.title==='증빙자료 (선택)').body.includes('제출하기 전에는 본인과 HR만, 제출한 뒤에는 평가자 · 본부장 · 대표이사도'), '③ 증빙 안내(실제): 제출 전에는 본인 · HR만, 제출한 뒤에는 평가자 · 본부장 · 대표이사도 (자기평가 카드 · 사이트 둘러보기)');
     const pf = [...d3.querySelectorAll('#evSelf details.ev-prog')].map(x=>x.textContent);
     ok(pf.length===2 && pf[0].includes('9월 안 씀') && pf[0].includes('10월 가상 10월 한 줄') && !pf[0].includes('11월') && pf[1].includes('9/30 가상 일정 · 가상 결과 한 줄') && pf[1].includes('12/20 가상 연말 · 예정') && pf[1].includes('늦어지는 이유 가상 늦어지는 이유') && evSteps({ poolKey:'LEADERS', evaluator:null, stage:'SELF' }).includes('>평가자 평가<'), '③ KPI 줄마다 진행 기록 (쓴 달 · 안 쓴 달 · 일정 결과 · 늦어지는 이유) · 평가자 칸이 없는 본인 팀장 줄의 단계 이름은 "평가자 평가"');
     evType('self-11', '새로 적은 실적'); sent.length = 0;
@@ -12158,15 +12171,15 @@ async function evLiveSelfCheck(){   // 브라우저 콘솔에서 await evLiveSel
       pools:[pool], todo:{ me:0, admin:2 } };
     await evLiveLoad();
     const e7 = evContent();
-    ok(!/evPoolDone|evReturnAsk|evUndo|evPoolPick|evDemo|시연:/.test(e7) && e7.includes('evRoundSave') && e7.includes('evNewsSeen') && e7.includes('전략마케팅본부 팀원') && e7.includes('평가자가 포털을 못 써요') && e7.includes('평가자 없음') && e7.includes('evRaterAsk')
-      && hrTodo()[1]===KPI_LIVE.inbox.filter(i=>i.proxy).length + 2, '⑦ HR 관리(실제): 확인 · 확정 · 돌려보내기 · 되돌리기 단추 없음 · [마감일 저장] · 마감 알림 · 평가자 표시 · 숫자는 서버 todo.admin');
+    ok(!/evReturnAsk|evUndo|evDemo|시연:|다음 단계에서 열려요/.test(e7) && [...dom(e7).querySelectorAll('.ev-pools input, button[onclick^="evPoolDone"]')].every(x=>x.disabled) && e7.includes('evRoundSave') && e7.includes('evNewsSeen') && e7.includes('전략마케팅본부 팀원') && e7.includes('평가자가 포털을 못 써요') && e7.includes('평가자 없음') && e7.includes('evRaterAsk')
+      && hrTodo()[1]===KPI_LIVE.inbox.filter(i=>i.proxy).length + 2, '⑦ HR 관리(실제): 서버 can 이 모두 거짓이면 체크 · [확정]은 꺼지고 돌려보내기 · 되돌리기는 없음 · [마감일 저장] · 마감 알림 · 평가자 표시 · 숫자는 서버 todo.admin');
     const tr = n=>[...dom(e7).querySelectorAll('#evRoster tbody tr')].find(x=>x.textContent.includes(n)), t7 = tr('가상해외'), t1 = tr('가상인사');
     ok(t7.textContent.includes('포털 사용 꺼짐') && t7.textContent.includes('확정 KPI 없음') && t7.querySelector('.badge.success').textContent==='등급 평가' && !t7.textContent.includes('현장직') && dom(e7).querySelector('#evRoster .card-title').textContent.includes('등급 평가 1명')
       && t1.querySelectorAll('td.num')[0].textContent==='—' && !t1.textContent.includes('0.0') && t1.textContent.includes('본인 것은 다른 HR이 처리해요'), '⑦ 명단: 포털 사용 꺼짐 · 확정 KPI 없음 · "등급 평가" · 총점이 없는 본인 줄은 —');
     const b7 = dom(e7).querySelector('#evBoard'), r7 = dom(e7).querySelector('#evRoster');
-    ok(!b7.textContent.includes('현장직') && b7.textContent.includes('지각 횟수는 등급 평가(KPI 없는 분)만') && !b7.querySelector('[onclick*="e3"]') && b7.textContent.includes('모든 묶음이 확정되면 공개합니다.')
+    ok(!b7.textContent.includes('현장직') && b7.textContent.includes('지각 횟수는 등급 평가(KPI 없는 분)만') && b7.querySelector("[onclick=\"goTo('perf','e3')\"]") && b7.textContent.includes('모든 묶음이 확정되면 평가 결과 탭에서 공개합니다.')
       && !r7.textContent.includes('현장직') && r7.textContent.includes('지각은 등급 평가(KPI 없는 분)만 입력합니다') && r7.querySelector('summary').textContent.includes('등급 평가(KPI 없는 분)가 아니면 지각은 0'),
-      '⑪ 진행표 · 명단 도움말(실제): "현장직" 대신 "등급 평가(KPI 없는 분)" · 마지막 줄은 결과 탭 고리 없이 "모든 묶음이 확정되면 공개합니다."');
+      '⑪ 진행표 · 명단 도움말(실제): "현장직" 대신 "등급 평가(KPI 없는 분)" · 마지막 줄은 평가 결과 탭 고리 (① 넘김)');
     state = { ...state, people:[...state.people, row({ pid:8, name:'가상직원', out:{ at:'2026-10-21T00:00:00Z', why:'가상 휴직' }, stage:'SCORE', hidden:false, edited:'' })] };
     await evLiveLoad(); sent.length = 0;
     const pr = evParseAttendance('이름\t지각\t연차초과\n가상직원\t1\t2\n가상해외\t3\t1\n없는사람\t1\t1');
@@ -12184,13 +12197,108 @@ async function evLiveSelfCheck(){   // 브라우저 콘솔에서 await evLiveSel
       && d8.querySelector('.ev-quota').textContent.includes('70점 초과 (등급 평가(KPI 없는 분)는 제외)') && !d8.querySelector('.ev-quota').textContent.includes('현장직'), '⑧ KPI 없는 분(실제): "등급 평가" · 평가자 등급 대기 · 등급 단추는 서버 cap(C) · 본부장 마감 단추');
     kpiRole = 'ceo'; AUTH.me = { ...AUTH.me, user_id:6, position:'CEO' };
     ok(!evContent().includes('(대표이사로)') && evContent().includes('등급 배정 마감'), '⑧ 본부장이 없는 본부를 대표이사가 마감할 때는 "(대표이사로)"를 붙이지 않는다');
+    // ⑫ 평가 3단계 ② — 대표이사 확인 · HR 확정 · 돌려보내기 · 되돌리기: 체크 · 단추는 서버 pools[].can 대로, 보내는 본문 (되돌리기는 화면이 본 상태 from)
+    let res = null; const askd = [], saved = [];
+    window.fetch = async (u, o={})=>{ u = String(u); sent.push([u, o.body ? JSON.parse(o.body) : null, o.method || 'GET']);
+      return u.startsWith('/api/eval/state') ? json(state) : u.startsWith('/api/eval/results') ? json(res) : u.startsWith('/api/kpi/progress/') ? json({ error:'볼 수 없음' }, 403)
+        : u.startsWith('/api/eval/report') ? new Response(new Blob(['xlsx']), { status:200 }) : json({ ok:true, done:o.body ? JSON.parse(o.body).pools || [] : [] }); };
+    window.confirm = m=>{ askd.push(m); return true; }; rzSave = async (name, lines, file)=>{ saved.push([name, file instanceof Blob]); return true; };
+    evPoolSel.ceo.clear(); evPoolSel.hr.clear();
+    const pc = (key, st, c)=>({ ...pool, key, name:{ LEADERS:'전사 팀장', DIRECT:'직속부서 팀원' }[key] || '전략마케팅본부 팀원', state:st, hrSeen:true, log:{ closed:null, ceo:null, back:null, undo:null }, can:{ ...pool.can, ...c } });
+    AUTH.me = { ...AUTH.me, user_id:6, name:'가상대표', position:'CEO', is_hr:false }; kpiRole = 'ceo'; hrView = 'me'; evOpen = null;
+    state = { ...state, me:null, people:[row({ hidden:false, edited:'', stage:'CEO', grade:'B' })], pools:[pc('DIV:1', 'CEO', { confirm:true, back:true }), pc('LEADERS', 'WAIT', {}), pc('DIRECT', 'CEO', {})], todo:{ me:1, admin:0, e3:0 } };   // DIRECT: 상태는 CEO 여도 can 이 거짓 (맡은 HR 이 든 묶음 같은 경우)
+    await evLiveLoad();
+    const d12 = dom(evContent()), ck = [...d12.querySelectorAll('.ev-pools tbody input[type=checkbox]')];
+    ok(ck.length===3 && !ck[0].disabled && ck[1].disabled && ck[2].disabled && d12.querySelector(".ev-pools button[onclick=\"evReturnAsk('DIV:1')\"]") && !d12.querySelector('[onclick^="evUndo"]')
+      && d12.querySelector("button[onclick=\"evPoolDone('ceo')\"]").disabled && !d12.textContent.includes('다음 단계에서 열려요'), '⑫ 대표이사 확인 카드: 체크 · 돌려보내기는 서버 can 대로 — 상태가 CEO 여도 can 이 거짓이면 꺼짐 (고르기 전에는 [확인]도 꺼짐)');
+    evPoolPickAll('ceo', true);
+    ok([...evPoolSel.ceo].join()==='DIV:1', '⑫ 모두 고르기 = can.confirm 인 묶음만');
+    sent.length = 0; await evPoolDone('ceo');
+    ok(sent[0][0]==='/api/eval/pools/confirm' && JSON.stringify(sent[0][1])==='{"year":2026,"pools":["DIV:1"]}' && sent[1][0]==='/api/eval/state?year=2026' && !evPoolSel.ceo.size, '⑫ [선택한 1개 확인]: pools/confirm {year, pools} → 다시 읽기 · 고른 것을 비운다');
+    evReturnAsk('DIV:1'); document.getElementById('evRetWhy').value = '  가상 다시 봐 주세요 '; sent.length = 0; await evReturn('DIV:1');
+    ok(sent[0][0]==='/api/eval/pools/back' && JSON.stringify(sent[0][1])==='{"year":2026,"pool":"DIV:1","reason":"가상 다시 봐 주세요"}' && !document.getElementById('orgModal'), '⑫ 돌려보내기: pools/back {year, pool, reason(앞뒤 공백 뗌)} · 받은 뒤 창을 닫는다');
+    AUTH.me = { ...AUTH.me, user_id:1, name:'가상인사', position:null, is_hr:true }; kpiRole = 'hr'; hrView = 'admin';
+    state = { ...state, me:me7, pools:[pc('DIV:1', 'HR', { finalize:true, undo:true }), pc('LEADERS', 'DONE', { undo:true })], todo:{ me:0, admin:1, e3:2 } };
+    await evLiveLoad();
+    const d13 = dom(evContent()), hk = [...d13.querySelectorAll('.ev-pools tbody input[type=checkbox]')], ub = [...d13.querySelectorAll('.ev-pools [onclick^="evUndo"]')].map(b=>b.getAttribute('onclick'));
+    ok(hk.length===2 && !hk[0].disabled && hk[1].disabled && ub.join()==="evUndo('DIV:1'),evUndo('LEADERS')" && !d13.querySelector('[onclick^="evReturnAsk"]'), '⑫ HR 확정 카드: 체크 = can.finalize · 되돌리기 = can.undo');
+    ok(TODO.e3()===2 && hrTodo()[1]===KPI_LIVE.inbox.filter(i=>i.proxy).length + 1 + 2 && homePortalTasks().some(p=>p.title==='이의 신청 처리 2건'), '⑫ TODO.e3 = 서버 todo.e3 (메뉴 · 홈 오늘의 업무 · HR 관리 화면 숫자)');
+    evPoolPick('hr', 'DIV:1', true); sent.length = 0; await evPoolDone('hr');
+    ok(sent[0][0]==='/api/eval/pools/finalize' && JSON.stringify(sent[0][1])==='{"year":2026,"pools":["DIV:1"]}', '⑫ [선택한 1개 확정]: pools/finalize {year, pools}');
+    sent.length = 0; await evUndo('LEADERS'); await evUndo('DIV:1');
+    ok(sent.filter(x=>x[0]==='/api/eval/pools/undo').map(x=>JSON.stringify(x[1])).join()==='{"year":2026,"pool":"LEADERS","from":"DONE"},{"year":2026,"pool":"DIV:1","from":"HR"}', '⑫ 되돌리기: pools/undo {year, pool, from = 화면이 본 묶음 상태}');
+    // ⑬ 평가 결과 탭 (GET /api/eval/results — 받은 줄은 evFromLive)
+    const R0 = { years:[], year:2026, offline:false, released:null, appealDue:null, mine:null, team:[], appeals:[] }, NO = '아직 포털에서 공개한 평가 결과가 없어요.';
+    AUTH.me = { ...AUTH.me, user_id:3, name:'가상직원', position:null, is_hr:false }; kpiRole = 'emp'; hrView = 'me';
+    res = { ...R0, offline:true }; EV_RES.state = ''; await evResLoad();
+    const n0 = evResultContent();
+    ok(said(dom(n0)).trim()===NO && !n0.includes('시연') && !n0.includes('가상 자료'), '⑬ offline: 안내 한 줄 · 시연 글 · 역할 전환 안내 없음');
+    res = { ...R0 }; await evResLoad();
+    ok(said(dom(evResultContent())).trim()===NO, '⑬ 볼 결과도 공개한 해도 없으면 같은 안내');
+    const self3 = { pid:3, name:'가상직원', title:'사원', team:'국내영업팀', div:'전략마케팅본부', poolKey:'DIV:1', poolName:'전략마케팅본부 팀원', kpi:true, stage:'GRADE', out:null, noSelf:'', late:0, leaveOver:0, items:[it(11), it(12)],
+      ev:[{ rid:11, note:'가상 실적 하나', selfGrade:'A', files:[] }, { rid:12, note:'가상 실적 둘', selfGrade:'A', files:[] }], can:can(), hidden:false, appeal:null };
+    res = { ...R0, mine:self3 }; await evResLoad();
+    const r13 = evResultContent(), q13 = dom(r13);
+    ok(r13.includes('아직 공개 전') && !q13.querySelector('.evr-hero, textarea') && !r13.includes('시연') && !r13.includes('가상 자료') && [...q13.querySelectorAll('.pay-year')].map(b=>b.textContent).join()==='2026년', '⑬ 공개 전 본인: "아직 공개 전" · 시연 글 · 역할 전환 안내 없음 · 연도 단추 = 그해');
+    const full3 = row({ stage:'DONE', grade:'B', proposed:'B', hidden:false, edited:'', total:95, cap:'A', comment:'가상 평가자 코멘트',
+      ev:[{ rid:11, note:'가상 실적 하나', selfGrade:'A', grade:'A', files:[] }, { rid:12, note:'가상 실적 둘', selfGrade:'A', grade:'B', files:[] }] });
+    res = { ...R0, years:[2026], released:'2026-10-27T01:00:00Z', appealDue:kpiDay(5), mine:full3 }; await evResLoad();
+    const r14 = evResultContent(), q14 = dom(r14);
+    ok(q14.querySelector('.evr-grade').textContent==='B' && !r14.includes('능력급') && !r14.includes('연봉계약서') && q14.querySelector('.evr-note').textContent==='공개일 2026-10-27' && r14.includes('95.0점') && r14.includes('-5점')
+      && r14.includes('가상팀장 팀장') && r14.includes('이의 신청 D-5') && q14.querySelector('#evAp') && q14.querySelector('button[onclick="evAppealSubmit(3)"]'), '⑬ 공개 뒤 본인: 등급 · 서버 총점 · 공개일만 (능력급 칸 · 연봉계약서 줄 없음) · 평가자는 서버 rater · 이의 신청 D-5');
+    evType('ap-3', '  가상 이의 사유 ');
+    ok(leave(), '⑬ 적던 이의 신청 사유가 있으면 창을 닫기 전에 묻는다');
+    const ap = { reason:'가상 이의 사유', at:'2026-10-27T02:00:00Z', status:'OPEN', before:'B', answer:null, after:null, marks:null };
+    res = { ...res, mine:{ ...full3, appeal:ap } }; sent.length = 0; await evAppealSubmit(3);
+    ok(sent[0][0]==='/api/eval/me/appeal' && JSON.stringify(sent[0][1])==='{"year":2026,"reason":"가상 이의 사유"}' && sent.some(x=>x[0]==='/api/eval/results?year=2026') && !EV_LIVE.typed['ap-3'] && !leave(), '⑬ 이의 신청: me/appeal {year, reason} → 결과를 다시 읽고 적던 글을 버린다');
+    const r15 = evResultContent();
+    ok(r15.includes('HR 답변 대기') && r15.includes('이의 신청</b> · 2026-10-27 ·') && !r15.includes('evAppealSubmit'), '⑬ 신청한 뒤: HR 답변 대기 · 신청일은 한국 날짜');
+    AUTH.me = { ...AUTH.me, user_id:1, name:'가상인사', is_hr:true }; kpiRole = 'hr'; hrView = 'admin';
+    const ap3 = { ...full3, appeal:ap }, line7 = row({ pid:7, name:'가상해외', kpi:false, items:[], ev:[], stage:'DONE', grade:'C', total:null, cap:'C', hidden:false, edited:'' });
+    res = { ...R0, years:[2026], released:'2026-10-27T01:00:00Z', appealDue:kpiDay(5), team:[ap3, line7], appeals:[ap3] }; await evResLoad();
+    const r16 = evResultContent(), q16 = dom(r16);
+    ok(q16.querySelector('#evAnsG3') && q16.querySelector('#evAnsM3_0') && q16.querySelector('#evAnsM3_1') && q16.querySelector('#evAnsT3') && !r16.includes('계약서') && !r16.includes('시연') && r16.includes('공개일 <b>2026-10-27</b>')
+      && !q16.querySelector('[onclick="evPublish()"]') && r16.includes('>2명<') && q16.querySelector('[onclick="evReport()"]'), '⑬ HR: 답변 칸(실행목표 등급 · 등급 · 답변) · 공개일 · 계약서 칸 없음 · 전체 결과 2명 · 보고서 단추');
+    evType('ansm-3_0', 'S'); evType('ansg-3', 'A'); evType('ans-3', ' 가상 답변 ');
+    res = { ...res, appeals:[{ ...ap3, appeal:{ ...ap, status:'CEO', answer:'가상 답변', after:'A', marks:{ 11:'S' } } }] }; sent.length = 0; await evAnswerSubmit(3);
+    ok(sent[0][0]==='/api/eval/appeals/3/answer' && JSON.stringify(sent[0][1])==='{"year":2026,"grade":"A","answer":"가상 답변","marks":{"11":"S","12":"B"}}' && !Object.keys(EV_LIVE.typed).some(k=>k.startsWith('ans')),
+      '⑬ HR 답변: appeals/<uid>/answer {year, grade, answer, marks(실행목표 번호 → 등급)} · 적던 것을 버린다');
+    AUTH.me = { ...AUTH.me, user_id:6, name:'가상대표', position:'CEO', is_hr:false }; kpiRole = 'ceo'; hrView = 'me';
+    const c3 = { ...ap3, appeal:{ ...ap, status:'CEO', answer:'가상 답변', after:'A', marks:{ 11:'S' } } };
+    res = { ...res, team:[c3], appeals:[c3] }; await evResLoad();
+    const r17 = evResultContent(), q17 = dom(r17);
+    ok(q17.querySelector('button[onclick="evAppealCeo(3,true)"]') && q17.querySelector('button[onclick="evAppealCeo(3,false)"]') && r17.includes('가상 답변') && r17.includes('가상 실행목표 11 A → S') && r17.includes('전체 평가 결과'), '⑬ 대표이사: 등급 변경 확인 카드(바뀐 실행목표 등급) · 전체 평가 결과');
+    sent.length = 0; await evAppealCeo(3, true);
+    ok(sent[0][0]==='/api/eval/appeals/3/confirm' && JSON.stringify(sent[0][1])==='{"year":2026}', '⑬ 확인: appeals/<uid>/confirm {year}');
+    sent.length = 0; await evAppealCeo(3, false);
+    ok(sent[0][0]==='/api/eval/appeals/3/back' && JSON.stringify(sent[0][1])==='{"year":2026}', '⑬ HR로 돌려보내기: appeals/<uid>/back {year}');
+    AUTH.me = { ...AUTH.me, user_id:2, name:'가상팀장', position:'TEAM_LEADER' }; kpiRole = 'lead'; evResView = 3;
+    res = { ...res, team:[{ ...full3, appeal:{ status:'OPEN' } }], appeals:[] }; await evResLoad();
+    const r18 = evResultContent();
+    ok(r18.includes('팀원 평가 결과') && r18.includes('이의 처리 중') && !r18.includes('undefined') && !r18.includes('사유:'), '⑬ 팀장: 팀원 결과 · 이의 신청은 상태만 (사유 · 날짜 없음)');
+    evResView = null;
+    AUTH.me = { ...AUTH.me, user_id:1, name:'가상인사', position:null, is_hr:true }; kpiRole = 'hr'; hrView = 'admin';
+    res = { ...R0, team:[row({ stage:'DONE', grade:'B', hidden:false, edited:'' })] }; await evResLoad();
+    const r19 = evResultContent();
+    ok(r19.includes('onclick="evPublish()"') && !r19.includes('evDemoFill') && !r19.includes('시연'), '⑬ HR 공개 전: [전 직원에게 결과 공개] · 시연 단추 없음');
+    askd.length = 0; sent.length = 0; await evPublish();
+    ok(askd[0].includes('평일 9~18시에 공개하면 휴대폰 알림이 함께 가요.') && sent[0][0]==='/api/eval/admin/release' && JSON.stringify(sent[0][1])==='{"year":2026}', '⑬ 공개: 확인 창에 휴대폰 알림 줄 · admin/release {year}');
+    sent.length = 0; await evReport();
+    ok(sent[0][0]==='/api/eval/report?year=2026' && sent[0][2]==='GET' && !sent[0][1] && saved.join()==='2026년 인사평가 결과.xlsx,true', '⑬ 보고서 엑셀(실제): GET /api/eval/report?year= → 받은 파일을 rzSave');
+    // ① 넘김: 공개 뒤 진행표 끝 줄 = 평가 결과 탭 고리 · 서버 공개일 · 이의 신청 수
+    state = { ...state, round:{ ...R, released:'2026-10-27T01:00:00Z' }, people:[row({ stage:'DONE', hidden:false, edited:'', appeal:ap })], todo:{ me:0, admin:0, e3:0 } };
+    await evLiveLoad();
+    const b19 = dom(evContent()).querySelector('#evBoard');
+    ok(b19.querySelector("[onclick=\"goTo('perf','e3')\"]") && b19.textContent.includes('공개 2026-10-27') && b19.textContent.includes('이의 신청 1건'), '① 넘김: 진행표 끝 줄은 평가 결과 탭 고리 · 서버 공개일 · 이의 신청 수');
   } finally {
     Object.assign(AUTH, { live:keep.live, me:keep.me }); kpiRole = keep.role; hrView = keep.view; Object.assign(kpiPeriod, keep.period); Object.assign(evBands, keep.bands); evAttDone = keep.att; evRelease.at = keep.rel; evProxy = keep.proxy;
     for(const k of Object.keys(evPoolLog)) delete evPoolLog[k]; Object.assign(evPoolLog, keep.log); Object.assign(EV_LIVE, keep.ev);
     evPeople.length = 0; evPeople.push(...keep.people); evPeople[0].appeal = keep.ap; kpiMsg = keep.msg; evOpen = keep.open; window.fetch = keep.fetch; renderContent = keep.rc; Object.assign(MS_LIVE, keep.ms);
+    Object.assign(EV_RES, keep.res); rzSave = keep.rz; window.confirm = keep.cf; evResView = keep.rv; ['ceo', 'hr'].forEach(m=>{ evPoolSel[m].clear(); keep.sel[m].forEach(k=>evPoolSel[m].add(k)); });
+    if(document.getElementById('orgModal')) orgCloseModal(true);
   }
   await new Promise(r=>setTimeout(r, 30));   // 검사가 남긴 요청이 끝난 뒤에도 되돌린 그대로인지
-  ok(MS_LIVE.state===keep.ms.state && MS_LIVE.list===keep.ms.list && JSON.stringify(EV_LIVE)===JSON.stringify(keep.ev) && window.fetch===keep.fetch, '끝나면 바꾼 것을 모두 되돌리고 남는 요청이 없다');
+  ok(MS_LIVE.state===keep.ms.state && MS_LIVE.list===keep.ms.list && JSON.stringify(EV_LIVE)===JSON.stringify(keep.ev) && JSON.stringify(EV_RES)===JSON.stringify(keep.res) && window.fetch===keep.fetch && rzSave===keep.rz, '끝나면 바꾼 것을 모두 되돌리고 남는 요청이 없다');
   if(!AUTH.live) ok(evPeople.length===20 && evPeople[0].name==='홍길동' && evContent().includes('시연용 가상 인원'), '⑥ 실제 로그인이 끝나면 시연 evPeople 20명이 돌아온다');
   return 'evLiveSelfCheck 통과';
 }
@@ -12369,12 +12477,37 @@ const EV_HISTORY = {   // 시연용 지난 결과 (가상 값): [최종 등급, 
   line: { 2025:['B', '출하 라인에서 성실하게 근무했습니다.', '', []] },   // 현장직: 실행목표 없음
 };
 let evResYear = null, evResView = null;   // 보고 있는 연도 / 펼친 사람(pid)
+const EV_RES = { state:'', data:null, year:null };   // 실제 로그인 평가 결과 탭 (평가 3단계 ② — GET /api/eval/results). state: '' 아직 · loading · ok · err. data = 응답 (released 는 한국 날짜 · mine · team · appeals 는 evFromLive 로 바꾼 줄)
+async function evResLoad(year=EV_RES.year){   // 결과 탭을 처음 열 때 · 연도 단추 · 동작 뒤(evLiveLoad 가 함께). year 가 없으면 서버가 고른 해 (시작한 해 — 공개 전이어도, 아니면 공개한 해 중 최근)
+  if(!EV_RES.state) EV_RES.state = 'loading';
+  try {
+    const r = await fetch('/api/eval/results' + (year ? '?year='+(+year) : ''));
+    if(!r.ok) throw new Error(r.status);
+    const j = await r.json(), data = { ...j, released:j.released ? kpiYmd(j.released) : null, mine:j.mine && evFromLive(j.mine), team:j.team.map(evFromLive), appeals:j.appeals.map(evFromLive) };   // 먼저 다 바꿔 본다 (evLiveLoad 와 같다)
+    Object.assign(EV_RES, { state:'ok', year:j.year, data });
+    evResPrune();
+  } catch(e){ if(EV_RES.state!=='ok') EV_RES.state = 'err'; }
+  evLiveShow();
+}
+function evResPrune(){   // 다시 읽은 뒤: 이제 쓸 수 없는 이의 신청 사유(ap) · HR 답변 칸(ans 글 · ansg 등급 · ansm 실행목표 등급)의 적던 것은 버린다 — 나가기 확인을 붙잡지 않게
+  const d = EV_RES.data, T = EV_LIVE.typed;
+  for(const k of Object.keys(T)){
+    const kind = k.slice(0, k.indexOf('-')), pid = parseInt(k.slice(k.indexOf('-')+1)), a = d.appeals.find(p=>p.pid===pid && p.appeal.status==='OPEN')?.appeal;
+    if(kind==='ap' ? !(d.mine?.pid===pid && evCanAppeal(d.mine) && String(T[k]).trim()) : kind==='ans' ? !a || String(T[k]).trim()===(a.answer || '').trim() : kind==='ansg' || kind==='ansm' ? !a : false) delete T[k];
+  }
+}
+function evResAll(){ const d = EV_RES.data; return [d.mine, ...d.team].filter(p=>p && !p.out); }   // HR이 보는 그해 전원 — 본인 줄은 mine 으로 따로 온다 · 제외된 분은 뺀다 (시연 evActive 와 같다)
+function evResFind(pid){ const d = EV_RES.data; return [d.mine, ...d.appeals, ...d.team].find(p=>p && p.pid===pid); }
+function evResYearBtns(){   // 연도 단추 (R14): 포털에서 공개한 해 + 시작했고 아직 공개 전인 올해 회차 + 보고 있는 해
+  const ys = [...new Set([EV_RES.year, ...(EV_LIVE.round?.started ? [EV_LIVE.year] : []), ...EV_RES.data.years])].sort((a,b)=>b-a);
+  return `<span class="pay-years" role="group" aria-label="연도 선택">${ys.map(y=>`<button type="button" class="pay-year${y===EV_RES.year?' on':''}" onclick="evResView=null; evResLoad(${+y})" aria-pressed="${y===EV_RES.year}">${+y}년</button>`).join('')}</span>`;
+}
 
 /* ----- 규칙 (순수 로직, evrSelfCheck가 검증) ----- */
 function evAddDays(ymd, n){ const [y,m,d] = ymd.split('-').map(Number); return ctYmd(new Date(y, m-1, d+n)); }
-function evAppealDue(){ return evRelease.at ? evAddDays(evRelease.at, EV_APPEAL_DAYS) : null; }
-function evReleased(p){ return !!evRelease.at && p.stage==='DONE'; }
-function evCanAppeal(p, role, today){ return evReleased(p) && !!role && p.key===role && !p.appeal && today<=evAppealDue(); }
+function evAppealDue(){ if(AUTH.live) return EV_RES.data?.appealDue || null; return evRelease.at ? evAddDays(evRelease.at, EV_APPEAL_DAYS) : null; }   // 실제 로그인: 서버 appealDue (평가 결과 탭이 보는 해)
+function evReleased(p){ if(AUTH.live) return !!EV_RES.data?.released && p.stage==='DONE'; return !!evRelease.at && p.stage==='DONE'; }
+function evCanAppeal(p, role, today=kpiDay(0)){ if(AUTH.live) return evReleased(p) && p.pid===AUTH.me.user_id && !p.out && !p.appeal && today<=evAppealDue(); return evReleased(p) && !!role && p.key===role && !p.appeal && today<=evAppealDue(); }   // 실제 로그인: 본인(세션 번호) — 기간 · 한 번은 서버가 다시 본다
 function evFinalGrade(p){ return !evReleased(p) ? null : p.appeal && p.appeal.status!=='DONE' ? 'WAIT' : p.grade; }   // 연봉계약서로 넘기는 등급 (WAIT = 이의 처리 대기)
 function evAppeal(p, role, reason, today){
   if(!evCanAppeal(p, role, today)) return '이의 신청 기간이 아니거나 이미 신청했습니다.';
@@ -12426,7 +12559,7 @@ function evDemoFillData(stage='DONE'){   // 시연: 확정 상태(DONE) 또는 �
     p.stage = stage==='DONE' ? 'DONE' : evPool(p)==='direct' ? 'GRADE' : 'CEO';
   });
 }
-function evResultNow(p){ return { year:KPI_YEAR, grade:p.grade, comment:p.comment, head:p.headComment, bonus:p.bonus, bonusReason:p.bonusReason,
+function evResultNow(p){ return { year:AUTH.live ? EV_RES.year : KPI_YEAR, grade:p.grade, comment:p.comment, head:p.headComment, bonus:p.bonus, bonusReason:p.bonusReason,
   rows:evKpi(p).map((k,i)=>({ action:k.action, weight:k.weight, self:evEntry(p,i).selfGrade, grade:evEntry(p,i).grade })) }; }
 function evResultPast(key, y){
   const h = EV_HISTORY[key] && EV_HISTORY[key][y]; if(!h) return null;
@@ -12510,31 +12643,32 @@ function evrSelfCheck(){   // 브라우저 콘솔에서 evrSelfCheck() 실행 (�
 function evrGrade(g){ return `<span class="evr-g${g==='C'||g==='D'?' low':''}">${g||'—'}</span>`; }
 function evDaysLeft(due){ return Math.round((Date.parse(due) - Date.parse(kpiDay(0)))/864e5); }
 function evResultCard(p, r, past){
-  const fg = past ? r.grade : evFinalGrade(p), wait = fg==='WAIT';
-  const score = evScore(r.rows, r.bonus), self = evScore(r.rows.map(x=>({ weight:x.weight, grade:x.self })));
+  const fg = past ? r.grade : evFinalGrade(p), wait = fg==='WAIT', L = AUTH.live;
+  const score = L ? (p.total ?? 0) : evScore(r.rows, r.bonus), self = evScore(r.rows.map(x=>({ weight:x.weight, grade:x.self })));   // 실제 로그인 총점은 서버 값 (자기평가 대비만 화면이 셈한다)
   const diff = Math.round((score-self)*10)/10, line = !r.rows.length;   // 실행목표가 없으면 현장직(팀장 평가)
   const rows = r.rows.map(x=>`<tr><td>${escapeHtml(x.action)}</td><td class="num">${x.weight}%</td><td>${x.self||'—'}</td><td>${evrGrade(x.grade)}</td><td class="num">${x.grade?((+x.weight)*EV_PCT[x.grade]/100).toFixed(1):'—'}</td></tr>`).join('');
   const changed = !past && p.appeal && p.appeal.status==='DONE' && p.appeal.before!==p.appeal.after ? ` · 이의 신청으로 ${p.appeal.before} → ${p.appeal.after}` : '';
-  const note = past ? `${r.year}년 확정 결과` : `공개일 ${evRelease.at}${changed} · 이 등급이 ${ctPeriod(new Date()).year}년 3월 연봉계약서 능력급에 반영됩니다${wait?' (이의 처리 후)':''}`;
+  const note = past ? `${r.year}년 확정 결과` : L ? `${EV_RES.data.released ? `공개일 ${EV_RES.data.released}` : '공개 전'}${changed}` : `공개일 ${evRelease.at}${changed} · 이 등급이 ${ctPeriod(new Date()).year}년 3월 연봉계약서 능력급에 반영됩니다${wait?' (이의 처리 후)':''}`;
   return `<section class="evr-hero" aria-label="${r.year}년 최종 등급">
       <div><div class="evr-grade${wait?' wait':''}">${wait ? '처리 중' : r.grade}</div><div class="evr-cap">${wait ? '이의 신청 처리 중' : '최종 등급'}</div></div>
       <div class="evr-tiles">
-        ${line ? `<div class="evr-tile"><small>평가 방식</small><b>팀장 평가</b></div><div class="evr-tile"><small>근태</small><b class="evr-att">지각 ${past?'—':p.late+'회'} · 연차 초과 ${past?'—':p.leaveOver+'일'}</b></div>`
+        ${line ? `<div class="evr-tile"><small>평가 방식</small><b>${L ? '등급 평가' : '팀장 평가'}</b></div><div class="evr-tile"><small>근태</small><b class="evr-att">지각 ${past?'—':p.late+'회'} · 연차 초과 ${past?'—':p.leaveOver+'일'}</b></div>`
           : `<div class="evr-tile"><small>총점</small><b>${score.toFixed(1)}점</b></div><div class="evr-tile"><small>자기평가 대비</small><b>${diff===0 ? '같음' : (diff>0?'+':'')+diff+'점'}</b></div>`}
-        <div class="evr-tile"><small>능력급 인상률</small><b>${past ? '—' : wait ? '대기' : '+'+evRaisePct(p, fg)+'%'}</b></div>
+        ${L ? '' : `<div class="evr-tile"><small>능력급 인상률</small><b>${past ? '—' : wait ? '대기' : '+'+evRaisePct(p, fg)+'%'}</b></div>`}
         <div class="evr-note">${note}</div>
       </div>
     </section>
     ${line ? '' : `<div class="ct-tbl" style="margin-top:12px;"><table><thead><tr><th>실행목표</th><th class="num">가중치</th><th>자기평가</th><th>최종</th><th class="num">점수</th></tr></thead>
       <tbody>${rows}${r.bonus?`<tr><td colspan="4">가점 (${escapeHtml(r.bonusReason||'')})</td><td class="num">+${r.bonus}</td></tr>`:''}</tbody></table></div>`}
     <div class="evr-comments">
-      <div class="evr-comment"><small>${line?'팀장':'평가자'}${past?'':' '+escapeHtml(evEvaluatorName(p))}</small>${escapeHtml(r.comment)||'—'}</div>
+      <div class="evr-comment"><small>${line && !L ? '팀장' : '평가자'}${past?'':' '+escapeHtml(evEvaluatorName(p))}</small>${escapeHtml(r.comment)||'—'}</div>
       ${r.head ? `<div class="evr-comment"><small>${past ? '본부장' : evUpper(p)}</small>${escapeHtml(r.head)}</div>` : ''}
     </div>`;
 }
 function evAppealBox(p, own){
   const a = p.appeal, due = evAppealDue();
-  if(a){ const full = !own && (kpiIsHr() || kpiRole==='ceo');   // 대표이사 확인을 기다리는 변경 내용은 HR·대표이사에게만 보인다
+  if(a){ if(AUTH.live && !('reason' in a)) return `<div class="evr-appeal"><b>이의 신청</b> · <span class="badge ${a.status==='DONE' ? 'success' : 'warning'}">${a.status==='DONE' ? '답변 완료' : '처리 중'}</span></div>`;   // 서버가 상태만 준다 (본인 · HR · 대표이사가 아닌 분)
+    const full = !own && (kpiIsHr() || kpiRole==='ceo');   // 대표이사 확인을 기다리는 변경 내용은 HR·대표이사에게만 보인다
     const badge = a.status==='DONE' ? `<span class="badge success">답변 완료 · ${a.before===a.after?'등급 유지':`${a.before} → ${a.after}`}</span>`
       : a.status==='CEO' && full ? `<span class="badge warning">대표이사 확인 대기 · ${a.before} → ${a.after}</span>` : `<span class="badge warning">${a.status==='OPEN' ? 'HR 답변 대기' : '처리 중'}</span>`;
     return `<div class="evr-appeal"><b>이의 신청</b> · ${a.at} · ${badge}
@@ -12543,11 +12677,15 @@ function evAppealBox(p, own){
   if(!evCanAppeal(p, kpiRole, kpiDay(0))) return `<div class="evr-appeal"><span class="list-sub" style="margin:0;">이의 신청 기간(${due}까지)이 끝났습니다.</span></div>`;
   return `<div class="evr-appeal">
       <div style="margin-bottom:8px;"><b class="d">이의 신청 D-${evDaysLeft(due)}</b> · ${due}까지 · 결과에 동의하지 않으면 사유를 적어 HR에 보냅니다. 한 번만 신청할 수 있습니다.</div>
-      <div class="field"><label for="evAp">이의 신청 사유</label><textarea id="evAp" rows="3" placeholder="어떤 KPI의 어떤 실적이 빠졌거나 다르게 평가됐는지 적어 주세요"></textarea></div>
+      <div class="field"><label for="evAp">이의 신청 사유</label><textarea id="evAp" rows="3" placeholder="어떤 KPI의 어떤 실적이 빠졌거나 다르게 평가됐는지 적어 주세요"${AUTH.live ? ` oninput="evType('ap-${+p.pid}',this.value)"` : ''}>${AUTH.live ? escapeHtml(evTyped('ap-'+p.pid, '')) : ''}</textarea></div>
       <div style="text-align:right; margin-top:8px;"><button class="btn primary" onclick="evAppealSubmit(${p.pid})">이의 신청하기</button></div>
     </div>`;
 }
 function evMyResult(me){
+  if(AUTH.live){ const Y = +EV_RES.year, note = t=>`<div class="placeholder-note" style="margin:0;">${t}</div>`;   // 실제 로그인: 그해 내 줄 하나 (지난 결과는 연도 단추로 서버에서 — EV_HISTORY 는 쓰지 않는다). me 가 없으면 그해 평가 대상이 아니다
+    const body = !me ? note(`${Y}년 평가 대상이 아니에요.`) : me.out ? note(`${Y}년 평가 대상이 아니에요. (${escapeHtml(me.out.why)})`) : evReleased(me) ? evResultCard(me, evResultNow(me), false) + evAppealBox(me, true)
+      : note(`${Y}년 결과는 아직 공개 전이에요. HR이 공개하면 여기에 보여요. (지금 단계: ${evStageLabel(me)})`);
+    return `<div class="card" style="margin-bottom:14px;"><div class="card-title"><span>나의 평가 결과</span>${evResYearBtns()}</div>${body}</div>`; }
   const years = [KPI_YEAR, ...Object.keys(EV_HISTORY[me.key]||{}).map(Number).sort((a,b)=>b-a)];
   if(!years.includes(evResYear)) evResYear = KPI_YEAR;
   const btns = years.map(y=>`<button type="button" class="pay-year${y===evResYear?' on':''}" onclick="evResYear=${y}; renderContent()" aria-pressed="${y===evResYear}">${y}년</button>`).join('');
@@ -12558,69 +12696,76 @@ function evMyResult(me){
 }
 function evPersonRows(list, hr){
   return list.map(p=>{ const open = evResView===p.pid, a = p.appeal;
-    return `<tr><td>${escapeHtml(p.name)} ${escapeHtml(p.title)}<div class="list-sub">${escapeHtml(p.team||'본부 직속')}</div></td><td>${evReleased(p)||hr ? evrGrade(p.grade) : '—'}</td><td class="num">${evIsLine(p) ? '—' : evTotal(p).toFixed(1)}</td>
+    return `<tr><td>${escapeHtml(p.name)} ${escapeHtml(p.title)}<div class="list-sub">${escapeHtml(p.team||'본부 직속')}</div></td><td>${evReleased(p)||hr ? evrGrade(p.grade) : '—'}</td><td class="num">${evIsLine(p) ? '—' : evTotalText(p)}</td>
       <td>${a ? (a.status!=='DONE' ? '<span class="badge warning">이의 처리 중</span>' : '<span class="badge success">이의 답변 완료</span>') : '—'}</td>
       <td><button class="btn sm" onclick="evResView=${open?'null':p.pid}; kpiFlash(null)">${open?'닫기':'보기'}</button></td></tr>
       ${open ? `<tr><td colspan="5"><div class="ev-panel">${evResultCard(p, evResultNow(p), false)}${evAppealBox(p, false)}</div></td></tr>` : ''}`; }).join('');
 }
-function evTeamResults(role){   // 본부장 = 자기 본부, 대표이사 = 전체(모든 묶음을 확인하는 사람), 팀장 = 자기 팀원
-  const me = evMe(), list = role==='head' ? evActive().filter(p=>p.div===EV_DIVISION) : role==='ceo' ? evActive() : me ? evActive().filter(p=>p.evaluator===me.pid) : [];
-  if(!list.length) return '';
-  const body = evRelease.at ? `<div class="ct-tbl"><table><thead><tr><th>이름</th><th>최종 등급</th><th class="num">총점</th><th>이의 신청</th><th></th></tr></thead><tbody>${evPersonRows(list, false)}</tbody></table></div>`
+function evTeamResults(role){   // 본부장 = 자기 본부, 대표이사 = 전체(모든 묶음을 확인하는 사람), 팀장 = 자기 팀원. 실제 로그인: 서버가 조직 위치로 정한 범위 — 공개 뒤에만 온다 (HR은 관리 화면에서 본다)
+  const L = AUTH.live, d = EV_RES.data, me = evMe(), rel = L ? !!d.released : !!evRelease.at;
+  const list = L ? d.team.filter(p=>!p.out) : role==='head' ? evActive().filter(p=>p.div===EV_DIVISION) : role==='ceo' ? evActive() : me ? evActive().filter(p=>p.evaluator===me.pid) : [];
+  if(L ? kpiIsHr() || !(rel ? list.length : ['lead', 'head', 'ceo'].includes(role)) : !list.length) return '';   // 실제 로그인 공개 전: 몇 명인지 모르니 안내만
+  const body = rel ? `<div class="ct-tbl"><table><thead><tr><th>이름</th><th>최종 등급</th><th class="num">총점</th><th>이의 신청</th><th></th></tr></thead><tbody>${evPersonRows(list, false)}</tbody></table></div>`
     : '<div class="placeholder-note" style="margin:0;">HR이 결과를 공개하면 볼 수 있습니다.</div>';
-  return `<div class="card" style="margin-bottom:14px;"><div class="card-title"><span>${role==='head' ? '본부' : role==='ceo' ? '전체' : '팀원'} 평가 결과 <span class="more">${list.length}명</span></span></div>${body}</div>`;
+  return `<div class="card" style="margin-bottom:14px;"><div class="card-title"><span>${role==='head' ? '본부' : role==='ceo' ? '전체' : '팀원'} 평가 결과${L && !rel ? '' : ` <span class="more">${list.length}명</span>`}</span>${L && (role==='head' || role==='ceo') ? evResYearBtns() : ''}</div>${body}</div>`;   // 내 결과 카드가 없는 분(본부장 · 대표이사)은 연도 단추를 여기에
 }
-function evAppealCeoCard(){   // 대표이사(또는 맡은 HR): HR이 등급을 바꾸기로 답변한 이의 신청을 확인한다
-  const list = evPeople.filter(p=>p.appeal && p.appeal.status==='CEO');
+function evAppealCeoCard(){   // 대표이사(또는 맡은 HR): HR이 등급을 바꾸기로 답변한 이의 신청을 확인한다. 실제 로그인: 서버 appeals — 내가 확인할 수 있는 것만 온다 (그 답변을 쓴 HR은 빠진다)
+  const L = AUTH.live, list = L ? EV_RES.data.appeals.filter(p=>p.appeal.status==='CEO') : evPeople.filter(p=>p.appeal && p.appeal.status==='CEO');
   if(!list.length) return '';
   return `<div class="card" style="margin-bottom:14px;"><div class="card-title"><span>이의 신청 — 등급 변경 확인 <span class="more">${list.length}건</span></span></div>
     <div class="list-sub" style="margin-bottom:8px;">HR이 검토해 등급을 바꾸기로 한 건입니다. 확인하면 등급이 바뀌고 직원에게 답변이 갑니다. 동의하지 않으면 HR로 돌려보냅니다.</div>
-    ${list.map(p=>{ const a = p.appeal, can = evCeoActs(p);
-      return `<div class="ev-panel"><div><b>${escapeHtml(p.name)} ${escapeHtml(p.title)}</b> · ${evrGrade(a.before)} → ${evrGrade(a.after)}${a.marks ? ` · 총점 ${evTotal(p).toFixed(1)} → ${evMarksTotal(p, a.marks).toFixed(1)}` : ''} · 신청 ${a.at}</div>
+    ${list.map(p=>{ const a = p.appeal, can = L || evCeoActs(p);
+      return `<div class="ev-panel"><div><b>${escapeHtml(p.name)} ${escapeHtml(p.title)}</b> · ${evrGrade(a.before)} → ${evrGrade(a.after)}${a.marks ? (L ? ` · ${evMarksText(p, a.marks)}` : ` · 총점 ${evTotal(p).toFixed(1)} → ${evMarksTotal(p, a.marks).toFixed(1)}`) : ''} · 신청 ${a.at}</div>
         <div class="list-sub">사유: ${escapeHtml(a.reason)}</div><div style="margin-top:4px;"><b>HR 답변</b> ${escapeHtml(a.answer)}</div>
         <div style="display:flex; gap:8px; justify-content:flex-end; align-items:center; margin-top:8px;">${can ? `<button class="btn sm" onclick="evAppealCeo(${p.pid},false)">HR로 돌려보내기</button><button class="btn primary sm" onclick="evAppealCeo(${p.pid},true)">확인 (등급 변경)</button>` : '<span class="list-sub" style="margin:0;">본인 것은 대신 확인할 수 없습니다.</span>'}</div></div>`; }).join('')}
   </div>`;
 }
+function evMarksText(p, marks){ return evKpi(p).map((k,i)=>marks[k.rid] ? `${escapeHtml(k.action)} ${evEntry(p,i).grade || '—'} → ${marks[k.rid]}` : '').filter(Boolean).join(' · '); }   // 실제 로그인: 이의 답변으로 바뀌는 실행목표 등급 (서버 marks — 바뀐 것만, 지금 등급 위에 얹어 보인다. 총점은 서버가 확인할 때 다시 셈한다)
 function evResHrPanel(){
-  const done = evActive().filter(p=>p.stage==='DONE').length, appeals = evActive().filter(p=>p.appeal), open = appeals.filter(p=>p.appeal.status==='OPEN');
+  const L = AUTH.live, all = L ? evResAll() : evActive(), rel = L ? EV_RES.data.released : evRelease.at;   // 실제 로그인: 결과 탭이 보는 해 (서버)
+  const done = all.filter(p=>p.stage==='DONE').length, appeals = all.filter(p=>p.appeal), open = L ? EV_RES.data.appeals.filter(p=>p.appeal.status==='OPEN') : appeals.filter(p=>p.appeal.status==='OPEN');   // 답변할 것 = 서버 appeals (본인 것은 다른 HR이)
   const toCt = evActive().filter(p=>{ const g = evFinalGrade(p); return g && g!=='WAIT'; }).length;
   const stat = (l, v, warn)=>`<div class="evr-stat"><small>${l}</small><b${warn?' class="warn"':''}>${v}</b></div>`;
-  const head = evRelease.at
-    ? `<span class="list-sub" style="margin:0;">공개일 <b>${evRelease.at}</b> · 이의 신청 마감 <b>${evAppealDue()}</b></span>`
-    : `<span style="display:flex; gap:8px; flex-wrap:wrap;">${done<evActive().length ? `<button class="btn sm" onclick="evDemoFill()">시연: 확정 상태로 채우기</button>` : ''}<button class="btn primary" onclick="evPublish()">전 직원에게 결과 공개</button></span>`;
-  const answerForm = p=>`<div class="ev-panel" style="margin-top:8px;">
+  const head = rel
+    ? `<span class="list-sub" style="margin:0;">공개일 <b>${rel}</b> · 이의 신청 마감 <b>${evAppealDue()}</b></span>`
+    : `<span style="display:flex; gap:8px; flex-wrap:wrap;">${!L && done<all.length ? `<button class="btn sm" onclick="evDemoFill()">시연: 확정 상태로 채우기</button>` : ''}<button class="btn primary" onclick="evPublish()">전 직원에게 결과 공개</button></span>`;
+  const answerForm = p=>{ const pid = +p.pid, T = (k, v)=>L ? evTyped(k, v) : v, on = k=>L ? ` onchange="evType('${k}',this.value)"` : '';   // 실제 로그인: 고른 등급 · 적던 답변은 EV_LIVE.typed — 다시 그려도 남는다
+    return `<div class="ev-panel" style="margin-top:8px;">
       <div><b>${escapeHtml(p.name)} ${escapeHtml(p.title)}</b> · 현재 ${evrGrade(p.grade)} · 신청 ${p.appeal.at}</div>
       <div class="list-sub">"${escapeHtml(p.appeal.reason)}"</div>
-      ${evIsLine(p) ? '' : `<div class="list-sub" style="margin-top:8px;">점수를 고칠 항목이 있으면 바꿔 주세요. 등급은 고친 점수의 기준 안에서만 줄 수 있습니다 (지금 총점 ${evTotal(p).toFixed(1)}점 → ${evBand(evTotal(p))}까지). 정원은 따지지 않습니다.</div>
-        <div style="display:flex; gap:12px; flex-wrap:wrap; margin-top:4px;">${evKpi(p).map((k,i)=>`<label style="display:inline-flex; gap:5px; align-items:center; margin:0; font-size:var(--fs-xs);">${escapeHtml(k.action)} <select id="evAnsM${p.pid}_${i}" aria-label="${escapeHtml(k.action)} 달성 등급">${KPI_GRADES.map(([g])=>`<option ${g===evEntry(p,i).grade?'selected':''}>${g}</option>`).join('')}</select></label>`).join('')}</div>`}
+      ${evIsLine(p) ? '' : `<div class="list-sub" style="margin-top:8px;">점수를 고칠 항목이 있으면 바꿔 주세요. 등급은 고친 점수의 기준 안에서만 줄 수 있습니다 (지금 총점 ${evTotalText(p)}점 → ${L ? p.cap : evBand(evTotal(p))}까지). 정원은 따지지 않습니다.</div>
+        <div style="display:flex; gap:12px; flex-wrap:wrap; margin-top:4px;">${evKpi(p).map((k,i)=>`<label style="display:inline-flex; gap:5px; align-items:center; margin:0; font-size:var(--fs-xs);">${escapeHtml(k.action)} <select id="evAnsM${p.pid}_${i}" aria-label="${escapeHtml(k.action)} 달성 등급"${on(`ansm-${pid}_${i}`)}>${KPI_GRADES.map(([g])=>`<option ${g===T(`ansm-${pid}_${i}`, evEntry(p,i).grade)?'selected':''}>${g}</option>`).join('')}</select></label>`).join('')}</div>`}
       <div class="field-row" style="margin-top:8px;">
-        <div class="field" style="max-width:200px;"><label for="evAnsG${p.pid}">최종 등급 (그대로 두면 유지)</label><select id="evAnsG${p.pid}">${KPI_GRADES.map(([g])=>`<option ${g===p.grade?'selected':''}>${g}</option>`).join('')}</select></div>
-        <div class="field"><label for="evAnsT${p.pid}">답변 (직원에게 공개)</label><textarea id="evAnsT${p.pid}" rows="2" placeholder="검토한 내용과 결론"></textarea></div>
+        <div class="field" style="max-width:200px;"><label for="evAnsG${p.pid}">최종 등급 (그대로 두면 유지)</label><select id="evAnsG${p.pid}"${on('ansg-'+pid)}>${KPI_GRADES.map(([g])=>`<option ${g===T('ansg-'+pid, p.grade)?'selected':''}>${g}</option>`).join('')}</select></div>
+        <div class="field"><label for="evAnsT${p.pid}">답변 (직원에게 공개)</label><textarea id="evAnsT${p.pid}" rows="2" placeholder="검토한 내용과 결론"${L ? ` oninput="evType('ans-${pid}',this.value)"` : ''}>${L ? escapeHtml(evTyped('ans-'+pid, p.appeal.answer || '')) : ''}</textarea></div>
       </div>
       <div style="text-align:right;"><button class="btn primary sm" onclick="evAnswerSubmit(${p.pid})">답변 보내기</button></div>
-    </div>`;
+    </div>`; };
   return `<div class="card" style="margin-bottom:14px;">
       <div class="card-title"><span>결과 공개 · 이의 신청 (HR)</span>${head}</div>
-      <div class="evr-stats">${stat('확정', `${done}/${evActive().length}명`)}${stat('이의 신청', appeals.length+'건')}${stat('답변 대기', open.length+'건', open.length>0)}${stat('계약서 반영 가능', toCt+'명')}</div>
-      ${!evRelease.at ? `<div class="list-sub">평가 진행 탭에서 대표이사 확인과 HR 확정을 모두 끝낸 뒤 공개합니다. 공개하면 모두 같은 날 결과를 보고, 그날부터 ${EV_APPEAL_DAYS}일 동안 이의 신청을 받습니다.</div>` : ''}
+      <div class="evr-stats">${stat('확정', `${done}/${all.length}명`)}${stat('이의 신청', appeals.length+'건')}${stat('답변 대기', open.length+'건', open.length>0)}${L ? '' : stat('계약서 반영 가능', toCt+'명')}</div>
+      ${!rel ? `<div class="list-sub">평가 진행 탭에서 대표이사 확인과 HR 확정을 모두 끝낸 뒤 공개합니다. 공개하면 모두 같은 날 결과를 보고, 그날부터 ${EV_APPEAL_DAYS}일 동안 이의 신청을 받습니다.</div>` : ''}
       ${appeals.some(p=>p.appeal.status==='CEO') ? kpiNote('등급 변경이 대표이사 확인을 기다립니다: ' + appeals.filter(p=>p.appeal.status==='CEO').map(p=>`${escapeHtml(p.name)} (${p.appeal.before} → ${p.appeal.after})`).join(', '), 'warning') : ''}
       ${open.map(answerForm).join('')}
     </div>
-    <div class="card" style="margin-bottom:14px;"><div class="card-title"><span>전체 결과 <span class="more">시연 인원 ${evActive().length}명</span></span><button type="button" class="btn sm" onclick="evReport()" title="요약(표·그래프)과 명단이 든 엑셀 파일">${icon('download')}보고서 엑셀 내려받기</button></div>
-      <div class="ct-tbl"><table><thead><tr><th>이름</th><th>최종 등급</th><th class="num">총점</th><th>이의 신청</th><th></th></tr></thead><tbody>${evPersonRows(evActive(), true)}</tbody></table></div></div>`;
+    <div class="card" style="margin-bottom:14px;"><div class="card-title"><span>전체 결과 <span class="more">${L ? '' : '시연 인원 '}${all.length}명</span></span>${L ? `<span style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">${evResYearBtns()}` : ''}<button type="button" class="btn sm" onclick="evReport()" title="요약(표·그래프)과 명단이 든 엑셀 파일">${icon('download')}보고서 엑셀 내려받기</button>${L ? '</span>' : ''}</div>
+      <div class="ct-tbl"><table><thead><tr><th>이름</th><th>최종 등급</th><th class="num">총점</th><th>이의 신청</th><th></th></tr></thead><tbody>${evPersonRows(all, true)}</tbody></table></div></div>`;
 }
 
 /* ----- 동작 ----- */
 function evDemoFill(){ evDemoFillData(); evPoolKeys().forEach(k=>{ evPoolLog[k].ceo = evPoolLog[k].ceo || { at:kpiDay(0), by:EV_RATERS.ceo }; }); kpiFlash(`시연용으로 ${evPeople.length}명 모두 확정까지 끝난 상태로 채웠습니다. 이제 "전 직원에게 결과 공개"를 누르세요.`); }
-async function evReport(){   // HR: 보고용 엑셀 (요약 · 명단). 꾸민 표와 그래프는 서버가 만들고(HR만), 저장할 곳은 연봉 인상 계산처럼 묻는다
+async function evReport(){   // HR: 보고용 엑셀 (요약 · 명단). 꾸민 표와 그래프는 서버가 만들고(HR만), 저장할 곳은 연봉 인상 계산처럼 묻는다. 실제 로그인: 서버가 그해 평가를 DB 에서 읽어 만든다 (GET — 공개 전에도)
   if(!orgIsHr()) return;
-  const r = await fetch('/api/eval/report', { method:'POST', headers:{ 'Content-Type':'application/json' }, body:JSON.stringify(evReportData()) }).catch(()=>null);
+  const Y = AUTH.live ? +EV_RES.year : KPI_YEAR;
+  const r = await (AUTH.live ? fetch(`/api/eval/report?year=${Y}`) : fetch('/api/eval/report', { method:'POST', headers:{ 'Content-Type':'application/json' }, body:JSON.stringify(evReportData()) })).catch(()=>null);
   if(!r || !r.ok) return kpiFlash(r && r.status===403 ? 'HR만 내려받을 수 있습니다.' : '보고서를 만들지 못했습니다. 잠시 뒤 다시 눌러 주세요.', 'danger');
-  rzSave(`${KPI_YEAR}년 인사평가 결과.xlsx`, null, await r.blob());
+  rzSave(`${Y}년 인사평가 결과.xlsx`, null, await r.blob());
 }
 function evPublish(){
   if(!orgIsHr()) return;
-  if(evActive().some(p=>p.stage!=='DONE')) return kpiFlash('아직 확정되지 않은 사람이 있습니다. 평가 진행 탭에서 대표이사 확인과 HR 확정을 먼저 끝내 주세요.', 'danger');
+  if((AUTH.live ? evResAll() : evActive()).some(p=>p.stage!=='DONE')) return kpiFlash('아직 확정되지 않은 사람이 있습니다. 평가 진행 탭에서 대표이사 확인과 HR 확정을 먼저 끝내 주세요.', 'danger');
+  if(AUTH.live){ if(!confirm(`평가 결과를 전 직원에게 공개할까요? 오늘부터 ${EV_APPEAL_DAYS}일 동안 이의 신청을 받아요. 공개는 되돌릴 수 없어요.\n\n평일 9~18시에 공개하면 휴대폰 알림이 함께 가요.`)) return;   // 밤 · 주말에는 휴대폰이 울리지 않는다 (알림 규칙)
+    return evLiveDo('/api/eval/admin/release', { year:EV_RES.year }, `결과를 공개했어요. 오늘부터 ${EV_APPEAL_DAYS}일 동안 이의 신청을 받아요.`); }   // 연봉계약서와 잇지 않는다 (R14 — evSyncContracts 를 부르지 않는다)
   if(!confirm(`평가 결과를 전 직원에게 공개할까요? 오늘부터 ${EV_APPEAL_DAYS}일 동안 이의 신청을 받습니다.`)) return;
   evRelease.at = kpiDay(0);
   const park = evFind(4);   // 시연: 이의 신청 예시 1건 (박영업은 시연 역할이 없어 직접 신청할 수 없다)
@@ -12629,28 +12774,42 @@ function evPublish(){
   kpiFlash('결과를 공개했습니다. 확정 등급은 작성 중인 연봉계약서 능력급에 반영됐고, 이의 신청 중인 사람은 처리 후 반영됩니다.');
 }
 function evAppealSubmit(pid){
+  if(AUTH.live){ const why = String(evTyped('ap-'+pid, '')).trim();   // 적던 사유(EV_LIVE.typed) — 기간 · 한 번 · 글자 수(500)는 서버가 다시 본다. 다시 읽으면 evResPrune 이 적던 것을 버린다
+    if(!why) return kpiFlash('이의 신청 사유를 적어 주세요.', 'danger');
+    return evLiveDo('/api/eval/me/appeal', { year:EV_RES.year, reason:why }, '이의 신청을 보냈어요. HR 답변이 오면 이 화면에서 볼 수 있어요.'); }
   const err = evAppeal(evFind(pid), kpiRole, document.getElementById('evAp').value, kpiDay(0));
   if(err) return kpiFlash(escapeHtml(err), 'danger');
   evSyncContracts(); kpiFlash('이의 신청을 보냈습니다. HR 답변이 오면 이 화면에서 볼 수 있습니다.');
 }
 function evAppealCeo(pid, yes){
+  if(AUTH.live){ const p = evResFind(pid);   // 권한(답변한 HR은 못 함) · 상태 · 점수 기준은 서버가 다시 본다
+    return evLiveDo(`/api/eval/appeals/${+pid}/${yes ? 'confirm' : 'back'}`, { year:EV_RES.year }, yes ? `${escapeHtml(p.name)} 님의 등급을 ${escapeHtml(p.appeal.after)}(으)로 바꾸고 답변을 보냈어요.` : 'HR로 돌려보냈어요. HR이 다시 답변해요.'); }
   const p = evFind(pid), err = yes ? evAppealOk(p, evCeoActs(p)) : evAppealBack(p, evCeoActs(p));
   if(err) return kpiFlash(escapeHtml(err).replace(/\n/g,'<br>'), 'danger');
   evSyncContracts(); kpiFlash(yes ? `${escapeHtml(p.name)} 님의 등급을 ${p.grade}(으)로 바꾸고 답변을 보냈습니다.` : 'HR로 돌려보냈습니다. HR이 다시 답변합니다.');
 }
 function evAnswerSubmit(pid){
+  if(AUTH.live){ const p = evResFind(pid), a = p.appeal, g = evTyped('ansg-'+pid, p.grade), t = String(evTyped('ans-'+pid, a.answer || '')).trim();   // 고른 등급 · 적던 답변(EV_LIVE.typed) — 점수 기준 · 연차는 서버가 다시 본다 (정원은 따지지 않는다)
+    if(!t) return kpiFlash('답변을 적어 주세요.', 'danger');
+    const marks = evIsLine(p) ? null : Object.fromEntries(evKpi(p).map((k,i)=>[k.rid, evTyped(`ansm-${pid}_${i}`, evEntry(p,i).grade)]).filter(([, g])=>g));   // 실행목표 번호 → 등급 (서버는 지금과 다른 것만 남긴다)
+    return evLiveDo(`/api/eval/appeals/${+pid}/answer`, { year:EV_RES.year, grade:g, answer:t, ...(marks ? { marks } : {}) },
+      g!==a.before ? `${escapeHtml(p.name)} 님 답변을 저장했어요. 등급 변경(${escapeHtml(a.before)} → ${escapeHtml(g)})은 대표이사 확인을 거쳐 직원에게 가요.` : `${escapeHtml(p.name)} 님에게 답변을 보냈어요. 최종 등급 ${escapeHtml(g)} (유지).`); }
   const p = evFind(pid), marks = evIsLine(p) ? null : evKpi(p).map((_,i)=>{ const el = document.getElementById(`evAnsM${pid}_${i}`); return el ? el.value : evEntry(p,i).grade; });
   const err = evAnswer(p, orgIsHr(), document.getElementById('evAnsG'+pid).value, document.getElementById('evAnsT'+pid).value, marks);
   if(err) return kpiFlash(escapeHtml(err).replace(/\n/g,'<br>'), 'danger');
   evSyncContracts(); kpiFlash(p.appeal.status==='CEO' ? `${escapeHtml(p.name)} 님 답변을 저장했습니다. 등급 변경(${p.appeal.before} → ${p.appeal.after})은 대표이사 확인을 거쳐 직원에게 갑니다.` : `${escapeHtml(p.name)} 님에게 답변을 보냈습니다. 최종 등급 ${p.grade} (유지).`);
 }
 function evResultContent(){
-  if(AUTH.live) return centerNote('포털에서 공개한 평가 결과가 아직 없어요.', '');   // 실제 로그인 (평가 3단계 ①): 안내만 — 결과 공개 · 이의 신청 · 지난 결과는 ②에서 서버로
-  const me = evMe();
-  return `${roleSwitcher()}${hrSwitch()}${kpiMsg ? kpiNote(kpiMsg.msg, kpiMsg.type) : ''}
+  const L = AUTH.live;
+  if(L){ if(!EV_RES.state) evResLoad();   // 실제 로그인 (평가 3단계 ②): 서버 결과 — 불러오는 중 · 못 불러옴 · 볼 것이 없으면 안내 한 줄 (포털 밖에서 평가한 해 · 시작한 회차도 공개한 해도 없음). 그해 대상이 아닌 직원도 '나의 평가 결과' 카드(연도 단추)
+    if(EV_RES.state!=='ok') return EV_RES.state==='err' ? kpiNote('평가 결과를 불러오지 못했어요. 잠시 뒤 새로 고쳐 주세요.', 'danger') : kpiNote('평가 결과를 불러오는 중이에요…');
+    const d = EV_RES.data;
+    if(d.offline || (!d.years.length && !d.mine && !d.team.length)) return centerNote('아직 포털에서 공개한 평가 결과가 없어요.', ''); }
+  const me = L ? EV_RES.data.mine : evMe();
+  return `${L ? '' : roleSwitcher()}${hrSwitch()}${kpiMsg ? kpiNote(kpiMsg.msg, kpiMsg.type) : ''}
     ${hrAdmin() ? evResHrPanel() + (evProxy ? evAppealCeoCard() : '')   // HR 관리 화면: 결과 공개 · 이의 신청 · 전체 결과
-      : (kpiRole==='ceo' ? evAppealCeoCard() : '') + (me ? evMyResult(me) : '') + evTeamResults(kpiRole)}
-    <div class="list-sub">시연용 가상 결과입니다. 결과를 보려면 HR 담당자로 바꿔 "직원 인사평가 관리" 화면에서 "시연: 확정 상태로 채우기" → "전 직원에게 결과 공개"를 누르세요. 지난 연도 결과도 가상 값입니다.</div>`;
+      : (kpiRole==='ceo' ? evAppealCeoCard() : '') + (me || (L && kpiRole!=='head' && kpiRole!=='ceo') ? evMyResult(me) : '') + evTeamResults(kpiRole)}
+    ${L ? '' : `<div class="list-sub">시연용 가상 결과입니다. 결과를 보려면 HR 담당자로 바꿔 "직원 인사평가 관리" 화면에서 "시연: 확정 상태로 채우기" → "전 직원에게 결과 공개"를 누르세요. 지난 연도 결과도 가상 값입니다.</div>`}`;
 }
 
 /* ---------------- 휴대폰에 설치 (홈 화면에 바로가기) ----------------
@@ -14421,7 +14580,7 @@ const TODO = {
   e4: ()=>!kvCanUse() ? 0 : AUTH.live ? kpiRev('check') + kpiRev('replies') : kvReplyTodo(kvMe()),   // 실제 로그인: 그 달 기록을 확인 안 한 바로 아래 사람 + 내가 쓴 메모에 새 답글이 온 사람 (처리함 review) / 시연: 새 답글이 온 사람 수
   e2: ()=>evTodo(),
   w3: ()=>cardList().unread,   // 안 읽은 받은 카드 (실제 로그인: 서버가 센 숫자 — 9시 묶음 · 아이콘 숫자와 같은 셈)
-  e3: ()=>AUTH.live ? 0 : (kpiIsHr() ? evPeople.filter(p=>p.appeal && p.appeal.status==='OPEN').length : 0) + evPeople.filter(p=>p.appeal && p.appeal.status==='CEO' && evCeoActs(p)).length,   // HR: 답변할 이의 신청 / 대표이사(또는 맡은 HR): 확인할 등급 변경
+  e3: ()=>AUTH.live ? +EV_LIVE.todo.e3 || 0 : (kpiIsHr() ? evPeople.filter(p=>p.appeal && p.appeal.status==='OPEN').length : 0) + evPeople.filter(p=>p.appeal && p.appeal.status==='CEO' && evCeoActs(p)).length,   // HR: 답변할 이의 신청 / 대표이사(또는 맡은 HR): 확인할 등급 변경 — 실제 로그인은 서버 todo.e3 (평가 진행 state 와 함께 받는다)
 };
 function todoCount(tab){ return TODO[tab.id] ? TODO[tab.id]() : 0; }
 function navBadge(n){ return n ? `<b class="nav-badge" aria-label="처리할 일 ${n}건">${n}</b>` : ''; }
@@ -14596,7 +14755,7 @@ const TOURS = {   // 단계: el = 가리킬 곳(여러 개면 묶어서, 배열�
     { el:'#evSelf .ev-table thead th:nth-child(1), #evSelf .ev-table tbody tr:first-child td:nth-child(1)', title:'확정 KPI · 달성 기준', body:'목표설정에서 확정한 KPI와 <b>S~D 기준</b>이 그대로 나옵니다. 이 기준에 비춰 평가합니다.' },
     { el:['#evSelf .ev-table tbody tr:first-child td:nth-child(2) textarea', '#evSelf .ev-table tbody tr:first-child td:nth-child(2)'], title:'실적 적기', body:'측정식 기준으로 <b>실제 결과</b>를 숫자와 함께 적습니다. 예: "월평균 21회".' },
     { el:'#evSelf .ev-table tbody tr:first-child .ev-grades', title:'스스로 등급 매기기', body:'달성 기준에 비춰 <b>S~D</b> 중 하나를 고릅니다. 평가자가 참고하는 값이고, 최종 등급은 본부장(팀장·직속부서는 대표이사)이 정한 뒤 대표이사 확인과 HR 확정을 거칩니다.' },
-    { el:'#evSelf .ev-table thead th:nth-child(3), #evSelf .ev-table tbody tr:first-child td:nth-child(3)', title:'증빙자료 (선택)', body:'실적을 뒷받침하는 파일을 올립니다. 평가자·본부장·HR만 볼 수 있습니다.' },
+    { el:'#evSelf .ev-table thead th:nth-child(3), #evSelf .ev-table tbody tr:first-child td:nth-child(3)', title:'증빙자료 (선택)', body:AUTH.live ? '실적을 뒷받침하는 파일을 올립니다. 제출하기 전에는 본인과 HR만, 제출한 뒤에는 평가자 · 본부장 · 대표이사도 볼 수 있습니다.' : '실적을 뒷받침하는 파일을 올립니다. 평가자·본부장·HR만 볼 수 있습니다.' },
     { el:'#evSelf button[onclick^="evSaveSelf"]', title:'임시 저장', body:'적은 실적과 등급을 저장해요. 제출하기 전까지 고칠 수 있어요.' },
     { el:'#evSelf button[onclick^="evSubmitSelf"]', title:'제출', body:'제출하면 평가자에게 넘어가고 실적과 등급은 고칠 수 없습니다. 증빙자료는 마감일까지 더 올릴 수 있습니다.' },
   ]},
