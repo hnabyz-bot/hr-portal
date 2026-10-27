@@ -1820,14 +1820,23 @@
   .cm-found button{ display:flex; align-items:center; gap:10px; padding:8px 12px; border:1px solid var(--border); border-radius:var(--radius); background:#fff; font:inherit; text-align:left; cursor:pointer; }
   .cm-found button:hover{ border-color:var(--accent); }
   .cm-found small{ display:block; color:var(--text-secondary); font-size:var(--fs-xs); }
-  /* 보내기 움직임 (시안 cardSent) — 봉투 뒤 · 앞 · 덮개 사이로 카드가 들어가 날아간다 */
-  .cm-ep{ position:absolute; left:7%; right:7%; bottom:0; height:52%; border-radius:10px; pointer-events:none; display:block; }
-  .cm-ep.back{ z-index:1; background:color-mix(in srgb, var(--k-fg) 22%, white); }
-  .cm-ep.front{ z-index:3; background:color-mix(in srgb, var(--k-fg) 12%, white); clip-path:polygon(0 18%, 50% 62%, 100% 18%, 100% 100%, 0 100%); }
-  .cm-ep.flap{ z-index:4; background:color-mix(in srgb, var(--k-fg) 30%, white); clip-path:polygon(0 0, 100% 0, 50% 62%); transform-origin:50% 0; }
+  /* 봉투 · 접히는 카드 (보내기 cardFly · 도착 openFx) — 뒤판(1) · 카드(2) · 앞주머니(3) · 덮개(닫히면 4, 열리면 0) 순서로 겹쳐 카드가 봉투 '안'에 있게 보인다. 자리 · 크기는 카드를 재어 JS 가 정한다(cardEnv) */
+  .cm-ep{ position:absolute; pointer-events:none; display:block; }
+  .cm-ep.back{ z-index:1; border-radius:10px; background:color-mix(in srgb, var(--k-fg) 30%, white); box-shadow:0 14px 28px -16px rgba(27,36,51,.5); }
+  .cm-ep.front{ z-index:3; border-radius:10px; background:linear-gradient(170deg, color-mix(in srgb, var(--k-fg) 11%, white), color-mix(in srgb, var(--k-fg) 19%, white)); clip-path:polygon(0 0, 50% 54%, 100% 0, 100% 100%, 0 100%); }
+  .cm-ep.flap{ z-index:4; background:linear-gradient(180deg, color-mix(in srgb, var(--k-fg) 22%, white), color-mix(in srgb, var(--k-fg) 34%, white)); clip-path:polygon(0 0, 100% 0, 50% 100%); transform-origin:50% 0; }
+  .cm-seal{ position:absolute; z-index:5; width:28px; height:28px; margin:-14px 0 0 -14px; border-radius:50%; display:grid; place-items:center; background:var(--k-fg); color:#fff; box-shadow:0 2px 6px rgba(27,36,51,.3); pointer-events:none; }   /* 하트 봉인 — 닫힌 덮개 끝 */
+  .cm-seal svg{ width:14px; height:14px; fill:currentColor; }
+  .cm-fold{ position:absolute; z-index:2; pointer-events:none; perspective:1200px; transform-origin:0 0; }   /* 접히는 카드 (cardFold): 아래 반 + 위 반(앞 · 뒷면) — 위 반을 rotateX(-180deg) 로 접는다 */
+  .cm-fold > div{ position:absolute; inset:0; }
+  .cm-fold .cm-face{ height:100%; box-shadow:none; }
+  .cm-fold-bot{ clip-path:inset(50% 0 0 0); }
+  .cm-fold-top{ transform-style:preserve-3d; transform-origin:50% 50%; }
+  .cm-fold-top > *{ position:absolute; left:0; right:0; -webkit-backface-visibility:hidden; backface-visibility:hidden; }
+  .cm-fold-top .fr{ top:0; bottom:0; clip-path:inset(0 0 50% 0); }
+  .cm-fold-top .bk{ top:0; height:50%; transform:rotateX(180deg); border-radius:14px 14px 0 0; border:1px solid color-mix(in srgb, var(--k-fg) 22%, white); background:color-mix(in srgb, var(--k-fg) 7%, #FFFDF9); display:grid; place-items:center; color:color-mix(in srgb, var(--k-fg) 55%, white); }   /* 접혔을 때 보이는 카드 뒷면 */
+  .cm-fold-top .bk svg{ width:22px; height:22px; }
   .cm-fly{ position:fixed; z-index:300; perspective:900px; pointer-events:none; }
-  .cm-fly .cm-fly-card{ position:absolute; inset:0; z-index:2; }
-  .cm-fly .cm-face{ height:100%; }
   /* 카드가 왔어요 움직임 (시안 cmFxCss) — 봉투가 열리고 카드가 올라온 뒤 종류별 효과 한 번 · 고마워요 하트 */
   .cm-stage{ position:relative; perspective:900px; overflow:hidden; border-radius:14px; }
   .cm-stage > .cm-face{ position:relative; z-index:2; }
@@ -6316,7 +6325,7 @@ async function kvLiveSelfCheck(){   // 브라우저 콘솔에서 await kvLiveSel
 
 /* ---------------- 경조사 배너 (홈) ----------------
    입사 환영·생일·입사 N주년은 직원 정보(입사일·생일)로 자동, 경사·조사는 HR이 본인 동의를 받고 등록.
-   규칙: 입사 환영 = 입사 후 30일 / 생일 = 이번 주(월~일), 본인이 숨기면 제외 / N주년 = 이번 달, 1·3·5·10년 이후 5년마다.
+   규칙: 입사 환영 = 입사 후 30일 / 생일 = 이번 주(월~일), 본인이 숨기면 제외 / N주년 = 이번 달, 1·3·5·10년, 11년부터는 해마다.
    배너 그림: public/img/banners (인사담당자 제작). 같은 이름으로 그림을 바꾸면 주소 끝의 ?v= 번호를 올린다(브라우저가 예전 그림을 기억하므로). 시연용 데이터는 브라우저 메모리에만 있다. */
 const celebEvents = [];
 let celebSeq = 2;
@@ -6361,7 +6370,7 @@ function celebBirthdaySoon(md, t){   // 오늘부터 7일 안의 생일이면 �
   }
   return null;
 }
-function celebMilestone(y){ return y===1 || y===3 || y===5 || (y>=10 && y%5===0); }
+function celebMilestone(y){ return [1, 3, 5, 10].includes(y) || y>=11; }   // 서버 auth.news_items 와 같은 규칙 (2026-10-27 인사담당자 — 11년부터는 해마다)
 function celebAnnivYears(hireDate, t){
   if(!hireDate) return 0;
   const h = celebParse(hireDate), y = t.getFullYear()-h.getFullYear();
@@ -6392,7 +6401,8 @@ function celebSelfCheck(){   // 브라우저 콘솔에서 celebSelfCheck() 실�
   ok(celebBirthdaySoon('02-29', new Date(2027, 1, 28)), '윤일 생일은 평년 2/28');
   ok(celebList('birthday', [{id:1, birthday:'01-02', hireDate:''}, {id:2, birthday:'12-31', hireDate:''}], [], new Date(2026, 11, 30)).map(x=>x.m.id).join()==='2,1', '날짜순 (해를 넘겨도)');
   ok(!celebValidMd('13-01') && !celebValidMd('02-30') && celebValidMd('02-29') && !celebValidMd('3-5'), '생일 형식');
-  ok([1,3,5,10,15,20].every(celebMilestone) && ![2,4,6,7,9,11,12].some(celebMilestone), '주년 1·3·5·10 이후 5년마다');
+  ok([1,3,5,10,11,12,13,14,15,20,21].every(celebMilestone) && ![0,2,4,6,7,8,9].some(celebMilestone), '주년 1·3·5·10, 11년부터는 해마다 (2026-10-27 인사담당자)');
+  ok(celebAnnivYears('2014-10-20', t)===12 && celebAnnivYears('2019-10-20', t)===0, '12주년은 이번 달 소식에 · 7주년은 아님');
   ok(celebAnnivYears('2021-10-20', t)===5 && celebAnnivYears('2022-10-01', t)===0 && celebAnnivYears('2021-09-20', t)===0 && celebAnnivYears('2026-10-01', t)===0, 'N주년 이번 달');
   const ms = [{id:1, hideBirthday:true, birthday:'10-01', hireDate:''}, {id:2, hideBirthday:false, birthday:'10-01', hireDate:''}];
   ok(celebList('birthday', ms, [], t).length===1, '생일 숨김 존중');
@@ -13830,7 +13840,12 @@ function msSee(id, err){   // err = 맡은 부서를 고르다 막힌 이유 (�
 const CARD_K = { cheer:{label:'축하', fg:'#B4232F', bg:'#FDECEC'}, praise:{label:'칭찬', fg:'#985A00', bg:'#FFF1D6'}, thanks:{label:'감사', fg:'#11734D', bg:'#E3F4EC'}, comfort:{label:'위로', fg:'#4D5566', bg:'#EEF0F4'} };   // 종류 색 (꼬리표 · 봉투)
 const CARD_WHY = { birthday:'생일', welcome:'새 식구', anniv:'입사 기념', joy:'경사' };   // 축하의 소식 — 꼬리표 "축하 · 생일"
 const CARD_HEART = '<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8l1 1.1L12 21l7.8-7.5 1-1.1a5.5 5.5 0 0 0 0-7.8z"/></svg>', CARD_HEART_SM = CARD_HEART.replace('<svg', '<svg width="11" height="11"');
-const CARD_SETS = ['birthday', 'welcome', 'anniv', 'joy', 'condol', 'praise', 'thanks'];   // 그림 묶음 (img/cards/{묶음}-{1~4}.jpg)
+const CARD_SETS = ['birthday', 'welcome', 'anniv', 'joy', 'condol', 'praise', 'thanks'];   // 그림 묶음 (img/cards/{묶음}-{번호}.jpg)
+const cardArtOk = n=>Number.isInteger(n) && n>=1 && n<=20;   // 그림 번호 = 표(022)의 범위 1~20 정수
+function cardArts(reason, y){   // 그 카드에 고를 수 있는 그림 번호 (보이는 순서 · 맨 앞이 처음 골라짐) — 서버 cards.arts_for 와 같은 규칙 (2026-10-27 인사담당자). 실제 로그인은 서버가 준 option.arts, 시연(cardDemoOpts)은 이 함수
+  const n = { 1:5, 3:6, 5:7, 10:8 }[y];   // 입사 기념 연차 → 숫자 그림 (1 · 3 · 5 · 10주년)
+  return reason==='birthday' ? [5, 6, 3, 4] : reason==='anniv' ? (n ? [n, 1, 2] : [9, 10, 1, 2]) : [1, 2, 3, 4];   // 생일 5(남) · 6(여) · 3 · 4 / 입사 기념 = 연차 숫자 그림 + 꽃다발 1 · 트로피 2, 11주년부터는 장기근속 9 · 10 + 1 · 2 / 나머지 1~4
+}
 function cardSet(kind, reason){   // 그림 묶음 — 축하는 소식 종류(birthday · welcome · anniv · joy)가 곧 묶음. 모르는 값이면 칭찬 묶음 (주소에 그대로 넣지 않는다)
   const s = { comfort:'condol', praise:'praise', thanks:'thanks', cheer:reason }[kind];
   return CARD_SETS.includes(s) ? s : 'praise';
@@ -13838,7 +13853,7 @@ function cardSet(kind, reason){   // 그림 묶음 — 축하는 소식 종류(b
 const cardK = k=>Object.hasOwn(CARD_K, k) ? CARD_K[k] : { label:'카드', fg:'#4D5566', bg:'#EEF0F4' };   // 모르는 종류는 회색 "카드" — 한 장 때문에 탭이 비지 않게
 const cardKv = k=>`--k-fg:${cardK(k).fg};--k-bg:${cardK(k).bg};`;
 const cardTag = c=>cardK(c.kind).label + (c.kind==='cheer' && Object.hasOwn(CARD_WHY, c.reason) ? ' · '+CARD_WHY[c.reason] : '');
-function cardArt(kind, reason, n){ return `<div class="cm-art"><img src="img/cards/${cardSet(kind, reason)}-${[1, 2, 3, 4].includes(n) ? n : 1}.jpg?v=1" alt="" loading="lazy"></div>`; }   // 그림을 바꾸면 ?v= 를 올린다 (설계 5장)
+function cardArt(kind, reason, n){ return `<div class="cm-art"><img src="img/cards/${cardSet(kind, reason)}-${cardArtOk(n) ? n : 1}.jpg?v=1" alt="" loading="lazy"></div>`; }   // 저장된 번호 그대로 — 이제 고를 수 없는 옛 그림(생일 1 · 2, 입사 기념 3 · 4)도 보인다. 그림을 바꾸면 ?v= 를 올린다 (설계 5장)
 function cardFace(c){   // 카드 한 장 (시안 face): 그림 · 꼬리표 / To. 받는 사람님 · 글 · From. 보낸 사람 · 날짜(M/D) — 손글씨
   return `<div class="cm-face" style="${cardKv(c.kind)}">${cardArt(c.kind, c.reason, c.art)}<div class="cm-face-body">
     <span class="cm-tag">${cardTag(c)}</span>
@@ -13853,7 +13868,7 @@ function cardDemoData(){   // 시연(서버 없음): 시안 IN · OUT 과 같은
   const gave = (id, kind, reason, i, ago, text, x)=>({ id, kind, reason, art:1, text, date:kpiDay(-ago), to:ppl[i], read:false, thanked:false, ...x });
   return {
     received:[
-      got(1, 'cheer', 'birthday', 1, 0, 0, '생일 축하해요! 오늘은 일 생각 말고 맛있는 거 많이 드세요.', { read:false }),
+      got(1, 'cheer', 'birthday', 5, 0, 0, '생일 축하해요! 오늘은 일 생각 말고 맛있는 거 많이 드세요.', { read:false }),
       got(2, 'praise', null, 2, 1, 2, '지난주 전시회 준비 정말 꼼꼼했어요. 덕분에 고객 반응이 좋았어요.', { read:false }),
       got(3, 'thanks', null, 3, 2, 4, '급하게 부탁한 자료 바로 챙겨 줘서 고마워요.', { read:false }),
       got(4, 'thanks', null, 1, 3, 11, '회의 자료 정리해 준 거 덕분에 보고가 금방 끝났어요.', { thanked:true }),
@@ -13966,7 +13981,7 @@ async function cardHide(id, hidden){   // 숨기기 · 다시 보이기 (받은 
   if(err) kpiFlash(escapeHtml(err), 'danger');
 }
 /* ----- 카드가 왔어요 · 움직임 (시안 cardArrive · openFx · burst · heartPop 그대로, 설계 4-4 · 4-6) — 모두 한 번만 움직이고 '움직임 줄이기'(cardStill)면 움직이지 않는다.
-   조각(.cm-ep 봉투 · .cm-p 효과 · .cm-pop 하트)은 모두 창(#orgModal) 안에 붙인다 — 움직이는 중에 닫거나 넘기면 창과 함께 사라지고, 남은 움직임은 떼어 낸 창에서 멈춘다 ----- */
+   조각(.cm-ep 봉투 · .cm-fold 접히는 카드 · .cm-seal 봉인 · .cm-p 효과 · .cm-pop 하트)은 모두 창(#orgModal) 안에 붙인다 — 움직이는 중에 닫거나 넘기면 창과 함께 사라지고, 남은 움직임은 떼어 낸 창에서 멈춘다 ----- */
 const CARD_AR = { list:[], seen:new Set(), auto:false };   // 도착 창 하나: 보여 줄 카드(오래된 것부터 — 넘겨 보는 동안 그대로) · 이미 펼친 카드 번호 · 들어올 때 자동으로 떴나(닫으면 오늘 할 일)
 function cardArrive(i=0, list, auto){   // "카드가 왔어요 1 / 3" · 카드 한 장 · [‹] [고마워요] [답장 쓰기] [›]. list 가 없으면 안 읽은 받은 카드 — [‹] [›] 는 떠 있는 창의 목록을 넘긴다. 보이는 카드는 바로 읽음(안 돼도 창은 그대로) — 돌려주는 약속은 그 요청이 끝날 때
   const A = CARD_AR;
@@ -14020,7 +14035,19 @@ function burst(stage, c){   // 시안 burst — 펼쳐진 뒤 한 번 (1~4초): 
     el.animate(kf, { duration:dur, delay, easing:ease, fill:'both' }).finished.then(()=>el.remove(), ()=>el.remove());
   }
 }
-async function openFx(stage, c, full){   // 시안 openFx — full: 종류 색 봉투가 나타남 → 덮개가 열림 → 카드가 올라와 자리 잡음(약 2초) / 아니면 살짝 떠오르기만(0.3초). 그다음 burst 한 번
+function cardFold(face){   // 접히는 카드 (.cm-fold): face 를 복사해 같은 자리에 놓고 — 아래 반은 그대로, 위 반(앞 · 뒷면)을 접는 줄(가운데)에서 rotateX(-180deg) 로 접는다
+  const el = document.createElement('div'), copy = ()=>{ const c = face.cloneNode(true); c.querySelectorAll('img').forEach(i=>{ i.loading = 'eager'; }); return c; };
+  el.className = 'cm-fold';
+  el.innerHTML = `<div class="cm-fold-bot"></div><div class="cm-fold-top"><div class="fr"></div><div class="bk">${CARD_HEART}</div></div>`;
+  el.querySelector('.cm-fold-bot').appendChild(copy()); el.querySelector('.fr').appendChild(copy());
+  return el;
+}
+function cardEnv(box, x, y, ew, eh){   // 봉투 조각 자리 (box 안 px): 뒤판 · 앞주머니 ew×eh, 덮개는 위 끝에 매달린 삼각형(높이 58% — 앞주머니의 V 를 다 덮는다), 봉인은 덮개 끝
+  const fh = eh * .58, seal = box.querySelector(':scope > .cm-seal');
+  box.querySelectorAll(':scope > .cm-ep').forEach(p=>Object.assign(p.style, { left:x + 'px', top:y + 'px', width:ew + 'px', height:(p.classList.contains('flap') ? fh : eh) + 'px' }));
+  if(seal) Object.assign(seal.style, { left:x + ew / 2 + 'px', top:y + fh - 6 + 'px' });
+}
+async function openFx(stage, c, full){   // full: 닫힌 봉투가 나타남 → 하트 봉인이 떨어지고 덮개가 열림 → 접힌 카드가 봉투 안에서 올라와 빠져나옴 → 봉투는 내려가며 사라지고 카드가 펼쳐짐(약 2.5초) / 아니면 살짝 떠오르기만(0.3초). 그다음 burst 한 번
   const f = stage.querySelector('.cm-face'), parts = [...stage.querySelectorAll('.cm-ep')], flap = stage.querySelector('.cm-ep.flap'), acts = stage.parentElement.querySelector('.cm-acts');
   if(cardStill() || !full){
     parts.forEach(p=>p.remove());
@@ -14029,17 +14056,28 @@ async function openFx(stage, c, full){   // 시안 openFx — full: 종류 색 �
   }
   const anim = (el, kf, o)=>el.animate(kf, { fill:'forwards', ...o }).finished, gone = ()=>!stage.isConnected;   // 그사이 창을 닫았거나 넘겼다 — 떼어 낸 창에 효과를 뿌리지 않는다
   if(acts){ Object.assign(acts.style, { opacity:0, pointerEvents:'none' }); acts.inert = true; }   // 봉투가 열리는 동안 단추 줄은 보이지도 눌리지도 키보드로 닿지도 않게 (X 는 된다)
+  const W = f.offsetWidth, H = f.offsetHeight, ew = W * .86, eh = Math.min(ew * .62, H * .5), ex = (W - ew) / 2, ey = H - eh - W * .04;   // 봉투: 카드 아래쪽에 (카드 칸 안 px)
+  const s = Math.min(.76, ew * .9 / W, eh * .9 / (H / 2), (ey - 6) / (H / 2)), at = (y0, k)=>`translate(${(W - W * k) / 2}px,${y0 - k * H / 2}px) scale(${k})`;   // 접힌 카드(높이 H/2)를 k 배로 — 봉투 안에 들어가고, 봉투 위로 다 빠져나올 자리가 있게 / at: 접힌 카드의 위 끝을 y0 에
+  const yIn = ey + (eh - s * H / 2) / 2, yOut = ey - 6 - s * H / 2, fold = cardFold(f), top = fold.querySelector('.cm-fold-top'), seal = Object.assign(document.createElement('i'), { className:'cm-seal', innerHTML:CARD_HEART });
+  Object.assign(fold.style, { left:f.offsetLeft + 'px', top:f.offsetTop + 'px', width:W + 'px', height:H + 'px', transform:at(yIn, s), visibility:'hidden' });   // 봉투가 나타나는 동안은 숨김 (안에 있어 어차피 안 보인다)
+  top.style.transform = 'rotateX(-180deg)';   // 접힌 채로
+  f.after(fold); stage.appendChild(seal); cardEnv(stage, f.offsetLeft + ex, f.offsetTop + ey, ew, eh);
   f.style.opacity = 0;
-  await Promise.all(parts.map(p=>anim(p, [{ transform:'translateY(18px) scale(.94)', opacity:0 }, { transform:'none', opacity:1 }], { duration:320, easing:'ease-out' })));
+  await Promise.all([...parts, seal].map(p=>anim(p, [{ transform:'translateY(16px) scale(.96)', opacity:0 }, { transform:'none', opacity:1 }], { duration:320, easing:'ease-out' })));
   if(gone()) return;
-  await anim(flap, [{ transform:'rotateX(0deg)' }, { transform:'rotateX(180deg)' }], { duration:420, easing:'ease-in-out' });
+  fold.style.visibility = '';
+  anim(seal, [{ transform:'none', opacity:1 }, { transform:'translateY(-5px) scale(1.15)', opacity:1, offset:.35 }, { transform:'translateY(12px) scale(.4)', opacity:0 }], { duration:280, easing:'ease-in' });
+  await anim(flap, [{ transform:'rotateX(0deg)' }, { transform:'rotateX(180deg)' }], { duration:440, easing:'ease-in-out', delay:140 });
   if(gone()) return;
-  flap.style.zIndex = 0; f.style.opacity = 1;
-  await anim(f, [{ transform:'translateY(46%) scale(.8)' }, { transform:'translateY(-7%) scale(.93)' }], { duration:640, easing:'cubic-bezier(.2,.8,.2,1)' });
+  flap.style.zIndex = 0;   // 열린 덮개는 카드 뒤로
+  await anim(fold, [{ transform:at(yIn, s) }, { transform:at(yOut, s) }], { duration:560, easing:'cubic-bezier(.3,.7,.3,1)' });   // 앞주머니 뒤에서 올라와 봉투 위로 빠져나온다
   if(gone()) return;
-  parts.forEach(p=>anim(p, [{ transform:'none', opacity:1 }, { transform:'translateY(46px)', opacity:0 }], { duration:360, easing:'ease-in' }));
-  await anim(f, [{ transform:'translateY(-7%) scale(.93)' }, { transform:'none' }], { duration:420, easing:'cubic-bezier(.3,1.5,.5,1)' });
-  parts.forEach(p=>p.remove()); f.getAnimations().forEach(a=>a.cancel());
+  fold.style.zIndex = 6;   // 다 나왔다 — 이제 봉투 앞
+  parts.forEach(p=>anim(p, [{ transform:p===flap ? 'rotateX(180deg)' : 'none', opacity:1 }, { transform:'translateY(40px)' + (p===flap ? ' rotateX(180deg)' : ''), opacity:0 }], { duration:380, easing:'ease-in' }));
+  await anim(fold, [{ transform:at(yOut, s) }, { transform:at(H / 2, 1) }], { duration:440, easing:'cubic-bezier(.4,0,.2,1)' });   // 제자리(아래 반)로 내려오며 커진다
+  if(gone()) return;
+  await anim(top, [{ transform:'rotateX(-180deg)' }, { transform:'rotateX(0deg)' }], { duration:520, easing:'cubic-bezier(.3,.55,.25,1)' });   // 위 반을 펼친다
+  fold.remove(); seal.remove(); parts.forEach(p=>p.remove()); f.style.opacity = '';
   if(gone()) return;
   if(acts){ acts.style.pointerEvents = ''; acts.inert = false; acts.animate([{ opacity:0, transform:'translateY(6px)' }, { opacity:1, transform:'none' }], { duration:260 }).finished.then(()=>{ acts.style.opacity = ''; }); }
   burst(stage, c);
@@ -14068,7 +14106,7 @@ const CARD_EX = {   // 예시 문구 칩 (누르면 글 칸에) — 축하는 �
   comfort:['마음 깊이 위로를 전합니다.', '힘든 시간 잘 이겨 내시길 바랍니다.', '필요한 일 있으면 언제든 말씀해 주세요.'],
 };
 const CARD_NEWS = { birthday:'birthday', welcome:'welcome', anniversary:'anniv', joy:'joy' };   // 이번 주 소식 배너 → 축하 사유 (조사는 위로 카드). 서버 cards.reasons_for 와 같은 짝 — 생일 · 새 식구 · 입사 기념은 news_items(_NEWS_REASON), 경사는 celeb_events
-const CARD_BASE = [{ kind:'praise', reason:null }, { kind:'thanks', reason:null }];   // 받는 분을 고르기 전 칩 (시안처럼 칭찬 · 감사)
+const CARD_BASE = [{ kind:'praise', reason:null, arts:cardArts(null) }, { kind:'thanks', reason:null, arts:cardArts(null) }];   // 받는 분을 고르기 전 칩 (시안처럼 칭찬 · 감사)
 const CARD_FAIL = '지금은 할 수 없어요. 잠시 뒤 다시 해 주세요.';
 const CARD_NO_KEY = '서버 설정이 아직 끝나지 않아 카드를 보낼 수 없어요.';   // 서버 503 과 같은 문구
 const cardNoKey = ()=>AUTH.live && CARD_LIVE.state==='ok' && !CARD_LIVE.ready;   // 카드 상자가 서버 열쇠(HR_PAY_KEY)가 없다고 답했다 — 소식 · 조직도 · 답장 단추는 막힌 [카드 쓰기]를 거치지 않으므로 창에서 막는다. 아직 모르면(불러오기 전 · 실패) 막지 않는다 — 보내면 서버가 503
@@ -14077,9 +14115,9 @@ const cardStill = ()=>matchMedia('(prefers-reduced-motion: reduce)').matches;   
 const cardCan = m=>!!m && !m.me && m.active!==false && (AUTH.live ? Number.isInteger(m.uid) : m.name!==kpiOwner());   // 이 조직도 사람에게 카드 단추를 보이나 — 나 · 비활성은 아니다. 실제 로그인은 서버 번호(uid)가 있어야
 const cardTo = m=>({ id:AUTH.live ? m.uid : m.id, name:m.name, title:m.title || '', dept:m.team || m.division || '' });
 const cardMourn = m=>celebItems('condol').some(x=>x.m.id===m.id);   // 지금 조사가 게시 중인 분 — 소식 · 조직도 단추도 위로 카드로 (창은 서버가 위로만 준다 — reasons_for)
-const cardOpt = ()=>CARD_S.opts && CARD_S.opts[CARD_S.sel] || CARD_BASE[0];   // 고른 종류 칩 { kind, reason }
+const cardOpt = ()=>CARD_S.opts && CARD_S.opts[CARD_S.sel] || CARD_BASE[0];   // 고른 종류 칩 { kind, reason, arts }
 function cardSendOrg(id, reason=null){ const m = orgFind(id); return cardCan(m) ? cardSend({ to:cardTo(m), reason }) : undefined; }   // 이번 주 소식 · 조직도 단추 — 화면 번호만 받는다(이름 없음)
-function cardPick(id){ const m = orgFind(id); return cardCan(m) ? cardFor(cardTo(m)) : undefined; }   // 이름 찾기에서 고름 — 고른 종류 · 쓴 글은 그대로
+function cardPick(id){ const m = orgFind(id); return cardCan(m) ? cardFor(cardTo(m)) : undefined; }   // 이름 찾기에서 고름 — 고른 종류 · 그림 · 쓴 글은 그대로 (그림은 그 종류의 목록에 있으면)
 function cardText(v){   // 서버 cards.clean_text 와 같은 규칙 → [다듬은 글, 안 되는 까닭('' = 됨)]. 글자 수는 코드 포인트로 센다 (그림 글자도 한 자)
   if([...v].length > 600) return [v, '글은 150자까지 쓸 수 있어요.'];   // 다듬기 전 600자(서버 RAW_MAX = 4 × 150)를 넘으면 바로 — 서버와 같은 순서
   if(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]|[\ud800-\udbff](?![\udc00-\udfff])|(^|[^\ud800-\udbff])[\udc00-\udfff]/.test(v)) return [v, '글에 쓸 수 없는 글자가 있어요.'];
@@ -14090,12 +14128,12 @@ function cardText(v){   // 서버 cards.clean_text 와 같은 규칙 → [다듬
 function cardDemoOpts(id){   // 시연: 그 사람의 이번 주 소식(시연 명단) → [보낼 수 있는 카드, 오류, 오늘 보냈나] — 서버 cards.options 와 같은 규칙 (조사면 위로만)
   const m = orgMembers.find(x=>x.id===id);
   if(!cardCan(m)) return [[], '카드를 받을 수 없는 분이에요.', false];
-  const has = key=>celebList(key, orgMembers, celebEvents, new Date()).some(x=>x.m===m);
-  const opts = has('condol') ? [{ kind:'comfort', reason:null }] : [...Object.entries(CARD_NEWS).filter(([k])=>has(k)).map(([, r])=>({ kind:'cheer', reason:r })), ...CARD_BASE];
+  const has = key=>celebList(key, orgMembers, celebEvents, new Date()).some(x=>x.m===m), y = celebAnnivYears(m.hireDate, new Date());   // 입사 연차 = 소식의 입사 N주년 (입사 기념 그림)
+  const opts = has('condol') ? [{ kind:'comfort', reason:null, arts:cardArts(null) }] : [...Object.entries(CARD_NEWS).filter(([k])=>has(k)).map(([, r])=>({ kind:'cheer', reason:r, arts:cardArts(r, y) })), ...CARD_BASE];
   return [opts, '', CARD_DEMO.sent.some(c=>c.to.id===id && c.date===kpiDay(0))];
 }
 async function cardSend({ to=null, reason=null }={}){   // 카드 보내기 창. to 가 없으면 이름 찾기부터 · reason(birthday · welcome · anniv · joy)을 주면 그 축하 칩이 처음 골라진다
-  Object.assign(CARD_S, { to:null, reason, opts:CARD_BASE, sel:0, art:1, text:'', q:'', sentToday:false, err:'', busy:false });
+  Object.assign(CARD_S, { to:null, reason, opts:CARD_BASE, sel:0, art:to ? null : CARD_BASE[0].arts[0], text:'', q:'', sentToday:false, err:'', busy:false });   // 받는 분과 함께 열면 그림은 아직 안 고름 → 종류를 받으면 그 종류의 첫 그림
   if(to) return cardFor(to);
   const my = ++CARD_S.seq;
   cardDraw(); document.getElementById('cmFindIn').focus();
@@ -14113,9 +14151,10 @@ async function cardFor(to){   // 받는 분이 정해짐 → 보낼 수 있는 �
     } catch(e){ err = CARD_FAIL; }
   } else [opts, err, sentToday] = cardDemoOpts(to.id);
   if(my!==S.seq || !document.querySelector('#orgModal .cm-send')) return;   // 그사이 창을 닫았거나 다른 분을 골랐다
-  opts = opts.filter(o=>o && Object.hasOwn(CARD_K, o.kind) && (o.kind==='cheer' ? Object.hasOwn(CARD_WHY, o.reason) : !o.reason));   // 아는 종류만 (예시 문구 · 그림이 있는 것)
+  opts = opts.filter(o=>o && Object.hasOwn(CARD_K, o.kind) && (o.kind==='cheer' ? Object.hasOwn(CARD_WHY, o.reason) : !o.reason) && Array.isArray(o.arts) && o.arts.length && o.arts.every(cardArtOk));   // 아는 종류 · 그림 번호만 (예시 문구 · 그림이 있는 것)
   const at = f=>opts.findIndex(f), i = [at(o=>S.reason && o.reason===S.reason), at(o=>o.kind===was.kind && o.reason===was.reason), at(o=>o.kind!=='cheer')].find(n=>n>=0);   // 준 사유 → 고르던 칩 → 칭찬(조사면 위로)
   Object.assign(S, { opts, sel:i ?? 0, sentToday, err });
+  if(!cardOpt().arts.includes(S.art)) S.art = cardOpt().arts[0];   // 이름 찾기 전에 고른 그림은 그 종류의 목록에 있으면 그대로, 아니면(처음 열 때 포함) 그 종류의 첫 그림
   cardDraw();
 }
 function cardPv(){   // 미리 보기 카드 — 받는 분이 보는 모양 그대로: From. 내 이름 직급 · 오늘(M/D). 직급은 실제 로그인이면 조직도의 내 줄(아직 안 불렀으면 이름만), 시연은 시연 역할
@@ -14141,7 +14180,7 @@ function cardDraw(){   // 시안 draw 그대로 — 미리 보기는 PC만 (휴�
         ? `<div class="cm-to-row"><span class="cm-av">${escapeHtml(to.name.slice(0, 1))}</span><div><b>${escapeHtml(to.name)}</b> ${escapeHtml(to.title || '')}<small>${escapeHtml(to.dept || '')}</small></div></div>${why ? `<span class="cm-why">${escapeHtml(why)} 소식이 있어요</span>` : ''}`
         : `<input class="cm-text" id="cmFindIn" style="min-height:0;" placeholder="이름으로 찾기" aria-label="받는 사람 이름으로 찾기" autocomplete="off" value="${escapeHtml(S.q)}" oninput="CARD_S.q=this.value; cardSeek()"><div class="cm-found" id="cmFound">${cardFound()}</div>`}</div>
       <div class="field"><label>카드 종류</label><div class="cm-kinds">${kinds}</div></div>
-      <div class="field"><label>그림</label><div class="cm-arts">${[1, 2, 3, 4].map(n=>`<button type="button" aria-pressed="${n===S.art}" onclick="cardArtPick(${n})" aria-label="그림 ${n}">${cardArt(o.kind, o.reason, n)}</button>`).join('')}</div></div>
+      <div class="field"><label>그림</label><div class="cm-arts">${o.arts.map((n, i)=>`<button type="button" aria-pressed="${n===S.art}" onclick="cardArtPick(${n})" aria-label="그림 ${i + 1}">${cardArt(o.kind, o.reason, n)}</button>`).join('')}</div></div>
       <div class="field"><label for="cmText">글 <small id="cmLen"></small></label><textarea class="cm-text" id="cmText" placeholder="${o.kind==='comfort' ? '위로의 마음을 적어 주세요' : '전하고 싶은 마음을 적어 주세요'}" oninput="cardTyped(this.value)">${escapeHtml(S.text)}</textarea>
         <div class="cm-ex">${!S.opts || !S.opts.length ? '' : CARD_EX[o.kind==='cheer' ? o.reason : o.kind].map((t, i)=>`<button type="button" onclick="cardExPick(${i})">${t}</button>`).join('')}</div></div>
     </div>
@@ -14159,7 +14198,7 @@ function cardFoot(){   // 글자 수 · 붉은 줄 · [보내기] 켜기 — 창
   if(red.textContent!==msg) red.textContent = msg;   // role=alert — 같은 안내를 글자마다 다시 읽지 않게 바뀔 때만
   b.disabled = S.busy || cardNoKey() || !S.to || !S.opts || !S.opts.length || S.sentToday || !!bad;
 }
-function cardKindPick(i){ Object.assign(CARD_S, { sel:i, err:'' }); cardDraw(); }
+function cardKindPick(i){ Object.assign(CARD_S, { sel:i, err:'' }); CARD_S.art = cardOpt().arts[0]; cardDraw(); }   // 종류를 바꾸면 그 종류의 첫 그림
 function cardArtPick(n){ CARD_S.art = n; cardDraw(); }
 function cardExPick(i){ const o = cardOpt(); CARD_S.text = CARD_EX[o.kind==='cheer' ? o.reason : o.kind][i]; cardDraw(); }
 function cardTyped(v){ CARD_S.text = v; cardFoot(); const pv = document.getElementById('cmPv'); if(pv) pv.innerHTML = cardPv(); }
@@ -14185,23 +14224,35 @@ async function cardSent(){   // [보내기] — 글 규칙을 먼저 보고, 단
   kpiFlash(`${escapeHtml(to.name)} 님께 카드를 보냈어요.`);
   if(AUTH.live) await cardLoad();   // 보낸 카드 · 숫자
 }
-async function cardFly(o){   // 시안 cardSent 움직임(약 1.7초): 미리 보기 카드가 봉투에 들어가 덮개가 닫히고 오른쪽 위로 날아간다 (휴대폰은 창 가운데에서). 봉투는 창(#orgModal) 안에 붙여 — 도중에 창을 닫으면 함께 사라진다
+async function cardFly(o){   // 보내기 움직임(약 2.5초): 미리 보기 카드가 반으로 접힘 → 아래에 열린 봉투가 올라옴 → 접힌 카드가 봉투 폭에 맞게 작아져 안으로 들어감 → 덮개가 닫히고 하트 봉인 → 오른쪽 위로 날아간다 (휴대폰은 창 위쪽 가운데에서). 봉투는 창(#orgModal) 안에 붙여 — 도중에 창을 닫으면 함께 사라진다
   const d = document.getElementById('orgModal'), pv = d.querySelector('#cmPv .cm-face'), shown = pv && pv.offsetParent, m = d.querySelector('.card').getBoundingClientRect();
-  const w = Math.min(240, m.width * .66), rc = shown ? pv.getBoundingClientRect() : { left:m.left + (m.width - w) / 2, top:m.top + m.height * .25, width:w, height:w * 1.05 };
+  const face = shown ? pv : Object.assign(document.createElement('div'), { innerHTML:cardPv() }).firstElementChild;   // 휴대폰은 미리 보기가 숨어 있어 같은 카드를 새로 그린다
+  const rc = shown ? pv.getBoundingClientRect() : { left:m.left + (m.width - Math.min(220, m.width * .62)) / 2, top:m.top + 20, width:Math.min(220, m.width * .62) };
   const fly = document.createElement('div'); fly.className = 'cm-fly';
-  fly.style.cssText = `left:${rc.left}px; top:${rc.top}px; width:${rc.width}px; height:${rc.height}px; ${cardKv(o.kind)}`;
-  fly.innerHTML = `<i class="cm-ep back"></i><div class="cm-fly-card">${cardPv()}</div><i class="cm-ep front"></i><i class="cm-ep flap" style="z-index:0; transform:rotateX(180deg);"></i>`;
-  d.querySelector('.cm-btns').style.pointerEvents = 'none';
+  fly.style.cssText = `left:${rc.left}px; top:${rc.top}px; width:${rc.width}px; ${cardKv(o.kind)}`;
+  fly.innerHTML = `<i class="cm-ep back"></i><i class="cm-ep front"></i><i class="cm-ep flap" style="z-index:0; transform:rotateX(180deg);"></i><i class="cm-seal" style="opacity:0">${CARD_HEART}</i>`;
   d.appendChild(fly);
+  let H = rc.height;
+  if(!shown){ const probe = face.cloneNode(true); probe.style.cssText = 'position:absolute; visibility:hidden; left:0; top:0; width:100%;'; fly.appendChild(probe); H = probe.offsetHeight; probe.remove(); }   // 숨은 카드 높이는 폭에 맞춰 재어 본다
+  const W = rc.width, ew = W * .92, eh = ew * .62, ex = (W - ew) / 2, ey = H + 14;   // 봉투: 카드 바로 아래
+  const s = Math.min(.84, ew * .88 / W, eh * .86 / (H / 2)), at = (y0, k)=>`translate(${(W - W * k) / 2}px,${y0 - k * H / 2}px) scale(${k})`, yIn = ey + (eh - s * H / 2) / 2 + 2;   // 접힌 카드(높이 H/2)를 봉투 안에 들어가게 k 배로 / at: 접힌 카드의 위 끝을 y0 에
+  const fold = cardFold(face), top = fold.querySelector('.cm-fold-top'), parts = [...fly.querySelectorAll('.cm-ep')], flap = fly.querySelector('.cm-ep.flap'), seal = fly.querySelector('.cm-seal');
+  Object.assign(fold.style, { left:0, top:0, width:W + 'px', height:H + 'px' });
+  fly.style.height = H + 'px'; fly.style.transformOrigin = `${W / 2}px ${ey + eh / 2}px`;   // 날아갈 때는 봉투 가운데를 축으로
+  fly.appendChild(fold); cardEnv(fly, ex, ey, ew, eh); parts.forEach(p=>{ p.style.opacity = 0; });   // 봉투는 올라올 때까지 숨김 (나타나는 움직임에 기다림이 있다)
+  d.querySelector('.cm-btns').style.pointerEvents = 'none';
   if(shown) pv.style.visibility = 'hidden';
   try {
-    const card = fly.querySelector('.cm-fly-card'), parts = [...fly.querySelectorAll('.cm-ep')], flap = fly.querySelector('.cm-ep.flap');
     const anim = (el, kf, opt)=>el.animate(kf, { fill:'forwards', ...opt }).finished;
-    parts.forEach(p=>anim(p, [{ opacity:0, transform:(p===flap ? 'rotateX(180deg) ' : '') + 'translateY(20px)' }, { opacity:1, transform:p===flap ? 'rotateX(180deg)' : 'none' }], { duration:260, easing:'ease-out' }));
-    await anim(card, [{ transform:'none' }, { transform:'translateY(50%) scale(.8)' }], { duration:560, easing:'cubic-bezier(.5,0,.6,1)', delay:120 });
+    if(!shown) await anim(fold, [{ opacity:0, transform:'translateY(10px)' }, { opacity:1, transform:'none' }], { duration:220, easing:'ease-out' });   // 휴대폰: 숨어 있던 카드가 먼저 나타난다
+    parts.forEach(p=>anim(p, [{ opacity:0, transform:'translateY(22px)' + (p===flap ? ' rotateX(180deg)' : '') }, { opacity:1, transform:p===flap ? 'rotateX(180deg)' : 'none' }], { duration:340, easing:'ease-out', delay:180 }));   // 열린 봉투가 아래에서 올라온다
+    await anim(top, [{ transform:'rotateX(0deg)' }, { transform:'rotateX(-180deg)' }], { duration:460, easing:'cubic-bezier(.45,0,.25,1)' });   // 반으로 접힌다
+    await anim(fold, [{ transform:at(H / 2, 1) }, { transform:at(H / 2 - 8, s) }], { duration:240, easing:'ease-out' });   // 봉투 폭에 맞게 작아지며 살짝 들린다
+    await anim(fold, [{ transform:at(H / 2 - 8, s) }, { transform:at(yIn, s) }], { duration:500, easing:'cubic-bezier(.5,0,.3,1)' });   // 봉투 안으로 (앞주머니 뒤로 사라진다)
     flap.style.zIndex = 4;
-    await anim(flap, [{ transform:'rotateX(180deg)' }, { transform:'rotateX(0deg)' }], { duration:320, easing:'ease-in-out' });
-    await anim(fly, [{ transform:'none', opacity:1 }, { transform:'translate(14px,6px) rotate(3deg)', opacity:1, offset:.2 }, { transform:'translate(300px,-360px) rotate(-16deg) scale(.45)', opacity:0 }], { duration:760, easing:'cubic-bezier(.45,0,.8,.45)' });
+    await anim(flap, [{ transform:'rotateX(180deg)' }, { transform:'rotateX(0deg)' }], { duration:320, easing:'ease-in-out' });   // 덮개가 닫힌다
+    await anim(seal, [{ opacity:0, transform:'scale(.2)' }, { opacity:1, transform:'scale(1.2)', offset:.6 }, { opacity:1, transform:'scale(1)' }], { duration:220, easing:'ease-out' });   // 하트 봉인
+    await anim(fly, [{ transform:'none', opacity:1 }, { transform:'translate(10px,-8px) rotate(-3deg)', opacity:1, offset:.2 }, { transform:'translate(300px,-360px) rotate(-16deg) scale(.4)', opacity:0 }], { duration:720, easing:'cubic-bezier(.45,0,.8,.45)' });
   } finally { fly.remove(); }
 }
 async function cardSelfCheck(){   // 브라우저 콘솔에서 await cardSelfCheck() 실행 — 시연 카드 · 실제 로그인 흉내 · 화면 상태는 끝나면 되돌린다 (fetch 는 가짜 — 서버에 보내지 않는다)
@@ -14248,7 +14299,12 @@ async function cardSelfCheck(){   // 브라우저 콘솔에서 await cardSelfChe
     ok(!w.querySelector('.cm-mini-meta i, .cm-msg b') && w.textContent.includes('<i>가상'), '이름 · 글은 글자 그대로');
     ok(w.querySelector('.cm-ktag').textContent==='축하 · 생일' && w.querySelector('.cm-mini img').getAttribute('src')==='img/cards/birthday-1.jpg?v=1', '꼬리표 "축하 · 생일" · 그림 주소');
     const src = html=>dom(html).querySelector('img').getAttribute('src');
-    ok(src(cardArt('cheer', null, 9))==='img/cards/praise-1.jpg?v=1' && src(cardArt('cheer', '../x"', '1"'))==='img/cards/praise-1.jpg?v=1' && src(cardArt('constructor', 'joy', 0))==='img/cards/praise-1.jpg?v=1' && src(cardArt('comfort', 'joy', 4))==='img/cards/condol-4.jpg?v=1', '모르는 묶음 · 번호는 알려진 그림(칭찬 1번)으로');
+    ok(src(cardArt('cheer', null, 21))==='img/cards/praise-1.jpg?v=1' && src(cardArt('cheer', '../x"', '1"'))==='img/cards/praise-1.jpg?v=1' && src(cardArt('constructor', 'joy', 0))==='img/cards/praise-1.jpg?v=1' && src(cardArt('comfort', 'joy', 4))==='img/cards/condol-4.jpg?v=1', '모르는 묶음 · 번호는 알려진 그림(칭찬 1번)으로');
+    ok(src(cardArt('cheer', 'birthday', 1))==='img/cards/birthday-1.jpg?v=1' && src(cardArt('cheer', 'anniv', 4))==='img/cards/anniv-4.jpg?v=1' && src(cardArt('cheer', 'birthday', 6))==='img/cards/birthday-6.jpg?v=1'
+      && src(cardArt('cheer', 'anniv', 9))==='img/cards/anniv-9.jpg?v=1' && src(cardArt('cheer', 'anniv', 10))==='img/cards/anniv-10.jpg?v=1' && src(cardArt('praise', null, 20))==='img/cards/praise-20.jpg?v=1' && [0, 21, 1.5, '5', null, -3].every(n=>src(cardArt('cheer', 'anniv', n))==='img/cards/anniv-1.jpg?v=1'),
+      '그림 번호는 1~20 정수면 그대로 — 받은 카드의 옛 번호(생일 1 · 입사 기념 4) · 새 번호(생일 6 · 장기근속 9 · 10)도, 그 밖은 1번');
+    CARD_LIVE.received.push(card(16, '2026-10-22', { kind:'cheer', reason:'anniv', art:4 })); w = dom(cardContent()); CARD_LIVE.received.pop();
+    ok([...w.querySelectorAll('.cm-mini img')].map(i=>i.getAttribute('src')).join()==='img/cards/anniv-4.jpg?v=1,img/cards/birthday-1.jpg?v=1,img/cards/praise-1.jpg?v=1,img/cards/praise-1.jpg?v=1', '받은 카드: 이제 고를 수 없는 옛 그림(입사 기념 4 메달 · 생일 1 케이크)도 저장된 번호 그대로 보인다');
     const bad = card(15, '2026-10-22', { kind:'nope', reason:'x', art:7 });
     CARD_LIVE.received.push(bad); w = dom(cardContent()); CARD_LIVE.received.pop();
     ok(w.querySelectorAll('.cm-wall .cm-mini').length===4 && [...w.querySelectorAll('.cm-ktag')].some(t=>t.textContent==='카드') && dom(cardFace({ ...bad, toName:'가', fromName:'나' })).querySelector('.cm-tag').textContent==='카드', '모르는 종류의 카드도 탭을 비우지 않고 회색 "카드"로');
@@ -14293,7 +14349,8 @@ async function cardSelfCheck(){   // 브라우저 콘솔에서 await cardSelfChe
     window.matchMedia = q=>/reduced-motion/.test(q) ? { matches:rm } : keep.mm.call(window, q);
     Element.prototype.animate = function(){ if(this.matches('.cm-fly')) flies++; return { finished:Promise.resolve(), cancel(){} }; };   // 움직임은 바로 끝난다
     AUTH.live = true; AUTH.me = { ...(keep.me || {}), name:'가상나' }; Object.assign(CARD_LIVE, { state:'ok', ready:true });
-    const OPT = (...ks)=>ks.map(k=>({ kind:k.split(' ')[0], reason:k.split(' ')[1] || null }));
+    const ARTS = { birthday:[5, 6, 3, 4], anniv:[6, 1, 2] };   // 서버 cards.arts_for 가 주는 그림 목록 (입사 기념은 3주년)
+    const OPT = (...ks)=>ks.map(k=>({ kind:k.split(' ')[0], reason:k.split(' ')[1] || null, arts:ARTS[k.split(' ')[1]] || [1, 2, 3, 4] }));
     let optR = { status:200, j:{ options:OPT('cheer birthday', 'cheer anniv', 'praise', 'thanks'), sentToday:false } }, postR = { status:201, j:{ id:77 } };
     const box = { ready:true, unread:0, received:[], sent:[] }, org = { divisions:[], hr:false, members:[
       { id:5, name:'가상받는이', title:'프로', division:'가상본부', team:'가상팀', lead:'', ext:'', email:'', mobile:null, mailNo:'', me:false },
@@ -14310,8 +14367,18 @@ async function cardSelfCheck(){   // 브라우저 콘솔에서 await cardSelfChe
     ok(M().querySelector('.cm-to-row').textContent.includes('<i>가상받는이') && !M().querySelector('.cm-to-row i') && M().querySelector('.cm-why').textContent==='생일 · 입사 기념 소식이 있어요', '받는 분 이름은 글자 그대로 · 소식 칩');
     ok(M().querySelector('.cm-note').textContent.trim()==='받는 분만 볼 수 있어요 · 같은 분께는 하루 한 장 · 보내면 휴대폰으로 알려 드려요' && M().querySelector('.cm-pv-label').textContent==='받는 분에게 이렇게 보여요' && btn().disabled, '안내 한 줄 · 미리 보기 · 글이 없으면 [보내기] 막힘');
     ok(ex()==='입사 기념일 축하해요. 늘 든든해요.|함께해 줘서 고마워요.|앞으로도 잘 부탁해요!', '예시 문구: 입사 기념');
+    const arts = ()=>[...M().querySelectorAll('.cm-arts button')].map(b=>b.querySelector('img').getAttribute('src').match(/cards\/(.+)\.jpg/)[1] + (b.getAttribute('aria-pressed')==='true' ? '*' : '')).join();
+    const pvArt = ()=>M().querySelector('#cmPv img').getAttribute('src'), boxes = ()=>[...M().querySelectorAll('.cm-arts button')].map(b=>{ const r = b.getBoundingClientRect(); return [Math.round(r.left), Math.round(r.width)]; });
+    ok(arts()==='anniv-6*,anniv-1,anniv-2' && pvArt()==='img/cards/anniv-6.jpg?v=1', '입사 기념(3주년): 그림 칸 = 서버 arts — 숫자 그림 6 · 꽃다발 1 · 트로피 2 · 처음 골라진 그림 6 · 미리 보기도 6');
+    const b3 = boxes();
     chips()[0].click(); ok(ex()==='생일 축하해요! 오늘은 맛있는 거 많이 드세요.|생일 축하해요. 늘 고마워요.|행복한 생일 보내세요!' && chips()[0].getAttribute('aria-pressed')==='true', '예시 문구: 생일');
+    const b4 = boxes();
+    ok(b3.length===3 && b4.length===4 && b4[0][1] > 0 && b3.every((x, i)=>x[0]===b4[i][0] && x[1]===b4[i][1]), `그림 3장(입사 기념)도 4장 칸과 같은 크기 · 같은 자리로 왼쪽부터 (${JSON.stringify(b3)} / ${JSON.stringify(b4)})`);
+    ok(arts()==='birthday-5*,birthday-6,birthday-3,birthday-4' && pvArt()==='img/cards/birthday-5.jpg?v=1', '생일: 그림 칸 5 · 6 · 3 · 4 — 종류를 바꾸면 그 종류의 첫 그림(5) · 미리 보기도');
+    M().querySelectorAll('.cm-arts button')[1].click();
+    ok(arts()==='birthday-5,birthday-6*,birthday-3,birthday-4' && pvArt()==='img/cards/birthday-6.jpg?v=1', '그림을 누르면 그 그림이 골라지고 미리 보기도 바뀐다 (생일 6)');
     chips()[2].click(); ok(ex()==='이번 일 정말 멋지게 해냈어요.|꼼꼼하게 챙겨 줘서 큰 도움이 됐어요.|늘 먼저 나서 줘서 든든해요.', '예시 문구: 칭찬');
+    ok(arts()==='praise-1*,praise-2,praise-3,praise-4', '칭찬: 그림 칸 1~4 · 첫 그림 1');
     chips()[3].click(); ok(ex()==='바쁜데도 도와줘서 고마워요.|덕분에 일이 잘 끝났어요.|오늘도 수고 많았어요.', '예시 문구: 감사');
     M().querySelectorAll('.cm-ex button')[1].click();
     ok(ta().value==='덕분에 일이 잘 끝났어요.' && M().querySelector('#cmPv .cm-msg').textContent==='덕분에 일이 잘 끝났어요.' && M().querySelector('#cmPv .cm-tag').textContent==='감사' && !btn().disabled, '예시 칩을 누르면 글 칸 · 미리 보기에 들어감');
@@ -14347,6 +14414,14 @@ async function cardSelfCheck(){   // 브라우저 콘솔에서 await cardSelfChe
     ok(calls[0][0]==='/api/cards' && calls[0][1]==='POST' && calls[0][2]==='{"to":9,"kind":"thanks","reason":null,"art":3,"text":"고마워요"}', 'POST: 받는 분 서버 번호 · 종류 · 그림 번호 · 다듬은 글');
     ok(!added.some(isFly) && !flies, '움직임 줄이기: .cm-fly 가 생기지 않는다');
     ok(!M() && kpiMsg.msg==='&lt;i&gt;가상받는이 님께 카드를 보냈어요.' && calls.some(c=>c[0]==='/api/cards' && !c[1]), '201: 창 닫고 알림 줄 (이름은 글자 그대로) → 카드 상자 다시 읽기');
+    const posted = ()=>JSON.parse(calls.find(c=>c[1]==='POST')[2]);
+    await cardSend({ to, reason:'anniv' }); M().querySelectorAll('.cm-arts button')[2].click(); type('축하해요'); calls.length = 0; await cardSent();
+    ok(posted().reason==='anniv' && posted().art===2, '보낼 때 art = 고른 그림 (입사 기념 셋째 칸 = 트로피 2)');
+    await cardSend({ to, reason:'birthday' }); type('축하해요'); calls.length = 0; await cardSent();
+    ok(posted().reason==='birthday' && posted().art===5, '그림을 고르지 않으면 그 종류의 첫 그림 (생일 5)');
+    optR = { status:200, j:{ options:[{ kind:'cheer', reason:'joy', arts:[1, 99] }, { kind:'cheer', reason:'welcome' }, ...OPT('praise', 'thanks')], sentToday:false } }; await cardSend({ to, reason:'joy' });
+    ok(names()==='칭찬,감사' && arts()==='praise-1*,praise-2,praise-3,praise-4', '서버 arts 가 없거나 1~20 정수가 아닌 종류는 칩에서 뺀다 (아는 그림만)');
+    optR = { status:200, j:{ options:OPT('cheer birthday', 'cheer anniv', 'praise', 'thanks'), sentToday:false } }; orgCloseModal();
     // 움직임: 봉투가 날아간 뒤 아무것도 남지 않는다 · 날아가는 중에 닫아도
     rm = false; await cardSend({ to }); type('고마워요'); added.length = 0; mo.observe(document.body, { childList:true, subtree:true });
     await cardSent();
@@ -14394,6 +14469,8 @@ async function cardSelfCheck(){   // 브라우저 콘솔에서 await cardSelfChe
     chips()[1].click(); type('고마워요'); await cardPick(ORG_ID + 5);
     ok(calls.at(-1)[0]==='/api/cards/options?to=5' && M().querySelector('.cm-to-row b').textContent==='가상받는이' && chips()[1].getAttribute('aria-pressed')==='true' && ta().value==='고마워요' && !btn().disabled, '고르면 서버 번호(uid)로 묻고, 고른 종류 · 쓴 글은 그대로');
     ok(M().querySelector('#cmPv .cm-from').textContent===`From. 가상나 프로 · ${kpiMd(kpiDay(0))}`, '미리 보기 = 받는 분이 보는 모양: From. 이름 직급(조직도의 내 줄) · M/D');
+    orgCloseModal(); await cardSend({}); M().querySelectorAll('.cm-arts button')[2].click(); await cardPick(ORG_ID + 5);
+    ok(chips()[0].getAttribute('aria-pressed')==='true' && arts()==='praise-1,praise-2,praise-3*,praise-4' && pvArt()==='img/cards/praise-3.jpg?v=1', '받는 분을 고르기 전에 고른 그림(칭찬 3)은 고른 뒤에도 그대로 — 그 종류의 그림 목록에 있으면');
     orgCloseModal();
     // 시연: 보내는 곳 — 이번 주 소식 · 조직도 이름 창 (사유는 배너에서, 단추에는 번호만)
     AUTH.live = false; kpiRole = 'emp'; Object.assign(CARD_DEMO, cardDemoData()); calls.length = 0;
@@ -14422,9 +14499,25 @@ async function cardSelfCheck(){   // 브라우저 콘솔에서 await cardSelfChe
     oth.active = false; orgShow(oth.id); const ok3 = document.querySelector('#orgModal [onclick^="cardSendOrg("]'); if(a0===undefined) delete oth.active; else oth.active = a0;
     ok(ok1 && ok1.textContent.trim()==='칭찬 · 감사 카드 보내기' && !ok2 && !ok3, 'orgShow: [칭찬 · 감사 카드 보내기] — 나 · 비활성에게는 없다');
     orgCloseModal();
+    ok([['birthday', 0], ['anniv', 1], ['anniv', 3], ['anniv', 5], ['anniv', 10], ['anniv', 11], ['anniv', 15], ['anniv', 35], ['welcome', 0], ['joy', 0], [null, 0]].map(([r, y])=>cardArts(r, y).join('·')).join()
+      ==='5·6·3·4,5·1·2,6·1·2,7·1·2,8·1·2,9·10·1·2,9·10·1·2,9·10·1·2,1·2·3·4,1·2·3·4,1·2·3·4', '그림 목록 표(cardArts)가 서버 cards.check 의 arts_for 표와 같다');
+    { const now = new Date(), mm = String(now.getMonth()+1).padStart(2, '0'), am = orgMembers.find(x=>cardCan(x) && !cardMourn(x)), h0 = am.hireDate;
+      try {
+        for(const [y, want] of [[3, '6,1,2'], [12, '9,10,1,2'], [15, '9,10,1,2'], [4, ''], [7, '']]){
+          am.hireDate = `${now.getFullYear()-y}-${mm}-01`;
+          const an = cardDemoOpts(am.id)[0].find(o=>o.reason==='anniv');
+          ok(want ? an && an.arts.join()===want : !an, `시연: 입사 ${y}년인 분 — ${want ? '입사 기념 그림 '+want : '입사 기념 없음'} (시연 명단의 입사일로 센다)`);
+        }
+        am.hireDate = `${now.getFullYear()-15}-${mm}-01`; await cardSendOrg(am.id, 'anniv');
+        ok(chips().find(b=>b.getAttribute('aria-pressed')==='true').textContent==='축하 · 입사 기념' && arts()==='anniv-9*,anniv-10,anniv-1,anniv-2' && pvArt()==='img/cards/anniv-9.jpg?v=1', '시연 창: 15주년 그림 칸 4장 9 · 10 · 1 · 2 (장기근속 9가 처음 골라짐)');
+        M().querySelectorAll('.cm-arts button')[1].click(); ok(arts()==='anniv-9,anniv-10*,anniv-1,anniv-2' && pvArt()==='img/cards/anniv-10.jpg?v=1', '시연 창: 장기근속 둘째 그림 10을 누르면 미리 보기도 10');
+        chips().find(b=>b.textContent==='칭찬').click(); ok(arts()==='praise-1*,praise-2,praise-3,praise-4', '시연 창: 칭찬으로 바꾸면 1~4 · 첫 그림 1');
+        orgCloseModal();
+      } finally { am.hireDate = h0; }
+    }
     // ---- 카드가 왔어요 (Task 7): 들어올 때 자동 창 · 넘겨 보면 읽음 · 고마워요 · 움직임 · 카드함 처음 열기 (움직임은 바로 끝나는 가짜 — 몇 번 움직였나만 센다) ----
     const tick = ()=>new Promise(r=>setTimeout(r)), A = ()=>document.getElementById('cmArrive'), cnt = ()=>A().querySelector('.cm-count').textContent, tb = ()=>A().querySelector('.cm-thanks');
-    const bits = ()=>document.querySelectorAll('.cm-ep,.cm-p,.cm-fly,.cm-pop').length, title = ()=>document.querySelector('#orgModal .card-title')?.textContent || '';
+    const bits = ()=>document.querySelectorAll('.cm-ep,.cm-p,.cm-fly,.cm-pop,.cm-fold,.cm-seal').length, title = ()=>document.querySelector('#orgModal .card-title')?.textContent || '';
     let fx = {};
     const fxAnim = function(){ for(const k of ['ep', 'p', 'pop', 'face']) if(this.matches('.cm-'+k)) fx[k] = (fx[k] || 0) + 1; return { finished:Promise.resolve(), cancel(){} }; };
     Element.prototype.animate = fxAnim; rm = false;
@@ -14490,7 +14583,7 @@ async function cardSelfCheck(){   // 브라우저 콘솔에서 await cardSelfChe
     // 움직이는 중에 X로 닫으면 조각이 남지 않는다 (움직임이 끝난 뒤에도)
     const held = []; Element.prototype.animate = function(){ return { finished:new Promise(r=>held.push(r)), cancel(){} }; };
     unread1(); cardArrive(0); await tick(); tb().click(); await tick();
-    const mid = A().querySelectorAll('.cm-ep').length===3 && document.querySelectorAll('#orgModal .cm-pop').length===6 && A().querySelector('.cm-acts').style.pointerEvents==='none' && A().querySelector('.cm-acts').inert;
+    const mid = A().querySelectorAll('.cm-ep').length===3 && A().querySelectorAll('.cm-stage > .cm-fold, .cm-stage > .cm-seal').length===2 && document.querySelectorAll('#orgModal .cm-pop').length===6 && A().querySelector('.cm-acts').style.pointerEvents==='none' && A().querySelector('.cm-acts').inert;
     A().querySelector('.x-btn').click(); const none = !bits();
     for(let i = 0; i < 50 && held.length; i++){ held.splice(0).forEach(r=>r()); await tick(); }
     ok(mid && none && !bits() && !document.getElementById('orgModal'), '봉투가 열리는 동안 단추 줄은 눌리지 않고(X 는 된다) · 그때 X로 닫으면 봉투 · 효과 · 하트 조각이 남지 않는다 (움직임이 끝난 뒤에도)');
