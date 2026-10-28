@@ -2462,14 +2462,16 @@ def 보정_점수():  # 지금 총점 − (그 평가자가 낸 점수 평균 �
     rows = [("a", 900, D("90")), ("a", 960, D("96")), ("b", 800, D("80")), ("b", 840, D("85")), ("c", None, D("70"))]
     assert adjusted(rows) == [Fraction(169, 2), Fraction(181, 2), Fraction(171, 2), Fraction(181, 2), None]  # 전체 87.5 · a +5.5 · b -5.5 · 넷째 줄은 낸 84 · 지금 85(고친 총점) · 낸 점수 없는 줄은 None
     assert adjusted([("a", 900, D("90")), ("a", 800, D("80"))]) == [Fraction(90), Fraction(80)]  # 평가자가 하나면 성향 0 = 총점 그대로
-    assert adjusted([("a", 900, None), ("b", 800, D("80"))]) == [None, Fraction(85)]  # 총점이 없으면 None (낸 점수는 평균에 든다 — 전체 85 · b -5)
-    assert adjusted([(None, 900, D("90")), (None, 800, D("80")), (7, 700, D("70"))]) == [Fraction(85), Fraction(75), Fraction(80)]  # 평가자 열쇠 None 은 None 끼리 한 사람
+    assert adjusted([("a", 900, None), ("b", 800, D("80")), ("b", 800, D("80"))]) == [None, Fraction(250, 3), Fraction(250, 3)]  # 총점이 없으면 None (낸 점수는 평균에 든다 — 전체 83.3 · b -3.3)
+    assert adjusted([(None, 900, D("90")), (None, 800, D("80")), (7, 700, D("70"))]) == [Fraction(85), Fraction(75), Fraction(70)]  # 평가자 열쇠 None 은 None 끼리 한 사람 · 7 은 1명이라 총점 그대로
+    rows5 = [("a", 900, D("90")), ("a", 960, D("96")), ("b", 800, D("80")), ("b", 840, D("85")), ("s", 980, D("98"))]
+    assert adjusted(rows5) == [Fraction(433, 5), Fraction(463, 5), Fraction(438, 5), Fraction(463, 5), Fraction(98)]  # 전사 89.6 · a +3.4 · b -7.6 · s 는 팀장을 1명만 채점해 보정하지 않는다(총점 그대로 — 낸 98은 전사 평균에 든다)
     assert adjusted([]) == []
 
 
 @check
 def 보정_점수_글자는_0점1_사사오입():
-    assert [adj_text(Fraction(a, b)) for a, b in ((1774, 20), (2603, 30), (1735, 20), (90, 1), (-1, 20), (0, 1), (-3, 40))] == ["88.7", "86.8", "86.8", "90", "-0.1", "0", "-0.1"]  # 86.75 는 올림 · -0.05 는 0에서 먼 쪽 · -0.075 도 -0.1
+    assert [adj_text(Fraction(a, b)) for a, b in ((1774, 20), (2603, 30), (1735, 20), (1737, 20), (90, 1), (-1, 20), (0, 1), (-3, 40))] == ["88.7", "86.8", "86.8", "86.9", "90", "-0.1", "0", "-0.1"]  # 86.75 는 올림 · 86.85 도 올림 · -0.05 는 0에서 먼 쪽 · -0.075 도 -0.1
 
 
 @check
@@ -2493,6 +2495,15 @@ def 팀장_묶음_역전은_보정_점수로():
     O = [EvMember(1, "가상팀장1", D("91"), "C", 0, adj=one[0]), EvMember(2, "가상팀장2", D("85"), "B", 0, adj=one[1])]
     assert check_pool(O, BANDS, False, need_note=False)[1] == ["가상팀장1 님(총점 91점)이 총점이 더 낮은 가상팀장2 님(85점)보다 등급이 낮습니다."]
     assert check_pool(O, BANDS, False, need_note=False, calibrated=True)[1] == ["가상팀장1 님(보정 점수 91점)이 보정 점수가 더 낮은 가상팀장2 님(85점)보다 등급이 낮습니다."]
+    # 팀장을 1명만 채점한 평가자(s)는 보정하지 않는다 — 가상팀장5 는 총점 98 그대로 (전에는 전사 평균 89.6 이 되어 이 경고가 없었다)
+    five = adjusted([("a", 900, D("90")), ("a", 960, D("96")), ("b", 800, D("80")), ("b", 840, D("85")), ("s", 980, D("98"))])
+    F = [EvMember(i, f"가상팀장{i}", D(t), g, 0, adj=a) for i, t, g, a in zip(range(1, 6), ("90", "96", "80", "85", "98"), "CACCB", five)]
+    assert check_pool(F, BANDS, False, need_note=False, calibrated=True)[1] == ["가상팀장5 님(보정 점수 98점)이 보정 점수가 더 낮은 가상팀장2 님(92.6점)보다 등급이 낮습니다."]
+    # 근소 차이: 글자는 둘 다 90.3 이어도 분수로 비교해 역전
+    N2 = [EvMember(1, "가상팀장1", D("95"), "C", 0, adj=Fraction(9034, 100)), EvMember(2, "가상팀장2", D("91"), "A", 0, adj=Fraction(9031, 100))]
+    assert check_pool(N2, BANDS, False, need_note=False, calibrated=True)[1] == ["가상팀장1 님(보정 점수 90.3점)이 보정 점수가 더 낮은 가상팀장2 님(90.3점)보다 등급이 낮습니다."]
+    # 총점이 없는 사람은 보정 점수가 있어도 따지지 않는다 (cap 이 총점을 쓴다)
+    assert check_pool([EvMember(1, "가상팀장1", None, "C", 0, adj=Fraction(95)), EvMember(2, "가상팀장2", D("80"), "A", 0, adj=Fraction(80))], BANDS, False, need_note=False, calibrated=True)[1] == []
 
 
 @check

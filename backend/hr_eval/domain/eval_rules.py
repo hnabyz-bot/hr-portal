@@ -126,14 +126,16 @@ def _num(x: Decimal) -> str:
 def adjusted(rows: Sequence[tuple[object, int | None, Decimal | None]]) -> list[Fraction | None]:
     """보정 점수 = 지금 총점 − (그 평가자가 낸 점수 평균 − 낸 점수 전체 평균). 같은 차례의 점(Fraction) 목록.
     rows 는 (평가자 열쇠, 낸 점수 10배 또는 None, 지금 총점 또는 None). 낸 점수가 None 인 줄은 평균에 안 들고 결과도 None, 지금 총점이 None 이어도 None.
-    평가자가 낸 점수만 평균에 든다 — 대표이사가 나중에 고친 총점은 성향에 안 든다. 평가자 열쇠 None 은 None 끼리 한 사람으로 본다."""
+    평가자가 낸 점수만 평균에 든다 — 대표이사가 나중에 고친 총점은 성향에 안 든다. 평가자 열쇠 None 은 None 끼리 한 사람으로 본다.
+    팀장을 1명만 채점한 평가자는 보정하지 않는다(보정 점수 = 지금 총점 — 1명으로는 후한지 잘했는지 가를 수 없다, 인사담당자 결정 2026-10-28). 그 낸 점수는 전체 평균에 그대로 든다."""
     per: dict[object, tuple[int, int]] = {}  # 평가자 → (낸 점수 10배 합, 수)
     for r, s, _ in rows:
         if s is not None:
             sum_, n = per.get(r, (0, 0))
             per[r] = (sum_ + s, n + 1)
     all_sum, all_n = sum(v[0] for v in per.values()), sum(v[1] for v in per.values())
-    return [None if s is None or t is None else Fraction(t) - (Fraction(per[r][0], per[r][1]) - Fraction(all_sum, all_n)) / 10 for r, s, t in rows]
+    return [None if s is None or t is None else Fraction(t) if per[r][1] == 1 else Fraction(t) - (Fraction(per[r][0], per[r][1]) - Fraction(all_sum, all_n)) / 10
+            for r, s, t in rows]
 
 
 def adj_text(x: Fraction) -> str:
@@ -205,7 +207,7 @@ def check_pool(
         if full and cnt["A"] + cnt["B"] < up:
             warnings.append(f"A·B가 정원보다 {up - cnt['A'] - cnt['B']}명 적습니다.")
     pts = (lambda m: m.adj) if calibrated else (lambda m: m.score)  # 역전을 따지는 점수
-    rated = [m for m in members if m.grade and pts(m) is not None]
+    rated = [m for m in members if m.grade and pts(m) is not None and (not calibrated or m.score is not None)]  # 보정 점수로 따져도 cap 은 총점으로 — 총점 없는 사람은 빠진다
     for x in rated:
         # x 보다 점수가 낮은데 더 높은 등급을 받았고, x 도 그 등급을 받을 수 있었다 = x 가 밀렸다 (동점 · 점수 없음은 제외)
         lower = [y for y in rated if pts(y) < pts(x) and above(y.grade, x.grade) and not above(y.grade, cap(x.score, x.leave_x2, bands))]

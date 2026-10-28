@@ -333,13 +333,15 @@ def _pool(ctx: _Ctx, key: str) -> tuple[str, list[str], list[str], dict[str, int
     배정 단계에 온 사람의 등급만 세고, 다 오기 전에는 빠진 등급 · 미달을 따지지 않는다(full 거짓).
     모두 대표이사 확인 단계(ready_stage)에 왔으면 배정 단계도 지났으니 full 검사다 — 그 오류로 FIX · CEO 를 가른다.
     정원은 그해 비율(_ratios_of) · 그 묶음의 늘린 정원(_extra_of). 점수 역전(밀린 사람)은 윗사람 코멘트가 없으면 오류 — 전사 팀장 묶음은 윗사람 코멘트 칸이 없어 경고만이고,
-    총점이 아니라 보정 점수(지금 총점 − 그 평가자의 채점 성향, eval_rules.adjusted)로 비교한다. 성향은 이 묶음의 제외 안 된 KPI 있는 사람 중 평가자가 낸 점수(sub_score_x10)로 센다."""
+    총점이 아니라 보정 점수(지금 총점 − 그 평가자의 채점 성향, eval_rules.adjusted)로 비교한다. 성향은 이 묶음의 제외 안 된 KPI 있는 사람 중 평가자가 낸 점수(sub_score_x10)로 센다
+    (팀장을 1명만 채점한 평가자의 사람은 보정 점수 = 총점 — 그 낸 점수는 전체 평균에 든다)."""
     ref = assign_stage(key)
     rows = sorted((r for r in ctx.rows.values() if r["pool"] == key and r["out_at"] is None), key=lambda r: _order(ctx, r))
     leaders = key == "LEADERS"
-    adj = adjusted([(r["rater_id"], r["sub_score_x10"] if r["kpi_version"] is not None else None, _total(ctx, r)) for r in rows]) if leaders else [None] * len(rows)
-    members = [Member(r["user_id"], ctx.names[r["user_id"]][0], _total(ctx, r), r["grade"] if at(r["stage"], ref) >= 0 else None, r["leave_x2"],
-                      note=bool(r["head_comment"].strip()), adj=a) for r, a in zip(rows, adj)]
+    tot = [_total(ctx, r) for r in rows]
+    adj = adjusted([(r["rater_id"], r["sub_score_x10"] if r["kpi_version"] is not None else None, t) for r, t in zip(rows, tot)]) if leaders else [None] * len(rows)
+    members = [Member(r["user_id"], ctx.names[r["user_id"]][0], t, r["grade"] if at(r["stage"], ref) >= 0 else None, r["leave_x2"],
+                      note=bool(r["head_comment"].strip()), adj=a) for r, t, a in zip(rows, tot, adj)]
     errors, warnings, counts = check_pool(members, _bands_of(ctx), all(at(r["stage"], ref) >= 0 for r in rows), _ratios_of(ctx), _extra_of(ctx, key),
                                           need_note=not leaders, calibrated=leaders)
     return pool_state([r["stage"] for r in rows], key, bool(errors)), errors, warnings, counts, rows
@@ -824,7 +826,7 @@ def _pool_label(ctx: _Ctx, key: str) -> str:
 
 
 def _pool_json(ctx: _Ctx, me: Actor, key: str) -> dict:
-    """묶음 한 줄 — 배정자 · 대표이사 · HR 에게만 보낸다 (오류 문구에 이름 · 총점 · 등급이 든다). quota = 정원 글자 (그해 비율 · 늘린 정원이 들어간 숫자,
+    """묶음 한 줄 — 배정자 · 대표이사 · HR 에게만 보낸다 (오류 문구에 이름 · 총점(전사 팀장 묶음의 역전 문구는 보정 점수) · 등급이 든다). quota = 정원 글자 (그해 비율 · 늘린 정원이 들어간 숫자,
     늘렸으면 뒤에 " · 대표이사 허용 S·A +x명 · B +y명" — 0 인 쪽은 뺀다. 4명 이하 묶음은 S·A·B 합쳐 하나라 " · 대표이사 허용 S·A·B +n명") ·
     extra = 늘린 정원 {"SA", "B", "reason", "at", "by"} (둘 다 0 이면 None)."""
     state, errors, warnings, counts, rows = _pool(ctx, key)
