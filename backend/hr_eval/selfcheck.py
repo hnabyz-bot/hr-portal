@@ -15,6 +15,7 @@ import traceback
 from dataclasses import replace
 from datetime import date, datetime
 from decimal import Decimal
+from fractions import Fraction
 
 # Windows 콘솔 기본 코드페이지(cp949)에서 한글·기호가 깨지는 걸 막는다.
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -47,6 +48,9 @@ from hr_eval.domain.quota import (
     SMALL_DIVISION_THRESHOLD,
     GroupedQuota,
     IndividualQuota,
+    DEFAULT_RATIOS,
+    EXTRA_MAX,
+    RATIO_SUM_MAX,
     QuotaMode,
     calculate_department_quota,
     round_half_up,
@@ -68,8 +72,8 @@ from hr_eval.domain.kpi_review import (
     alarm, check_state, clean_biz_plan, is_muted, js_round, month_summary, mute_until, same_kst_day,
 )
 from hr_eval.domain.eval_rules import (
-    APPEAL_DAYS, BANDS, BONUS_MAX_X2, FILE_MAX, FILES_PER_ITEM, GRADES, LEAVE_LIMIT_X2, ORDER, PCT, TEXT_MAX, TOTAL_MAX,
-    Member as EvMember, above, after_score, assign_stage, at, band, cap, check_pool, edited, level, pool_key, pool_ref, pool_state, ready_stage, total,
+    APPEAL_DAYS, BANDS, FILE_MAX, FILES_PER_ITEM, GRADES, LEAVE_LIMIT_X2, ORDER, PCT, TEXT_MAX, TOTAL_MAX,
+    Member as EvMember, above, adj_text, adjusted, after_score, assign_stage, at, band, cap, check_pool, edited, level, pool_key, pool_ref, pool_state, ready_stage, total,
 )
 from hr_eval.domain.access import Act, Delegation, Pool, PoolRef, Target, can
 from hr_eval.domain.roster import (
@@ -196,6 +200,54 @@ def 음수_인원은_거부한다():
         pass
     else:
         raise AssertionError("음수 인원인데 ValueError가 나오지 않았다")
+
+
+@check
+def 비율을_바꾸면_정원이_바뀐다():
+    q = calculate_department_quota(10, (20, 10, 0))
+    assert (q.a, q.b, q.d, q.c, q.cap_s) == (2, 1, 0, 7, 2), q
+    q = calculate_department_quota(20, (25, 15, 10))
+    assert (q.a, q.b, q.d, q.c, q.cap_s) == (5, 3, 2, 10, 5), q
+
+
+@check
+def 비율_기본값은_지금_규칙과_같다():
+    assert (DEFAULT_RATIOS, EXTRA_MAX, RATIO_SUM_MAX) == ((10, 10, 10), 5, 70)
+    for n in range(0, 61):
+        assert calculate_department_quota(n) == calculate_department_quota(n, (10, 10, 10), (0, 0)), n
+    q = calculate_department_quota(10)
+    assert (q.a, q.b, q.c, q.d, q.cap_s) == (1, 1, 7, 1, 1), q  # 지금 규칙: 10명 A1 B1 C7 D1
+
+
+@check
+def 비율_합_70이면_5명_이상_어디서나_정원_합이_인원을_넘지_않는다():
+    for ratios in ((70, 0, 0), (35, 35, 0), (30, 30, 10), (25, 25, 20), (0, 0, 70)):
+        for n in range(5, 201):
+            q = calculate_department_quota(n, ratios)
+            assert q.c >= 0 and q.total() == n, (ratios, n, q)
+
+
+@check
+def 늘린_정원은_SA와_B에_더해지고_S상한도_오른다():
+    q = calculate_department_quota(10, extra=(1, 0))
+    assert (q.a, q.cap_s, q.c) == (2, 2, 6), q
+    q = calculate_department_quota(10, extra=(0, 2))
+    assert (q.b, q.cap_s) == (3, 1), q
+    q = calculate_department_quota(4, extra=(1, 0))  # 묶음(4명 이하)은 비율을 안 쓰고 위쪽 칸이 늘어난다
+    assert (q.upper, q.cap_s, q.lower) == (2, 2, 2), q
+    q = calculate_department_quota(1, extra=(1, 0))  # 1명 묶음도 늘려 주면 위쪽 1명
+    assert (q.upper, q.lower) == (1, 0), q
+
+
+@check
+def 늘린_정원이_인원을_넘으면_ValueError():
+    for n, extra in ((5, (5, 5)), (3, (2, 1))):
+        try:
+            calculate_department_quota(n, extra=extra)
+        except ValueError as e:
+            assert str(e) == "늘린 정원이 묶음 인원보다 많습니다.", e
+        else:
+            raise AssertionError(f"{n}명에 {extra}인데 ValueError가 나오지 않았다")
 
 
 @check
@@ -2304,10 +2356,10 @@ def 보는_대상_모양():
 
 
 @check
-def 총점은_가중치와_가점():
+def 총점은_가중치와_등급():  # 가점은 없다 (2026-10-27)
     rows = [(40, "S"), (30, "A"), (30, "B")]
-    assert total(rows, 0) == Decimal("101.0") and total(rows, 40) == Decimal("110") and total([(100, None)], 0) == 0
-    assert total([(33.3, "A"), (33.3, "B"), (33.4, "C")], 1) == Decimal("90.5")  # 33.3 + 29.97 + 26.72 + 0.5 = 90.49 → 90.5 (둘째 자리에서 사사오입)
+    assert total(rows) == Decimal("101.0") and total([(60, "S"), (60, "S")]) == Decimal("110") and total([(100, None)]) == 0  # 상한 110
+    assert total([(33.3, "A"), (33.3, "B"), (33.4, "C")]) == Decimal("90.0")  # 33.3 + 29.97 + 26.72 = 89.99 → 90.0 (둘째 자리에서 사사오입)
 
 
 @check
@@ -2327,7 +2379,7 @@ def 연차는_5일부터():
 def 정원_검사는_화면과_같다():  # evSelfCheck 의 R (101 · 99 · 96 · 92 · 88 · 80) — 6명이라 A·B·D 각 1명
     R = [EvMember(i, f"p{i}", Decimal(s), None, 0) for i, s in zip(range(1, 7), ("101", "99", "96", "92", "88", "80"))]
     g = lambda a, rows=R: [replace(m, grade=a.get(m.uid)) for m in rows]  # noqa: E731
-    assert check_pool(g({1: "S", 3: "B", 6: "D", 2: "C", 4: "C", 5: "C"}), BANDS, True)[0] == []  # S 1명이면 A 0명으로 통과
+    assert check_pool(g({1: "S", 3: "B", 6: "D", 2: "C", 4: "C", 5: "C"}), BANDS, True, need_note=False)[0] == []  # S 1명이면 A 0명으로 통과 (p2 가 p3 에게 밀린 줄은 코멘트를 안 따지면 경고라 오류가 아니다)
     assert len(check_pool(g({1: "S", 2: "A"}), BANDS, False)[0]) == 1  # S가 있는데 A까지 주면 초과
     assert any("100점" in e for e in check_pool(g({2: "S"}), BANDS, False)[0])  # 총점 100 이하 S 불가
     assert any("최대" in e for e in check_pool(g({1: "S", 2: "S"}), BANDS, False)[0])  # S 상한
@@ -2362,6 +2414,127 @@ def 정원_검사_문구와_순서는_화면_그대로():  # evValidate 의 문�
 
 
 @check
+def 점수_역전은_코멘트가_없으면_오류_있으면_경고():
+    R = [EvMember(1, "가", Decimal("95"), "C", 0), EvMember(2, "나", Decimal("91"), "A", 0)]
+    R += [EvMember(i, f"p{i}", Decimal(str(90 - i)), "C", 0) for i in range(3, 7)]  # 6명 묶음 — 기본 비율이면 A·B·D 각 1명
+    줄 = "가 님(총점 95점)이 총점이 더 낮은 나 님(91점)보다 등급이 낮습니다."
+    e, w, _ = check_pool(R, BANDS, False)
+    assert e == [줄 + " 코멘트(직원에게 공개)에 이유를 적어 주세요."] and w == [], (e, w)
+    e, w, _ = check_pool([replace(R[0], note=True), *R[1:]], BANDS, False)
+    assert e == [] and w == [줄], (e, w)  # 코멘트가 있으면 경고만
+    e, w, _ = check_pool(R, BANDS, False, need_note=False)
+    assert e == [] and w == [줄], (e, w)  # 코멘트를 요구하지 않는 곳(배정 중)은 경고만
+    # 정원 줄 뒤에 붙고, full 이어도 역전 줄이 마지막이다
+    R2 = [R[0], R[1], replace(R[1], uid=7, name="다", score=Decimal("90.5")), *R[3:]]  # A 2명 → 정원 초과 + 가 님이 둘에게 밀림
+    e, w, _ = check_pool(R2, BANDS, False)
+    assert e[0] == "A는 1명까지입니다. 현재 2명" and len(e) == 2 and e[1].startswith("가 님(총점 95점)이 총점이 더 낮은 나 님(91점)"), e
+    e, w, _ = check_pool(R2, BANDS, True)
+    assert e[-1].endswith("코멘트(직원에게 공개)에 이유를 적어 주세요.") and w[:2] == ["B가 정원보다 1명 적습니다.", "D가 정원보다 1명 적습니다."], (e, w)
+
+
+@check
+def 점수_역전_줄은_가장_높은_등급을_받은_사람을_밀린_사람_차례로_부른다():
+    줄 = lambda ms: check_pool(ms, BANDS, False, need_note=False)[1]  # noqa: E731  (정원 경고는 full 일 때만이라 역전 줄만 남는다)
+    M = lambda i, s, g: EvMember(i, f"p{i}", Decimal(s), g, 0)  # noqa: E731
+    # 97 C · 94 C 는 91 B · 90.5 A 에게 모두 밀림 — 부르는 사람은 더 높은 등급(A) · 91 B 도 90.5 A 에게 밀림
+    assert 줄([M(1, "97", "C"), M(2, "94", "C"), M(3, "91", "B"), M(4, "90.5", "A"), M(5, "85", "C"), M(6, "80", "C")]) == [
+        "p1 님(총점 97점)이 총점이 더 낮은 p4 님(90.5점)보다 등급이 낮습니다.",
+        "p2 님(총점 94점)이 총점이 더 낮은 p4 님(90.5점)보다 등급이 낮습니다.",
+        "p3 님(총점 91점)이 총점이 더 낮은 p4 님(90.5점)보다 등급이 낮습니다.",
+    ]
+    # 등급이 같으면 점수가 높은 사람, 점수까지 같으면 명단 차례가 앞선 사람
+    assert 줄([M(1, "97", "C"), M(2, "91", "B"), M(3, "92", "B")]) == ["p1 님(총점 97점)이 총점이 더 낮은 p3 님(92점)보다 등급이 낮습니다."]
+    assert 줄([M(1, "97", "C"), M(2, "92", "B"), M(3, "92", "B")]) == ["p1 님(총점 97점)이 총점이 더 낮은 p2 님(92점)보다 등급이 낮습니다."]
+
+
+@check
+def 동점_점수없음_연차초과는_역전이_아니다():
+    줄 = lambda ms: check_pool(ms, BANDS, False)[:2]  # noqa: E731
+    assert 줄([EvMember(1, "가", Decimal("92"), "C", 0), EvMember(2, "나", Decimal("92"), "A", 0)]) == ([], [])  # 동점
+    assert 줄([EvMember(1, "가", None, "C", 0), EvMember(2, "나", Decimal("91"), "A", 0)]) == ([], [])  # 점수 없음(KPI 없음)은 따지지 않는다
+    assert 줄([EvMember(1, "가", Decimal("91"), "C", 0), EvMember(2, "나", None, "A", 0)]) == ([], [])  # 올려 받은 쪽이 점수 없음이어도 마찬가지
+    assert 줄([EvMember(1, "가", Decimal("95"), "C", 10), EvMember(2, "나", Decimal("91"), "B", 0)]) == ([], [])  # 연차 초과라 그 등급을 받을 수 없었다
+
+
+@check
+def 보정_점수():  # 지금 총점 − (그 평가자가 낸 점수 평균 − 전체 평균) — 분수 그대로
+    D = Decimal
+    rows = [("a", 900, D("90")), ("a", 960, D("96")), ("b", 800, D("80")), ("b", 840, D("85")), ("c", None, D("70"))]
+    assert adjusted(rows) == [Fraction(169, 2), Fraction(181, 2), Fraction(171, 2), Fraction(181, 2), None]  # 전체 87.5 · a +5.5 · b -5.5 · 넷째 줄은 낸 84 · 지금 85(고친 총점) · 낸 점수 없는 줄은 None
+    assert adjusted([("a", 900, D("90")), ("a", 800, D("80"))]) == [Fraction(90), Fraction(80)]  # 평가자가 하나면 성향 0 = 총점 그대로
+    assert adjusted([("a", 900, None), ("b", 800, D("80")), ("b", 800, D("80"))]) == [None, Fraction(250, 3), Fraction(250, 3)]  # 총점이 없으면 None (낸 점수는 평균에 든다 — 전체 83.3 · b -3.3)
+    assert adjusted([(None, 900, D("90")), (None, 800, D("80")), (7, 700, D("70"))]) == [Fraction(85), Fraction(75), Fraction(70)]  # 평가자 열쇠 None 은 None 끼리 한 사람 · 7 은 1명이라 총점 그대로
+    rows5 = [("a", 900, D("90")), ("a", 960, D("96")), ("b", 800, D("80")), ("b", 840, D("85")), ("s", 980, D("98"))]
+    assert adjusted(rows5) == [Fraction(433, 5), Fraction(463, 5), Fraction(438, 5), Fraction(463, 5), Fraction(98)]  # 전사 89.6 · a +3.4 · b -7.6 · s 는 팀장을 1명만 채점해 보정하지 않는다(총점 그대로 — 낸 98은 전사 평균에 든다)
+    assert adjusted([]) == []
+
+
+@check
+def 보정_점수_글자는_0점1_사사오입():
+    assert [adj_text(Fraction(a, b)) for a, b in ((1774, 20), (2603, 30), (1735, 20), (1737, 20), (90, 1), (-1, 20), (0, 1), (-3, 40))] == ["88.7", "86.8", "86.8", "86.9", "90", "-0.1", "0", "-0.1"]  # 86.75 는 올림 · 86.85 도 올림 · -0.05 는 0에서 먼 쪽 · -0.075 도 -0.1
+
+
+@check
+def 팀장_묶음_역전은_보정_점수로():
+    D = Decimal
+    rows = [("a", 900, D("90")), ("a", 960, D("96")), ("b", 800, D("80")), ("b", 840, D("85")), ("c", None, D("70"))]
+    adj = adjusted(rows)[:4]
+    M = lambda i, 총점, g, a: EvMember(i, f"가상팀장{i}", D(총점), g, 0, adj=a)  # noqa: E731
+    # 가상팀장1 90 → 84.5 B · 가상팀장2 96 → 90.5 A · 가상팀장3 80 → 85.5 C · 가상팀장4 85 → 90.5 C (a 가 후하게, b 가 짜게 줬다)
+    R = [M(1, "90", "B", adj[0]), M(2, "96", "A", adj[1]), M(3, "80", "C", adj[2]), M(4, "85", "C", adj[3])]
+    L4 = "가상팀장4 님(보정 점수 90.5점)이 보정 점수가 더 낮은 가상팀장1 님(84.5점)보다 등급이 낮습니다."
+    e, w, _ = check_pool(R, BANDS, False, need_note=False, calibrated=True)
+    assert w == [L4], w  # 총점은 85 < 90 이라 총점으로는 역전이 아니다 · 가상팀장3(80)은 B를 못 받아 밀린 게 아니다(cap 은 총점) · 90.5 동점끼리(가상팀장2 · 4)는 역전이 아니다
+    assert check_pool(R, BANDS, False, need_note=False)[1] == [], "calibrated=False 는 총점으로"
+    assert check_pool([replace(m, adj=None) for m in R], BANDS, False, need_note=False, calibrated=True)[1] == []  # 보정 점수가 없는 사람은 따지지 않는다
+    # 코멘트를 요구하는 묶음이면 보정 점수 역전도 오류 (전사 팀장 묶음은 요구하지 않는다)
+    e, w, _ = check_pool(R, BANDS, False, calibrated=True)
+    assert [x for x in e if x.startswith("가상팀장4")] == [f"{L4} 코멘트(직원에게 공개)에 이유를 적어 주세요."] and w == [], (e, w)
+    # 평가자가 하나면 보정 점수 = 총점 — 같은 사람 · 같은 숫자 (문구만 다르다)
+    one = adjusted([("a", 910, D("91")), ("a", 850, D("85"))])
+    O = [EvMember(1, "가상팀장1", D("91"), "C", 0, adj=one[0]), EvMember(2, "가상팀장2", D("85"), "B", 0, adj=one[1])]
+    assert check_pool(O, BANDS, False, need_note=False)[1] == ["가상팀장1 님(총점 91점)이 총점이 더 낮은 가상팀장2 님(85점)보다 등급이 낮습니다."]
+    assert check_pool(O, BANDS, False, need_note=False, calibrated=True)[1] == ["가상팀장1 님(보정 점수 91점)이 보정 점수가 더 낮은 가상팀장2 님(85점)보다 등급이 낮습니다."]
+    # 팀장을 1명만 채점한 평가자(s)는 보정하지 않는다 — 가상팀장5 는 총점 98 그대로 (전에는 전사 평균 89.6 이 되어 이 경고가 없었다)
+    five = adjusted([("a", 900, D("90")), ("a", 960, D("96")), ("b", 800, D("80")), ("b", 840, D("85")), ("s", 980, D("98"))])
+    F = [EvMember(i, f"가상팀장{i}", D(t), g, 0, adj=a) for i, t, g, a in zip(range(1, 6), ("90", "96", "80", "85", "98"), "CACCB", five)]
+    assert check_pool(F, BANDS, False, need_note=False, calibrated=True)[1] == ["가상팀장5 님(보정 점수 98점)이 보정 점수가 더 낮은 가상팀장2 님(92.6점)보다 등급이 낮습니다."]
+    # 근소 차이: 글자는 둘 다 90.3 이어도 분수로 비교해 역전
+    N2 = [EvMember(1, "가상팀장1", D("95"), "C", 0, adj=Fraction(9034, 100)), EvMember(2, "가상팀장2", D("91"), "A", 0, adj=Fraction(9031, 100))]
+    assert check_pool(N2, BANDS, False, need_note=False, calibrated=True)[1] == ["가상팀장1 님(보정 점수 90.3점)이 보정 점수가 더 낮은 가상팀장2 님(90.3점)보다 등급이 낮습니다."]
+    # 총점이 없는 사람은 보정 점수가 있어도 따지지 않는다 (cap 이 총점을 쓴다)
+    assert check_pool([EvMember(1, "가상팀장1", None, "C", 0, adj=Fraction(95)), EvMember(2, "가상팀장2", D("80"), "A", 0, adj=Fraction(80))], BANDS, False, need_note=False, calibrated=True)[1] == []
+
+
+@check
+def 정원_검사가_비율과_늘린_정원을_쓴다():
+    R = [EvMember(i, f"p{i}", Decimal("95") - i, "A" if i < 3 else "C", 0) for i in range(1, 11)]  # 10명 — A 2명
+    assert check_pool(R, BANDS, False, ratios=(20, 10, 10))[:2] == ([], [])  # S·A 20% → A 2명까지
+    assert check_pool(R, BANDS, False)[0] == ["A는 1명까지입니다. 현재 2명"]  # 기본 비율은 1명
+    assert check_pool(R, BANDS, False, extra=(1, 0))[:2] == ([], [])  # 늘려 주면 기본 비율도 통과
+
+
+@check
+def 점수로_D인_사람은_D_정원에_세지_않는다():  # S7 — 10명 묶음 기본 비율이면 S·A 1 · B 1 · D 1 · C 7
+    def 검사(*d, ratios=(10, 10, 10)):  # d = D를 받은 사람들의 점수(None 은 KPI 없음) — A 95 · B 85 가 한 명씩, 나머지는 C(75점)
+        ms = [EvMember(1, "p1", Decimal("95"), "A", 0), EvMember(2, "p2", Decimal("85"), "B", 0)]
+        ms += [EvMember(3 + i, f"d{i}", None if s is None else Decimal(s), "D", 0) for i, s in enumerate(d)]
+        ms += [EvMember(20 + i, f"c{i}", Decimal("75"), "C", 0) for i in range(8 - len(d))]
+        return check_pool(ms, BANDS, True, ratios=ratios, need_note=False)  # 역전 줄은 경고라 오류만 따진다
+    D미달 = lambda w: [x for x in w if x.startswith("D가")]  # noqa: E731
+    e, w, n = 검사("65", "68")
+    assert e == [] and w == [] and n["D"] == 2, (e, w, n)  # 점수로 D인 둘은 정원 밖 · 미달 경고도 없다(경고는 모든 D로 센다)
+    e, w, n = 검사("85", "65", "68")
+    assert e == [] and D미달(w) == [] and n["D"] == 3, (e, w, n)  # 85점 D 한 명 = 정원 1명
+    assert 검사("85", "88", "65")[0] == ["D는 1명까지입니다. 현재 2명 (점수로 D인 1명은 세지 않음)"]  # 점수보다 낮춰 준 D 둘
+    assert 검사("85", "88")[0] == ["D는 1명까지입니다. 현재 2명"]  # 점수로 D인 사람이 없으면 문구가 그대로
+    assert 검사(None, None)[0] == ["D는 1명까지입니다. 현재 2명"] and 검사(None, "65")[0] == []  # 점수 없는 사람(KPI 없음) D는 센다
+    assert 검사(None, None, "65")[0] == ["D는 1명까지입니다. 현재 2명 (점수로 D인 1명은 세지 않음)"]
+    assert 검사("65", ratios=(10, 10, 0))[0] == [] and 검사("85", ratios=(10, 10, 0))[0] == ["D는 0명까지입니다. 현재 1명"]  # D 비율 0 — 점수로 D인 사람만 받는다
+    assert 검사("70", "70")[0] == [] and 검사("70.1", "70.2")[0] == ["D는 1명까지입니다. 현재 2명"]  # 점수 기준은 '초과' — 70점은 D · 70.1점은 C까지 받을 수 있다
+
+
+@check
 def 묶음_상태():
     assert pool_state([], "DIRECT", False) == "WAIT"
     assert pool_state(["GRADE", "GRADE"], "DIRECT", False) == "CEO" and pool_state(["GRADE", "GRADE"], "DIV:3", False) == "WAIT"
@@ -2382,9 +2555,9 @@ def 묶음_참조와_단계():
     assert [after_score(k) for k in ("LEADERS", "DIRECT", "DIV:1")] == ["CEO", "GRADE", "GRADE"] and assign_stage("LEADERS") == "CEO" and assign_stage("DIV:1") == "GRADE"
     assert [ready_stage(k) for k in ("LEADERS", "DIRECT", "DIV:1")] == ["CEO", "GRADE", "CEO"]
     assert at("SCORE", "CEO") < 0 and at("CEO", "CEO") == 0 and at("HR", "CEO") > 0 and at("DONE", "GRADE") > 0  # 대표이사 확인 다음이 HR 확정
-    assert (ORDER, GRADES, BANDS, LEAVE_LIMIT_X2, BONUS_MAX_X2, TOTAL_MAX) == (("SELF", "SCORE", "GRADE", "CEO", "HR", "DONE"), ("S", "A", "B", "C", "D"), (90, 80, 70), 10, 20, Decimal("110"))
+    assert (ORDER, GRADES, BANDS, LEAVE_LIMIT_X2, TOTAL_MAX) == (("SELF", "SCORE", "GRADE", "CEO", "HR", "DONE"), ("S", "A", "B", "C", "D"), (90, 80, 70), 10, Decimal("110"))
     assert (PCT, APPEAL_DAYS, FILE_MAX, FILES_PER_ITEM) == ({"S": 110, "A": 100, "B": 90, "C": 80, "D": 70}, 7, 10 * 1024 * 1024, 5)
-    assert TEXT_MAX == {"note": 500, "comment": 500, "head": 500, "bonusReason": 100, "out": 100, "back": 200, "appeal": 500, "answer": 500}
+    assert TEXT_MAX == {"note": 500, "comment": 500, "head": 500, "out": 100, "back": 200, "appeal": 500, "answer": 500}  # 가점 사유는 판 23부터 없다
 
 
 @check
