@@ -6697,14 +6697,14 @@ function ctSelfCheck(){   // 브라우저 콘솔에서 ctSelfCheck() 실행
   const BL = [{ t:'title', text:'연 봉 계 약 서' }, { t:'kv', rows:[['사업주', '㈜가상 · 대표이사 ○○○', '사업의 종류', '제조업'], ['소재지', '가상 주소 <i>1</i>']] }, { t:'h', text:'제1조 (임금)' },
     { t:'p', runs:[['총 계약 연봉금액 : ', false], ['51,224,084원', true], [' ((월급여 − 수당) × 12 + 명절상여)', false], ['굵은 글', true]] },
     { t:'p', runs:[['둘째 줄\n\u00a0\u00a0- 셋째 <script>x()<\/script>', false]] },
-    { t:'table', head:2, rows:[[{ c:'월 급여 / 月', span:2 }, '명절'], ['계', '시간급', ''], ['1원', '2원', '3원']] },
+    { t:'table', head:2, rows:[[{ c:'월 급여 / 月', span:2 }, { c:'명절', rspan:2 }], ['계', '시간급'], ['1원', '2원', '3원']] },
     { t:'center', text:'위와 같이 체결합니다.' }, { t:'center', text:'2027년 2월 10일' }, { t:'signs', employer:'㈜가상 대표이사 ○○○', worker:'가상직원' }, { t:'zzz', text:'모르는 블록' }];
   const h = ctBlocksHtml(BL, { sealUrl:'blob:seal-1', signUrl:'blob:sign-1', signed:true }), d = new DOMParser().parseFromString(h, 'text/html'), q = s=>d.querySelector(s);
   ok(q('.ct-doc .ct-doc-title').textContent==='연 봉 계 약 서' && q('h4').textContent==='제1조 (임금)' && !h.includes('모르는 블록'), '제목 · 조 제목 · 모르는 블록은 그리지 않는다');
   ok(d.querySelectorAll('.ct-kv > div').length===6 && q('.ct-kv .span3').textContent==='가상 주소 <i>1</i>' && !q('i'), 'kv: 네 칸 줄과 값 하나가 가로 전체(span3) · 글 안의 태그는 글자로');
   ok(q('b.ct-amt').textContent==='51,224,084원' && q('p .list-sub').textContent.startsWith(' ((월급여') && d.querySelectorAll('b').length===2 && !d.querySelectorAll('b')[1].className, '굵은 run은 <b> (금액은 파란 큰 글자, 다른 굵은 글은 그냥 굵게) · 설명 run은 작은 회색');
   ok(h.includes('둘째 줄<br>\u00a0\u00a0- 셋째') && h.includes('&lt;script&gt;') && !q('script'), '"\\n"은 줄바꿈 · U+00A0은 그대로 · <script>는 글자로 (escapeHtml)');
-  ok(h.includes('<th colspan="2">월 급여 / 月</th>') && d.querySelectorAll('tr')[1].children[0].tagName==='TH' && d.querySelectorAll('tr')[2].children[0].tagName==='TD' && d.querySelectorAll('tr')[1].children.length===3 && q('.ct-tbl table'), '표: span 2 → colspan="2" · head 줄 수만큼 th · 빈 칸도 그대로');
+  ok(h.includes('<th colspan="2">월 급여 / 月</th>') && h.includes('<th rowspan="2">명절</th>') && d.querySelectorAll('tr')[1].children[0].tagName==='TH' && d.querySelectorAll('tr')[2].children[0].tagName==='TD' && d.querySelectorAll('tr')[1].children.length===2 && q('.ct-tbl table'), '표: span 2 → colspan="2" · rspan 2 → rowspan="2"(아랫줄은 그 칸이 없다) · head 줄 수만큼 th');
   ok(d.querySelectorAll('.ct-center').length===2 && !q('.ct-center').classList.contains('list-sub') && d.querySelectorAll('.ct-center')[1].classList.contains('list-sub') && d.querySelectorAll('.ct-center')[1].textContent==='2027년 2월 10일', '가운데 줄 둘: 맺는 글 · 서명한 날(작은 글자)');
   ok(q('.ct-signs').textContent.includes('사업주 : ㈜가상 대표이사 ○○○ (인)') && q('.ct-sealwrap img.ct-seal').getAttribute('src')==='blob:seal-1' && q('img.ct-sigimg').getAttribute('src')==='blob:sign-1' && q('.ct-signs').textContent.includes('근로자 : 가상직원'), '서명 줄: 사업주 "(인)" 위에 직인 그림 · 근로자 옆 서명 그림');
   const h2 = ctBlocksHtml(BL.slice(-2, -1), { sealId:9 }), d2 = new DOMParser().parseFromString(h2, 'text/html'), h3 = ctBlocksHtml(BL.slice(-2, -1), { signed:true });
@@ -6765,8 +6765,8 @@ function ctDocHtml(c, forHash){
     <p>총 계약 연봉금액 : <b class="ct-amt">${ctWon(k.annual)}</b> <span class="list-sub" style="display:inline;">((월급여 − 현장관리수당·자격수당, 직책수당) × 12 + 명절상여)</span></p>
     <p>1) 급여 구성은 기본급과 수당으로 구성되며, 내역은 아래와 같다.</p>
     <div class="ct-tbl"><table>
-      <tr><th colspan="5">월 급여 / 月</th><th colspan="2">연봉 외 수당</th><th>명절상여/年</th></tr>
-      <tr><th>계</th><th>시간급</th><th>기본급(209H)</th><th>시간외근로(10H)</th><th>능력급(209H)</th><th>현장관리수당/자격수당</th><th>직책수당</th><th></th></tr>
+      <tr><th colspan="5">월 급여 / 月</th><th colspan="2">연봉 외 수당</th><th rowspan="2">명절상여/年</th></tr>
+      <tr><th>계</th><th>시간급</th><th>기본급(209H)</th><th>시간외근로(10H)</th><th>능력급(209H)</th><th>현장관리수당/자격수당</th><th>직책수당</th></tr>
       <tr><td>${ctWon(k.monthly)}</td><td>${ctWon(k.hourly)}</td><td>${ctWon(c.base)}</td><td>${ctWon(k.ot)}</td><td>${ctWon(c.ability)}</td><td>${ctWon((c.site||0)+(c.qual||0))}</td><td>${ctWon(c.pos||0)}</td><td>${ctWon(k.bonus)}</td></tr>
     </table></div>
     <p>2) 상기 월급여는 기본급 209시간, 시간외근로수당(연장/야간/휴일근로를 포함한다) 10시간 150% 상당액을 포함한다.<br>&nbsp;&nbsp;- 직책수당, 현장관리수당·자격수당은 사업주의 급여규정에 의거 지급한다.</p>
@@ -7605,7 +7605,7 @@ function ctBlocksHtml(blocks, o = {}){   // 서버가 준 본문 블록 → 지�
       case 'kv': return `<div class="ct-kv">${b.rows.map(r=>r.length>2 ? `<div class="k">${t(r[0])}</div><div>${t(r[1])}</div><div class="k">${t(r[2])}</div><div>${t(r[3])}</div>` : `<div class="k">${t(r[0])}</div><div class="span3">${t(r[1])}</div>`).join('')}</div>`;
       case 'h': return `<h4>${t(b.text)}</h4>`;
       case 'p': return `<p>${b.runs.map(([s, bold])=>bold ? `<b${/^[\d,]+원$/.test(s) ? ' class="ct-amt"' : ''}>${t(s)}</b>` : s.startsWith(' ((') ? `<span class="list-sub"${inl}>${t(s)}</span>` : t(s)).join('')}</p>`;   // 굵은 "51,224,084원"은 파란 큰 글자(시안) · " ((월급여 − …" 설명은 작은 회색
-      case 'table': return `<div class="ct-tbl"><table>${b.rows.map((r, i)=>`<tr>${r.map(c=>{ const tag = i<b.head ? 'th' : 'td', obj = !!c && typeof c==='object'; return `<${tag}${obj && c.span>1 ? ` colspan="${c.span|0}"` : ''}>${t(obj ? c.c : c)}</${tag}>`; }).join('')}</tr>`).join('')}</table></div>`;
+      case 'table': return `<div class="ct-tbl"><table>${b.rows.map((r, i)=>`<tr>${r.map(c=>{ const tag = i<b.head ? 'th' : 'td', obj = !!c && typeof c==='object'; return `<${tag}${obj && c.span>1 ? ` colspan="${c.span|0}"` : ''}${obj && c.rspan>1 ? ` rowspan="${c.rspan|0}"` : ''}>${t(obj ? c.c : c)}</${tag}>`; }).join('')}</tr>`).join('')}</table></div>`;
       case 'center': return center++ ? `<p class="ct-center list-sub">${t(b.text)}</p>` : `<p class="ct-center" style="margin-top:18px;">${t(b.text)}</p>`;   // 첫째 = 맺는 글, 둘째 = 서명한 날
       case 'signs': {
         const seal = o.sealUrl ? `<img class="ct-seal" src="${escapeHtml(o.sealUrl)}" alt="직인">` : o.sealId ? `<img class="ct-seal" data-seal="${o.sealId|0}" alt="직인" hidden>` : '';
