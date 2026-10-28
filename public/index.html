@@ -2611,7 +2611,7 @@ function wsContent(){
           ${tags.length ? `<select class="ws-pick" aria-label="태그로 골라 보기" onchange="wsTag=this.value; wsRenderBody()"><option value="">태그 전체</option>${wsOpts(tags, wsTag)}</select>` : ''}
         </div>
         <div id="wsBody">${wsBody()}</div>
-        <div class="hm-foot">이 브라우저에만 저장되어 다른 기기에서는 보이지 않습니다. 개인 업무는 평가에 반영되지 않습니다.</div>
+        <div class="hm-foot">${AUTH.live ? 'PC와 휴대폰에서 같은 내용이 보입니다. 본인만 볼 수 있고,' : '이 브라우저에만 저장되어 다른 기기에서는 보이지 않습니다.'} 개인 업무는 평가에 반영되지 않습니다.</div>
       </div>
       ${wsProgress(list, today)}
     </div>
@@ -2947,7 +2947,7 @@ function rtContent(){
           ${kept ? `<span><button type="button" class="btn sm" onclick="rtArchived()">보관한 루틴 (${kept})</button></span>` : ''}</div>
         <form class="field ws-add" onsubmit="rtAdd(event)"><input name="title" required maxlength="40" placeholder="새 루틴을 적고 Enter — 예: 점심 먹고 10분 걷기" aria-label="새 루틴 이름" autocomplete="off"><button class="btn primary">추가</button></form>
         ${rtView==='week' ? rtWeekView(list, today) : rtView==='log' ? rtLogView(list, today, st) : rtTodayView(list, today, st)}
-        <div class="hm-foot">이 브라우저에만 저장되어 다른 기기에서는 보이지 않습니다. 루틴 기록은 본인만 보고, 평가에 반영되지 않습니다.</div>
+        <div class="hm-foot">${AUTH.live ? 'PC와 휴대폰에서 같은 내용이 보입니다.' : '이 브라우저에만 저장되어 다른 기기에서는 보이지 않습니다.'} 루틴 기록은 본인만 보고, 평가에 반영되지 않습니다.</div>
       </div>
       ${rtSide(list, today, week, dall-dn)}
     </div>
@@ -4341,7 +4341,7 @@ function kpiKindSection(goals, edit, dues, who='팀장'){   // "업무 종류와
       : `<span class="badge ${reg ? 'info' : 'neutral'}">${reg ? '정기적' : irr ? '비정기적' : '안 고름'}</span>`;
     const body = reg ? `<div class="kl-num">목표 ${edit ? `<input type="number" class="kpi-in" min="0" step="any" value="${escapeHtml(it.target ?? '')}" aria-label="목표 숫자" oninput="${p}.target=this.value==='' ? null : +this.value"><input class="kpi-in" maxlength="10" value="${escapeHtml(it.unit)}" placeholder="건" aria-label="단위" oninput="${p}.unit=this.value"><span class="kl-hint">비워도 돼요 · 적어 두면 실적으로 진행률을 계산해요</span>`
           : `<b>${escapeHtml(it.target ?? '—')}</b>${escapeHtml(it.unit)}`}</div>
-        <div class="kl-hint" style="margin-top:6px;">정기적 = <b>매달 한 줄</b> (그 달에 한 일 · 말일까지)</div>`
+        <div class="kl-hint" style="margin-top:6px;">정기적 = <b>매달 한 줄</b> (그 달에 한 일 · 다음 달 7일까지)</div>`
       : irr ? `<div class="kl-dates">${it.scheds.map((sc,si)=>edit
           ? `<div><input type="date" class="kpi-in" min="${y}-01-01" max="${y}-12-31" value="${escapeHtml(sc.due)}" aria-label="예정 기한 ${si+1}" oninput="${p}.scheds[${si}].due=this.value"><input class="kpi-in" maxlength="40" value="${escapeHtml(sc.name)}" placeholder="일정 이름 (예: 1분기 웨비나 개최)" aria-label="일정 이름 ${si+1}" oninput="${p}.scheds[${si}].name=this.value"><button type="button" class="x-btn" aria-label="일정 ${si+1} 지우기" onclick="kpiDelSched(${gi},${ii},${si})">${icon('x')}</button></div>`
           : `<div><b>${escapeHtml(dues?.[sc.sid] || sc.due)}${dues?.[sc.sid] && dues[sc.sid]!==sc.due ? '<small class="kl-chg">(바뀜)</small>' : ''}</b><span>${escapeHtml(sc.name)}</span></div>`).join('')}${edit && it.scheds.length<24 ? `<div><button type="button" class="kl-add" onclick="kpiAddSched(${gi},${ii})">＋ 예정 기한</button></div>` : ''}</div>
@@ -11970,7 +11970,7 @@ function evSelfCard(p){
   if(!kpi.length) return `<div class="card" style="margin-bottom:14px;"><div class="card-title">나의 ${evYear()}년 자기평가</div>${kpiNote('확정된 KPI가 없어 평가할 항목이 없습니다. 목표설정(KPI)을 먼저 확정해 주세요.')}</div>`;
   const rows = kpi.map((k,i)=>{ const e = evEntry(p,i);
     return `<tr><td>${evKpiCell(k)}${evCriteria(k, null, e.selfGrade)}${evProgFold(p, k.rid)}</td>
-      <td>${editable ? `<textarea class="kpi-in" rows="3" placeholder="측정식 기준으로 실제 결과를 적어 주세요" oninput="${L ? `evType('self-${+k.rid}',this.value)` : `evEntry(evFind(${p.pid}),${i}).note=this.value`}">${escapeHtml(L ? evTyped('self-'+k.rid, e.note) : e.note)}</textarea>` : escapeHtml(e.note) || '—'}
+      <td>${editable ? `<textarea class="kpi-in" rows="3" maxlength="500" placeholder="측정식 기준으로 실제 결과를 적어 주세요" oninput="${L ? `evType('self-${+k.rid}',this.value)` : `evEntry(evFind(${p.pid}),${i}).note=this.value`}">${escapeHtml(L ? evTyped('self-'+k.rid, e.note) : e.note)}</textarea>` : escapeHtml(e.note) || '—'}
         <div style="margin-top:6px;">${evGradeBtns(`evSetSelf.bind(null,${p.pid},${i})`, e.selfGrade, null, editable)}</div></td>
       <td>${evFiles(p, i, upload)}</td></tr>`; }).join('');
   return `<div class="card" id="evSelf" style="margin-bottom:14px;">
@@ -12000,7 +12000,7 @@ function evScorePanel(p){
     <div class="ct-tbl"><table class="ev-table"><thead><tr><th style="width:40%;">KPI · 달성 기준</th><th>실적 · 달성 등급</th><th style="width:20%;">증빙자료</th><th class="num">점수</th></tr></thead>
       <tbody>${rows}<tr><td colspan="3"><b>총점</b> (가중치 × 달성 비율) · 이 점수로 받을 수 있는 가장 높은 등급 <b>${L ? p.cap : evBand(total)}</b></td><td class="num"><b class="ev-total">${mine || !L ? total.toFixed(1) : evTotalText(p)}</b></td></tr></tbody></table></div>${scoring ? evQuotaNote(p) : ''}
     <div class="field" style="margin-top:10px;"><label>${label}</label><div>${mine ? `<b class="ev-final">${p.proposed||'—'}</b>` : evPickBtns(p, editable)}</div></div>
-    <div class="field" style="margin-top:10px;"><label>평가자 코멘트 (직원에게 공개 · 필수)</label>${scoring ? `<textarea rows="3" oninput="${L ? `evType('cmt-${p.pid}',this.value)` : `evFind(${p.pid}).comment=this.value`}" placeholder="잘한 점과 다음 해에 기대하는 점">${escapeHtml(L ? evTyped('cmt-'+p.pid, p.comment) : p.comment)}</textarea>` : `<div class="placeholder-note" style="margin:0;">${escapeHtml(p.comment)||'—'}</div>`}</div>
+    <div class="field" style="margin-top:10px;"><label>평가자 코멘트 (직원에게 공개 · 필수 · 500자까지)</label>${scoring ? `<textarea rows="3" maxlength="500" oninput="${L ? `evType('cmt-${p.pid}',this.value)` : `evFind(${p.pid}).comment=this.value`}" placeholder="잘한 점과 다음 해에 기대하는 점">${escapeHtml(L ? evTyped('cmt-'+p.pid, p.comment) : p.comment)}</textarea>` : `<div class="placeholder-note" style="margin:0;">${escapeHtml(p.comment)||'—'}</div>`}</div>
     ${!mine && p.headComment ? `<div class="list-sub" style="margin-top:6px;">${evUpper(p)} 코멘트: ${escapeHtml(p.headComment)}</div>` : ''}
     ${scoring ? `<div style="text-align:right; margin-top:10px;">${L ? `<button class="btn" onclick="evSaveCmt(${p.pid})">코멘트 저장</button> ` : ''}<button class="btn primary" onclick="evSubmitScore(${p.pid})">${lead ? '점수·등급 제출 (대표이사로)' : `점수·등급 의견 제출 (${evUpper(p)}${evUpper(p)==='본부장' ? '으로' : '로'})`}</button></div>`
       : editable ? `<div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; margin-top:10px;"><span class="list-sub" style="margin:0;">고친 점수와 등급은 바로 반영됩니다. 등급은 고친 점수의 기준 안에서만 줄 수 있습니다.</span></div>` : ''}
@@ -12242,7 +12242,7 @@ function evAssign(pid, g){ const p = evFind(pid); if(evAbove(g, evCap(p))) retur
 function evHeadAsk(pid){   // 윗사람(본부장 · 대표이사) 코멘트 — 등급을 배정하는 묶음(본부 팀원 · 직속부서 팀원)만. 전사 팀장은 평가자 코멘트뿐이라 단추가 없다. 가점은 없다 (2026-10-27)
   const p = evFind(pid);
   orgModal(`<div class="card-title"><span>코멘트 · ${escapeHtml(p.name)}</span><button type="button" class="x-btn" onclick="orgCloseModal()" aria-label="닫기">${icon('x')}</button></div><div id="evErr"></div>
-    <div class="field" style="margin-bottom:12px;"><label for="evF_head">${evUpper(p)} 코멘트 (선택 · 직원에게 공개)</label><textarea id="evF_head" rows="3">${escapeHtml(p.headComment)}</textarea></div>
+    <div class="field" style="margin-bottom:12px;"><label for="evF_head">${evUpper(p)} 코멘트 (선택 · 직원에게 공개)</label><textarea id="evF_head" rows="3" maxlength="500">${escapeHtml(p.headComment)}</textarea></div>
     <div style="display:flex; gap:8px;"><button class="btn primary" onclick="evHeadSave(${pid})">저장</button><button class="btn" onclick="orgCloseModal()">취소</button></div>`);
 }
 function evHeadSave(pid){
@@ -12785,7 +12785,7 @@ function evLinePanel(p){
   return `<div class="ev-panel">
     <div class="list-sub" style="margin-bottom:8px;">${AUTH.live ? '등급 평가 · KPI 없이 평가자가 등급을 매겨요' : '현장직 · KPI 없이 팀장이 등급을 매깁니다'} · ${evAttendance(p)}</div>
     ${evLineGradeBtns(evHidden(p) ? { ...p, grade:p.proposed } : p, editable, 'evSetLine')}${evHidden(p) ? '<div class="list-sub" style="margin-top:6px;">내가 낸 등급 의견입니다. 최종 등급은 결과 공개 뒤에 보입니다.</div>' : ''}${editable ? evQuotaNote(p) : ''}
-    <div class="field" style="margin-top:10px;"><label>${AUTH.live ? '평가자' : '팀장'} 코멘트 (선택 · 직원에게 공개)</label>${editable ? `<textarea rows="2" oninput="${AUTH.live ? `evType('cmt-${p.pid}',this.value)` : `evFind(${p.pid}).comment=this.value`}" placeholder="한 해 근무에 대한 한 줄 평">${escapeHtml(AUTH.live ? evTyped('cmt-'+p.pid, p.comment) : p.comment)}</textarea>` : `<div class="placeholder-note" style="margin:0;">${escapeHtml(p.comment)||'—'}</div>`}</div>
+    <div class="field" style="margin-top:10px;"><label>${AUTH.live ? '평가자' : '팀장'} 코멘트 (선택 · 직원에게 공개)</label>${editable ? `<textarea rows="2" maxlength="500" oninput="${AUTH.live ? `evType('cmt-${p.pid}',this.value)` : `evFind(${p.pid}).comment=this.value`}" placeholder="한 해 근무에 대한 한 줄 평">${escapeHtml(AUTH.live ? evTyped('cmt-'+p.pid, p.comment) : p.comment)}</textarea>` : `<div class="placeholder-note" style="margin:0;">${escapeHtml(p.comment)||'—'}</div>`}</div>
     ${editable ? `<div style="text-align:right; margin-top:10px;">${AUTH.live ? `<button class="btn" onclick="evSaveCmt(${p.pid})">코멘트 저장</button> ` : ''}<button class="btn primary" onclick="evSubmitLine(${p.pid})">등급 제출</button></div>` : ''}
   </div>`;
 }
@@ -13207,7 +13207,7 @@ function evAppealBox(p, own){
   if(!evCanAppeal(p, kpiRole, kpiDay(0))) return `<div class="evr-appeal"><span class="list-sub" style="margin:0;">이의 신청 기간(${due}까지)이 끝났습니다.</span></div>`;
   return `<div class="evr-appeal">
       <div style="margin-bottom:8px;"><b class="d">이의 신청 D-${evDaysLeft(due)}</b> · ${due}까지 · 결과에 동의하지 않으면 사유를 적어 HR에 보냅니다. 한 번만 신청할 수 있습니다.</div>
-      <div class="field"><label for="evAp">이의 신청 사유</label><textarea id="evAp" rows="3" placeholder="어떤 KPI의 어떤 실적이 빠졌거나 다르게 평가됐는지 적어 주세요"${AUTH.live ? ` oninput="evType('${evApKey(p.pid)}',this.value)"` : ''}>${AUTH.live ? escapeHtml(evTyped(evApKey(p.pid), '')) : ''}</textarea></div>
+      <div class="field"><label for="evAp">이의 신청 사유</label><textarea id="evAp" rows="3" maxlength="500" placeholder="어떤 KPI의 어떤 실적이 빠졌거나 다르게 평가됐는지 적어 주세요"${AUTH.live ? ` oninput="evType('${evApKey(p.pid)}',this.value)"` : ''}>${AUTH.live ? escapeHtml(evTyped(evApKey(p.pid), '')) : ''}</textarea></div>
       <div style="text-align:right; margin-top:8px;"><button class="btn primary" onclick="evAppealSubmit(${p.pid})">이의 신청하기</button></div>
     </div>`;
 }
@@ -13267,7 +13267,7 @@ function evResHrPanel(){
         <div style="display:flex; gap:12px; flex-wrap:wrap; margin-top:4px;">${evKpi(p).map((k,i)=>`<label style="display:inline-flex; gap:5px; align-items:center; margin:0; font-size:var(--fs-xs);">${escapeHtml(k.action)} <select id="evAnsM${p.pid}_${i}" aria-label="${escapeHtml(k.action)} 달성 등급"${on(`ansm-${pid}_${i}`)}>${KPI_GRADES.map(([g])=>`<option ${g===T(`ansm-${pid}_${i}`, evEntry(p,i).grade)?'selected':''}>${g}</option>`).join('')}</select></label>`).join('')}</div>`}
       <div class="field-row" style="margin-top:8px;">
         <div class="field" style="max-width:200px;"><label for="evAnsG${p.pid}">최종 등급 (그대로 두면 유지)</label><select id="evAnsG${p.pid}"${on('ansg-'+pid)}>${KPI_GRADES.map(([g])=>`<option ${g===T('ansg-'+pid, p.grade)?'selected':''}>${g}</option>`).join('')}</select></div>
-        <div class="field"><label for="evAnsT${p.pid}">답변 (직원에게 공개)</label><textarea id="evAnsT${p.pid}" rows="2" placeholder="검토한 내용과 결론"${L ? ` oninput="evType('ans-${pid}',this.value)"` : ''}>${L ? escapeHtml(evTyped('ans-'+pid, p.appeal.answer || '')) : ''}</textarea></div>
+        <div class="field"><label for="evAnsT${p.pid}">답변 (직원에게 공개)</label><textarea id="evAnsT${p.pid}" rows="2" maxlength="500" placeholder="검토한 내용과 결론"${L ? ` oninput="evType('ans-${pid}',this.value)"` : ''}>${L ? escapeHtml(evTyped('ans-'+pid, p.appeal.answer || '')) : ''}</textarea></div>
       </div>
       <div style="text-align:right;"><button class="btn primary sm" onclick="evAnswerSubmit(${p.pid})">답변 보내기</button></div>
     </div>`; };
