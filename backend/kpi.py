@@ -33,7 +33,7 @@ app.py 가 bp 를 붙인다. 세션 검사는 auth._guard 가 모든 /api/* 에 
 
   POST /api/kpi/plans/<uid>/check   {"year", "month"} 그 달 기록을 확인했다고 남긴다 — 바로 위 관리자 본인만 (HR 대신 없음 · 대표이사에게 보고하는 분은 확인이 없음)
 
-  GET  /api/kpi/memos/<uid>         올해 확인 메모 {"role", "canWrite", "writer", "memos": [{…, "replies": […]}]} — 보는 범위는 plans 와 같다. 메모는 새것부터, 답글은 오래된 것부터
+  GET  /api/kpi/memos/<uid>         올해 확인 메모 {"role", "canWrite", "writer", "memos": [{…, "replies": […]}]} — 보는 범위는 plans 와 같되 HR 은 빠진다 (_sees_memo). 메모는 새것부터, 답글은 오래된 것부터
   POST /api/kpi/memos/<uid>         {"year", "text"} 확인 메모 쓰기 → {"ok", "id"} — 바로 위 관리자 본인만 (HR 대신 없음 · 대표이사에게 보고하는 분은 메모가 없음)
   POST /api/kpi/memo/<mid>/edit     {"text"} 쓴 사람이 쓴 날에만 고친다 (본인의 확인은 풀림) · /delete 같은 조건으로 지운다 (답글도 함께)
   POST /api/kpi/memo/<mid>/ack      본인이 '확인했습니다' (취소 없음) · /reply {"text"} 본인 · 메모를 쓴 사람의 답글 → {"ok", "id"} (본인 답글 = 확인, 쓴 사람 답글 = 확인 풀림)
@@ -47,10 +47,11 @@ app.py 가 bp 를 붙인다. 세션 검사는 auth._guard 가 모든 /api/* 에 
   POST /api/kpi/admin/biz-plan      {"year", "goals": [{"goal", "detail"}]} 그해 경영계획 목표를 통째로 바꾼다 (HR)
 
   GET  /api/kpi/board               ?month= (없으면 오늘의 달) KPI 현황 명단 {"year", "month", "gap", "scope", "depts", "people", "teams", "todo"} — 팀장 · 본부장 · 대표이사 · HR 만.
-                                    people = 내가 볼 수 있는(_sees) 활성 KPI 작성자(본인 뺌)마다 계획서 상태 · 숫자 · 알람 · 그 달 요약 · 확인 상태 · 메모 수. 대표이사 응답에는 팀원 줄이 없고
+                                    people = 내가 볼 수 있는(_sees) 활성 KPI 작성자(본인 뺌)마다 계획서 상태 · 숫자 · 알람 · 그 달 요약 · 확인 상태 · 메모 수(HR 은 메모 null). 대표이사 응답에는 팀원 줄이 없고
                                     teams 에 팀(부서)마다 인원 · 확정 · 평균 · 부진 수만 있다. scope = 보는 사람이 팀장 · 본부장이면 맡은 부서 {"deptId", "name"} (명단 제목), 아니면 null
 
 남의 KPI(계획서 · 진행 기록)를 보는 범위는 _sees 한 곳: HR · 본인 · 바로 위 관리자, 그리고 팀장 = 팀원, 본부장 = 본부의 팀장 · 팀원, 대표이사 = 본부장 · 팀장과 자기가 바로 위 관리자인 사람('임원' 소속 · 직속 팀장 등) (팀원은 못 본다).
+확인 메모(/memos 와 명단의 memo 칸)만 _sees_memo 로 HR 을 뺀다 — 주고받는 본인 · 바로 위 관리자와 그 윗사람만 본다 (인사담당자 2026-10-28).
 본인 쓰기는 서버가 늘 같은 순서로 다시 본다: KPI 작성 대상 403 → 작성 기간 403 → 상태 409 → 내용 400.
 관리자 처리는: 처리 권한 403 → 계획서 주인의 작성 기간 403 → 상태 409 → 사유 400. 권한은 요청마다 명단에서 새로 계산한다 (decider).
 진행 기록 쓰기는: KPI 작성 대상 403 → 그해 확정본 404 → 기록 기간(다음 해 1월 7일까지) 403 → 실행목표 · 일정 · 종류 400 → (월 한 줄) 달 403 → 글자 · 링크 · 숫자 한도 400.
@@ -76,6 +77,7 @@ import json
 import re
 import sqlite3
 from contextlib import contextmanager
+from dataclasses import replace
 from datetime import date, datetime, timedelta, timezone
 from typing import Iterator, NamedTuple
 
@@ -499,11 +501,12 @@ def unlock(uid: int) -> Response:
     return jsonify(ok=True)
 
 
-def _sees(uid: int, people: list[Person], depts: list[Dept]) -> bool:
+def _sees(uid: int, people: list[Person], depts: list[Dept], me: Actor | None = None) -> bool:
     """로그인한 사람이 이 사람의 KPI(계획서 · 진행 기록)를 볼 수 있나: HR · 본인 · 바로 위 관리자, 그리고 access 의 VIEW_KPI 규칙 —
     팀장 = 팀원, 본부장 = 본부의 팀장 · 팀원, 대표이사 = 본부장 · 팀장 (팀원은 못 본다). 명단에 없는 사람은 HR 만 본다.
-    명단을 이미 읽은 쪽(명단 표 · 메모)도 이 함수를 쓴다 — 보는 범위를 바꿀 때는 여기 한 곳만 고친다."""
-    me = g.actor
+    명단을 이미 읽은 쪽(명단 표 · 메모)도 이 함수를 쓴다 — 보는 범위를 바꿀 때는 여기 한 곳만 고친다.
+    me 를 주면 그 사람으로 따진다 (확인 메모가 HR 권한을 끈 사람으로 다시 묻는다 — _sees_memo)."""
+    me = me or g.actor
     if me.is_hr or uid == me.user_id or manager_of(uid, people, depts) == me.user_id:
         return True
     owner = next((p for p in people if p.id == uid), None)
@@ -511,6 +514,14 @@ def _sees(uid: int, people: list[Person], depts: list[Dept]) -> bool:
 
 
 NO_VIEW = "이 KPI를 볼 권한이 없습니다."
+NO_MEMO = "이 확인 메모를 볼 권한이 없습니다."
+
+
+def _sees_memo(uid: int, people: list[Person], depts: list[Dept]) -> bool:
+    """확인 메모를 볼 수 있나 — 주고받는 본인 · 바로 위 관리자와 그 윗사람(팀장 · 본부장 · 대표이사)뿐.
+    **HR 권한만으로는 못 본다**(인사담당자 2026-10-28 — 팀원과 관리자가 주고받는 글). HR 이 팀장 · 본부장이면 자기 팀 · 본부 것은 본다 —
+    그래서 is_hr 을 끈 사람으로 _sees 를 다시 묻는다(access 의 VIEW_KPI 에도 HR 이 들어 있다)."""
+    return _sees(uid, people, depts, replace(g.actor, is_hr=False))
 
 
 def _can_view(conn: sqlite3.Connection, uid: int) -> bool:
@@ -1019,10 +1030,10 @@ def _by(name: str, title: str | None) -> str:
 
 
 def _may_view(conn: sqlite3.Connection, owner_id: int) -> None:
-    """메모 일을 하는 사람이 지금도 그 사람의 KPI 를 볼 수 있어야 한다 — 팀을 옮겨 못 보게 된 옛 관리자가 읽지도 못하는 메모란에 쓰지 못하게. 아니면 403 (GET 과 같은 문구).
-    '확인했습니다' 는 본인만 하므로 여기서 보지 않는다 (본인은 늘 자기 KPI 를 볼 수 있다)."""
-    if not _can_view(conn, owner_id):
-        raise _Refuse(NO_VIEW, 403)
+    """메모 일을 하는 사람이 지금도 그 사람의 메모를 볼 수 있어야 한다 — 팀을 옮겨 못 보게 된 옛 관리자가 읽지도 못하는 메모란에 쓰지 못하게. 아니면 403 (GET 과 같은 문구).
+    '확인했습니다' 는 본인만 하므로 여기서 보지 않는다 (본인은 늘 자기 메모를 볼 수 있다)."""
+    if not _sees_memo(owner_id, *load_org(conn)):
+        raise _Refuse(NO_MEMO, 403)
 
 
 def _mine_today(conn: sqlite3.Connection, owner_id: int, author_id: int, created_at: str, only: str) -> None:
@@ -1044,15 +1055,15 @@ def _memo(conn: sqlite3.Connection, mid: int) -> tuple[int, int, str, str | None
 
 @bp.get(f"/api/kpi/memos/{UID}")
 def memos_get(uid: int) -> Response:
-    """올해 그 사람의 확인 메모 — 볼 수 있는 사람만 (_sees, plan_get 과 같은 범위). {"role": "owner"(본인) | "writer"(지금 바로 위 관리자, 대표이사 아님) | "",
+    """올해 그 사람의 확인 메모 — 볼 수 있는 사람만 (_sees_memo: plan_get 과 같은 범위에서 HR 만 뺀다). {"role": "owner"(본인) | "writer"(지금 바로 위 관리자, 대표이사 아님) | "",
     "canWrite": writer 이고 그해 확정본이 있음, "writer": {"id", "name", "title"} | null(확인 단계가 없음),
     "memos": [{"id", "at", "authorId", "by", "text", "edited", "ack", "fresh", "canEdit", "replies": [{"id", "at", "who", "by", "text", "canDelete"}]}]}.
     메모는 새것부터, 답글은 오래된 것부터. fresh = 쓴 사람이 마지막으로 본 뒤 달린 본인 답글 수 (보는 사람이 그 메모를 쓴 사람일 때만 — 아니면 0).
     canEdit · canDelete = 쓴 사람 본인이고 쓴 날 (한국 날짜). 메모가 없으면 빈 목록."""
     conn, me, year, today = auth._db(), g.actor.user_id, plan_year(), auth._today()
     org = load_org(conn)
-    if not _sees(uid, *org):
-        return jsonify(error=NO_VIEW), 403
+    if not _sees_memo(uid, *org):
+        return jsonify(error=NO_MEMO), 403
     boss = _writer_of(uid, *org)
     with _txn(conn):  # 표 여럿을 읽는 동안 다른 요청이 끼어들지 않게
         writer = conn.execute("SELECT id, name, title FROM users WHERE id = ?", (boss,)).fetchone() if boss is not None else None
@@ -1314,7 +1325,7 @@ def _review(conn: sqlite3.Connection, people: list[Person], depts: list[Dept], p
                 progs[uid] = progress_json(conn, uid, year, (people, depts))
             prog = progs[uid]
             check += prog is not None and any(check_state(True, month_summary(prog, m), str(m) in prog["checks"]) == "TODO" for m in months)
-    replies = sum(_sees(owner, people, depts) for (owner,) in conn.execute(
+    replies = sum(_sees_memo(owner, people, depts) for (owner,) in conn.execute(  # 내가 쓴 메모라 HR 권한은 상관없다 — 메모를 보는 범위로 센다
         "SELECT DISTINCT m.user_id FROM kpi_memo_replies r JOIN kpi_memos m ON m.id = r.memo_id JOIN users u ON u.id = m.user_id"
         " WHERE m.year = ? AND m.author_id = ? AND r.who = 'owner' AND (m.seen_at IS NULL OR r.created_at > m.seen_at) AND u.is_active = 1 AND u.writes_kpi = 1",
         (year, me)).fetchall())
@@ -1329,7 +1340,7 @@ def board() -> Response:
     people = 활성 · KPI 작성 대상 · 본인 아님 · _sees(plans 와 같은 보는 범위)가 참인 사람. 순서 = 부서 번호 → 본부장 · 팀장 · 그 밖 → 이름.
     사람마다 userId · name · title(없으면 "") · deptId(팀장 · 본부장은 맡은 부서, 그 밖은 소속) · position("DIVISION_HEAD" | "TEAM_LEADER" | null) ·
     status(계획서 줄의 상태, 없으면 "NONE") · direct(내가 바로 위 관리자) · checkStep · total · totalExpected · alarm · items[{rid, action, kind, weight, value, expected, why, mute}] ·
-    month{reg, irr, records, noSched, check, checkedAt} · memo{count, open, fresh}. 확정본이 없으면 total · totalExpected · alarm · month 는 null, items 는 [].
+    month{reg, irr, records, noSched, check, checkedAt} · memo{count, open, fresh}(확인 메모를 볼 수 있을 때 — _sees_memo, HR 은 null). 확정본이 없으면 total · totalExpected · alarm · month 는 null, items 는 [].
     teams = 대표이사만: 줄로 못 받는 팀원(_sees 거짓인 활성 KPI 작성자)을 부서마다 묶은 {"deptId", "count", "confirmed", "avg"(확정본이 있는 사람 total 의 평균, 없으면 null), "slow"(부진 수)} —
     그 사람들의 번호 · 이름 · KPI 는 응답 어디에도 가지 않는다. 다른 사람은 []. todo = {"check": _review 의 check}.
     scope = 보는 사람이 팀장 · 본부장이면 맡은 부서(led_dept — 소속이 '임원'이어도 이끄는 본부) {"deptId", "name"}, 아니면 null (명단 제목에 쓴다)."""
@@ -1363,11 +1374,12 @@ def board() -> Response:
         for uid in shown:
             p, prog, (name, title) = by_id[uid], progs[uid], users[uid]
             step, count = _step(uid, people, depts), memos.get(uid, (0, 0))
+            seen = _sees_memo(uid, people, depts)  # HR 은 메모를 못 보므로 건수도 보내지 않는다 (null)
             row = {"userId": uid, "name": name, "title": title, "deptId": led_dept(p) or p.department_id,
                    "position": p.position.value if p.position in (Role.DIVISION_HEAD, Role.TEAM_LEADER) else None,
                    "status": status.get(uid, "NONE"), "direct": manager_of(uid, people, depts) == me.user_id, "checkStep": step,
                    "total": None, "totalExpected": None, "alarm": None, "items": [], "month": None,
-                   "memo": {"count": count[0], "open": count[1], "fresh": fresh.get(uid, 0)}}
+                   "memo": {"count": count[0], "open": count[1], "fresh": fresh.get(uid, 0)} if seen else None}
             if prog is not None:
                 summary, checked = month_summary(prog, month), prog["checks"].get(str(month))
                 row.update(total=prog["total"], totalExpected=prog["totalExpected"], alarm=prog["alarm"],

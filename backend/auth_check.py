@@ -5055,6 +5055,7 @@ def check_kpi_review(hr) -> None:
         return jar[uid]
 
     NO_VIEW, NOT_BOSS = {"error": "이 KPI를 볼 권한이 없습니다."}, {"error": "바로 위 관리자만 확인할 수 있습니다."}
+    NO_MEMO = {"error": "이 확인 메모를 볼 권한이 없습니다."}  # 확인 메모는 HR 도 못 본다 (인사담당자 2026-10-28)
     TO_CEO, FUTURE = {"error": "대표이사에게 보고하는 분은 월간 확인이 없습니다."}, {"error": "아직 오지 않은 달입니다."}
     NO_PLAN, NO_REC = {"error": "확정된 KPI가 없습니다."}, {"error": "확인할 기록이 없습니다."}
     hit = lambda r, code, body: r.status_code == code and r.json == body  # noqa: E731
@@ -5119,7 +5120,7 @@ def check_kpi_review(hr) -> None:
         ok(closed(HEAD, DIRECT) and closed(HEAD, EXEC), "본부장도 본부 밖(대표이사 직속 팀장 · '임원' 소속)은 못 봄")
         ok(all(sees(CEO, u) for u in (LEAD, HEAD, DIRECT, EXEC)), "대표이사는 팀장 · 본부장 · 직속 팀장 · '임원' 소속(자기에게 보고하는 분)을 봄")
         ok(all(closed(CEO, u) for u in (EMP, EMP2, PEER2)), "대표이사는 팀원 KPI 를 응답으로 받지 않음: 진행 기록 · 계획서 모두 403")
-        ok(closed(CEO, DMEMBER) and hit(memos(DMEMBER, CEO), 403, NO_VIEW) and closed(HEAD, DMEMBER) and closed(EMP, DMEMBER),
+        ok(closed(CEO, DMEMBER) and hit(memos(DMEMBER, CEO), 403, NO_MEMO) and closed(HEAD, DMEMBER) and closed(EMP, DMEMBER),
            "대표이사는 직속 팀의 팀원 KPI 도 못 봄: 진행 기록 · 계획서 · 메모 모두 403 (그 사람은 계획서가 없는데도 404 가 아니라 403 — 보는 범위가 먼저)")
         ok(prog(DMEMBER, DIRECT).status_code == 404 and plan_of(DMEMBER, DIRECT).status_code == 404 and prog(DMEMBER, HR).status_code == 404
            and view(DMEMBER, DIRECT)["role"] == "writer" and view(DMEMBER, DIRECT)["writer"]["id"] == DIRECT and view(DMEMBER, DIRECT)["canWrite"] is False,
@@ -5240,9 +5241,9 @@ def check_kpi_review(hr) -> None:
            and all(hit(memo_post(HR, u), 403, NOT_WRITER) for u in (EMP, HEAD, DIRECT, EXEC)) and n_memos() == 1,
            "대표이사가 HR 에 맡김을 켜도 HR 은 403 (같은 문구)")
         c(CEO).post("/api/kpi/delegation", base_url=BASE, headers=ORIGIN, json={"on": False})
-        ok(all((j := view(HEAD, w))["writer"] is None and j["canWrite"] is False and j["memos"] == [] for w in (HEAD, CEO, HR))
-           and view(HEAD, HEAD)["role"] == "owner" and view(HEAD, CEO)["role"] == "" and view(HEAD, HR)["role"] == "",
-           "대표이사에게 보고하는 분(본부장)의 메모란: writer 없음 · canWrite 거짓 — 대표이사도 쓰는 사람이 아니라 role 은 빈 글자")
+        ok(all((j := view(HEAD, w))["writer"] is None and j["canWrite"] is False and j["memos"] == [] for w in (HEAD, CEO))
+           and view(HEAD, HEAD)["role"] == "owner" and view(HEAD, CEO)["role"] == "" and hit(memos(HEAD, HR), 403, NO_MEMO),
+           "대표이사에게 보고하는 분(본부장)의 메모란: writer 없음 · canWrite 거짓 — 대표이사도 쓰는 사람이 아니라 role 은 빈 글자 (HR 은 403)")
         ok(view(EXEC, CEO)["writer"] is None and view(DIRECT, CEO)["writer"] is None and view(EXEC, CEO)["role"] == "",
            "(직속 팀장 · '임원' 소속도 같다)")
 
@@ -5253,13 +5254,15 @@ def check_kpi_review(hr) -> None:
            and mj["memos"] == [{"id": m1, "at": z(8, 3), "authorId": LEAD, "by": "가상R팀장 팀장", "text": "가상 첫 메모", "edited": False, "ack": None,
                                 "fresh": 0, "canEdit": True, "replies": []}],
            "GET 모양: role · canWrite · writer{id name title} · memos[{id at authorId by text edited ack fresh canEdit replies}] — 쓴 사람은 canEdit 참 · by 는 이름 + 직급")
-        ok(all((j := view(EMP, w))["role"] == "" and j["canWrite"] is False and j["writer"]["id"] == LEAD and len(j["memos"]) == 1
-               and not any(m["canEdit"] for m in j["memos"]) for w in (HEAD, HR)),
-           "윗사람_HR은_읽기만: 본부장 · HR 은 읽기 200 — role 빈 글자 · canWrite 거짓 · canEdit 모두 거짓")
+        ok((j := view(EMP, HEAD))["role"] == "" and j["canWrite"] is False and j["writer"]["id"] == LEAD and len(j["memos"]) == 1
+           and not any(m["canEdit"] for m in j["memos"]),
+           "윗사람은_읽기만: 본부장은 읽기 200 — role 빈 글자 · canWrite 거짓 · canEdit 모두 거짓")
+        ok(hit(memos(EMP, HR), 403, NO_MEMO) and prog(EMP, HR).status_code == 200 and plan_of(EMP, HR).status_code == 200,
+           "HR은_메모를_못_본다: 계획서 · 진행 기록은 200 인데 메모란만 403 (인사담당자 2026-10-28)")
         mj = view(EMP, EMP)
         ok(mj["role"] == "owner" and mj["canWrite"] is False and mj["writer"]["id"] == LEAD and not mj["memos"][0]["canEdit"] and mj["memos"][0]["fresh"] == 0,
            "본인 화면: role owner · canWrite 거짓 · canEdit 거짓 · fresh 0")
-        ok(all(hit(memos(EMP, w), 403, NO_VIEW) for w in (CEO, LEAD2, EMP2)), "볼 수 없는 사람(대표이사 · 다른 팀장 · 동료 팀원)은 메모란도 403")
+        ok(all(hit(memos(EMP, w), 403, NO_MEMO) for w in (CEO, LEAD2, EMP2, HR)), "볼 수 없는 사람(대표이사 · 다른 팀장 · 동료 팀원)과 HR 은 메모란도 403")
         ok(view(LEAD, CEO)["role"] == "" and view(LEAD, CEO)["writer"]["id"] == HEAD and view(LEAD, CEO)["canWrite"] is False,
            "대표이사는 팀장의 메모란을 읽기만 (쓰는 사람은 본부장)")
         mj = view(PEER2, LEAD2)
@@ -5362,8 +5365,8 @@ def check_kpi_review(hr) -> None:
         at(9, 1, 5)
         ok(memo_do(EMP, m4, "reply", text="가상 새 답글 2").status_code == 200 and memo_do(LEAD, m4, "reply", text="가상 팀장 답글").status_code == 200,
            "(본인 답글 2 · 팀장 답글 1 — 팀장 자신의 답글은 새 답글이 아님)")
-        ok(one(EMP, LEAD, m4)["fresh"] == 2 and one(EMP, EMP, m4)["fresh"] == 0 and one(EMP, HEAD, m4)["fresh"] == 0 and one(EMP, HR, m4)["fresh"] == 0,
-           "새_답글은_열어_보면_사라진다: 쓴 사람(팀장)에게만 fresh 2 · 본인 · 본부장 · HR 화면은 0")
+        ok(one(EMP, LEAD, m4)["fresh"] == 2 and one(EMP, EMP, m4)["fresh"] == 0 and one(EMP, HEAD, m4)["fresh"] == 0,
+           "새_답글은_열어_보면_사라진다: 쓴 사람(팀장)에게만 fresh 2 · 본인 · 본부장 화면은 0 (HR 은 메모란 자체가 403)")
         at(9, 1, 6)
         n_lead = q("SELECT COUNT(*) FROM kpi_memos WHERE user_id = ? AND author_id = ?", EMP, LEAD)[0][0]
         ok(hit(seen(LEAD, EMP), 200, {"ok": True}) and all(m["fresh"] == 0 for m in view(EMP, LEAD)["memos"])
@@ -5418,11 +5421,11 @@ def check_kpi_review(hr) -> None:
         try:
             j = view(EMP2, LEAD)
             ok(j["role"] == "writer" and j["writer"]["id"] == LEAD and j["canWrite"] is True and [m["authorId"] for m in j["memos"]] == [LEAD2]
-               and j["memos"][0]["canEdit"] is False and hit(memos(EMP2, LEAD2), 403, NO_VIEW) and hit(memo_post(LEAD2, EMP2), 403, NOT_WRITER)
+               and j["memos"][0]["canEdit"] is False and hit(memos(EMP2, LEAD2), 403, NO_MEMO) and hit(memo_post(LEAD2, EMP2), 403, NOT_WRITER)
                and memo_post(LEAD, EMP2, "가상 새 팀장 메모").status_code == 200,
                "팀을_옮기면_새_관리자가_쓴다: 새 팀장이 role writer · 옛 메모를 읽음(고치기 거짓) · 옛 팀장은 읽기도 쓰기도 403")
-            ok(all(hit(memo_do(LEAD2, m6, w, **b), 403, NO_VIEW) for w, b in (("reply", {"text": "가상 끼어들기"}), ("edit", {"text": "가상 옛 팀장의 손"}), ("delete", {})))
-               and hit(rp_del(LEAD2, rp6), 403, NO_VIEW) and memo_row(m6)[0][0] == "가상 다른 팀 메모" and n_replies(m6) == 1,
+            ok(all(hit(memo_do(LEAD2, m6, w, **b), 403, NO_MEMO) for w, b in (("reply", {"text": "가상 끼어들기"}), ("edit", {"text": "가상 옛 팀장의 손"}), ("delete", {})))
+               and hit(rp_del(LEAD2, rp6), 403, NO_MEMO) and memo_row(m6)[0][0] == "가상 다른 팀 메모" and n_replies(m6) == 1,
                "옛_관리자는_못_본_뒤_쓰지_못한다: 팀을 옮긴 사람의 메모에 옛 팀장은 쓴 날이어도 답글 · 고치기 · 지우기 · 답글 지우기 403 (GET 과 같은 문구) — 아무것도 안 바뀜")
             r = memo_do(EMP2, m6, "reply", text="가상 본인 답글")
             ok(r.status_code == 200 and hit(memo_do(EMP2, m6, "ack"), 200, {"ok": True}) and memo_row(m6)[0][2] is not None and n_replies(m6) == 2
@@ -5775,6 +5778,8 @@ def check_kpi_review(hr) -> None:
            and set(mine_ids(j)) == {HEAD, LEAD, EMP, EMP2, LEAD2, PEER2, DIRECT, EXEC, DMEMBER} and j["teams"] == []
            and j["people"] == sorted(j["people"], key=lambda p: (p["deptId"], rank.get(p["position"], 2), p["name"], p["userId"])),
            "HR은_전체: 활성 · KPI 작성이 켜진 사람 모두 (HR 본인 · 작성이 꺼진 대표이사 · 비활성은 없음) — 순서는 부서 번호 → 본부장 · 팀장 · 그 밖 → 이름 · teams 빈 목록")
+        ok(all(p["memo"] is None for p in j["people"]) and by_id(bj(LEAD), EMP)["memo"] is not None,
+           "HR 명단에는 memo 가 null: 메모를 못 보므로 건수도 보내지 않는다 (바로 위 관리자는 그대로)")
         x("UPDATE users SET is_active = 0, deactivated_at = '2027-01-01T00:00:00Z' WHERE id = ?", DMEMBER)
         x("UPDATE users SET writes_kpi = 0 WHERE id = ?", EMP2)
         try:
