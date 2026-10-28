@@ -545,6 +545,8 @@ def plan_get(uid: int) -> Response:
 def inbox() -> Response:
     """{"items": [내가 처리할 것], "team": {상태: 수}}. items = 오래된 것부터 두 가지: kind "PLAN" = 내가 바로 위 관리자인 제출 · 수정 요청 계획서,
     kind "SCHED" = 기다리는 일정 변경 요청 (그해 평가 시작일이 지났으면 뺀다). 일정 변경 줄은 id · 실행목표(action) · 일정 이름(sched) · 옛 → 새 기한 · 이유가 있다.
+    계획서 줄의 closed = 그해 평가 시작일이 지나 작성 기간이 모두 닫혀 누구도(HR 도) 처리할 수 없다 — 화면은 줄을 보이되 처리할 일 숫자에서 빼고(휴대폰 숫자 push.pending 도),
+    confirmed = 확정본이 있나 (있으면 그것으로 평가, 없으면 확정 KPI 없이 등급만 — 화면 안내 줄).
     HR 이면 관리자가 없거나 대표이사가 맡긴 것도 proxy: true 로 (HR 본인 것은 빼고). 주인이 활성이고 KPI 작성이 켜진 것만 —
     team · HR 목록과 같은 기준. team = 내가 바로 위 관리자인 KPI 작성자들의 상태 수 (HR 대신 몫은 안 센다 · 일정 변경은 안 센다)."""
     conn, year, mine = auth._db(), plan_year(), g.actor.user_id
@@ -558,9 +560,9 @@ def inbox() -> Response:
             return False
         return True if g.actor.is_hr and uid != mine and (boss is None or ceos.get(boss, False)) else None
 
-    items = []
-    for uid, name, dept, title, status, submitted, updated, reason, draft in conn.execute(
-            "SELECT p.user_id, u.name, d.name, COALESCE(u.title, ''), p.status, p.submitted_at, p.updated_at, p.change_reason, p.draft"
+    items, closed = [], eval_started(conn, year)
+    for uid, name, dept, title, status, submitted, updated, reason, draft, version in conn.execute(
+            "SELECT p.user_id, u.name, d.name, COALESCE(u.title, ''), p.status, p.submitted_at, p.updated_at, p.change_reason, p.draft, p.confirmed_version"
             " FROM kpi_plans p JOIN users u ON u.id = p.user_id JOIN departments d ON d.id = u.department_id"
             " WHERE p.year = ? AND p.status IN ('SUBMITTED', 'CHANGE_REQUESTED') AND u.is_active = 1 AND u.writes_kpi = 1", (year,)):
         px = proxy(uid)
@@ -570,7 +572,7 @@ def inbox() -> Response:
         items.append({"kind": "PLAN", "userId": uid, "name": name, "dept": dept, "title": title, "status": status,
                       "at": submitted if status == "SUBMITTED" else updated, "reason": reason if status == "CHANGE_REQUESTED" else None,
                       "items": len(rows), "reg": sum(it["kind"] == "reg" for it in rows), "irr": sum(it["kind"] == "irr" for it in rows),
-                      "scheds": sum(len(it["scheds"]) for it in rows), "proxy": px})
+                      "scheds": sum(len(it["scheds"]) for it in rows), "proxy": px, "closed": closed, "confirmed": version is not None})
     waiting = conn.execute(
         "SELECT c.id, c.user_id, u.name, d.name, COALESCE(u.title, ''), c.sid, c.from_due, c.to_due, c.reason, c.requested_at"
         " FROM kpi_sched_changes c JOIN users u ON u.id = c.user_id JOIN departments d ON d.id = u.department_id"
@@ -1392,10 +1394,15 @@ def board() -> Response:
 
 
 # ---------------- 일정 변경 요청 (2단계 ①, 2026-10-21) ----------------
+def eval_started(conn: sqlite3.Connection, year: int) -> bool:
+    """그해 평가 시작일(한국 날짜)이 됐나 — 그날부터 작성 기간(사람별 기간도) · 일정 변경이 모두 닫혀 누구도 다시 열 수 없다. 평가 시작일을 정하지 않았으면 거짓."""
+    ev = conn.execute("SELECT eval_start FROM kpi_years WHERE year = ?", (year,)).fetchone()
+    return bool(ev and ev[0]) and auth._today().isoformat() >= ev[0]
+
+
 def _sched_open(conn: sqlite3.Connection, year: int) -> bool:
     """일정 변경은 그해 평가 시작일부터 막힌다 (한국 날짜). 평가 시작일을 정하지 않았으면 늘 열려 있다."""
-    ev = conn.execute("SELECT eval_start FROM kpi_years WHERE year = ?", (year,)).fetchone()
-    return not (ev and ev[0]) or auth._today().isoformat() < ev[0]
+    return not eval_started(conn, year)
 
 
 STARTED = "평가가 시작되어 일정을 바꿀 수 없습니다."

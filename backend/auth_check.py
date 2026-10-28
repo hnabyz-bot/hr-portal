@@ -2593,7 +2593,9 @@ def check_push_pending(hr) -> None:
         n = {"p1": sum(not s["seen"] for s in c.get("/api/payslips", base_url=BASE).json["slips"]),
              "p2": sum(r["canSign"] for r in c.get("/api/contracts/mine", base_url=BASE).json["rows"]),
              "p3": sum(not y["seen"] for y in c.get("/api/withholding", base_url=BASE).json["years"]),
-             "inbox": len(ib["items"]), "back": int(km["plan"] is not None and km["plan"]["noteKind"] == "RETURNED"),
+             "inbox": sum(not i.get("closed") for i in ib["items"]),  # 평가 시작일이 지나 누구도 처리 못 하는 줄은 안 센다 (KPI_LIVE.closed)
+             "back": int(km["plan"] is not None and km["plan"]["noteKind"] == "RETURNED"
+                         and not (km["window"]["evalStart"] and auth._today().isoformat() >= km["window"]["evalStart"])),  # kpiLiveBack
              "prev": pr.json["todo"]["prev"] if pr is not None and pr.status_code == 200 else 0,
              "memos": ib["review"]["memos"], "check": ib["review"]["check"] if leads else 0, "replies": ib["review"]["replies"] if leads else 0,
              "e2": todo["me"] + todo["admin"], "e3": todo["e3"],  # 평가 진행 (TODO.e2 = evTodo — 서버 todo 의 me + admin) · 이의 신청 (TODO.e3 — 서버 todo 의 e3)
@@ -4011,6 +4013,7 @@ def check_kpi_manager(hr) -> None:
     HR 은 대신 할 수 있고 원래 관리자가 남음 · 대표이사 몫은 맡겼을 때만 · 처리함 · 사람별 기간 ·
     서버가 순서대로 다시 본다 (권한 403 → 작성 기간 403 → 상태 409 → 사유 400)."""
     import kpi
+    import push
     print("KPI 계획서 (관리자)")
     # 이 검사만의 가상 조직 — 앞 검사가 바꿔 놓은 것에 기대지 않는다.
     # 본부(31) 밑 팀 A(32) · B(33), 본부장이 없는 본부(35) 밑 팀 C(34), 본부장 · 대표이사
@@ -4079,7 +4082,7 @@ def check_kpi_manager(hr) -> None:
     ok(setyear(day(-1), day(7)).status_code == 200 and send(a1), "작성 기간을 열고 팀원이 제출")
     at = q("SELECT submitted_at FROM kpi_plans WHERE user_id = 42 AND year = ?", year)[0][0]
     item = {"kind": "PLAN", "userId": 42, "name": "가상팀원A1", "dept": "가상K팀A", "title": "프로", "status": "SUBMITTED", "at": at, "reason": None,
-            "items": 3, "reg": 2, "irr": 1, "scheds": 2, "proxy": False}
+            "items": 3, "reg": 2, "irr": 1, "scheds": 2, "proxy": False, "closed": False, "confirmed": False}
     ok(inbox(lead) == {"items": [item], "team": {**zero, "NONE": 2, "SUBMITTED": 1}, "review": calm},
        "팀장 처리함에 1건 (직급 · 제출 시각 · 행 수) · 우리 팀 상태: 제출 1 · 아직 안 씀 2")
     x("UPDATE users SET writes_kpi = 0 WHERE id = 42")
@@ -4155,7 +4158,7 @@ def check_kpi_manager(hr) -> None:
     ok(own(a1, "request-change", {"reason": "가상 수정 사유"}).status_code == 200, "팀원이 수정 요청")
     at_cr = q("SELECT updated_at FROM kpi_plans WHERE user_id = 42 AND year = ?", year)[0][0]
     r = inbox(lead)
-    ok(r["items"] == [{**item, "status": "CHANGE_REQUESTED", "at": at_cr, "reason": "가상 수정 사유"}] and r["team"]["CHANGE_REQUESTED"] == 1,
+    ok(r["items"] == [{**item, "status": "CHANGE_REQUESTED", "at": at_cr, "reason": "가상 수정 사유", "confirmed": True}] and r["team"]["CHANGE_REQUESTED"] == 1,
        "수정 요청도 처리함에 (사유 · 시각 · 행 수는 확정본 기준)")
     ok(conflict(act(lead, 42, "confirm"), "CHANGE_REQUESTED") and conflict(act(lead, 42, "return", {"note": "가상 사유"}), "CHANGE_REQUESTED"),
        "수정 요청 중에는 확정 · 돌려보내기가 409")
@@ -4324,10 +4327,22 @@ def check_kpi_manager(hr) -> None:
     people = {p["userId"]: p for p in r.json["people"]}
     ok(r.status_code == 200 and r.json["year"] == year and r.json["window"] == {"from": day(-1), "to": day(7), "evalStart": None, "open": True},
        "HR 목록: 해 · 올해 작성 기간 · 열려 있는지 (서버가 정한다)")
+    old45 = row(45)
+    ok(own(a1, "request-change", {"reason": "가상 늦은 사유"}).status_code == 200, "(평가 시작일 전에 팀원이 수정 요청을 걸어 둠)")
+    x("UPDATE kpi_plans SET note = '가상', note_kind = 'RETURNED' WHERE user_id = 45 AND year = ?", year)  # 돌려받은 채 평가 시작일을 넘긴 팀원
     hr.post("/api/kpi/admin/year", base_url=BASE, headers=ORIGIN, json={"year": year, "editFrom": day(-1), "editTo": day(7), "evalStart": day(0)})
     ok(hr.get("/api/kpi/admin", base_url=BASE).json["window"] == {"from": day(-1), "to": day(7), "evalStart": day(0), "open": False},
        "평가 시작일부터는 HR 목록에도 닫혀 있다고 나옴")
+    pend = lambda uid: dict(push.pending(app, uid))  # noqa: E731
+    ok([(i["userId"], i["closed"], i["confirmed"]) for i in inbox(lead)["items"]] == [(42, True, True)] and act(lead, 42, "unlock").json == no_window
+       and act(hr, 42, "unlock").json == no_window and "inbox" not in pend(41),
+       "평가_시작_뒤_못_처리하는_요청은_숫자에서_빠진다: 줄은 closed 로 남고(확정본 있음 — 화면 안내) 팀장 · HR 모두 처리 못 함 · 휴대폰 숫자에 없음")
+    ok("back" not in pend(45), "돌려받은 계획서도 평가 시작일부터는 다시 쓸 수 없어 숫자에서 빠짐")
     ok(setyear(day(-1), day(7)).status_code == 200, "(평가 시작일을 비우고 다시 엶)")
+    ok([(i["userId"], i["closed"]) for i in inbox(lead)["items"]] == [(42, False)] and pend(41).get("inbox") == 1 and pend(45).get("back") == 1,
+       "평가 시작일 전에는 그대로 센다 (처리함 1 · 돌려받음 1)")
+    ok(act(lead, 42, "reject", {"note": "가상 사유"}).status_code == 200, "(수정 요청을 거절해 확정 그대로 되돌림)")
+    x("UPDATE kpi_plans SET note = ?, note_kind = ? WHERE user_id = 45 AND year = ?", old45[0][1], old45[0][2], year)
     ok(people[42] == {"userId": 42, "name": "가상팀원A1", "dept": "가상K팀A", "manager": {"id": 41, "name": "가상팀장A"},
                       "status": "CONFIRMED", "confirmedVersion": 2, "window": None, "canAct": True}
        and people[45]["status"] == "DRAFT" and people[45]["confirmedVersion"] == 1

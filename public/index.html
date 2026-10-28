@@ -4259,10 +4259,10 @@ function kpiContent(){
    단추를 막는 것은 안내일 뿐: 기간 · 상태 · 내용은 서버가 다시 본다. 관리자는 위에 처리할 KPI(GET /api/kpi/inbox) · 우리 팀 KPI 상태(시안 2),
    HR 관리 화면은 작성 기간 · 전 직원 표(GET /api/kpi/admin) · 대신 처리할 KPI, 대표이사는 HR에 맡기기(/api/kpi/delegation).
    시안: 뉴디자인/KPI 진행 관리 시안 - 1. 시안 1의 "확정되면 나의 업무에 …" 줄은 넣지 않았다 — 진행 관리 비정기 카드 아래 안내(kpiProgCard)가 이미 말한다. */
-const KPI_LIVE = { state:'', me:null, inbox:[], team:null, review:null, admin:null, deleg:null, biz:null, yr:null, gapEd:null, bizEd:null, busy:false, progBusy:false, dirty:false, yrDirty:false, gapDirty:false, bizDirty:false, prog:null, memos:null, typed:{} };   // review: 처리할 일 숫자 {check, replies, memos}(처리함 응답 — 메뉴 · 홈). biz: 경영계획 목표 {year, goals}(대표이사 · 본부장 · HR, 못 읽으면 null). gapEd · bizEd · gapDirty · bizDirty: HR 알람 기준 칸 · 경영계획 목록에 적는 중인 것과 저장 안 한 표시 (R21). busy: 계획서 일(kpiLiveDo) 도는 중 · progBusy: 진행 기록 저장(kpiProgDo) 도는 중. state: '' 아직 · loading · ok · err. deleg: 대표이사만 true/false. yr: HR 기간 칸에 적는 중인 날짜. dirty · yrDirty: 저장 안 한 내 초안 · 기간 칸 (R21). prog: 내 진행 기록(확정본이 있을 때). memos: 내 확인 메모(확정본이 있을 때 — GET /api/kpi/memos/<내 id>). typed: 진행 관리에 적고 저장 안 한 글 { 'm-rid-달' · 'r-sid' · 'w-rid': { t, l } }
+const KPI_LIVE = { state:'', me:null, inbox:[], closed:[], team:null, review:null, admin:null, deleg:null, biz:null, yr:null, gapEd:null, bizEd:null, busy:false, progBusy:false, dirty:false, yrDirty:false, gapDirty:false, bizDirty:false, prog:null, memos:null, typed:{} };   // review: 처리할 일 숫자 {check, replies, memos}(처리함 응답 — 메뉴 · 홈). biz: 경영계획 목표 {year, goals}(대표이사 · 본부장 · HR, 못 읽으면 null). gapEd · bizEd · gapDirty · bizDirty: HR 알람 기준 칸 · 경영계획 목록에 적는 중인 것과 저장 안 한 표시 (R21). busy: 계획서 일(kpiLiveDo) 도는 중 · progBusy: 진행 기록 저장(kpiProgDo) 도는 중. state: '' 아직 · loading · ok · err. deleg: 대표이사만 true/false. yr: HR 기간 칸에 적는 중인 날짜. dirty · yrDirty: 저장 안 한 내 초안 · 기간 칸 (R21). prog: 내 진행 기록(확정본이 있을 때). memos: 내 확인 메모(확정본이 있을 때 — GET /api/kpi/memos/<내 id>). typed: 진행 관리에 적고 저장 안 한 글 { 'm-rid-달' · 'r-sid' · 'w-rid': { t, l } }
 function kpiEdited(){ if(AUTH.live) KPI_LIVE.dirty = true; }   // 내 초안을 화면에서 고쳤다 — 저장하기 전에는 다시 불러도 지킨다 (R21)
 addEventListener('beforeunload', e=>{ if(AUTH.live && (KPI_LIVE.dirty || KPI_LIVE.yrDirty || KPI_LIVE.gapDirty || KPI_LIVE.bizDirty || Object.keys(KPI_LIVE.typed).length || Object.keys(EV_LIVE.typed).length || Object.values(KV_LIVE.memoUi.draft).some(t=>String(t).trim()))){ e.preventDefault(); e.returnValue = ''; } });   // 저장 안 한 내 초안 · 기간 칸 · 알람 기준 · 경영계획 · 진행 관리 한 줄 · 보내지 않은 확인 메모 · 답글 · 고치기 글(KPI 현황 · 본인 화면 모두)이 있으면 창을 닫거나 나가기 전에 브라우저가 묻는다 (없으면 아무것도 안 함)
-function kpiLiveBack(){ return KPI_LIVE.me?.plan?.noteKind==='RETURNED' ? 1 : 0; }   // 돌려보내진 내 계획서 = 다시 써서 낼 일 1건 (메뉴 숫자 · 홈 오늘의 업무 같은 규칙). 수정 요청 거절은 확정본이 그대로라 할 일이 아니다
+function kpiLiveBack(){ const ev = KPI_LIVE.me?.window?.evalStart; return KPI_LIVE.me?.plan?.noteKind==='RETURNED' && !(ev && kpiDay(0)>=ev) ? 1 : 0; }   // 평가 시작일부터는 작성 기간이 모두 닫혀 다시 쓸 수 없으니 세지 않는다 (서버 push.pending 과 같은 규칙)   // 돌려보내진 내 계획서 = 다시 써서 낼 일 1건 (메뉴 숫자 · 홈 오늘의 업무 같은 규칙). 수정 요청 거절은 확정본이 그대로라 할 일이 아니다
 function kpiRev(k){ return +KPI_LIVE.review?.[k] || 0; }   // 처리할 일 숫자 — 처리함 응답의 review: check(그 달 기록을 확인 안 한 바로 아래 사람) · replies(내가 쓴 메모에 새 답글이 온 사람) · memos(내가 확인 안 한 내 메모). 아직 못 읽었으면 0
 async function kpiRevGet(){   // 처리할 일 숫자만 다시 읽는다 (GET /api/kpi/inbox 의 review) — 확인 · 메모 일 뒤에 메뉴 · 홈 숫자가 바로 따라오게. 못 읽으면 있던 것 그대로, 그리기는 부른 쪽이
   const j = await fetch('/api/kpi/inbox').then(r=>r.ok ? r.json() : null).catch(()=>null);
@@ -4278,7 +4278,7 @@ function kpiLiveKeep(me, admin, biz){   // R21: 새로 받은 것(상태 · 사�
     bizEd:KPI_LIVE.bizDirty && KPI_LIVE.bizEd ? KPI_LIVE.bizEd : biz ? biz.goals.map(g=>({ goal:g.goal, detail:g.detail })) : null };   // 경영계획을 못 읽었으면 null — HR 칸 없이 안내 (빈 목록을 저장해 지우지 않게)
 }
 const KPI_LIVE_ST = { NONE:['작성 전','neutral'], DRAFT:['작성 중','info'], RETURNED:['돌려받음','danger'], SUBMITTED:['제출 · 확인 대기','info'], CONFIRMED:['확정 · 잠김','success'], CHANGE_REQUESTED:['수정 요청','warning'] };
-const KPI_STEPS = [['작성','KPI · 정기/비정기 · 예정 기한'], ['제출 · 팀장 확인','제출하면 팀장이 확인'], ['확정 (잠김)','팀장이 확정하면 고칠 수 없음'], ['수정 요청 → 해제','팀장이 해제하면 다시 작성']];
+const KPI_STEPS = who=>{ const by = who + kpiGa(who); return [['작성','KPI · 정기/비정기 · 예정 기한'], [`제출 · ${who} 확인`,`제출하면 ${by} 확인`], ['확정 (잠김)',`${by} 확정하면 고칠 수 없음`], ['수정 요청 → 해제',`${by} 해제하면 다시 작성`]]; };   // who: 계획서 주인의 바로 위 관리자 직책 (팀장 · 본부장 · 대표이사)
 async function kpiLiveLoad(){
   KPI_LIVE.state = 'loading';
   try {
@@ -4289,7 +4289,7 @@ async function kpiLiveLoad(){
     if(!me.plan && me.writesKpi && me.window.open) me.plan = { status:'DRAFT', draft:[kpiNewGoal(AUTH.me.name, 3)], note:null, noteKind:null, changeReason:null, confirmed:null };   // 처음 쓰는 사람: 화면에서 시작하고, 처음 임시 저장할 때 서버에 생긴다
     const [prog, memos] = await Promise.all([kpiProgGet(me), kpiMemoGet(me)]);   // 확정본이 있을 때만 — 못 읽어도 계획서는 그린다 (진행 칸에 오류 한 줄 · 메모 카드는 없음)
     if(prog) kpiProgPrune(prog);
-    Object.assign(KPI_LIVE, kpiLiveKeep(me, admin, biz), { inbox:inbox.items, team:inbox.team, review:inbox.review || null, admin, deleg:deleg ? deleg.on : null, biz, prog, memos, state:'ok' });
+    Object.assign(KPI_LIVE, kpiLiveKeep(me, admin, biz), { inbox:inbox.items.filter(i=>!i.closed), closed:inbox.items.filter(i=>i.closed), team:inbox.team, review:inbox.review || null, admin, deleg:deleg ? deleg.on : null, biz, prog, memos, state:'ok' });
   } catch(e){ KPI_LIVE.state = 'err'; }
   if(!ORG_LIVE.state) orgLoad();   // 제목의 직급 · 관리자 직책은 조직도 명단에서
   if(currentTab.id==='e1' || currentTab.id==='e4') kpiProgShow(); else renderContent();   // 목표설정 · KPI 현황: 글 칸에 적는 중이면 그 칸을 떠날 때 그린다 (확인 메모 · HR 경영계획 칸의 한글 조합이 끊기지 않게)
@@ -4301,8 +4301,8 @@ function kpiLiveContent(){
   }
   const { me, team, inbox } = KPI_LIVE, msg = kpiMsg ? `<div id="kpiLiveMsg">${kpiNote(kpiMsg.msg, kpiMsg.type)}</div>` : '';
   if(hrAdmin()) return hrSwitch() + msg + kpiLiveHr() + kpiLiveInbox(inbox.filter(i=>i.proxy), true);   // HR 관리 화면: 작성 기간 · 전 직원 표 · 대신 처리할 KPI
-  const mine = inbox.filter(i=>!i.proxy), leads = Object.values(team).some(n=>n>0);   // 처리할 KPI · 우리 팀은 맡은 사람이 있거나 처리할 것이 있을 때만 (시안 2: 내 계획서 위)
-  const boss = (mine.length || leads ? kpiLiveInbox(mine) : '') + (leads ? kpiLiveTeam(team) : '') + (KPI_LIVE.deleg==null ? '' : kpiLiveDeleg());
+  const mine = inbox.filter(i=>!i.proxy), shut = KPI_LIVE.closed.some(i=>!i.proxy), leads = Object.values(team).some(n=>n>0);   // 처리할 KPI · 우리 팀은 맡은 사람이 있거나 처리할 것이 있을 때만 (시안 2: 내 계획서 위)
+  const boss = (mine.length || shut || leads ? kpiLiveInbox(mine) : '') + (leads ? kpiLiveTeam(team) : '') + (KPI_LIVE.deleg==null ? '' : kpiLiveDeleg());
   const b = KPI_LIVE.biz, pos = AUTH.me.position, plan = b && (pos==='CEO' || pos==='DIVISION_HEAD') ? kpiPlanList(b.goals.map(g=>[g.goal, g.detail]), pos==='CEO', b.year) : '';   // 경영계획 목표 — 대표이사는 HR에 맡기기 아래, 본부장은 내 KPI 위 (시연과 같은 자리)
   return hrSwitch() + msg + boss + plan + (me.writesKpi ? kpiLiveMine() : pos==='CEO' ? '' : centerNote('KPI 작성 대상자가 아닙니다', '변경이 필요하면 HR에 문의해 주세요.', !boss));   // KPI 작성을 끈 분은 가운데 안내 카드 — 팀장 · 본부장은 팀원 KPI 카드 아래에 (없으면 처리함의 "작성 기간이 아니에요"만 보여 내 KPI 기간으로 읽힌다). 대표이사는 원래 쓰지 않는다
 }
@@ -4313,9 +4313,9 @@ function kpiBoss(me=KPI_LIVE.me){   // 바로 위 관리자 "김○○ 팀장" �
 }
 function kpiLeadName(id){ const p = id!=null && ORG_LIVE.people.find(m=>m.uid===id); return p && p.lead ? MS_LEAD[p.lead] : '관리자'; }   // 그 사람의 직책 이름 "팀장" · "본부장" — kpiBoss 와 같은 조직도 명단에서, 못 찾으면 "관리자" (확인 메모 · 팀장 확인)
 function kpiGa(w){ const c = w.charCodeAt(w.length-1) - 0xAC00; return c>=0 && c<11172 && c%28 ? '이' : '가'; }   // 받침 있으면 "이" (팀장이 · 대표이사가)
-function kpiSteps(status){   // 단계 표시 네 칸 — 지난 칸 done(✓), 지금 칸 on
+function kpiSteps(status, who='팀장'){   // 단계 표시 네 칸 — 지난 칸 done(✓), 지금 칸 on. who: 확인하는 사람의 직책 (내 계획서는 바로 위 관리자 — kpiLeadName)
   const on = { SUBMITTED:1, CONFIRMED:2, CHANGE_REQUESTED:3 }[status] || 0;
-  return `<div class="kl-steps">${KPI_STEPS.map(([b,t],i)=>`<div class="kl-step ${i<on ? 'done' : i===on ? 'on' : ''}"><b><i>${i<on ? '✓' : '&#8203;'}</i>${i+1}. ${b}</b>${t}</div>`).join('')}</div>`;
+  return `<div class="kl-steps">${KPI_STEPS(who).map(([b,t],i)=>`<div class="kl-step ${i<on ? 'done' : i===on ? 'on' : ''}"><b><i>${i<on ? '✓' : '&#8203;'}</i>${i+1}. ${b}</b>${t}</div>`).join('')}</div>`;
 }
 function kpiMd(d){ return +d.slice(5,7)+'/'+ +d.slice(8,10); }   // "2026-10-13" → "10/13"
 function kpiLeft(to){ return Math.round((new Date(to) - new Date(kpiDay(0))) / 864e5); }   // 마지막 날까지 남은 날 수
@@ -4333,7 +4333,7 @@ function kpiWindowBand(win){   // 작성 기간 띠 — 열림 초록 · 닫힘 
 }
 function kpiKindName(it){ return `<b>${escapeHtml(it.action) || '<span style="color:var(--text-muted);">실행목표를 위 표에 적어 주세요</span>'}</b><small>측정식: ${escapeHtml(it.formula) || '—'} · 가중치 ${+it.weight || 0}</small>`; }
 function kpiKindNames(){ document.querySelectorAll('[data-kl]').forEach(el=>{ const [gi, ii] = el.dataset.kl.split('.'); el.innerHTML = kpiKindName(kpiDraft()[gi].items[ii]); }); }   // 위 표를 고치는 동안 이름 · 가중치만 따라 바꾼다 (다시 그리면 입력 칸을 놓친다)
-function kpiKindSection(goals, edit, dues){   // "업무 종류와 진행 기록" — 실행목표마다 정기적(목표 숫자 · 단위) / 비정기적(예정 기한 · 일정 이름). dues: 진행 관리의 계획서 보기 — 실제 기한 {sid: due}, 바뀐 일정은 "(바뀜)"
+function kpiKindSection(goals, edit, dues, who='팀장'){   // "업무 종류와 진행 기록" — 실행목표마다 정기적(목표 숫자 · 단위) / 비정기적(예정 기한 · 일정 이름). dues: 진행 관리의 계획서 보기 — 실제 기한 {sid: due}, 바뀐 일정은 "(바뀜)"
   const y = KPI_LIVE.me ? KPI_LIVE.me.year : KPI_YEAR;
   const rows = goals.flatMap((g,gi)=>g.items.map((it,ii)=>{
     const p = `kpiDraft()[${gi}].items[${ii}]`, reg = it.kind==='reg', irr = it.kind==='irr';
@@ -4349,7 +4349,7 @@ function kpiKindSection(goals, edit, dues){   // "업무 종류와 진행 기록
       : `<div class="kl-hint">${edit ? '정기적인지 비정기적인지 골라 주세요.' : '업무 종류를 아직 고르지 않았어요.'}</div>`;
     return `<div class="kl-meas${irr ? ' top' : ''}"><div class="nm" data-kl="${gi}.${ii}">${kpiKindName(it)}</div><div>${seg}</div><div>${body}</div></div>`;
   })).join('');
-  return `<div class="kl-sec"><div class="kl-sec-h"><b>업무 종류와 진행 기록</b><span class="kv-new">새로</span><span>실행목표마다 골라요 · 팀장이 KPI와 함께 확정해요 · 진행률은 이것으로 계산해요</span></div>${rows}</div>`;
+  return `<div class="kl-sec"><div class="kl-sec-h"><b>업무 종류와 진행 기록</b><span class="kv-new">새로</span><span>실행목표마다 골라요 · ${who}${kpiGa(who)} KPI와 함께 확정해요 · 진행률은 이것으로 계산해요</span></div>${rows}</div>`;
 }
 function kpiSetKind(gi, ii, k){   // 정기 = 목표 숫자 · 단위, 비정기 = 예정 기한 — 바꾸면 다른 쪽 칸은 비운다 (서버 모양 규칙 R1)
   const it = kpiDraft()[gi].items[ii];
@@ -4378,9 +4378,9 @@ function kpiLiveSheet(me=KPI_LIVE.me){   // 내 계획서 (시안 1)
   const [note, foot] = kpiLiveFoot(me);
   return `<div class="card" id="kpiMine" data-mode="${edit ? 'edit' : 'view'}"${edit ? ' oninput="kpiEdited()"' : ''}>
     <div class="card-title"><span>${year}년 KPI 계획서 <span style="font-weight:500; color:var(--text-secondary);">[${escapeHtml(kpiLiveWho())}]</span></span><span class="badge ${cls}">${label}</span></div>
-    ${kpiSteps(st)}${kpiWindowBand(win)}${note}${edit ? KPI_HOWTO : ''}
+    ${kpiSteps(st, kpiLeadName(me.manager?.id))}${kpiWindowBand(win)}${note}${edit ? KPI_HOWTO : ''}
     ${!goals ? kpiNote('아직 쓴 KPI가 없어요. 작성 기간이 열리면 여기서 써요.')
-      : `<div oninput="kpiKindNames()">${kpiTable(goals, { edit })}</div>${edit ? '<div style="margin-top:10px;"><button class="btn sm" onclick="kpiAddGoal()">＋ 목표 추가</button></div>' : ''}${kpiKindSection(goals, edit)}`}
+      : `<div oninput="kpiKindNames()">${kpiTable(goals, { edit })}</div>${edit ? '<div style="margin-top:10px;"><button class="btn sm" onclick="kpiAddGoal()">＋ 목표 추가</button></div>' : ''}${kpiKindSection(goals, edit, null, kpiLeadName(me.manager?.id))}`}
     ${foot}
   </div>`;
 }
@@ -4653,7 +4653,7 @@ const kpiDues = prog=>Object.fromEntries(prog.items.flatMap(it=>(it.scheds || []
 function kpiProgPlan(me=KPI_LIVE.me, prog=KPI_LIVE.prog){   // KPI 계획서 보기 (읽기 전용) — 지금 확정본(표 + 업무 종류). 기한은 실제 기한, 바뀐 일정은 "(바뀜)"
   const c = me.plan.confirmed, dues = kpiDues(prog);
   orgModal(`<div class="kl-view"><div class="card-title"><span>${+me.year}년 KPI 계획서 <span style="font-weight:500; color:var(--text-secondary);">확정본 · 읽기 전용</span></span><button type="button" class="x-btn" aria-label="닫기" onclick="orgCloseModal()">${icon('x')}</button></div>
-    ${kpiTable(c.content)}${kpiKindSection(c.content, false, dues)}</div>`);
+    ${kpiTable(c.content)}${kpiKindSection(c.content, false, dues, kpiLeadName(me.manager?.id))}</div>`);
 }
 /* ----- 관리자: 처리할 KPI · 우리 팀 KPI 상태 (시안 2) · HR 관리 화면 · 대표이사 맡기기 ----- */
 const KPI_TEAM_ST = { CONFIRMED:['확정','success'], SUBMITTED:['확인 대기','info'], CHANGE_REQUESTED:['수정 요청','warning'], DRAFT:['작성 중','neutral'], NONE:['작성 전','danger'] };   // 이 순서로 배지 다섯 개 (R18)
@@ -4681,9 +4681,13 @@ function kpiLiveInbox(items, proxy){   // 처리할 KPI — 받은 차례(오래
         <small>${escapeHtml(it.dept)} · ${kpiAt(it.at)} ${sub ? '제출' : '수정 요청'}</small>${sub ? '' : `<div class="why">"${escapeHtml(it.reason || '')}"</div>`}</div>
       <div class="kl-ib-btns">${kpiLiveBtns(it.userId, it.status)}</div></div>`;
   };
+  const shut = KPI_LIVE.closed.filter(i=>!!i.proxy===!!proxy).map(it=>`<div class="kl-ib">${kpiLiveSt(it.status, it.status==='SUBMITTED' ? '제출' : '수정 요청')}
+      <div>${who(it)} · KPI ${it.items}개 <small>${escapeHtml(it.dept)} · ${kpiAt(it.at)} ${it.status==='SUBMITTED' ? '제출' : '수정 요청'}</small>
+        <div class="why">작성 기간이 끝나 처리할 수 없어요 — ${it.confirmed ? '마지막 확정본으로 평가해요' : '확정 KPI 없이 등급만 매겨요'}</div></div>
+      <div class="kl-ib-btns">${kpiLiveBtns(it.userId, it.status, false)}</div></div>`).join('');   // 평가 시작일이 지나 누구도 처리 못 하는 줄 — 숫자에는 안 들어가고 내용 보기만
   const one = [...new Set(sch.map(i=>i.name))], sNote = sch.length ? `확인하면 예정 기한과 ${one.length===1 ? escapeHtml(one[0])+' 님' : '요청한 직원'} 나의 업무의 마감일이 바뀝니다. 돌려보낼 때는 이유를 적어요. ` : '';
   return `<div class="card" id="kpiInbox" style="margin-bottom:14px;"><div class="card-title"><span>${proxy ? '대신 처리할 KPI' : '처리할 KPI'} <span style="color:var(--coral-text);">${items.length}건</span></span>${band}</div>
-    ${items.map(row).join('') || '<div class="list-sub" style="margin:0;">지금 처리할 KPI가 없어요.</div>'}
+    ${items.map(row).join('') || '<div class="list-sub" style="margin:0;">지금 처리할 KPI가 없어요.</div>'}${shut}
     <div class="list-sub" style="margin-top:12px;">${proxy ? '관리자가 없는 직원과 대표이사가 HR에 맡긴 KPI가 여기에 나와요. 대신 처리해도 기록에는 원래 관리자가 함께 남아요. ' : ''}${sNote}${only ? '' : '확정하면 그 직원은 KPI를 고칠 수 없어요. <b>해제</b>하면 다시 고쳐서 제출하고, 그때 다시 확정해요. 작성 기간이 끝나면 확정 · 해제 단추도 막혀요.'}</div></div>`;
 }
 function kpiLiveTeam(team){   // 우리 팀 KPI 상태 — 내가 바로 위 관리자인 KPI 작성자 수 (HR 대신 몫은 안 센다)
@@ -4698,7 +4702,7 @@ async function kpiLiveView(uid){   // 내용 보기 — 제출한 것은 초안,
   const prog = old ? await kvGet('/api/kpi/progress/'+(+uid)).then(r=>r.ok ? r.json() : null).catch(()=>null) : null;   // 확정본의 일정 변경(확인된 것)은 진행 기록의 실제 기한에 있다
   orgModal(`<div class="kl-view"><div class="card-title"><span>${KPI_LIVE.me?.year ?? KV_LIVE.board.year}년 KPI 계획서 <span style="font-weight:500; color:var(--text-secondary);">[${escapeHtml(p.owner.dept)}_${escapeHtml(p.owner.name)}]</span></span><button type="button" class="x-btn" aria-label="닫기" onclick="orgCloseModal()">${icon('x')}</button></div>
     ${cr ? kpiNote(`수정 요청 이유: ${escapeHtml(p.changeReason || '')}<br>아래는 지금 확정된 KPI예요.`, 'warning') : old && p.status==='DRAFT' ? kpiNote('다시 고쳐 쓰고 있어요. 아래는 지금 확정된 KPI예요.', 'warning') : ''}
-    ${kpiTable(goals)}${kpiKindSection(goals, false, prog && kpiDues(prog))}</div>`);
+    ${kpiTable(goals)}${kpiKindSection(goals, false, prog && kpiDues(prog), '바로 위 관리자')}</div>`);
 }
 const KPI_ACT = {   // [단추, 안내(이름은 escape 한 것, 처리함 줄), 이유를 받나, 끝난 뒤 알림, 이유 예시] — 관리자 처리 넷 + 일정 변경 확인 · 돌려보내기(sched_*, 줄 = 요청 번호) + 내 계획서 수정 요청(change)
   confirm:['확정', n=>`확정하면 ${n}님은 KPI를 고칠 수 없어요.`, false, '확정했어요.'],
@@ -4796,6 +4800,9 @@ async function kpiLiveSelfCheck(){   // 브라우저 콘솔에서 await kpiLiveS
   ok(rows[0].querySelector('button.on').textContent==='정기적' && rows[1].querySelector('button.on').textContent==='비정기적', '고른 업무 종류 단추가 켜짐');
   ok(!rows[2].querySelector('button.on') && !rows[2].querySelector('input'), '업무 종류를 안 고른 줄은 두 단추 모두 꺼짐 (R17a)');
   ok(!dom(kpiKindSection(goals, false)).querySelector('input, button'), '읽기 전용이면 입력 칸 · 단추 없음');
+  ok(dom(kpiSteps('DRAFT', '본부장')).textContent.includes('제출하면 본부장이 확인') && dom(kpiSteps('DRAFT', '대표이사')).textContent.includes('대표이사가 확정하면')
+    && dom(kpiSteps('DRAFT')).textContent.includes('팀장이 해제하면') && dom(kpiKindSection(goals, false, null, '본부장')).textContent.includes('본부장이 KPI와 함께 확정해요'),
+    '단계 · 업무 종류 글은 확인하는 사람의 직책 (본부장이 · 대표이사가 — 팀장 KPI가 "팀장이 확인"으로 나왔다, 2026-10-27)');
   const on = st=>[...dom(kpiSteps(st)).querySelectorAll('.kl-step')].map(e=>e.classList.contains('on') ? 'on' : e.classList.contains('done') ? 'done' : '').join();
   ok(on('SUBMITTED')==='done,on,,', '제출 = 둘째 칸 on');
   ok(on('DRAFT')==='on,,,' && on('CONFIRMED')==='done,done,on,' && on('CHANGE_REQUESTED')==='done,done,done,on', '작성 · 확정 · 수정 요청 칸');
@@ -4835,7 +4842,7 @@ async function kpiLiveSelfCheck(){   // 브라우저 콘솔에서 await kpiLiveS
   ok(h1.querySelector('.kl-st i').textContent==='✓' && h2.querySelector('.kl-st i'), 'HR 표 상태 칸 아이콘 자리');
   ok(dom(kpiLiveDeleg(true)).querySelector('button').textContent==='맡기기 끄기' && dom(kpiLiveDeleg(false)).querySelector('button').textContent==='HR에 맡기기', '대표이사 HR에 맡기기 단추');
   ok(dom(kpiLiveSheet(me(true, 'DRAFT'))).querySelector('#kpiMine[oninput="kpiEdited()"]') && !dom(kpiLiveSheet(me(true, 'SUBMITTED'))).querySelector('#kpiMine[oninput]'), '작성 중일 때만 고친 것을 표시한다 (R21)');
-  const keep = { live:AUTH.live, authMe:AUTH.me, inbox:KPI_LIVE.inbox, me:KPI_LIVE.me, admin:KPI_LIVE.admin, dirty:KPI_LIVE.dirty, yrDirty:KPI_LIVE.yrDirty, yr:KPI_LIVE.yr, prog:KPI_LIVE.prog, memos:KPI_LIVE.memos, typed:KPI_LIVE.typed, tab:kpiProgTab, fold:[...kpiProgFold],
+  const keep = { live:AUTH.live, authMe:AUTH.me, inbox:KPI_LIVE.inbox, closed:KPI_LIVE.closed, me:KPI_LIVE.me, admin:KPI_LIVE.admin, dirty:KPI_LIVE.dirty, yrDirty:KPI_LIVE.yrDirty, yr:KPI_LIVE.yr, prog:KPI_LIVE.prog, memos:KPI_LIVE.memos, typed:KPI_LIVE.typed, tab:kpiProgTab, fold:[...kpiProgFold],
     review:KPI_LIVE.review, biz:KPI_LIVE.biz, gapEd:KPI_LIVE.gapEd, bizEd:KPI_LIVE.bizEd, gapDirty:KPI_LIVE.gapDirty, bizDirty:KPI_LIVE.bizDirty };
   try {
     AUTH.live = true; KPI_LIVE.inbox = [ib('SUBMITTED', false), ib('CHANGE_REQUESTED', false)]; KPI_LIVE.me = me(true, 'DRAFT'); KPI_LIVE.prog = null; KPI_LIVE.memos = null;
@@ -4876,6 +4883,17 @@ async function kpiLiveSelfCheck(){   // 브라우저 콘솔에서 await kpiLiveS
     ok(TODO.e1()===3 && homePortalTasks().some(p=>p.title==='반려된 KPI 다시 작성'), '돌려받은 내 계획서는 +1');
     KPI_LIVE.me.plan.noteKind = 'REJECTED';
     ok(TODO.e1()===2 && !homePortalTasks().some(p=>p.title==='반려된 KPI 다시 작성'), '수정 요청 거절은 할 일이 아니다 (확정본이 그대로)');
+    KPI_LIVE.me.plan.noteKind = 'RETURNED'; KPI_LIVE.me.window.evalStart = kpiDay(0);
+    ok(kpiLiveBack()===0, '평가 시작일부터는 돌려받은 계획서도 숫자에 안 셈 (작성 기간이 모두 닫혀 다시 쓸 수 없다)');
+    KPI_LIVE.me.window.evalStart = kpiDay(1); ok(kpiLiveBack()===1, '평가 시작일 전에는 셈');
+    KPI_LIVE.me.window.evalStart = null; KPI_LIVE.me.plan.noteKind = 'REJECTED';
+    const ib0 = KPI_LIVE.inbox; KPI_LIVE.inbox = []; KPI_LIVE.closed = [{ ...ib('CHANGE_REQUESTED', false), closed:true, confirmed:true }, { ...ib('SUBMITTED', false), closed:true, confirmed:false }];
+    const shut = dom(kpiLiveInbox([])), shutRows = [...shut.querySelectorAll('.kl-ib')];
+    ok(TODO.e1()===0 && shut.textContent.includes('처리할 KPI 0건') && shutRows.length===2
+      && shutRows[0].textContent.includes('작성 기간이 끝나 처리할 수 없어요 — 마지막 확정본으로 평가해요') && shutRows[1].textContent.includes('작성 기간이 끝나 처리할 수 없어요 — 확정 KPI 없이 등급만 매겨요')
+      && shutRows.every(r=>[...r.querySelectorAll('button')].map(b=>b.textContent).join()==='내용 보기'),
+      '평가 시작 뒤 누구도 처리 못 하는 줄(서버 closed): 숫자에 안 셈 · 처리함에는 안내 줄과 내용 보기만 (2026-10-27)');
+    KPI_LIVE.inbox = ib0; KPI_LIVE.closed = [];
     const fresh = st=>{ const m = me(true, st); m.plan.draft = [{ team:'서버', personal:'p', items:[] }]; return m; };   // 서버에서 새로 받은 것 (R21)
     KPI_LIVE.me = me(true, 'DRAFT'); KPI_LIVE.me.plan.draft = kpiClone(goals); KPI_LIVE.dirty = false;
     KPI_LIVE.me.plan.draft[0].team = '화면에서 고침'; kpiEdited();
@@ -5342,7 +5360,7 @@ async function kpiLiveSelfCheck(){   // 브라우저 콘솔에서 await kpiLiveS
         o9.btns.forEach(([b, d])=>{ b.disabled = d; }); orgCloseModal();
       }
     }
-  } finally { Object.assign(KPI_LIVE, { inbox:keep.inbox, me:keep.me, admin:keep.admin, dirty:keep.dirty, yrDirty:keep.yrDirty, yr:keep.yr, prog:keep.prog, memos:keep.memos, typed:keep.typed,
+  } finally { Object.assign(KPI_LIVE, { inbox:keep.inbox, closed:keep.closed, me:keep.me, admin:keep.admin, dirty:keep.dirty, yrDirty:keep.yrDirty, yr:keep.yr, prog:keep.prog, memos:keep.memos, typed:keep.typed,
     review:keep.review, biz:keep.biz, gapEd:keep.gapEd, bizEd:keep.bizEd, gapDirty:keep.gapDirty, bizDirty:keep.bizDirty }); kpiProgTab = keep.tab; kpiProgFold.clear(); keep.fold.forEach(r=>kpiProgFold.add(r)); AUTH.live = keep.live; AUTH.me = keep.authMe; }
   return 'kpiLiveSelfCheck 통과';
 }
@@ -15310,7 +15328,7 @@ const TOURS = {   // 단계: el = 가리킬 곳(여러 개면 묶어서, 배열�
       { el:'#kpiProg .kp-kb', one:true, title:'정기 업무 — 실적 · 이번 달 한 줄', body:'실적(또는 진행률)은 고치면 바로 저장돼요. 그 달에 한 일은 <b>한 줄</b>로 적고 <b>저장</b>해요. 다음 달 7일까지 고칠 수 있어요.' },
       { el:'#kpiProg .kp-evs', one:true, title:'비정기 업무 — 결과 한 줄', body:'예정 기한마다 <b>결과 적기</b>로 한 줄 적어요. 결과를 적으면 나의 업무가 완료로 바뀌어요. 기한이 지나면 주황, 2주가 넘으면 빨강이에요.' },
       { el:'#kpiProg .kp-why', one:true, title:'늦어지는 이유 (선택)', body:'늦어지는 실행목표는 이유를 한 줄 적고 <b>저장</b>해요. 바로 위 관리자 · HR이 봐요.' }] : []),
-    ...(AUTH.live ? [{ el:'#kpiMine .kl-steps', title:'진행 단계', body:'<b>작성 → 제출 · 팀장 확인 → 확정 → 수정 요청 → 해제</b> 순서예요. 지금 단계가 색으로 표시돼요. 작성 기간이 끝나면 제출 · 수정 요청이 모두 막혀요.' }] : []),
+    ...(AUTH.live ? [{ el:'#kpiMine .kl-steps', title:'진행 단계', body:'<b>작성 → 제출 · 바로 위 관리자 확인 → 확정 → 수정 요청 → 해제</b> 순서예요. 지금 단계가 색으로 표시돼요. 작성 기간이 끝나면 제출 · 수정 요청이 모두 막혀요.' }] : []),
     { el:'#kpiInbox .list-row', one:true, title:'승인 대기함', body:'<b>검토</b>를 누르면 제출한 KPI가 펼쳐집니다. 수정 요청은 바뀐 줄이 노란색으로 표시됩니다. 내용을 확인하고 <b>승인</b>하거나, 사유를 적어 <b>반려</b>합니다.' },
     { el:trCol(1,2), inline:'start', title:'팀목표 · 개인목표', body:'팀 목표와 <b>직접 이어지는</b> 내 목표를 적습니다. 팀장과 면담한 뒤 정하세요.' },
     { el:trCol(3,4), inline:'center', title:'실행목표 · 측정식', body:'"월 1회 제안서 작성"처럼 <b>구체적으로</b>, 숫자로 잴 수 있게 적습니다. 실행목표는 <b>3개 이상</b> 필요합니다.' },

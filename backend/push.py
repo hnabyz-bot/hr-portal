@@ -353,9 +353,9 @@ def pending(flask_app: Flask, uid: int) -> list[tuple[str, int]]:
         items = box["items"]
         if actor.position is Role.CEO and conn.execute("SELECT 1 FROM ceo_delegation WHERE ceo_user_id = ?", (uid,)).fetchone():
             items = [i for i in items if i["proxy"]]  # 맡긴 동안 대표이사 몫은 HR 의 몫 — 대표이사가 HR 권한도 가졌을 때만 HR 몫이 남는다 (설계 7장)
-        n["inbox"] = len(items)
+        n["inbox"] = sum(not i.get("closed") for i in items)  # 평가 시작일이 지나 누구도 처리 못 하는 계획서 줄은 세지 않는다 (화면 KPI_LIVE.closed)
         plan = kpi.plan_json(conn, uid, year)
-        n["back"] = int(plan is not None and plan["noteKind"] == "RETURNED")
+        n["back"] = int(plan is not None and plan["noteKind"] == "RETURNED" and not kpi.eval_started(conn, year))  # 돌려받았어도 평가 시작일부터는 다시 쓸 수 없다 (화면 kpiLiveBack)
         with kpi._txn(conn):  # 진행 기록은 표 여럿을 읽는다 — 화면이 부르는 곳(progress_get)과 같이 한 트랜잭션 안에서
             prog = kpi.progress_json(conn, uid, year)
         n["prev"] = prog["todo"]["prev"] if prog else 0
