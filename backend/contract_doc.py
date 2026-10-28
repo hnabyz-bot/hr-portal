@@ -8,7 +8,8 @@
   {"t":"kv","rows":[[라벨,값,라벨,값] 또는 [라벨,값]]}   두 칸 줄(라벨·값 한 쌍)은 값이 가로 전체
   {"t":"h","text"}                            조 제목
   {"t":"p","runs":[[글, 굵게:bool], …]}        문단
-  {"t":"table","head":머리 줄 수,"rows":[[칸 …]]}   칸 = 글 또는 {"c":글,"span":n}
+  {"t":"table","head":머리 줄 수,"rows":[[칸 …]]}   칸 = 글 또는 {"c":글,"span":가로 칸 수,"rspan":세로 줄 수}
+                                              세로로 합친 칸은 아랫줄에서 그 자리를 비워 둔다(칸을 적지 않는다)
   {"t":"center","text"}                       가운데 줄
   {"t":"signs","employer","worker"}           사업주 · 근로자 서명 자리(직인·서명 그림은 그리는 쪽이 얹는다)
 """
@@ -39,7 +40,7 @@ from reportlab.platypus import Flowable, KeepTogether, Paragraph, SimpleDocTempl
 
 logger = logging.getLogger(__name__)
 
-TPL = "2027-1"  # 양식 판 번호 — 문장·표를 고치면 올린다(문서 고유번호에도 들어간다)
+TPL = "2027-2"  # 양식 판 번호 — 문장·표를 고치면 올린다(문서 고유번호에도 들어간다)
 COMPANY_NAME = "㈜에이치앤아비즈"
 
 
@@ -120,8 +121,8 @@ def build_blocks(*, company: dict, worker: dict, pay: dict, start: str, end: str
         _p("총 계약 연봉금액 : ", (_won(k["annual"]), True), " ((월급여 − 현장관리수당·자격수당, 직책수당) × 12 + 명절상여)"),
         _p("1) 급여 구성은 기본급과 수당으로 구성되며, 내역은 아래와 같다."),
         {"t": "table", "head": 2, "rows": [
-            [{"c": "월 급여 / 月", "span": 5}, {"c": "연봉 외 수당", "span": 2}, "명절상여/年"],
-            ["계", "시간급", "기본급(209H)", "시간외근로(10H)", "능력급(209H)", "현장관리수당/자격수당", "직책수당", ""],
+            [{"c": "월 급여 / 月", "span": 5}, {"c": "연봉 외 수당", "span": 2}, {"c": "명절상여/年", "rspan": 2}],
+            ["계", "시간급", "기본급(209H)", "시간외근로(10H)", "능력급(209H)", "현장관리수당/자격수당", "직책수당"],
             [_won(k["monthly"]), _won(k["hourly"]), _won(pay["base"]), _won(k["ot"]), _won(pay["ability"]),
              _won(site_qual), _won(pay.get("pos", 0)), _won(k["bonus"])],
         ]},
@@ -282,20 +283,28 @@ def render_pdf(blocks: list, *, seal_png: bytes | None, sign_png: bytes | None, 
         return escape(text).replace("\n", "<br/>")
 
     def grid(rows, widths, shade, cell_style):
-        """칸 글을 Paragraph 로, 칸 합치기(span)는 SPAN 으로. shade(r, c) 면 머리·라벨 칸 색."""
+        """칸 글을 Paragraph 로, 칸 합치기(가로 span · 세로 rspan)는 SPAN 으로. shade(r, c) 면 머리·라벨 칸 색."""
         data, cmds = [], [("GRID", (0, 0), (-1, -1), 0.5, _LINE), ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
                           ("TOPPADDING", (0, 0), (-1, -1), 4), ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
                           ("LEFTPADDING", (0, 0), (-1, -1), 4), ("RIGHTPADDING", (0, 0), (-1, -1), 4)]
+        held = set()  # 윗줄에서 세로로 합쳐 내려온 자리 (줄, 칸) — 빈 칸으로 채운다
         for r, row in enumerate(rows):
             line, col = [], 0
             for cell in row:
-                text, span = (cell["c"], cell.get("span", 1)) if isinstance(cell, dict) else (cell, 1)
+                while (r, col) in held:
+                    line.append("")
+                    col += 1
+                text, span, rspan = (cell["c"], cell.get("span", 1), cell.get("rspan", 1)) if isinstance(cell, dict) else (cell, 1, 1)
                 line += [Paragraph(m(text), cell_style(r, col))] + [""] * (span - 1)
-                if span > 1:
-                    cmds.append(("SPAN", (col, r), (col + span - 1, r)))
+                if span > 1 or rspan > 1:
+                    cmds.append(("SPAN", (col, r), (col + span - 1, r + rspan - 1)))
                 if shade(r, col):
-                    cmds.append(("BACKGROUND", (col, r), (col + span - 1, r), _SHADE))
+                    cmds.append(("BACKGROUND", (col, r), (col + span - 1, r + rspan - 1), _SHADE))
+                held |= {(rr, cc) for rr in range(r + 1, r + rspan) for cc in range(col, col + span)}
                 col += span
+            while (r, col) in held:
+                line.append("")
+                col += 1
             data.append(line)
         t = Table(data, colWidths=widths)
         t.setStyle(TableStyle(cmds))
@@ -316,16 +325,19 @@ def render_pdf(blocks: list, *, seal_png: bytes | None, sign_png: bytes | None, 
                       grid(rows, [22 * mm, 65 * mm, 24 * mm, 63 * mm], lambda r, c: c in (0, 2), lambda r, c: st["k"] if c in (0, 2) else st["v"]),
                       Spacer(1, 2 * mm)]
         elif kind == "table":  # 칸 너비는 글이 안 꺾일 만큼(칸 합치기 줄은 빼고) 재서 쪽 너비에 맞춰 비례로 늘이거나 줄인다
-            head, need = blk["head"], {}
-            for row in blk["rows"]:
+            head, need, held, n = blk["head"], {}, set(), 0
+            for r, row in enumerate(blk["rows"]):
                 col = 0
                 for cell in row:
-                    text, span = (cell["c"], cell["span"]) if isinstance(cell, dict) else (cell, 1)
+                    while (r, col) in held:
+                        col += 1
+                    text, span, rspan = (cell["c"], cell.get("span", 1), cell.get("rspan", 1)) if isinstance(cell, dict) else (cell, 1, 1)
                     if span == 1:
                         w = max((stringWidth(seg, bold, 7.5) for seg in re.split(r"[\n/]", text)), default=0)
                         need[col] = max(need.get(col, 0), w + 12)
+                    held |= {(rr, cc) for rr in range(r + 1, r + rspan) for cc in range(col, col + span)}
                     col += span
-            n = col
+                n = max(n, col, max((c + 1 for rr, c in held if rr == r), default=0))
             widths = [max(need.get(i, 0), 24) for i in range(n)]
             widths = [_W * w / sum(widths) for w in widths]
             story += [Spacer(1, 1 * mm),
@@ -382,7 +394,9 @@ def selfcheck() -> None:
     # 표 모양: 첫 표는 머리 2줄 · 8칸, 둘째 표는 머리 1줄 · 6칸. 굵게는 총액과 계약 기간뿐. 직급이 없으면 소속만.
     t1, t2 = [x for x in b if x["t"] == "table"]
     assert t1["head"] == 2 and t2["head"] == 1
-    assert [sum(c["span"] if isinstance(c, dict) else 1 for c in r) for r in t1["rows"]] == [8, 8, 8] and [len(r) for r in t2["rows"]] == [6, 6, 6]
+    # "명절상여/年" 은 머리 두 줄에 걸친 한 칸(rspan 2) 이라 둘째 줄은 7칸뿐이다
+    assert [sum(c.get("span", 1) if isinstance(c, dict) else 1 for c in r) for r in t1["rows"]] == [8, 7, 8] and [len(r) for r in t2["rows"]] == [6, 6, 6]
+    assert t1["rows"][0][-1] == {"c": "명절상여/年", "rspan": 2}
     assert [r[0] for x in b if x["t"] == "p" for r in x["runs"] if r[1]] == ["49,665,095원", "2027년 3월 1일부터 2028년 2월 29일"]
     assert b[1]["rows"][2][3] == "가상팀 · 프로"
     assert build_blocks(company=co, worker={**wk, "title": ""}, pay=pay, start="2027-03-01", end="2028-02-29", signed_on=None)[1]["rows"][2][3] == "가상팀"
