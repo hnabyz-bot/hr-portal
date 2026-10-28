@@ -59,7 +59,7 @@ app.register_blueprint(game.bp)  # X-ray 특공대 기록·랭킹·선물 (로�
 app.register_blueprint(kpi.bp)  # KPI 계획서 본인 쓰기 · HR 작성 기간 (로그인한 사람만 — 위 세션 검사)
 app.register_blueprint(evaluation.bp)  # 인사평가: 회차 · 시작(떠 두기) · HR 명단 일 (로그인한 사람만 — 위 세션 검사)
 app.register_blueprint(payslip.bp)  # 급여명세서: 잠가 저장 · 본인(공개된 달)·HR 만 (HR_PAY_KEY 가 있어야 올릴 수 있다)
-app.register_blueprint(eval_report.bp)  # 평가 결과 보고용 엑셀 (HR 만 — 지금은 화면이 보낸 시연 결과로 만든다)
+app.register_blueprint(eval_report.bp)  # 평가 결과 보고용 엑셀 (HR 만 — 시작한 해는 서버가 DB 에서, 시연은 화면이 보낸 결과로 만든다)
 app.register_blueprint(withholding.bp)  # 원천징수영수증: 잠가 저장 · 해 전체/사람만 · 본인(공개된 해)·HR 만 (같은 HR_PAY_KEY)
 app.register_blueprint(contract.bp)  # 연봉계약서: 잠가 저장 · HR 이 올려 발송 · 직원이 서명 (같은 HR_PAY_KEY)
 app.register_blueprint(paypin.bp)  # 급여·계약 비밀번호: 잠금 상태 · 정하기 · 확인 · 잠그기 · 아직 있어요 (세 앞머리 검문 gate 는 auth._guard 가 부른다)

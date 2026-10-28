@@ -5,6 +5,13 @@
   - N >= 5  : INDIVIDUAL — 등급별로 개별 정원을 준다
 
 두 모드 모두 정원 합계는 본부 인원과 정확히 같다.
+
+등급 비율과 늘린 정원은 부르는 쪽이 넘긴다 (기본값은 10 · 10 · 10 % 와 늘림 없음 = 지금 규칙).
+  - ratios = (S·A %, B %, D %) — 5명 이상 묶음의 정원은 인원 × 비율을 사사오입한 값, C 는 나머지.
+    세 칸 합이 70 이하면 5명 이상에서 정원 합이 인원을 넘지 않는다 (RATIO_SUM_MAX).
+  - extra = (S·A +명, B +명) — 대표이사가 묶음 정원을 늘려 준 만큼. 5명 이상은 a · b 에, 4명 이하는 위쪽(upper)에 더한다.
+  - 4명 이하 묶음은 비율을 쓰지 않는다 (상위 1명 · 1명 묶음은 0명, 거기에 늘린 정원만 더한다).
+  - 비율 · 늘린 정원의 범위는 부르는 쪽(서버 · DB)이 본다. 여기서는 정원 합이 인원을 넘을 때만 ValueError.
 """
 
 from __future__ import annotations
@@ -16,8 +23,12 @@ from enum import Enum
 #: 이 인원 이하면 그룹 정원(GROUPED) 모드다.
 SMALL_DIVISION_THRESHOLD = 4
 
-#: A·B·D 각각의 목표 비율. C는 나머지를 흡수한다.
-GRADE_RATIO = Decimal("0.1")
+#: (S·A, B, D) 목표 비율(%). C는 나머지를 흡수한다.
+DEFAULT_RATIOS = (10, 10, 10)
+
+#: 늘린 정원 한 칸(S·A 또는 B)의 상한(명) · 비율 세 칸 합의 상한(%) — 범위 검사는 부르는 쪽이 이 값으로 한다.
+EXTRA_MAX = 5
+RATIO_SUM_MAX = 70
 
 
 class QuotaMode(str, Enum):
@@ -63,26 +74,34 @@ class IndividualQuota:
 Quota = GroupedQuota | IndividualQuota
 
 
-def calculate_department_quota(headcount: int) -> Quota:
+def calculate_department_quota(
+    headcount: int,
+    ratios: tuple[int, int, int] = DEFAULT_RATIOS,
+    extra: tuple[int, int] = (0, 0),
+) -> Quota:
+    """ratios = (S·A %, B %, D %), extra = (S·A +명, B +명)."""
     if headcount < 0:
         raise ValueError(f"본부 인원은 음수일 수 없습니다: {headcount}")
+    extra_sa, extra_b = extra
 
     if headcount <= SMALL_DIVISION_THRESHOLD:
         # 1명짜리 본부에 상위 정원을 주면 전원이 상위등급이 된다.
-        upper = 1 if headcount >= 2 else 0
+        base = 1 if headcount >= 2 else 0
+        upper = base + extra_sa + extra_b
+        if upper > headcount:
+            raise ValueError("늘린 정원이 묶음 인원보다 많습니다.")
         return GroupedQuota(
             headcount=headcount,
             upper=upper,
             lower=headcount - upper,
-            cap_s=upper,
+            cap_s=base + extra_sa,
         )
 
-    q = round_half_up(Decimal(headcount) * GRADE_RATIO)
-    return IndividualQuota(
-        headcount=headcount,
-        a=q,
-        b=q,
-        c=headcount - 3 * q,
-        d=q,
-        cap_s=q,
-    )
+    ra, rb, rd = ratios
+    a = round_half_up(Decimal(headcount) * ra / 100) + extra_sa
+    b = round_half_up(Decimal(headcount) * rb / 100) + extra_b
+    d = round_half_up(Decimal(headcount) * rd / 100)
+    c = headcount - a - b - d
+    if c < 0:
+        raise ValueError("늘린 정원이 묶음 인원보다 많습니다.")
+    return IndividualQuota(headcount=headcount, a=a, b=b, c=c, d=d, cap_s=a)

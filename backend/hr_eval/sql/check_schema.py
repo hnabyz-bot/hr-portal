@@ -1839,6 +1839,235 @@ def check_cards_migration() -> None:
             conn.close()
 
 
+_RULES_T = "2027-03-02T09:00:00Z"
+_RULES_RD = dict(self_to="2027-02-14", evid_due="2027-02-20", score_to="2027-02-28", grade_to="2027-03-07",
+                 ceo_to="2027-03-14", final_to="2027-03-21", updated_at=_RULES_T)   # 회차 한 줄의 바탕 (해는 따로)
+_RATIO_MSG = "RATIO_SUM: 등급 비율 세 칸 합은 70 이하여야 합니다."
+_EXTRA_MSG = "EXTRA_REASON: 정원을 늘렸으면 이유가 있어야 합니다."
+
+
+def _rules_seed(conn: sqlite3.Connection) -> int:
+    """평가 규칙 검사용 바탕 — 가상본부 · 가상 사람 한 명(번호를 돌려준다) · 평가 시작일 줄(kpi_years)이 있는 해 2027 · 2028 · 2029."""
+    conn.execute("INSERT INTO departments (code, name, level) VALUES ('DIV1', '가상본부', 'DIVISION')")
+    uid = conn.execute("INSERT INTO users (employee_no, name, email, department_id) VALUES ('T050', '가상규칙', 't050@example.invalid',"
+                       " (SELECT id FROM departments WHERE code='DIV1')) RETURNING id").fetchone()[0]
+    for y in (2027, 2028, 2029):
+        conn.execute("INSERT INTO kpi_years (year, edit_from, edit_to, eval_start, updated_at) VALUES (?, NULL, NULL, NULL, ?)", (y, _RULES_T))
+    return uid
+
+
+def check_eval_rules_tables() -> None:
+    """인사평가 규칙 칸 (023 — 판 23): 회차의 등급 비율 세 칸(합 70 이하) · 묶음 기록의 늘린 정원 칸(늘렸으면 이유). 앞 절들과 섞이지 않게 따로 만든 새 DB 에서 본다. 사람은 가상(T050).
+    회차는 서버가 INSERT ... ON CONFLICT DO UPDATE 로 저장하므로 합 검사가 새 줄 길과 고치는 길 둘 다에서 막는지 그 문장 그대로 본다.
+    막힌 이유는 메시지의 규칙 토막(CHECK 식 · RATIO_SUM · EXTRA_REASON · FOREIGN KEY)까지 본다 — 칸이 없어서 막힌 것이 통과로 세어지지 않게."""
+    print("35. 인사평가 규칙 (023 — 등급 비율 · 늘린 정원)")
+    with tempfile.TemporaryDirectory() as tmp:
+        try:
+            ver = init_db(str(Path(tmp) / "rules-23.db"))
+        except sqlite3.Error as exc:
+            _report(False, "새 DB 에 스키마 넣기", str(exc))
+            return
+        conn = connect(str(Path(tmp) / "rules-23.db"))
+        try:
+            _report(ver >= 23, f"판 번호가 23 이상 — {ver}", f"실제 {ver}")
+            info = {t: {r[1]: r for r in conn.execute(f"PRAGMA table_info({t})")} for t in ("ev_rounds", "ev_pools", "ev_targets")}
+            want_r, want_p = ("ratio_sa", "ratio_b", "ratio_d"), ("extra_sa", "extra_b", "extra_reason", "extra_at", "extra_by", "extra_behalf")
+            have = all(c in info["ev_rounds"] for c in want_r) and all(c in info["ev_pools"] for c in want_p)
+            _report(have, "ev_rounds 에 비율 칸 셋 · ev_pools 에 늘린 정원 칸 여섯 (이후 작업이 이 이름을 쓴다)", f"실제 {sorted(info['ev_rounds'])[-3:]} · {sorted(info['ev_pools'])}")
+            if not have:
+                return
+            r_def = [(info["ev_rounds"][c][2], info["ev_rounds"][c][3], info["ev_rounds"][c][4]) for c in want_r]
+            _report(r_def == [("INTEGER", 1, "10")] * 3, "비율 칸: 정수 · 비어 있을 수 없음 · 기본 10", f"실제 {r_def}")
+            p_def = [(info["ev_pools"][c][2], info["ev_pools"][c][3], info["ev_pools"][c][4]) for c in want_p]
+            _report(p_def == [("INTEGER", 1, "0")] * 2 + [("TEXT", 0, None), ("TEXT", 0, None), ("INTEGER", 0, None), ("INTEGER", 0, None)],
+                    "늘린 정원 칸: 인원 둘은 정수 · 비어 있을 수 없음 · 기본 0, 이유 · 때 · 한 사람 · 대신한 사람은 비어 있을 수 있음", f"실제 {p_def}")
+            old = [(c, info["ev_targets"][c][2], info["ev_targets"][c][3], info["ev_targets"][c][4]) for c in ("bonus_x2", "bonus_reason") if c in info["ev_targets"]]
+            _report(old == [("bonus_x2", "INTEGER", 1, "0"), ("bonus_reason", "TEXT", 1, "''")],
+                    "가점 칸 bonus_x2 · bonus_reason 은 그대로 남아 있음 (판 23부터 서버가 읽지도 쓰지도 않음 — 지우지 않는다)", f"실제 {old}")
+            trg = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='trigger'")}
+            want_t = {"trg_ev_rounds_ratio_ins", "trg_ev_rounds_ratio_upd", "trg_ev_pools_extra_ins", "trg_ev_pools_extra_upd"}
+            _report(want_t <= trg, "트리거 넷 (비율 합 검사 새 줄 · 고치기 / 늘린 정원 이유 검사 새 줄 · 고치기)", f"없는 것 {sorted(want_t - trg)}")
+
+            uid = _rules_seed(conn)
+            ln = lambda n: "가" * n   # 글자 수 맞춘 가상 문장
+
+            def row(table: str, base: dict, over: dict) -> tuple[str, tuple]:
+                cols = {**base, **over}
+                return f"INSERT INTO {table} ({', '.join(cols)}) VALUES ({', '.join('?' * len(cols))})", tuple(cols.values())
+
+            def put(table: str, base: dict, **over) -> None:
+                conn.execute(*row(table, base, over))
+
+            def bad(table: str, base: dict, word: str | tuple, why: str, **over) -> None:
+                """over 로 바꾼 줄이 거부되고, 메시지에 word(여럿이면 그중 하나)가 들어 있나 — BEFORE 트리거가 칸 CHECK 보다 먼저 돌아 합이 넘치면 CHECK 대신 트리거 메시지가 나온다."""
+                ok, msg = _rejects(conn, *row(table, base, over))
+                _report(ok and any(w in msg for w in ((word,) if isinstance(word, str) else word)), f"{table} {why} 거부", msg)
+
+            def changed(sql: str, params: tuple, word: str | tuple, why: str, probe: str, pparams: tuple, kept) -> None:
+                """고치는 문장이 word(여럿이면 그중 하나)로 거부되고 probe 로 읽은 값이 kept 그대로인가."""
+                ok, msg = _rejects(conn, sql, params)
+                now = conn.execute(probe, pparams).fetchone()
+                _report(ok and any(w in msg for w in ((word,) if isinstance(word, str) else word)) and now == kept, f"{why} 거부 · 값 그대로", f"{msg} · 지금 {now}")
+
+            # --- 회차: 등급 비율 세 칸 ---------------------------------------------------------------------------------
+            RD = {**_RULES_RD, "year": 2027}
+            put("ev_rounds", RD)
+            got = conn.execute("SELECT ratio_sa, ratio_b, ratio_d FROM ev_rounds WHERE year = 2027").fetchone()
+            _report(got == (10, 10, 10), "회차 비율 기본값 10 · 10 · 10 (지금 규칙 그대로)", f"실제 {got}")
+            RB = {**_RULES_RD, "year": 2028}   # 거부 시험의 바탕 — 2028 은 아직 회차가 없다
+            for kw, word, why in ((dict(ratio_sa=71), ("ratio_sa BETWEEN 0 AND 70", _RATIO_MSG), "S·A 비율 71"), (dict(ratio_sa=-1), "ratio_sa BETWEEN 0 AND 70", "S·A 비율 -1"),
+                                  (dict(ratio_b=71), ("ratio_b BETWEEN 0 AND 70", _RATIO_MSG), "B 비율 71"), (dict(ratio_b=-1), "ratio_b BETWEEN 0 AND 70", "B 비율 -1"),
+                                  (dict(ratio_d=71), ("ratio_d BETWEEN 0 AND 70", _RATIO_MSG), "D 비율 71"), (dict(ratio_d=-1), "ratio_d BETWEEN 0 AND 70", "D 비율 -1"),
+                                  (dict(ratio_sa=71, ratio_b=0, ratio_d=-1), "ratio_sa BETWEEN 0 AND 70", "S·A 비율 71 (합은 70 이 되게 D 를 -1 로 맞춰 합 검사를 지나게 함 — 칸 CHECK 만 본다)"),
+                                  (dict(ratio_sa=0, ratio_b=71, ratio_d=-1), "ratio_b BETWEEN 0 AND 70", "B 비율 71 (같은 방법으로 칸 CHECK 만 본다)"),
+                                  (dict(ratio_sa=70), _RATIO_MSG, "S·A 70 만 넣고 나머지는 기본 10 · 10 (합 90 — 안 넣은 칸의 기본값도 합에 들어감)"),
+                                  (dict(ratio_sa=None), "NOT NULL", "S·A 비율 비어 있음"), (dict(ratio_b=None), "NOT NULL", "B 비율 비어 있음"),
+                                  (dict(ratio_d=None), "NOT NULL", "D 비율 비어 있음"),
+                                  (dict(ratio_sa=40, ratio_b=20, ratio_d=11), _RATIO_MSG, "세 칸 합 71 (40 · 20 · 11)"),
+                                  (dict(ratio_sa=70, ratio_b=1, ratio_d=0), _RATIO_MSG, "세 칸 합 71 (70 · 1 · 0)"),
+                                  (dict(ratio_sa=70, ratio_b=70, ratio_d=70), _RATIO_MSG, "세 칸 모두 70 (합 210)")):
+                bad("ev_rounds", RB, word, why, **kw)
+            put("ev_rounds", RB, ratio_sa=40, ratio_b=20, ratio_d=10)
+            got = conn.execute("SELECT ratio_sa, ratio_b, ratio_d FROM ev_rounds WHERE year = 2028").fetchone()
+            _report(got == (40, 20, 10), "세 칸 합 70 (40 · 20 · 10 — 경계)은 저장됨", f"실제 {got}")
+            q28, p28 = "SELECT ratio_sa, ratio_b, ratio_d FROM ev_rounds WHERE year = 2028", ()
+            for sets, why in (("ratio_sa = 41", "한 칸만 올려 합 71"), ("ratio_b = 21", "B 만 올려 합 71"), ("ratio_d = 11", "D 만 올려 합 71"),
+                              ("ratio_sa = 40, ratio_b = 20, ratio_d = 11", "세 칸을 함께 고쳐 합 71")):
+                changed(f"UPDATE ev_rounds SET {sets} WHERE year = 2028", (), _RATIO_MSG, f"회차 비율 고치기 — {why}", q28, p28, (40, 20, 10))
+            changed("UPDATE ev_rounds SET ratio_sa = 71 WHERE year = 2028", (), ("ratio_sa BETWEEN 0 AND 70", _RATIO_MSG), "회차 비율 고치기 — S·A 71", q28, p28, (40, 20, 10))
+            conn.execute("UPDATE ev_rounds SET ratio_sa = 0, ratio_b = 0, ratio_d = 0 WHERE year = 2028")
+            conn.execute("UPDATE ev_rounds SET ratio_sa = 70 WHERE year = 2028")
+            _report(conn.execute(q28).fetchone() == (70, 0, 0), "고쳐서 합 70 (70 · 0 · 0)과 0 · 0 · 0 은 됨 (D 비율 0 허용)")
+            changed("UPDATE ev_rounds SET ratio_b = 1 WHERE year = 2028", (), _RATIO_MSG, "회차 비율 고치기 — 70 · 0 · 0 에서 B 1", q28, p28, (70, 0, 0))
+            conn.execute("UPDATE ev_rounds SET band_a = 95, self_to = '2027-02-13' WHERE year = 2028")
+            _report(conn.execute("SELECT band_a FROM ev_rounds WHERE year = 2028").fetchone() == (95,), "비율 아닌 칸(등급 기준 · 마감일)만 고치는 것은 막지 않음")
+
+            def upsert(year: int, ra: int, rb: int, rd: int) -> tuple[str, tuple]:
+                """서버 round_set 이 쓰는 모양 그대로 — 새 줄이면 넣고, 같은 해가 있으면 DO UPDATE 로 비율까지 덮어쓴다."""
+                cols = {**_RULES_RD, "year": year, "ratio_sa": ra, "ratio_b": rb, "ratio_d": rd}
+                sets = ", ".join(f"{c} = excluded.{c}" for c in cols if c != "year")
+                return (f"INSERT INTO ev_rounds ({', '.join(cols)}) VALUES ({', '.join('?' * len(cols))}) ON CONFLICT (year) DO UPDATE SET {sets}", tuple(cols.values()))
+
+            conn.execute("UPDATE ev_rounds SET ratio_sa = 30, ratio_b = 20, ratio_d = 20 WHERE year = 2028")
+            ok, msg = _rejects(conn, *upsert(2028, 40, 20, 11))
+            _report(ok and _RATIO_MSG in msg and conn.execute(q28).fetchone() == (30, 20, 20), "UPSERT 로 있는 해를 합 71 로 덮어쓰기(DO UPDATE 길) 거부 · 값 그대로", f"{msg} · 지금 {conn.execute(q28).fetchone()}")
+            ok, msg = _rejects(conn, *upsert(2029, 40, 20, 11))
+            n = conn.execute("SELECT COUNT(*) FROM ev_rounds WHERE year = 2029").fetchone()[0]
+            _report(ok and _RATIO_MSG in msg and n == 0, "UPSERT 로 없는 해를 합 71 로 넣기(INSERT 길) 거부 · 줄 안 생김", f"{msg} · 줄 {n}")
+            ok, msg = _rejects(conn, *upsert(2028, 25, 15, 10))
+            _report(not ok and conn.execute(q28).fetchone() == (25, 15, 10), "UPSERT 로 있는 해를 합 50 으로 덮어쓰기는 됨", f"{msg} · 지금 {conn.execute(q28).fetchone()}")
+            ok, msg = _rejects(conn, *upsert(2029, 40, 20, 10))
+            _report(not ok and conn.execute("SELECT ratio_sa, ratio_b, ratio_d FROM ev_rounds WHERE year = 2029").fetchone() == (40, 20, 10), "UPSERT 로 없는 해를 합 70 으로 넣기는 됨", msg)
+
+            # --- 묶음 기록: 늘린 정원 --------------------------------------------------------------------------------------
+            PL = dict(year=2027, pool="DIV:1")
+            put("ev_pools", PL)
+            got = conn.execute("SELECT extra_sa, extra_b, extra_reason, extra_at, extra_by, extra_behalf FROM ev_pools WHERE pool = 'DIV:1'").fetchone()
+            _report(got == (0, 0, None, None, None, None), "묶음 기록 기본값: 늘린 정원 0 · 0 · 이유 · 때 · 한 사람 · 대신한 사람 비어 있음", f"실제 {got}")
+            PB = dict(year=2027, pool="DIV:2")   # 거부 시험의 바탕 — DIV:2 는 아직 줄이 없다
+            for kw, word, why in ((dict(extra_sa=6, extra_reason="가상"), "extra_sa BETWEEN 0 AND 5", "S·A +6명"), (dict(extra_sa=-1, extra_reason="가상"), "extra_sa BETWEEN 0 AND 5", "S·A -1명"),
+                                  (dict(extra_b=6, extra_reason="가상"), "extra_b BETWEEN 0 AND 5", "B +6명"), (dict(extra_b=-1, extra_reason="가상"), "extra_b BETWEEN 0 AND 5", "B -1명"),
+                                  (dict(extra_sa=None), "NOT NULL", "S·A 늘린 인원 비어 있음"), (dict(extra_b=None), "NOT NULL", "B 늘린 인원 비어 있음"),
+                                  (dict(extra_sa=1), _EXTRA_MSG, "S·A +1명인데 이유가 없음"), (dict(extra_b=1), _EXTRA_MSG, "B +1명인데 이유가 없음"),
+                                  (dict(extra_sa=5, extra_b=5), _EXTRA_MSG, "S·A +5 · B +5 인데 이유가 없음"),
+                                  (dict(extra_sa=1, extra_reason=""), "length(extra_reason) BETWEEN 1 AND 200", "이유 빈칸"),
+                                  (dict(extra_sa=1, extra_reason=ln(201)), "length(extra_reason) BETWEEN 1 AND 200", "이유 201자"),
+                                  (dict(extra_by=9999), "FOREIGN KEY", "없는 사람이 늘린 것으로 적기"),
+                                  (dict(extra_behalf=9999), "FOREIGN KEY", "없는 사람의 몫을 대신 늘린 것으로 적기")):
+                bad("ev_pools", PB, word, why, **kw)
+            put("ev_pools", PB, extra_sa=1, extra_reason="가상 이유", extra_at=_RULES_T, extra_by=uid, extra_behalf=uid)
+            put("ev_pools", PB, pool="DIV:3", extra_b=5, extra_reason=ln(200))
+            put("ev_pools", PB, pool="DIV:4", extra_sa=5, extra_b=5, extra_reason="가상 이유")
+            got = conn.execute("SELECT pool, extra_sa, extra_b, length(extra_reason) FROM ev_pools WHERE pool IN ('DIV:2','DIV:3','DIV:4') ORDER BY pool").fetchall()
+            _report(got == [("DIV:2", 1, 0, 5), ("DIV:3", 0, 5, 200), ("DIV:4", 5, 5, 5)], "이유가 있으면 늘린 정원 저장 (S·A +1 · B +5 · 둘 다 +5 · 이유 200자 — 경계)", f"실제 {got}")
+            q1, p1 = "SELECT extra_sa, extra_b, extra_reason FROM ev_pools WHERE year = 2027 AND pool = 'DIV:1'", ()
+            changed("UPDATE ev_pools SET extra_sa = 1 WHERE pool = 'DIV:1'", (), _EXTRA_MSG, "고쳐서 S·A +1명인데 이유가 없음", q1, p1, (0, 0, None))
+            changed("UPDATE ev_pools SET extra_b = 2 WHERE pool = 'DIV:1'", (), _EXTRA_MSG, "고쳐서 B +2명인데 이유가 없음", q1, p1, (0, 0, None))
+            changed("UPDATE ev_pools SET extra_sa = 6, extra_reason = '가상' WHERE pool = 'DIV:1'", (), "extra_sa BETWEEN 0 AND 5", "고쳐서 S·A +6명", q1, p1, (0, 0, None))
+            conn.execute("UPDATE ev_pools SET extra_sa = 1, extra_reason = '가상 이유' WHERE pool = 'DIV:1'")
+            _report(conn.execute(q1).fetchone() == (1, 0, "가상 이유"), "인원과 이유를 함께 고치면 됨")
+            changed("UPDATE ev_pools SET extra_reason = NULL WHERE pool = 'DIV:1'", (), _EXTRA_MSG, "늘린 정원이 있는데 이유만 지우기", q1, p1, (1, 0, "가상 이유"))
+            conn.execute("UPDATE ev_pools SET extra_sa = 0, extra_reason = NULL WHERE pool = 'DIV:1'")
+            _report(conn.execute(q1).fetchone() == (0, 0, None), "늘린 정원을 0 · 0 으로 되돌리며 이유를 지우면 됨 (이유 없어도 됨)")
+            conn.execute("UPDATE ev_pools SET closed_at = ?, closed_by = ? WHERE pool = 'DIV:1'", (_RULES_T, uid))
+            _report(conn.execute("SELECT closed_at FROM ev_pools WHERE pool = 'DIV:1'").fetchone() == (_RULES_T,), "늘린 정원 아닌 칸(마감 기록)만 고치는 것은 막지 않음")
+            for i, col in enumerate(("extra_by", "extra_behalf"), start=1):   # 그 칸만이 가리키는 직원으로 따로 본다 (다른 줄이 가리켜 막힌 것과 섞이지 않게)
+                solo = conn.execute("INSERT INTO users (employee_no, name, email, department_id) VALUES (?, '가상규칙외', ?,"
+                                    " (SELECT id FROM departments WHERE code='DIV1')) RETURNING id", (f"T05{i}", f"t05{i}@example.invalid")).fetchone()[0]
+                put("ev_pools", PB, pool=f"DIV:{4 + i}", extra_sa=1, extra_reason="가상 이유", **{col: solo})
+                ok, msg = _rejects(conn, "DELETE FROM users WHERE id = ?", (solo,))
+                _report(ok and "FOREIGN KEY" in msg, f"{col} 로 가리킨 직원은 지울 수 없음 (RESTRICT)", msg)
+                conn.execute(f"UPDATE ev_pools SET {col} = NULL WHERE pool = ?", (f"DIV:{4 + i}",))
+                ok, msg = _rejects(conn, "DELETE FROM users WHERE id = ?", (solo,))
+                _report(not ok, f"{col} 를 비우면 그 직원은 지울 수 있음 (그 칸 때문에 막혔던 것)", msg)
+        finally:
+            conn.close()
+
+
+def check_eval_rules_migration() -> None:
+    """023(판 23)이 판 22 DB 의 회차 · 묶음 기록 줄을 그대로 두고 새 칸에 기본값을 주는가. ADD COLUMN 이라 표를 다시 만들지 않으므로
+    옛 줄 · 칸 순서 · 외래키가 그대로이고, 옛 줄도 새 규칙(합 70 · 늘리면 이유)을 받는지 따로 만든 판 22 DB 에서 본다(앞 절들과 섞이지 않는다). 사람은 가상(T050)."""
+    print("36. 인사평가 규칙 올리기 (023 — 판 22 DB 의 줄이 기본값을 받음)")
+    with tempfile.TemporaryDirectory() as tmp:
+        path = str(Path(tmp) / "rules-22.db")
+        try:
+            v22 = init_db(path, upto=22)
+        except (sqlite3.Error, TypeError) as exc:
+            _report(False, "판 22 까지만 넣기 (init_db upto=22)", str(exc))
+            return
+        conn = connect(path)
+        try:
+            _report(v22 == 22, f"판 22 까지만 넣음 — {v22}", f"실제 {v22}")
+            uid = _rules_seed(conn)
+            T = _RULES_T
+            for kw in (dict(year=2027), dict(year=2028, band_a=95, band_b=85, band_c=75, started_at=T, started_by=uid, att_done_at=T, updated_by=uid)):
+                cols = {**_RULES_RD, **kw}
+                conn.execute(f"INSERT INTO ev_rounds ({', '.join(cols)}) VALUES ({', '.join('?' * len(cols))})", tuple(cols.values()))
+            for kw in (dict(pool="DIV:1"), dict(pool="LEADERS", closed_at=T, closed_by=uid, hr_seen="[1, 2]", ceo_at=T, ceo_by=uid, back_at=T, back_by=uid, back_reason="가상 이유"),
+                       dict(year=2028, pool="DIRECT", undo_at=T, undo_by=uid, undo_from="HR")):
+                cols = {"year": 2027, **kw}
+                conn.execute(f"INSERT INTO ev_pools ({', '.join(cols)}) VALUES ({', '.join('?' * len(cols))})", tuple(cols.values()))
+            old_r = [r[1] for r in conn.execute("PRAGMA table_info(ev_rounds)")]
+            old_p = [r[1] for r in conn.execute("PRAGMA table_info(ev_pools)")]
+            before_r = conn.execute(f"SELECT {', '.join(old_r)} FROM ev_rounds ORDER BY year").fetchall()
+            before_p = conn.execute(f"SELECT {', '.join(old_p)} FROM ev_pools ORDER BY year, pool").fetchall()
+            _report("ratio_sa" not in old_r and "extra_sa" not in old_p, "판 22 에는 새 칸이 아직 없음", f"{old_r[-3:]} · {old_p[-3:]}")
+        finally:
+            conn.close()
+        try:
+            v23 = init_db(path)
+        except sqlite3.Error as exc:
+            _report(False, "판 22 DB 에 023 넣기", str(exc))
+            return
+        conn = connect(path)
+        try:
+            _report(v23 >= 23, f"판 22 DB 에 023 을 넣음 — 판 {v23}", f"실제 {v23}")
+            if v23 < 23:
+                return
+            new_r = [r[1] for r in conn.execute("PRAGMA table_info(ev_rounds)")]
+            new_p = [r[1] for r in conn.execute("PRAGMA table_info(ev_pools)")]
+            _report(new_r == old_r + ["ratio_sa", "ratio_b", "ratio_d"] and new_p == old_p + ["extra_sa", "extra_b", "extra_reason", "extra_at", "extra_by", "extra_behalf"],
+                    "옛 칸 이름 · 순서는 그대로 두고 새 칸이 뒤에 붙음", f"{new_r[-4:]} · {new_p[-7:]}")
+            _report(conn.execute(f"SELECT {', '.join(old_r)} FROM ev_rounds ORDER BY year").fetchall() == before_r and len(before_r) == 2
+                    and conn.execute(f"SELECT {', '.join(old_p)} FROM ev_pools ORDER BY year, pool").fetchall() == before_p and len(before_p) == 3,
+                    "회차 2줄 · 묶음 기록 3줄이 옛 칸 값까지 그대로 (등급 기준 · 시작 · 마감 · 돌려보냄 · 되돌림)")
+            got = conn.execute("SELECT ratio_sa, ratio_b, ratio_d FROM ev_rounds ORDER BY year").fetchall()
+            _report(got == [(10, 10, 10)] * 2, "옛 회차 줄이 비율 기본값 10 · 10 · 10 을 받음 (지금 규칙 그대로)", f"실제 {got}")
+            got = conn.execute("SELECT extra_sa, extra_b, extra_reason, extra_at, extra_by, extra_behalf FROM ev_pools").fetchall()
+            _report(got == [(0, 0, None, None, None, None)] * 3, "옛 묶음 기록 줄이 늘린 정원 0 · 0 · 나머지 비어 있음을 받음", f"실제 {got}")
+            _report(not conn.execute("PRAGMA foreign_key_check").fetchall() and conn.execute("PRAGMA integrity_check").fetchone() == ("ok",), "외래키 어긋남 · 무결성 문제 없음")
+            ok, msg = _rejects(conn, "UPDATE ev_rounds SET ratio_sa = 40, ratio_b = 20, ratio_d = 11 WHERE year = 2027")
+            _report(ok and _RATIO_MSG in msg, "옛 회차 줄도 합 71 로 고치기는 거부", msg)
+            conn.execute("UPDATE ev_rounds SET ratio_sa = 40, ratio_b = 20, ratio_d = 10 WHERE year = 2027")
+            ok, msg = _rejects(conn, "UPDATE ev_pools SET extra_sa = 1 WHERE pool = 'LEADERS'")
+            _report(ok and _EXTRA_MSG in msg, "옛 묶음 기록 줄도 이유 없이 정원 늘리기는 거부", msg)
+            conn.execute("UPDATE ev_pools SET extra_sa = 1, extra_reason = '가상 이유' WHERE pool = 'LEADERS'")
+            _report(conn.execute("SELECT extra_sa, extra_reason FROM ev_pools WHERE pool = 'LEADERS'").fetchone() == (1, "가상 이유"), "옛 묶음 기록 줄에 이유와 함께 늘린 정원은 저장됨")
+            _report(init_db(path) == v23, "서버가 다시 떠도 023 을 또 넣지 않음")
+        finally:
+            conn.close()
+
+
 def main() -> int:
     print("=" * 62)
     print("SQLite 스키마 적용 + 제약조건 동작 검사")
@@ -1873,6 +2102,8 @@ def main() -> int:
         finally:
             conn.close()
     check_cards_migration()
+    check_eval_rules_tables()
+    check_eval_rules_migration()
 
     print("-" * 62)
     if _failures:
