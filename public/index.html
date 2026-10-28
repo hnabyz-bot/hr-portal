@@ -6724,7 +6724,11 @@ const ctContracts = [];
   const t = new Date(), per = ctPeriod(t), today = ctYmd(t);
   const mk = (pid, o)=>{ const c = { id:++ctSeq, pid, version:1, status:'DRAFT', grade:null, baseBefore:2418900, abilityBefore:1000000, base:0, ability:0, pos:0, site:0, qual:0,
     adjReason:'', newHire:false, start:per.start, end:per.end, sentAt:null, locked:false, signerName:null, signature:null, signedAt:null, hash:null, cancelReason:null, cancelledAt:null, resentFrom:null, ...o };
-    ctApplyRates(c, ctRates); if(!c.base){ c.base = c.baseBefore; c.ability = c.abilityBefore; } ctContracts.push(c); return c; };
+    ctApplyRates(c, ctRates); if(!c.base){ c.base = c.baseBefore; c.ability = c.abilityBefore; }
+    const p = ctPerson(pid);   // HR 현황 줄(CT_MEM.rows)이 쓰는 칸 — 같은 줄 하나를 두 화면이 함께 본다
+    Object.assign(c, { year:per.year, userId:pid, name:p.name, dept:p.team || p.division, title:p.title, code:'', birth6:(p.rrn || '').slice(0, 6),
+      reason:c.adjReason || '', due:null, late:false, replacedOn:null, ask:null, prevId:null, annual:ctCalc(c).annual });
+    ctContracts.push(c); return c; };
   mk(1, { grade:'A', abilityBefore:1211000 }).status = 'SENT';
   const lead = mk(2, { grade:'S', abilityBefore:1500000, pos:300000 });
   const hire = (orgMembers.find(m=>m.name==='신에스')||{}).hireDate || today;
@@ -6898,6 +6902,7 @@ const CT_SEAL_FAKE = 'data:image/svg+xml;utf8,' + encodeURIComponent(`<svg xmlns
   <text font-size="11.5" fill="#D2392F" font-weight="800" letter-spacing="1.6"><textPath href="#c">가짜 직인 · 가짜 직인 · 가짜 직인 · 가짜 직인 ·</textPath></text>
   <text x="50" y="47" text-anchor="middle" font-size="12" fill="#D2392F" font-weight="900">대표</text><text x="50" y="61" text-anchor="middle" font-size="12" fill="#D2392F" font-weight="900">이사인</text></svg>`);   // 시연용 가짜 직인 그림 (실제 직인 그림은 서버에만 둔다)
 const CT_MEM = { rows:[], settings:{ ceo:'○○○', addr:CT_COMPANY.addr, kind:CT_COMPANY.kind, seal:CT_SEAL_FAKE }, seq:0 };   // 시연 기억 — rows = 서버 admin 줄과 같은 모양 · settings = 계약서 설정(seal = 그림 주소, 없으면 null)
+CT_MEM.rows = ctContracts; CT_MEM.seq = ctSeq;   // 시연은 화면 둘이 같은 계약서를 본다 — 직원이 서명하면 HR "직원 연봉계약 관리"에 바로 보이고, HR이 발송하면 직원 화면이 바뀐다 (2026-10-28 인사담당자)
 const CT_LIVE = { state:'', year:null, rows:[], ready:false, settings:false, mine:[], mineState:'', division:null };   // 실제: GET /api/contracts/admin 답(state: '' 아직 · loading · ok · err) · mine = 내 계약서들(GET /api/contracts/mine — 메뉴 숫자 · 홈 · 직원 화면, mineState도 같은 뜻) · division = 본부장 현황 { state, year, rows }(GET /api/contracts/division) — 둘 다 로그아웃 때 ctDrop이 비운다
 const ctCfg = { state:'', cfg:null, url:'' };   // 실제 계약서 설정: GET /api/contracts/settings 답({ ceo, addr, kind, sealId }) + 직인 그림의 Blob 주소 (state: '' 아직 · loading · ok · err). 로그아웃 때 ctDrop이 주소를 버린다
 let ctAdminN = 0, ctCfgN = 0;
@@ -7120,7 +7125,8 @@ async function ctUpload(){   // 확인 창의 "올리기 (발송 전)". 실제 =
       const s = list[j], old = CT_MEM.rows.find(x=>x.year===year && x.userId===s.userId && x.status==='DRAFT');
       const ver = old ? old.version : Math.max(0, ...CT_MEM.rows.filter(x=>x.year===year && x.userId===s.userId).map(x=>x.version)) + 1;
       const row = { id:old ? old.id : ++CT_MEM.seq, year, userId:s.userId, version:ver, status:'DRAFT', start:s.start || ctSpan(year)[0], end:ctSpan(year)[1], code:s.code, name:m.name, dept:m.team || m.division, title:m.title || '',
-        birth6:s.birth6, base:s.base, ability:s.ability, pos:s.pos, site:s.site, qual:s.qual, annual:ctCalc(s).annual, reason:'', sentAt:null, due:null, late:false, signedAt:null, replacedOn:null, cancelledAt:null, cancelReason:null, ask:null, prevId:null };
+        birth6:s.birth6, base:s.base, ability:s.ability, pos:s.pos, site:s.site, qual:s.qual, annual:ctCalc(s).annual, reason:'', sentAt:null, due:null, late:false, signedAt:null, replacedOn:null, cancelledAt:null, cancelReason:null, ask:null, prevId:null,
+        pid:s.userId, grade:null, baseBefore:s.base, abilityBefore:s.ability, adjReason:'', newHire:!!s.start, locked:false, signerName:null, signature:null, hash:null, resentFrom:null };   // 시연은 직원 화면도 이 줄을 본다
       if(old) Object.assign(old, row); else CT_MEM.rows.push(row);
     });
     ctUi.pick = null; orgCloseModal();
@@ -7832,7 +7838,7 @@ async function ctOpen(id){   // 계약서 한 장: 본문(서버 블록) + 직�
 
 async function ctFlowCheck(){   // 브라우저 콘솔에서 await ctFlowCheck() 실행 — 시연 모드로 계약 금액 읽기 · 확인 창 · 올리기를 끝까지 (끝나면 시연 기억을 되돌린다)
   const ok = (c, msg)=>{ if(!c) throw new Error('ctFlowCheck 실패: '+msg); };
-  const keep = [AUTH.live, ctUi.pick, kpiMsg, structuredClone(CT_MEM), CT_PEOPLE[0].birthday], cp = a=>a.map(r=>r.slice());
+  const keep = [AUTH.live, ctUi.pick, kpiMsg, { rows:CT_MEM.rows, seq:CT_MEM.seq, settings:structuredClone(CT_MEM.settings) }, CT_PEOPLE[0].birthday], cp = a=>a.map(r=>r.slice());   // rows 는 사본을 뜨지 않는다 — 시연 계약서 배열과 같아야 한다
   const keep2 = { y:ctYear, ui:{ ...ctUi }, open:window.open, use:CT_PEOPLE[3].use, org:{ ...ORG_LIVE }, mail:orgMembers.map(m=>m.mailNo), role:kpiRole, view:ctView, cl:{ ...CT_LIVE }, ms:{ state:MS_LIVE.state, list:MS_LIVE.list }, fetch:window.fetch, render:renderContent, revoke:URL.revokeObjectURL, save:window.showSaveFilePicker, cfg:{ ...ctCfg }, pin:PIN.on };   // 화면 ② · ③ 검사가 바꾸는 것들
   const Y = ctPeriod(new Date()).year, txt = ()=>document.querySelector('#orgModal .ct-cf')?.textContent || '';
   const H = ['사번','이름','부서','직급','새 기본급','새 능력급','직책수당','현장관리수당','자격수당','생년월일','계약 시작일'];   // 가상 금액 · 이름은 시연 명단(홍길동)과 맞는 한 줄 + 못 읽는 줄(가상둘)
