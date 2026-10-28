@@ -2278,7 +2278,7 @@ function wsNorm(saved){   // 저장된 목록(브라우저 · 서버)을 화면�
   return list.map((x,i)=>wsFill(ids ? x : { ...x, id:i+1, from:undefined }));
 }
 function wsTasks(){   // 지금 역할의 업무 목록. 저장된 것이 없으면 예시
-  if(!wsStore[kpiRole]) wsStore[kpiRole] = wsNorm(wsLocal('tasks'));
+  if(!wsStore[kpiRole]){ wsStore[kpiRole] = wsNorm(wsLocal('tasks')); wsRoll(wsStore[kpiRole], kpiDay(0)); }   // 처음 읽을 때 지난 반복 업무의 다음 회차를 만든다
   return wsStore[kpiRole];
 }
 const WS_KPI_MEMO = '목표설정(KPI)의 예정 기한입니다. 결과는 KPI 화면에서 적어 주세요.';
@@ -2334,6 +2334,12 @@ function wsNextDue(x, today){   // 반복 업무의 다음 마감일: 마감일�
     if(c>base) return c;
   }
 }
+function wsRoll(list, today){   // 마감일이 지난 반복 업무는 끝내지 않았어도 다음 회차를 만들어 둔다 (2026-10-28 인사담당자 — 전에는 "완료"로 바꿀 때만 생겨서 다음 달에 아무것도 안 떴다).
+  // 앞 회차를 가리키는 줄이 이미 있으면 만들지 않는다 → 한 업무당 앞서 가는 회차는 늘 하나뿐이고, 못 끝낸 회차는 "기한 초과"로 남는다. 만든 수를 돌려준다.
+  const old = list.filter(x=>x.repeat && x.due && x.due<today && x.state!=='완료' && !list.some(v=>v.from===x.id));
+  old.forEach(x=>list.push({ ...x, id:wsNewId(list), from:x.id, due:wsNextDue(x, today), state:'예정', doneAt:'', memo:'', tags:[...x.tags], subs:x.subs.map(s=>({ t:s.t, done:false })) }));
+  return old.length;
+}
 function wsParse(text, today){   // 빠른 등록: 제목 "끝"에 적은 날짜·시간만 읽는다 → { title, due, time }. 못 읽으면 적은 그대로, 마감은 오늘. (앞·가운데는 읽지 않는다 — "내일 할 일 정리" 같은 제목이 잘리지 않게)
   const raw = text.trim(), t = celebParse(today), hm = (h, m)=>h<24 && m<60 ? String(h).padStart(2,'0')+':'+String(m).padStart(2,'0') : '';
   const TIME = [
@@ -2383,6 +2389,15 @@ function wsSelfCheck(){   // 브라우저 콘솔에서 wsSelfCheck() 실행 — 
   ok(next('2026-10-14','weekly',3)==='2026-10-21' && next('2026-10-16','weekly',5)==='2026-10-23' && next('2026-10-05','weekly',1)==='2026-10-19', '매주: 오늘 마감·미리 끝냄·밀린 뒤 끝냄');
   ok(next('2026-10-13','weekly',1)==='2026-10-19', '매주: 내일로 넘겼어도 원래 요일로 돌아온다');
   ok(next('2026-10-31','monthly',31,'2026-10-31')==='2026-11-30' && next('2026-11-30','monthly',31,'2026-11-30')==='2026-12-31' && next('2026-10-20','monthly',20)==='2026-11-20' && next('2026-09-20','monthly',20)==='2026-10-20', '매월: 31일은 말일, 다음 달에는 다시 31일');
+  {   // 마감일이 지나면 끝내지 않아도 다음 회차가 생긴다
+  const roll = (more, today=T)=>{ const l = [wsFill({ id:1, title:'t', ...more })]; const n = wsRoll(l, today); return [n, l.length, l[1] && l[1].due, l[1] && l[1].from, l[1] && l[1].state].join('|'); };
+  ok(roll({ due:'2026-09-20', repeat:'monthly', rday:20 })==='1|2|2026-10-20|1|예정', '지난달 것을 안 끝냈어도 이번 달 회차가 생긴다');
+  ok(roll({ due:'2026-10-09', repeat:'weekly', rday:5 })==='1|2|2026-10-16|1|예정', '매주도 같다 — 다음 반복일로');
+  ok(roll({ due:T, repeat:'monthly', rday:14 })==='0|1|||' && roll({ due:'2026-09-20', repeat:'', rday:20 })==='0|1|||', '마감일이 안 지났거나 반복이 아니면 안 만든다');
+  ok(roll({ due:'2026-09-20', repeat:'monthly', rday:20, state:'완료', doneAt:'2026-09-20' })==='0|1|||', '이미 끝낸 회차는 안 만든다 (완료할 때 이미 만들었다)');
+  const two = [wsFill({ id:1, title:'t', due:'2026-09-20', repeat:'monthly', rday:20 }), wsFill({ id:2, title:'t', due:'2026-10-20', repeat:'monthly', rday:20, from:1 })];
+  ok(wsRoll(two, T)===0 && two.length===2, '앞서 가는 회차가 이미 있으면 더 만들지 않는다 (한 번에 한 회차)');
+  }
   const ps = (text, want)=>{ const p = wsParse(text, T); return [p.title, p.due, p.time].join('|')===want; };
   ok(ps('채용 서류 검토 금요일 3시', '채용 서류 검토|2026-10-16|15:00') && ps('채용 서류 검토 3시 금요일', '채용 서류 검토|2026-10-16|15:00'), '요일 + 시간, 순서 무관');
   ok(ps('회의 자료 내일', '회의 자료|2026-10-15|') && ps('점검 수요일', '점검|2026-10-14|') && ps('주간 회의 다음 주 월요일 오전 9시 30분', '주간 회의|2026-10-19|09:30') && ps('정리 다음주 일요일', '정리|2026-10-25|'), '내일·요일·다음 주');
@@ -2677,6 +2692,7 @@ function wsMerge(kind, server, local){   // 순수 함수 — 이 기기에 있�
 function wsTake(kind, data, v){   // 서버 것을 화면 저장소와 이 기기 브라우저에
   const [key, store, norm] = WS_KIND[kind];
   store[kpiRole] = norm(data); WS_SYNC[kind].v = v;
+  if(kind==='tasks') wsRoll(store[kpiRole], kpiDay(0));   // 다른 기기에서 받은 목록에도 지난 반복 업무의 다음 회차를 만든다
   try{ localStorage.setItem(key+kpiRole, JSON.stringify(store[kpiRole])); }catch(_){}
 }
 async function wsPull(first){   // first = 로그인 직후 한 번 (합치기 포함)
