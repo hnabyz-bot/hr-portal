@@ -6284,12 +6284,12 @@ function paintNotice() {
     const E = INST_ENV || {};
     ic.className = 'nd-inst'; ic.style.backgroundImage = 'url(assets/btn2/c_install.webp)';
     $('#ndTitle').textContent = '폰에 앱으로 설치하기';
-    let txt = '홈 화면에 <em>X-ray 특공대</em> 아이콘이 생겨요.<br>다음부터는 아이콘만 누르면 바로 출동!', rows = null, ok = ['확인', 'close'];
+    let txt = isInstalled() ? '<em>X-ray 특공대</em>를 다시 설치할 수 있어요.<br>아이콘이 없어졌으면 아래 순서로 다시 깔아 주세요.' : '홈 화면에 <em>X-ray 특공대</em> 아이콘이 생겨요.<br>다음부터는 아이콘만 누르면 바로 출동!', rows = null, ok = ['확인', 'close'];
     if (E.frame) { txt = '지금은 다른 화면 안에서 열려 있어서 바로 설치할 수 없어요.<br><em>새 창으로 연 다음</em> "폰에 설치"를 다시 눌러 주세요.'; ok = ['새 창으로 열기', 'newtab']; }
     else if (E.inapp) txt = '카카오톡 같은 앱 안의 화면에서는 설치가 안 돼요.<br>오른쪽 위 메뉴에서 <em>다른 브라우저로 열기</em>를 누른 다음<br>"폰에 설치"를 다시 눌러 주세요.';
-    else if (inPortalApp()) {   // 아이폰 인사포털 앱 안: 공유 단추가 없다 → 사파리에서 게임 주소를 열도록 (포털 사본에만 있는 수정)
-      const copied = !!(ND.data && ND.data.copied);
-      txt = '지금은 <em>인사포털 앱 안</em>에서 열려 있어서 여기서는 설치할 수 없어요.<br><em>사파리</em>에서 아래 주소를 열고 "폰에 설치"를 눌러 주세요.<br><em>' + location.host + location.pathname.replace(/\/(index\.html)?$/, '') + '</em>' + (copied ? '<br>주소를 복사했어요. 사파리 주소창에 붙여넣어 주세요.' : '');
+    else if (inPortalApp()) {   // 인사포털 앱 안: 여기서는 게임 앱을 만들 수 없다 → 브라우저에서 게임 주소를 열도록 (포털 사본에만 있는 수정)
+      const copied = !!(ND.data && ND.data.copied), br = E.ios ? '사파리' : '삼성 인터넷·크롬 같은 브라우저';
+      txt = '지금은 <em>인사포털 앱 안</em>에서 열려 있어서 여기서는 설치할 수 없어요.<br><em>' + br + '</em>에서 아래 주소를 열고 "폰에 설치"를 눌러 주세요.<br><em>' + location.host + location.pathname.replace(/\/(index\.html)?$/, '') + '</em>' + (copied ? '<br>주소를 복사했어요. 주소창에 붙여넣어 주세요.' : '');
       ok = copied ? ['확인', 'close'] : ['주소 복사', 'copyurl'];
     }
     else if (E.ios) { rows = [['1', '사파리 아래쪽 <em>공유</em> 버튼 누르기'], ['2', '<em>홈 화면에 추가</em> 누르기'], ['3', '오른쪽 위 <em>추가</em> 누르기']]; }
@@ -6366,10 +6366,10 @@ function installNudge() {   // 폰으로 한 판 해 본 사람에게 한 번만
   store.set('instNudge', true); openNotice('install'); return true;
 }
 function isInstalled() { try { return matchMedia('(display-mode: fullscreen)').matches || matchMedia('(display-mode: standalone)').matches || navigator.standalone === true; } catch (e) { return false; } }
-function inPortalApp() { return !!(INST_ENV && INST_ENV.ios && INST_ENV.portal && isInstalled()); }   // 아이폰 인사포털 앱 안 — 공유 단추가 없어 여기서는 설치 못 함, 사파리로 안내 (포털 사본에만 있는 수정)
+function inPortalApp() { return !!(INST_ENV && INST_ENV.portal && isInstalled()); }   // 인사포털 앱 안 — 여기서는 게임을 설치할 수 없어 브라우저로 안내 (갤럭시·아이폰 모두, 포털 사본에만 있는 수정)
 function paintInstall() {
   const b = document.getElementById('btnInstallT'); if (!b || !INST || !INST_ENV) return;
-  const show = (!isInstalled() || inPortalApp()) && !!(INST.prompt || document.body.classList.contains('touch') || INST_ENV.ios || INST_ENV.android);
+  const show = !!(INST.prompt || document.body.classList.contains('touch') || INST_ENV.ios || INST_ENV.android);   // 설치한 뒤에도 계속 보여요 — 로그인이 풀려 아이콘이 없어져도 언제든 다시 깔 수 있게 (2026-10-28 인사담당자)
   if (b.hidden === show) b.hidden = !show;
 }
 window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); INST.prompt = e; paintInstall(); });
