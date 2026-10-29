@@ -8905,24 +8905,25 @@ def check_usage(hr) -> None:
     year = date.today().year
     had = q("SELECT edit_from, edit_to, eval_start FROM kpi_years WHERE year = ?", year)
     kpi = lambda: next((i for i in hr.get("/api/usage", base_url=BASE).json["items"] if i["key"] == "kpi"), None)  # noqa: E731
+    if not had:  # 줄을 지웠다 다시 넣으면 알람 기준 · 경영계획이 사라지므로, 날짜 세 칸만 비웠다 되돌린다
+        x("INSERT INTO kpi_years (year, updated_at) VALUES (?, '2026-01-01T00:00:00Z')", year)
     try:
-        x("DELETE FROM kpi_years WHERE year = ?", year)
+        x("UPDATE kpi_years SET edit_from = NULL, edit_to = NULL, eval_start = NULL WHERE year = ?", year)
         ok(kpi() is None, "작성 기간을 정하지 않았으면 KPI 줄이 없다")
-        x("INSERT INTO kpi_years (year, edit_from, edit_to, updated_at) VALUES (?, ?, ?, '2026-01-01T00:00:00Z')",
-          year, f"{year}-01-01", f"{year}-12-31")
+        x("UPDATE kpi_years SET edit_from = ?, edit_to = ? WHERE year = ?", f"{year}-01-01", f"{year}-12-31", year)
         it = kpi()
         n = q(f"SELECT COUNT(*) FROM users u WHERE {usage.WHO} AND u.writes_kpi = 1")[0][0]
         ok(it and it["total"] == n and it["key"] == "kpi", "기간을 열면 KPI 줄 — 대상 = 포털 사용이 켜진 KPI 작성 대상")
-        ok(it["total"] - it["done"] == len([x for x in hr.get("/api/usage", base_url=BASE).json["rows"] if "kpi" in x["left"]]),
+        ok(it["total"] - it["done"] == len([m for m in hr.get("/api/usage", base_url=BASE).json["rows"] if "kpi" in m["left"]]),
            "KPI 를 안 낸 분이 명단에 든다")
         x("UPDATE kpi_years SET eval_start = ? WHERE year = ?", f"{year}-01-01", year)
         ok(kpi() is None, "평가가 시작된 해에는 KPI 줄이 사라진다")
     finally:
-        x("DELETE FROM kpi_years WHERE year = ?", year)
         if had:
-            x("INSERT INTO kpi_years (year, edit_from, edit_to, eval_start, updated_at) VALUES (?, ?, ?, ?, '2026-01-01T00:00:00Z')",
-              year, had[0][0], had[0][1], had[0][2])
-    ok(q("SELECT 1 FROM kpi_years WHERE year = ?", year) == had or not had, "끝나면 작성 기간 줄을 되돌린다")
+            x("UPDATE kpi_years SET edit_from = ?, edit_to = ?, eval_start = ? WHERE year = ?", had[0][0], had[0][1], had[0][2], year)
+        else:
+            x("DELETE FROM kpi_years WHERE year = ?", year)
+    ok(q("SELECT edit_from, edit_to, eval_start FROM kpi_years WHERE year = ?", year) == had, "끝나면 작성 기간 줄을 되돌린다")
 
 
 def main() -> int:
