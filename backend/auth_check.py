@@ -8866,6 +8866,50 @@ def check_cards(hr) -> None:
        "끝나면 카드 줄 · 경사 · 조사 · 세션(휴대폰 구독 포함)을 지우고 가상 사람은 비활성으로 두며 열쇠 · 로그 설정을 되돌림")
 
 
+
+def check_usage(hr) -> None:
+    """사용 현황 (2026-10-29): HR 만 본다 · 요약 숫자와 명단이 서로 맞는다 · 오래 안 들어온 사람부터 ·
+    명단 칸에 금액 · 메일 · 생일이 없다 · 12개월 지난 세션 줄을 지운다.
+    앞 검사들이 만들어 둔 사람 · 세션 · 급여명세서를 그대로 읽으므로 숫자를 못 박지 않고 서로 맞는지만 본다."""
+    print("사용 현황")
+    emp = app.test_client()
+    login(emp, new_token("emp"))
+    ok(app.test_client().get("/api/usage", base_url=BASE).status_code == 401, "로그인 없이 401")
+    ok(emp.get("/api/usage", base_url=BASE).status_code == 403, "직원 403 — HR 만 본다")
+
+    r = hr.get("/api/usage", base_url=BASE)
+    ok(r.headers.get("Cache-Control") == "no-store", "사람 명단이라 브라우저에 남기지 않는다")
+    d = r.json
+    people = q("SELECT COUNT(*) FROM users WHERE is_active = 1 AND portal_enabled = 1")[0][0]
+    ok(d["people"] == people == len(d["rows"]), "대상 = 포털 사용이 켜진 활성 구성원 · 명단도 같은 수")
+    ok(d["never"] == len([x for x in d["rows"] if not x["last"]]), "한 번도 안 들어온 수 = 마지막 접속이 빈 줄 수")
+    ok(d["phones"] == len([x for x in d["rows"] if x["phone"]]), "휴대폰 등록 수 = 명단의 휴대폰 줄 수")
+    ok(0 <= d["month"] <= people and 0 <= d["lastMonth"] <= people, "이번 달 · 지난달 들어온 사람은 대상 안의 수")
+    last = [x["last"] for x in d["rows"]]
+    ok(last == sorted(last, key=lambda s: (bool(s), s)), "오래 안 들어온 사람부터 (기록 없는 사람이 맨 앞)")
+    ok(set(d["rows"][0]) == {"id", "name", "title", "division", "team", "last", "phone", "phoneAt", "pay"},
+       "명단 칸은 아홉 — 금액 · 메일 · 생일 · 사원코드는 보내지 않는다")
+
+    pay = next((x for x in d["done"] if x["key"] == "pay"), None)
+    ym = q("SELECT ym FROM payslip_months WHERE status = 'OPEN' ORDER BY ym DESC LIMIT 1")
+    if ym:
+        n = q("SELECT COUNT(*), COUNT(seen_at) FROM payslips WHERE ym = ?", ym[0][0])[0]
+        ok(pay and (pay["total"], pay["done"]) == tuple(n) and d["payYm"] == ym[0][0],
+           "급여명세서 줄 = 공개 중인 가장 최근 달의 사람 수 · 연 사람 수")
+        seen = {x[0] for x in q("SELECT user_id FROM payslips WHERE ym = ? AND seen_at IS NOT NULL", ym[0][0])}
+        ok(all((x["pay"] == "seen") == (x["id"] in seen) for x in d["rows"] if x["pay"]),
+           "명단의 명세서 칸 = 그 달 명세서를 열었는지")
+    else:
+        ok(pay is None and not d["payYm"], "공개한 달이 없으면 급여명세서 줄도 없다")
+    ok(all(0 <= x["done"] <= x["total"] for x in d["done"]), "끝낸 수는 대상 수를 넘지 않는다")
+
+    old = "2000-01-01T00:00:00Z"
+    x("INSERT INTO sessions (token_hash, user_id, created_at, last_seen_at, expires_at) VALUES ('usage-old', 1, ?, ?, ?)", old, old, old)
+    ok(q("SELECT 1 FROM sessions WHERE token_hash = 'usage-old'"), "오래된 세션 줄을 넣었다")
+    hr.get("/api/usage", base_url=BASE)
+    ok(not q("SELECT 1 FROM sessions WHERE token_hash = 'usage-old'"), "12개월보다 오래 안 쓴 세션 줄은 화면을 열 때 지운다")
+
+
 def main() -> int:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     seed()
@@ -9126,6 +9170,7 @@ def main() -> int:
         check_push_deadlines(hr)
     check_pay_pin(hr)
     check_cards(hr)
+    check_usage(hr)
 
     acts = {r[0] for r in q("SELECT action FROM audit_logs")}
     ok({"LOGIN", "HR_BOOTSTRAP"} <= acts, "감사로그 LOGIN 이 남음")

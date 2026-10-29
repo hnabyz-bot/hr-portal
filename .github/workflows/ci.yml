@@ -113,6 +113,10 @@ jobs:
         working-directory: backend
         run: python -m cards check
 
+      - name: 사용 현황 날짜 계산 자체 검증
+        working-directory: backend
+        run: python -m usage check
+
       - name: 출장경비 계산(활동비 기준·복귀 구간) 자체 검증
         working-directory: backend
         run: python -m services.calculator

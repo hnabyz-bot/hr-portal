@@ -26,6 +26,7 @@ import kpi
 import payslip
 import paypin
 import push
+import usage
 import withholding
 from services import opinet_api
 from services.calculator import (
@@ -55,6 +56,7 @@ auth.refuse_unsafe_config()
 app = Flask(__name__)
 # 하이웍스 로그인 + 모든 /api/* 세션 검사. 세션 없이 열린 곳은 /api/health 와 로그인 받는 곳뿐 (로그인 설계 §3)
 auth.register(app)
+app.register_blueprint(usage.bp)  # 사용 현황 (조직도 > 사용 현황, HR만 — 위 세션 검사)
 app.register_blueprint(game.bp)  # X-ray 특공대 기록·랭킹·선물 (로그인한 사람만 — 위 세션 검사)
 app.register_blueprint(kpi.bp)  # KPI 계획서 본인 쓰기 · HR 작성 기간 (로그인한 사람만 — 위 세션 검사)
 app.register_blueprint(evaluation.bp)  # 인사평가: 회차 · 시작(떠 두기) · HR 명단 일 (로그인한 사람만 — 위 세션 검사)
