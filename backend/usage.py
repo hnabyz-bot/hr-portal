@@ -54,7 +54,8 @@ def _sweep(conn: sqlite3.Connection, now: datetime) -> int:
 # 사람 한 줄을 세는 조건 — 포털 사용이 켜진 활성 구성원만 (구성원 설정과 같은 범위)
 WHO = "u.is_active = 1 AND u.portal_enabled = 1"
 USED = "EXISTS (SELECT 1 FROM sessions s WHERE s.user_id = u.id AND s.last_seen_at >= ? AND s.last_seen_at < ?)"
-PHONE = ("SELECT s.{} FROM sessions s WHERE s.user_id = u.id AND s.kind = 'phone' AND s.revoked_at IS NULL"
+PHONE_NAME = "COALESCE(s.device, '휴대폰')"   # 기기 이름이 비어 있어도 등록된 것은 등록으로 보인다 (요약 칸의 EXISTS 와 같은 수)
+PHONE = ("SELECT {} FROM sessions s WHERE s.user_id = u.id AND s.kind = 'phone' AND s.revoked_at IS NULL"
          " AND s.last_seen_at > ? ORDER BY s.created_at DESC LIMIT 1")
 
 
@@ -106,13 +107,13 @@ def usage() -> Response:
     n = _one(conn,
              f"SELECT COUNT(*), SUM({USED}), SUM({USED}),"
              f" SUM(NOT EXISTS (SELECT 1 FROM sessions s WHERE s.user_id = u.id)),"
-             f" SUM(EXISTS ({PHONE.format('user_id')})) FROM users u WHERE {WHO}",
+             f" SUM(EXISTS ({PHONE.format('s.user_id')})) FROM users u WHERE {WHO}",
              m1, m2, m0, m1, live)
 
     rows = conn.execute(
         "SELECT u.id, u.name, u.title, d.name, d.level, p.name,"
         " (SELECT MAX(s.last_seen_at) FROM sessions s WHERE s.user_id = u.id),"
-        f" ({PHONE.format('device')}), ({PHONE.format('last_seen_at')})"
+        f" ({PHONE.format(PHONE_NAME)}), ({PHONE.format('s.last_seen_at')})"
         " FROM users u JOIN departments d ON d.id = u.department_id LEFT JOIN departments p ON p.id = d.parent_id"
         f" WHERE {WHO} ORDER BY (SELECT MAX(s.last_seen_at) FROM sessions s WHERE s.user_id = u.id) IS NOT NULL,"
         " (SELECT MAX(s.last_seen_at) FROM sessions s WHERE s.user_id = u.id), u.name",
