@@ -113,7 +113,7 @@ jobs:
         working-directory: backend
         run: python -m cards check
 
-      - name: 사용 현황 날짜 계산 자체 검증
+      - name: 처리 현황 항목 자체 검증
         working-directory: backend
         run: python -m usage check
 

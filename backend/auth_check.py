@@ -68,6 +68,7 @@ for k in ("HIWORKS_FIRST_HR_USER_NO", "HIWORKS_SSO_LINK_BY_EMPLOYEE_NO"):
     os.environ.pop(k, None)
 
 import auth  # noqa: E402
+import usage  # noqa: E402
 from app import app  # noqa: E402
 from hr_eval.sql.db import connect  # noqa: E402
 
@@ -8868,10 +8869,10 @@ def check_cards(hr) -> None:
 
 
 def check_usage(hr) -> None:
-    """사용 현황 (2026-10-29): HR 만 본다 · 요약 숫자와 명단이 서로 맞는다 · 오래 안 들어온 사람부터 ·
-    명단 칸에 금액 · 메일 · 생일이 없다 · 12개월 지난 세션 줄을 지운다.
-    앞 검사들이 만들어 둔 사람 · 세션 · 급여명세서를 그대로 읽으므로 숫자를 못 박지 않고 서로 맞는지만 본다."""
-    print("사용 현황")
+    """처리 현황 (2026-10-29): HR 만 본다 · 항목과 명단이 서로 맞는다 · 남은 일이 많은 분부터 ·
+    **응답 어디에도 접속 기록이 없다**(언제 들어왔는지 · 휴대폰 — 인사담당자 "감시한다고 생각하지 않을까") ·
+    KPI 작성 기간을 열면 그 항목이 생기고 닫으면 사라진다. 앞 검사들이 만들어 둔 사람 · 급여명세서를 그대로 읽는다."""
+    print("처리 현황")
     emp = app.test_client()
     login(emp, new_token("emp"))
     ok(app.test_client().get("/api/usage", base_url=BASE).status_code == 401, "로그인 없이 401")
@@ -8880,34 +8881,48 @@ def check_usage(hr) -> None:
     r = hr.get("/api/usage", base_url=BASE)
     ok(r.headers.get("Cache-Control") == "no-store", "사람 명단이라 브라우저에 남기지 않는다")
     d = r.json
-    people = q("SELECT COUNT(*) FROM users WHERE is_active = 1 AND portal_enabled = 1")[0][0]
-    ok(d["people"] == people == len(d["rows"]), "대상 = 포털 사용이 켜진 활성 구성원 · 명단도 같은 수")
-    ok(d["never"] == len([x for x in d["rows"] if not x["last"]]), "한 번도 안 들어온 수 = 마지막 접속이 빈 줄 수")
-    ok(d["phones"] == len([x for x in d["rows"] if x["phone"]]), "휴대폰 등록 수 = 명단의 휴대폰 줄 수")
-    ok(0 <= d["month"] <= people and 0 <= d["lastMonth"] <= people, "이번 달 · 지난달 들어온 사람은 대상 안의 수")
-    last = [x["last"] for x in d["rows"]]
-    ok(last == sorted(last, key=lambda s: (bool(s), s)), "오래 안 들어온 사람부터 (기록 없는 사람이 맨 앞)")
-    ok(set(d["rows"][0]) == {"id", "name", "title", "division", "team", "last", "phone", "phoneAt", "pay"},
-       "명단 칸은 아홉 — 금액 · 메일 · 생일 · 사원코드는 보내지 않는다")
+    ok(set(d) == {"today", "people", "items", "rows"}, "응답은 네 칸")
+    ok(all(set(i) == {"key", "label", "note", "total", "done"} for i in d["items"]), "항목 칸 다섯 — 안 한 사람 번호(left)는 보내지 않는다")
+    ok(all(i["key"] in ("pay", "wh", "ct", "kpi") for i in d["items"]), "보는 일은 네 가지 — 받은 카드 · 접속은 없다")
+    ok(all(0 <= i["done"] <= i["total"] for i in d["items"]), "끝낸 수는 대상 수를 넘지 않는다")
 
-    pay = next((x for x in d["done"] if x["key"] == "pay"), None)
-    ym = q("SELECT ym FROM payslip_months WHERE status = 'OPEN' ORDER BY ym DESC LIMIT 1")
-    if ym:
-        n = q("SELECT COUNT(*), COUNT(seen_at) FROM payslips WHERE ym = ?", ym[0][0])[0]
-        ok(pay and (pay["total"], pay["done"]) == tuple(n) and d["payYm"] == ym[0][0],
-           "급여명세서 줄 = 공개 중인 가장 최근 달의 사람 수 · 연 사람 수")
-        seen = {x[0] for x in q("SELECT user_id FROM payslips WHERE ym = ? AND seen_at IS NOT NULL", ym[0][0])}
-        ok(all((x["pay"] == "seen") == (x["id"] in seen) for x in d["rows"] if x["pay"]),
-           "명단의 명세서 칸 = 그 달 명세서를 열었는지")
-    else:
-        ok(pay is None and not d["payYm"], "공개한 달이 없으면 급여명세서 줄도 없다")
-    ok(all(0 <= x["done"] <= x["total"] for x in d["done"]), "끝낸 수는 대상 수를 넘지 않는다")
+    glob = json.dumps(d, ensure_ascii=False)
+    for word in ("last", "phone", "seen_at", "session", "마지막", "휴대폰", "접속"):
+        ok(word not in glob, f"응답 어디에도 접속 기록이 없다 ({word})")
 
-    old = "2000-01-01T00:00:00Z"
-    x("INSERT INTO sessions (token_hash, user_id, created_at, last_seen_at, expires_at) VALUES ('usage-old', 1, ?, ?, ?)", old, old, old)
-    ok(q("SELECT 1 FROM sessions WHERE token_hash = 'usage-old'"), "오래된 세션 줄을 넣었다")
-    hr.get("/api/usage", base_url=BASE)
-    ok(not q("SELECT 1 FROM sessions WHERE token_hash = 'usage-old'"), "12개월보다 오래 안 쓴 세션 줄은 화면을 열 때 지운다")
+    ok(d["people"] == len(d["rows"]), "안내가 필요한 분 수 = 명단 줄 수")
+    ok(all(x["left"] and all(k in ("pay", "wh", "ct", "kpi") for k in x["left"]) for x in d["rows"]),
+       "명단에는 안 한 일이 하나 이상 남은 분만 든다")
+    ok([len(x["left"]) for x in d["rows"]] == sorted((len(x["left"]) for x in d["rows"]), reverse=True),
+       "남은 일이 많은 분부터")
+    if d["rows"]:
+        ok(set(d["rows"][0]) == {"id", "name", "title", "division", "team", "left"},
+           "명단 칸은 여섯 — 금액 · 메일 · 생일 · 사원코드 · 접속은 보내지 않는다")
+    left = {k: sum(1 for x in d["rows"] if k in x["left"]) for k in ("pay", "wh", "ct", "kpi")}
+    for i in d["items"]:
+        ok(i["total"] - i["done"] == left[i["key"]], f"{i['key']}: 남은 수 = 그 일이 남은 분 수")
+
+    year = date.today().year
+    had = q("SELECT edit_from, edit_to, eval_start FROM kpi_years WHERE year = ?", year)
+    kpi = lambda: next((i for i in hr.get("/api/usage", base_url=BASE).json["items"] if i["key"] == "kpi"), None)  # noqa: E731
+    try:
+        x("DELETE FROM kpi_years WHERE year = ?", year)
+        ok(kpi() is None, "작성 기간을 정하지 않았으면 KPI 줄이 없다")
+        x("INSERT INTO kpi_years (year, edit_from, edit_to, updated_at) VALUES (?, ?, ?, '2026-01-01T00:00:00Z')",
+          year, f"{year}-01-01", f"{year}-12-31")
+        it = kpi()
+        n = q(f"SELECT COUNT(*) FROM users u WHERE {usage.WHO} AND u.writes_kpi = 1")[0][0]
+        ok(it and it["total"] == n and it["key"] == "kpi", "기간을 열면 KPI 줄 — 대상 = 포털 사용이 켜진 KPI 작성 대상")
+        ok(it["total"] - it["done"] == len([x for x in hr.get("/api/usage", base_url=BASE).json["rows"] if "kpi" in x["left"]]),
+           "KPI 를 안 낸 분이 명단에 든다")
+        x("UPDATE kpi_years SET eval_start = ? WHERE year = ?", f"{year}-01-01", year)
+        ok(kpi() is None, "평가가 시작된 해에는 KPI 줄이 사라진다")
+    finally:
+        x("DELETE FROM kpi_years WHERE year = ?", year)
+        if had:
+            x("INSERT INTO kpi_years (year, edit_from, edit_to, eval_start, updated_at) VALUES (?, ?, ?, ?, '2026-01-01T00:00:00Z')",
+              year, had[0][0], had[0][1], had[0][2])
+    ok(q("SELECT 1 FROM kpi_years WHERE year = ?", year) == had or not had, "끝나면 작성 기간 줄을 되돌린다")
 
 
 def main() -> int:
