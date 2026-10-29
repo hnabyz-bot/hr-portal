@@ -699,6 +699,14 @@
   .ms-bar select, .ms-bar input{ font:inherit; font-size:var(--fs-sm); height:32px; padding:0 10px; border:1px solid var(--border); border-radius:var(--radius-sm); background:var(--surface); color:var(--text-primary); }
   .ms-bar input{ width:170px; }
   .ms-bar .sp{ flex:1; }
+  /* 처리 현황 (조직도 > 처리 현황, HR) — 표·칩·타일은 구성원 설정 것을 그대로 쓰고 막대와 남은 수만 여기서 */
+  .us-bar{ display:flex; align-items:center; gap:8px; }
+  .us-bar i{ flex:1; height:8px; border-radius:999px; background:#E8EDF4; overflow:hidden; }
+  .us-bar i b{ display:block; height:100%; border-radius:999px; background:var(--success); }
+  .us-bar i b.warn{ background:var(--warning); }
+  .us-bar > b{ font-size:var(--fs-xs); }
+  .us-tbl td small{ display:block; color:var(--text-muted); }
+  .us-no{ color:var(--danger); }
   .ms-tbl{ table-layout:fixed; min-width:918px; }   /* 칸 폭 합 728 + 이름 칸 190 */
   .ms-tbl th{ vertical-align:bottom; padding:8px 10px 9px; line-height:1.35; }
   /* 제목 줄 고정 (2026-10-19 인사담당자 — 내리면 무슨 칸인지 몰라서). 옆으로 넘기는 상자 안에서는 붙지 않으므로, 표가 다 들어가는 넓은 화면에서는 상자를 풀고
@@ -14081,6 +14089,121 @@ async function msLoad(){   // 실제 로그인: 서버 명단을 불러온다 (H
   } catch(e){ MS_LIVE.state = 'err'; }
   renderContent();
 }
+
+/* ---------------- 조직도 > 처리 현황 (2026-10-29 인사담당자 결정) ----------------
+   직원이 아직 하지 않은 일(공개한 서류 열람 · 연봉계약서 서명 · KPI 제출)을 HR 이 보고 안내한다. HR 만, 실제 로그인에서만 보인다.
+   **접속 기록은 보지 않는다** (2026-10-29 "감시한다고 생각하지 않을까") — 언제 들어왔는지 · 휴대폰 등록은 서버가 세지도 보내지도 않고
+   어느 메뉴를 눌렀는지는 기록이 아예 없다. 받은 카드는 해야 하는 일이 아니라 세지 않는다. backend/usage.py 머리말 참고.
+   검증은 usSelfCheck(). 모양은 .us-* 와 구성원 설정의 .ms-* · 홈의 .hm-*. */
+const US_LIVE = { state:'', d:null };   // state: '' 아직 · loading · ok · err
+let usFilter = 'all', usQuery = '';
+const US_SHORT = { pay:'급여명세서', wh:'원천징수영수증', ct:'연봉계약서', kpi:'KPI 계획서' };   // 칩 · 명단에 쓰는 짧은 이름 (서버 항목 열쇠)
+const usPct = (done, total)=>total ? Math.round(done / total * 100) : 0;
+function usShown(){   // 칩 · 이름 검색을 거친 줄. 차례는 서버가 준 그대로다(남은 일이 많은 분부터)
+  const d = US_LIVE.d, q = usQuery.trim();
+  if(!d) return [];
+  return d.rows.filter(r=>(usFilter === 'all' || r.left.includes(usFilter))
+    && (!q || [r.name, r.title, r.division, r.team].join(' ').includes(q)));
+}
+function usShow(k){ usFilter = k; renderContent(); }
+
+function usTable(){
+  const rows = usShown();
+  if(!rows.length) return kpiNote('해당하는 분이 없습니다.');
+  return `<div class="ct-tbl"><table class="ms-tbl us-tbl" style="min-width:720px;">
+    <colgroup><col style="width:180px"><col style="width:220px"><col></colgroup>
+    <thead><tr><th><b>이름</b><small>직급</small></th><th><b>부서</b></th><th><b>아직 안 한 일</b></th></tr></thead>
+    <tbody>${rows.map(r=>`<tr>
+      <td><div class="ms-name"><b>${escapeHtml(r.name)}</b><i>${escapeHtml(r.title)}</i></div></td>
+      <td>${escapeHtml(r.division)}${r.team ? ' · ' + escapeHtml(r.team) : ''}</td>
+      <td>${r.left.map(k=>`<span class="ms-tag">${US_SHORT[k] || k}</span>`).join(' ')}</td>
+    </tr>`).join('')}</tbody></table></div>`;
+}
+
+function usContent(){
+  if(!orgIsHr()) return kpiNote('처리 현황은 HR만 볼 수 있습니다.');
+  if(!AUTH.live) return kpiNote('처리 현황은 로그인한 뒤에 보입니다.');
+  if(US_LIVE.state !== 'ok'){
+    if(!US_LIVE.state) usLoad();
+    return kpiNote(US_LIVE.state === 'err' ? '처리 현황을 불러오지 못했습니다. 잠시 뒤 새로 고쳐 주세요.' : '처리 현황을 불러오는 중입니다…', US_LIVE.state === 'err' ? 'danger' : 'info');
+  }
+  const d = US_LIVE.d, t = celebParse(d.today);
+  const bar = x=>`<div class="us-bar"><i><b class="${usPct(x.done, x.total) < 80 ? 'warn' : ''}" style="width:${usPct(x.done, x.total)}%;"></b></i><b>${usPct(x.done, x.total)}%</b></div>`;
+  const chips = [['all', '전체', d.rows.length], ...d.items.filter(x=>x.total - x.done).map(x=>[x.key, US_SHORT[x.key] || x.key, x.total - x.done])];
+  if(!d.items.length) return `<div class="list-sub" style="margin-bottom:12px;">${t.getFullYear()}년 ${t.getMonth() + 1}월 ${t.getDate()}일 (${WS_DOW[t.getDay()]}) 기준</div>
+    ${kpiNote('지금은 직원이 해야 할 일이 없습니다. 급여명세서 · 원천징수영수증을 공개하거나, 연봉계약서를 발송하거나, KPI 작성 기간을 열면 여기에 나옵니다.')}`;
+  return `<div class="us">
+    <div class="list-sub" style="margin-bottom:12px;">${t.getFullYear()}년 ${t.getMonth() + 1}월 ${t.getDate()}일 (${WS_DOW[t.getDay()]}) 기준</div>
+    <div class="hm-tiles" style="grid-template-columns:repeat(2,minmax(0,1fr));">
+      <div class="hm-tile ${d.people ? 'coral' : 'green'}"><span>안내가 필요한 분</span><b>${d.people}<small>명</small></b><em>아직 안 한 일이 남은 분</em></div>
+      <div class="hm-tile blue"><span>보고 있는 일</span><b>${d.items.length}<small>가지</small></b><em>${escapeHtml(d.items.map(x=>US_SHORT[x.key] || x.key).join(' · '))}</em></div>
+    </div>
+    <div class="card"><div class="card-title">무엇을 끝냈나<small style="margin-left:6px; font-weight:500; color:var(--text-muted); font-size:var(--fs-xs);">공개 · 발송한 것을 열었는지</small></div>
+      <div class="ct-tbl"><table class="ms-tbl us-tbl" style="min-width:620px;">
+        <colgroup><col><col style="width:84px"><col style="width:84px"><col style="width:84px"><col style="width:180px"></colgroup>
+        <thead><tr><th><b>항목</b></th><th class="c"><b>대상</b></th><th class="c"><b>끝냄</b></th><th class="c"><b>남음</b></th><th class="c"><b>비율</b></th></tr></thead>
+        <tbody>${d.items.map(x=>`<tr><td>${escapeHtml(x.label)}${x.note ? ` <i style="font-style:normal; color:var(--text-muted);">· ${escapeHtml(x.note)}</i>` : ''}</td>
+          <td class="c">${x.total}명</td><td class="c">${x.done}명</td>
+          <td class="c">${x.total - x.done ? `<b class="us-no">${x.total - x.done}명</b>` : '<span class="list-sub">—</span>'}</td>
+          <td class="c">${bar(x)}</td></tr>`).join('')}</tbody>
+      </table></div></div>
+    ${d.rows.length ? `<div class="card">
+      <div class="ms-bar">
+        ${chips.map(([k, l, n])=>`<button type="button" class="ms-chip ${usFilter === k ? 'on' : ''}" aria-pressed="${usFilter === k}" onclick="usShow('${k}')">${escapeHtml(l)} ${n}</button>`).join('')}
+        <span class="sp"></span>
+        <input id="usQ" aria-label="이름 검색" placeholder="이름 · 부서 검색" value="${escapeHtml(usQuery)}" oninput="usQuery=this.value; document.getElementById('usBody').innerHTML=usTable()">
+      </div>
+      <div id="usBody">${usTable()}</div>
+      <div class="list-sub" style="margin-top:10px;">남은 일이 많은 분부터 보입니다. 안내는 하이웍스 메일 · 메신저로 직접 보내 주세요.</div>
+    </div>` : kpiNote('모두 끝냈습니다. 안내할 분이 없습니다.', 'success')}
+    <div class="card"><div class="card-title">이 화면의 규칙</div>
+      <ol class="ms-rules">
+        <li><b>언제 접속했는지는 보지 않습니다.</b> HR이 공개 · 발송한 서류를 열었는지와 KPI를 냈는지만 봅니다 — 직원이 해야 하는 일입니다.</li>
+        <li><b>무엇을 눌렀는지도 기록하지 않습니다.</b> 그 기록은 아예 없습니다.</li>
+        <li><b>HR만 봅니다.</b> 팀장 · 본부장은 볼 수 없습니다.</li>
+        <li>이 화면은 <b>아직 못 하신 분께 안내하기 위한 것</b>입니다. 근무 평가에는 쓰지 않습니다.</li>
+      </ol>
+    </div>
+  </div>`;
+}
+
+async function usLoad(){
+  US_LIVE.state = 'loading';
+  try {
+    const r = await fetch('/api/usage');
+    if(!r.ok) throw new Error(r.status);
+    US_LIVE.d = await r.json(); US_LIVE.state = 'ok';
+  } catch(e){ US_LIVE.state = 'err'; }
+  renderContent();
+}
+
+function usSelfCheck(){   // 브라우저 콘솔에서 usSelfCheck() 실행
+  const ok = (c, msg)=>{ if(!c) throw new Error('usSelfCheck 실패: ' + msg); };
+  ok(usPct(92, 103) === 89 && usPct(0, 0) === 0 && usPct(3, 3) === 100, '비율 — 대상이 0명이면 0%');
+  ok(Object.keys(US_SHORT).join() === 'pay,wh,ct,kpi', '보는 일은 네 가지 — 접속 기록 · 휴대폰 · 받은 카드는 없다');
+
+  const was = { d:US_LIVE.d, f:usFilter, q:usQuery };
+  try {
+    const mk = (name, left, o)=>({ id:0, name, title:'사원', division:'DR사업본부', team:'생산팀', left, ...o });
+    US_LIVE.d = { today:'2026-10-29', people:3, items:[{ key:'pay', label:'10월 급여명세서 열람', note:'공개 10/25', total:6, done:4 }],
+      rows:[mk('가상현장', ['pay', 'kpi']), mk('가상품질', ['pay'], { title:'주임', division:'품질경영본부', team:'품질팀' }),
+            mk('가상팀장', ['kpi'], { title:'팀장', division:'전략마케팅본부', team:'국내영업팀' })] };
+    const names = k=>{ usFilter = k; return usShown().map(r=>r.name).join(); };
+    ok(names('all') === '가상현장,가상품질,가상팀장', '전체');
+    ok(names('pay') === '가상현장,가상품질', '급여명세서를 안 연 분만');
+    ok(names('kpi') === '가상현장,가상팀장', 'KPI를 안 낸 분만');
+    usFilter = 'all'; usQuery = '품질';
+    ok(usShown().map(r=>r.name).join() === '가상품질', '검색은 부서 이름으로도 찾는다');
+    usQuery = '팀장';
+    ok(usShown().map(r=>r.name).join() === '가상팀장', '검색은 직급으로도 찾는다');
+    usQuery = '';
+    ok(usTable().includes('급여명세서') && usTable().includes('KPI 계획서'), '명단에 아직 안 한 일이 짧은 이름으로 나온다');
+    ok(!/마지막 접속|휴대폰|들어온/.test(usTable()), '명단에 마지막 접속 · 휴대폰 칸이 없다');
+    ok(usContent().includes('언제 접속했는지는 보지 않습니다'), '규칙 첫 줄이 그렇게 알린다');
+  } finally { US_LIVE.d = was.d; usFilter = was.f; usQuery = was.q; }
+  return 'usSelfCheck 통과';
+}
+
 function msActiveAsk(id, on){   // 실제 로그인: 비활성화 · 다시 켜기 (퇴사 처리 — 하이웍스 계정 정지보다 먼저, 로그인 설계 §4)
   const m = msList().find(o=>o.id===id);
   orgModal(`<div class="card-title">${escapeHtml(m.name)} 님을 ${on ? '다시 켤까요' : '비활성화할까요'}?</div>
@@ -15184,6 +15307,7 @@ const NAV = [
       {id:'o1', label:'부서별 조직도', render:orgChart},
       {id:'o2', label:'구성원 검색', render:memberSearch},
       {id:'o3', label:'구성원 설정', render:msContent, show:()=>orgIsHr()},   // HR(담당자·팀장)에게만 보인다
+      {id:'o4', label:'처리 현황', render:usContent, show:()=>orgIsHr() && AUTH.live},   // HR에게만 · 실제 로그인만 (시연에는 서버 자료가 없다)
   ]},
   { id:'pantry', label:'탕비실', icon:'coffee', tabs:[
       {id:'g1', label:'X-ray 특공대', render:pantryGame},

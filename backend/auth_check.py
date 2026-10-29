@@ -68,6 +68,7 @@ for k in ("HIWORKS_FIRST_HR_USER_NO", "HIWORKS_SSO_LINK_BY_EMPLOYEE_NO"):
     os.environ.pop(k, None)
 
 import auth  # noqa: E402
+import usage  # noqa: E402
 from app import app  # noqa: E402
 from hr_eval.sql.db import connect  # noqa: E402
 
@@ -8866,6 +8867,65 @@ def check_cards(hr) -> None:
        "끝나면 카드 줄 · 경사 · 조사 · 세션(휴대폰 구독 포함)을 지우고 가상 사람은 비활성으로 두며 열쇠 · 로그 설정을 되돌림")
 
 
+
+def check_usage(hr) -> None:
+    """처리 현황 (2026-10-29): HR 만 본다 · 항목과 명단이 서로 맞는다 · 남은 일이 많은 분부터 ·
+    **응답 어디에도 접속 기록이 없다**(언제 들어왔는지 · 휴대폰 — 인사담당자 "감시한다고 생각하지 않을까") ·
+    KPI 작성 기간을 열면 그 항목이 생기고 닫으면 사라진다. 앞 검사들이 만들어 둔 사람 · 급여명세서를 그대로 읽는다."""
+    print("처리 현황")
+    emp = app.test_client()
+    login(emp, new_token("emp"))
+    ok(app.test_client().get("/api/usage", base_url=BASE).status_code == 401, "로그인 없이 401")
+    ok(emp.get("/api/usage", base_url=BASE).status_code == 403, "직원 403 — HR 만 본다")
+
+    r = hr.get("/api/usage", base_url=BASE)
+    ok(r.headers.get("Cache-Control") == "no-store", "사람 명단이라 브라우저에 남기지 않는다")
+    d = r.json
+    ok(set(d) == {"today", "people", "items", "rows"}, "응답은 네 칸")
+    ok(all(set(i) == {"key", "label", "note", "total", "done"} for i in d["items"]), "항목 칸 다섯 — 안 한 사람 번호(left)는 보내지 않는다")
+    ok(all(i["key"] in ("pay", "wh", "ct", "kpi") for i in d["items"]), "보는 일은 네 가지 — 받은 카드 · 접속은 없다")
+    ok(all(0 <= i["done"] <= i["total"] for i in d["items"]), "끝낸 수는 대상 수를 넘지 않는다")
+
+    glob = json.dumps(d, ensure_ascii=False)
+    for word in ("last", "phone", "seen_at", "session", "마지막", "휴대폰", "접속"):
+        ok(word not in glob, f"응답 어디에도 접속 기록이 없다 ({word})")
+
+    ok(d["people"] == len(d["rows"]), "안내가 필요한 분 수 = 명단 줄 수")
+    ok(all(x["left"] and all(k in ("pay", "wh", "ct", "kpi") for k in x["left"]) for x in d["rows"]),
+       "명단에는 안 한 일이 하나 이상 남은 분만 든다")
+    ok([len(x["left"]) for x in d["rows"]] == sorted((len(x["left"]) for x in d["rows"]), reverse=True),
+       "남은 일이 많은 분부터")
+    if d["rows"]:
+        ok(set(d["rows"][0]) == {"id", "name", "title", "division", "team", "left"},
+           "명단 칸은 여섯 — 금액 · 메일 · 생일 · 사원코드 · 접속은 보내지 않는다")
+    left = {k: sum(1 for x in d["rows"] if k in x["left"]) for k in ("pay", "wh", "ct", "kpi")}
+    for i in d["items"]:
+        ok(i["total"] - i["done"] == left[i["key"]], f"{i['key']}: 남은 수 = 그 일이 남은 분 수")
+
+    year = date.today().year
+    had = q("SELECT edit_from, edit_to, eval_start FROM kpi_years WHERE year = ?", year)
+    kpi = lambda: next((i for i in hr.get("/api/usage", base_url=BASE).json["items"] if i["key"] == "kpi"), None)  # noqa: E731
+    if not had:  # 줄을 지웠다 다시 넣으면 알람 기준 · 경영계획이 사라지므로, 날짜 세 칸만 비웠다 되돌린다
+        x("INSERT INTO kpi_years (year, updated_at) VALUES (?, '2026-01-01T00:00:00Z')", year)
+    try:
+        x("UPDATE kpi_years SET edit_from = NULL, edit_to = NULL, eval_start = NULL WHERE year = ?", year)
+        ok(kpi() is None, "작성 기간을 정하지 않았으면 KPI 줄이 없다")
+        x("UPDATE kpi_years SET edit_from = ?, edit_to = ? WHERE year = ?", f"{year}-01-01", f"{year}-12-31", year)
+        it = kpi()
+        n = q(f"SELECT COUNT(*) FROM users u WHERE {usage.WHO} AND u.writes_kpi = 1")[0][0]
+        ok(it and it["total"] == n and it["key"] == "kpi", "기간을 열면 KPI 줄 — 대상 = 포털 사용이 켜진 KPI 작성 대상")
+        ok(it["total"] - it["done"] == len([m for m in hr.get("/api/usage", base_url=BASE).json["rows"] if "kpi" in m["left"]]),
+           "KPI 를 안 낸 분이 명단에 든다")
+        x("UPDATE kpi_years SET eval_start = ? WHERE year = ?", f"{year}-01-01", year)
+        ok(kpi() is None, "평가가 시작된 해에는 KPI 줄이 사라진다")
+    finally:
+        if had:
+            x("UPDATE kpi_years SET edit_from = ?, edit_to = ?, eval_start = ? WHERE year = ?", had[0][0], had[0][1], had[0][2], year)
+        else:
+            x("DELETE FROM kpi_years WHERE year = ?", year)
+    ok(q("SELECT edit_from, edit_to, eval_start FROM kpi_years WHERE year = ?", year) == had, "끝나면 작성 기간 줄을 되돌린다")
+
+
 def main() -> int:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     seed()
@@ -9126,6 +9186,7 @@ def main() -> int:
         check_push_deadlines(hr)
     check_pay_pin(hr)
     check_cards(hr)
+    check_usage(hr)
 
     acts = {r[0] for r in q("SELECT action FROM audit_logs")}
     ok({"LOGIN", "HR_BOOTSTRAP"} <= acts, "감사로그 LOGIN 이 남음")

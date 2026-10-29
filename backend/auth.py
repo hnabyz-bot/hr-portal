@@ -992,7 +992,7 @@ def _guard() -> Response | None:
 
 
 def _no_store(resp: Response) -> Response:
-    if request.path.startswith(("/api/auth/", "/api/phone", "/api/pay", "/api/cards")) or request.path == "/api/me":  # /api/pay = 명세서 · 비밀번호 둘 다 · /api/cards = 풀어서 내려 주는 카드 글
+    if request.path.startswith(("/api/auth/", "/api/phone", "/api/pay", "/api/cards", "/api/usage")) or request.path == "/api/me":  # /api/pay = 명세서 · 비밀번호 둘 다 · /api/cards = 풀어서 내려 주는 카드 글 · /api/usage = 사람 명단
         resp.headers["Referrer-Policy"] = "no-referrer"
         resp.headers["Cache-Control"] = "no-store"
     if g.get("phone_cookie") and resp.status_code < 400:
