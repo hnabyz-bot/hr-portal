@@ -1,6 +1,6 @@
 """환영 페이지에서 둥실 떠다니는 두 장비(포터블·디텍터)의 자리를 만든다.
 
-환영 그림(public/img/home/welcome.jpg, 1672×941)은 한 장짜리다. 같은 그림을 "장비 자리만 남기고" 한 장 더 얹어 움직인다.
+환영 그림은 PC 용(public/img/home/welcome.jpg, 1672×941)과 휴대폰 용(welcome-m.jpg, 1012×1555) 두 장이고, 각각 한 장짜리다. 같은 그림을 "장비 자리만 남기고" 한 장 더 얹어 움직인다.
 이 스크립트가 그 "자리"(투명도 그림)를 만든다. 윤곽을 그대로 따서 장비만 움직이고, 비켜난 자리에 제자리의 장비가 비치지 않도록
 장비를 지우고 둘레 색으로 메운 배경 조각을 밑에 깐다.
 (2026-10-12 "장비가 배경과 같이 움직여 화면이 깨져 보인다"는 지적 — 처음에는 둘레의 구름까지 넓게 함께 움직였다)
@@ -8,7 +8,7 @@
 
   python tools/welcome_masks.py        (Pillow·numpy 필요)
 
-결과: public/img/home/welcome-a.png(포터블 자리), welcome-b.png(디텍터 자리), welcome-p.png(두 장비를 지운 배경 조각), welcome-t.png(휴대폰용 Better Together 글자 둘레)
+결과: public/img/home/welcome-a.png(포터블 자리), welcome-b.png(디텍터 자리), welcome-p.png(두 장비를 지운 배경 조각) — 휴대폰 용은 welcome-ma · mb · mp.png
 그림을 바꾸면 아래 좌표를 새 그림의 장비 윤곽에 맞춰 고치고 다시 돌린 뒤, index.html에서 이 그림들의 주소 뒤 ?v= 번호를 올린다.
 """
 import pathlib
@@ -16,16 +16,13 @@ import numpy as np
 from PIL import Image, ImageChops, ImageDraw, ImageFilter
 
 OUT = pathlib.Path(__file__).resolve().parent.parent / 'public' / 'img' / 'home'
-W, H = 1672, 941
-# 포터블의 대강의 윤곽(그림 크기에 대한 %) — 휴대폰용 글자 둘레에서 포터블 모서리를 뺄 때만 쓴다
-PORTABLE = [(28.2, 40), (34, 37.6), (45, 33), (50, 32.3), (54, 33.3), (55.8, 36), (56.4, 50), (55.6, 54.5), (55.5, 64), (55.4, 73.2), (53.3, 72.6),
-            (49.5, 62.5), (47, 61.5), (44, 63), (40, 63.5), (37.6, 62.5), (36.6, 82.2), (34.3, 82), (32.3, 75), (32, 63), (29.6, 61), (28.4, 57)]
-# 두 장비 사이의 꽃(그림 크기에 대한 %) — 디텍터 앞에 놓여 있으니 디텍터와 함께 움직이지 않게 뺀다 (경계가 디텍터의 밋밋한 면 위를 지나가 티가 나지 않는다).
+W, H = 1672, 941   # 지금 만드는 그림의 크기 — make()가 그림마다 바꾼다
+# 두 장비 사이의 꽃(그림 크기에 대한 %를 원본 px 로) — 디텍터 앞에 놓여 있으니 디텍터와 함께 움직이지 않게 뺀다 (경계가 디텍터의 밋밋한 면 위를 지나가 티가 나지 않는다).
 # 디텍터 조각에서는 HOLE px 넓혀 빼고 그 가장자리를 SOFT로 번지게 한다. 배경 조각에서는 KEEP px 넓혀 뺀다 — 디텍터 조각의 구멍이 움직여도
 # 그 밑에 늘 원본(제자리의 디텍터 변)이 있도록 KEEP을 HOLE + 움직이는 거리 + 번짐보다 크게 둔다.
 # 디텍터의 변이 이 경계를 지나는 두 곳(왼쪽 변·아랫변)에서 변이 꺾여 보이지 않으려면 그 자리가 변을 따라서만 움직여야 한다
 # → index.html의 .wc-fl.b 축(transform-origin)을 "왼쪽 변이 지나는 높이 × 아랫변이 지나는 가로 자리"(지금 1255, 476 = 75.1% 50.6%)에 두고 기울이기만 한다
-FLOWERS = [(56.5, 60), (61, 54.5), (66, 51.8), (71.5, 52.2), (73.5, 57), (75.8, 61.5), (75.8, 68), (73, 72.3), (62, 73), (56.5, 71)]
+FLOWERS = [(x * 1672 / 100, y * 941 / 100) for x, y in [(56.5, 60), (61, 54.5), (66, 51.8), (71.5, 52.2), (73.5, 57), (75.8, 61.5), (75.8, 68), (73, 72.3), (62, 73), (56.5, 71)]]
 HOLE, SOFT, KEEP = 12, 6, 28
 # 포터블의 정확한 윤곽(원본 px, 시계 방향: 왼쪽 위 모서리 → 윗변 → 손잡이 → 오른쪽 다리 → 센서 아랫변 → 왼쪽 다리 → 몸통 왼쪽).
 # 그림을 4~5배로 키우고 대비를 높여 눈금을 놓고 딴 것이다. 오차는 ±3px쯤이면 된다 — 움직이는 조각은 1px 안쪽으로 줄이고, 배경 조각은 6px 넓게 지운다
@@ -47,12 +44,21 @@ D_OUT = [(1085, 342), (1087, 336), (1092, 333), (1105, 330), (1255, 298.6), (133
          (1523.8, 552), (1520, 552.5), (1520.8, 560), (1525.6, 600), (1533, 660), (1534, 667), (1532, 674), (1527, 680), (1519, 683), (1510, 684.5), (1495, 682.5),
          (1362.5, 673.6), (1249, 666), (1143, 658.9), (1141.8, 659), (1113.1, 498), (1099.2, 420)]
 
+# ---- 휴대폰 그림(welcome-m.jpg, 2026-11-02 인사담당자가 준 세로 그림) — 원본 px ----
+# 윤곽은 GrabCut(OpenCV)으로 딴 뒤 손잡이 구멍 · 두 다리(안쪽 구멍 포함) · 디텍터 옆면 · 모서리 꽃을 손으로 고쳐 다각형으로 옮겼다.
+# 포터블 구멍은 손잡이 안 · 오른쪽 다리 안 · 왼쪽 다리 안. 디텍터 앞의 꽃 · 아랫변 앞 구름(M_FRONT)은 움직이지 않는다
+# → index.html 휴대폰 .wc-fl.b 축을 "왼쪽 변이 M_FRONT 로 들어가는 높이(1105) × 아랫변이 나오는 가로 자리(805)"에 둔다 (PC 와 같은 까닭)
+M_P_OUT = [(418, 973), (407, 970), (398, 969), (397, 971), (390, 968), (374, 966), (369, 964), (308, 964), (284, 970), (269, 972), (266, 974), (223, 983), (195, 991), (165, 996), (94, 1013), (73, 1021), (57, 1034), (50, 1049), (50, 1066), (58, 1099), (61, 1106), (61, 1111), (73, 1149), (76, 1166), (80, 1170), (83, 1179), (89, 1186), (99, 1193), (113, 1200), (110, 1209), (112, 1252), (128, 1319), (138, 1340), (145, 1349), (151, 1349), (156, 1347), (163, 1331), (168, 1265), (176, 1257), (177, 1250), (183, 1243), (184, 1225), (188, 1221), (192, 1208), (197, 1204), (204, 1207), (230, 1206), (303, 1188), (311, 1185), (319, 1179), (320, 1182), (334, 1195), (347, 1211), (363, 1236), (363, 1239), (379, 1258), (395, 1274), (401, 1274), (405, 1281), (414, 1282), (426, 1271), (431, 1259), (432, 1232), (430, 1218), (430, 1145), (419, 1142), (430, 1142), (437, 1121), (444, 1106), (449, 1082), (451, 1053), (449, 1022), (444, 1002), (435, 986)]
+M_P_HOLES = [[(128, 1209), (154, 1207), (163, 1208), (164, 1239), (161, 1264), (156, 1285), (150, 1293), (142, 1283), (129, 1236), (127, 1216)], [(336, 1142), (387, 1139), (397, 1141), (402, 1144), (412, 1161), (416, 1178), (417, 1208), (414, 1226), (404, 1235), (395, 1233), (387, 1226), (336, 1171), (331, 1161)], [(384, 999), (401, 999), (405, 1001), (410, 1008), (422, 1087), (422, 1094), (419, 1102), (411, 1107), (394, 1107), (385, 1102), (381, 1093), (377, 1037), (377, 1003)]]
+M_D_OUT = [(910, 908), (894, 906), (882, 912), (874, 922), (873, 926), (881, 934), (883, 948), (882, 950), (879, 948), (878, 940), (863, 925), (858, 925), (791, 940), (707, 956), (705, 958), (666, 965), (607, 979), (583, 983), (577, 985), (571, 990), (570, 994), (573, 1007), (573, 1014), (578, 1034), (580, 1053), (582, 1057), (589, 1103), (601, 1107), (607, 1107), (629, 1120), (635, 1127), (642, 1131), (676, 1163), (682, 1163), (705, 1186), (705, 1188), (711, 1194), (711, 1203), (714, 1206), (715, 1238), (728, 1251), (751, 1255), (779, 1256), (782, 1258), (787, 1258), (790, 1260), (801, 1262), (810, 1271), (838, 1271), (840, 1273), (884, 1275), (891, 1277), (931, 1281), (945, 1279), (949, 1266), (943, 1197), (939, 1172), (939, 1166), (943, 1162), (943, 1157), (935, 1143), (915, 965), (910, 949), (913, 947), (920, 935), (920, 918)]
+M_FRONT = [(588, 1104), (610, 1110), (630, 1122), (648, 1150), (660, 1180), (695, 1183), (705, 1200), (705, 1228), (718, 1250), (745, 1255), (780, 1258), (803, 1264), (810, 1272), (810, 1295), (560, 1295), (545, 1200), (560, 1130)]
+
 
 def shape(points, grow):
-    """윤곽을 grow px 만큼 넓힌 흑백 그림"""
+    """원본 px 윤곽을 grow px 만큼 넓힌 흑백 그림"""
     m = Image.new('L', (W, H), 0)
     d = ImageDraw.Draw(m)
-    p = [(x * W / 100, y * H / 100) for x, y in points]
+    p = list(points)
     d.polygon(p, fill=255)
     d.line(p + p[:1], fill=255, width=grow * 2, joint='curve')
     for x, y in p:
@@ -99,22 +105,27 @@ def save(name, alpha, half=False):
     print(name, (OUT / name).stat().st_size, 'bytes')
 
 
-# 움직이는 조각: 윤곽보다 1px 안쪽(배경을 묻혀 오지 않게), 구멍은 1px 넓게. 선명해야 하므로 원본 크기 그대로 둔다
-holes = Image.new('L', (W, H), 0)
-for h in P_HOLES:
-    holes = ImageChops.lighter(holes, exact(h))
-save('welcome-a.png', ImageChops.subtract(widen(exact(P_OUT), -1), widen(holes, 1)).filter(ImageFilter.GaussianBlur(.8)))
-save('welcome-b.png', ImageChops.multiply(widen(exact(D_OUT), -1).filter(ImageFilter.GaussianBlur(.8)),
-                                          ImageChops.invert(shape(FLOWERS, HOLE).filter(ImageFilter.GaussianBlur(SOFT)))))
-# 배경 조각: 장비를 윤곽보다 6px 넓게 지우고(포터블 구멍 속 배경은 4px 안쪽부터 남긴다) 둘레 색으로 메운다. 흐린 그림이라 절반 크기면 충분하다.
-# 디텍터는 가장자리 띠(안쪽으로 32px)만 쓴다 — 꽃 자리와 그 안쪽은 원본(제자리의 디텍터)이 보여야 한다
-gone_p, gone_d = ImageChops.subtract(widen(exact(P_OUT), 6), widen(holes, -4)), widen(exact(D_OUT), 6)
-plate = fill_from_around(Image.open(OUT / 'welcome.jpg').convert('RGB'), ImageChops.lighter(gone_p, gone_d))
-band = ImageChops.subtract(ImageChops.subtract(widen(gone_d, 2), widen(exact(D_OUT), -32)), shape(FLOWERS, KEEP))
-plate.putalpha(ImageChops.lighter(widen(gone_p, 2), band).filter(ImageFilter.GaussianBlur(1.5)))   # 메운 곳 밖은 원본 그대로라 가장자리가 번져도 이음매가 없다
-plate.resize((W // 2, H // 2), Image.LANCZOS).save(OUT / 'welcome-p.png', optimize=True)
-print('welcome-p.png', (OUT / 'welcome-p.png').stat().st_size, 'bytes')
-# 휴대폰: 그림 왼쪽 위의 Better Together 글자 둘레. 바로 옆 포터블의 모서리는 빼고, 흐린 바탕에 녹도록 넓게 번지게 한다
-title = Image.new('L', (W, H), 0)
-ImageDraw.Draw(title).rounded_rectangle((0.035 * W, 0.07 * H, 0.335 * W, 0.445 * H), radius=70, fill=255)
-save('welcome-t.png', ImageChops.subtract(title, shape(PORTABLE, 34)).filter(ImageFilter.GaussianBlur(16)), half=True)
+def make(src, names, p_out, p_holes, d_out, flowers):
+    """그림 한 장의 움직이는 조각 둘(포터블 · 디텍터)과 배경 조각을 만든다. names = (포터블, 디텍터, 배경) 파일 이름"""
+    global W, H
+    pic = Image.open(OUT / src).convert('RGB')
+    W, H = pic.size
+    # 움직이는 조각: 윤곽보다 1px 안쪽(배경을 묻혀 오지 않게), 구멍은 1px 넓게. 선명해야 하므로 원본 크기 그대로 둔다
+    holes = Image.new('L', (W, H), 0)
+    for h in p_holes:
+        holes = ImageChops.lighter(holes, exact(h))
+    save(names[0], ImageChops.subtract(widen(exact(p_out), -1), widen(holes, 1)).filter(ImageFilter.GaussianBlur(.8)))
+    save(names[1], ImageChops.multiply(widen(exact(d_out), -1).filter(ImageFilter.GaussianBlur(.8)),
+                                       ImageChops.invert(shape(flowers, HOLE).filter(ImageFilter.GaussianBlur(SOFT)))))
+    # 배경 조각: 장비를 윤곽보다 6px 넓게 지우고(포터블 구멍 속 배경은 4px 안쪽부터 남긴다) 둘레 색으로 메운다. 흐린 그림이라 절반 크기면 충분하다.
+    # 디텍터는 가장자리 띠(안쪽으로 32px)만 쓴다 — 꽃 자리와 그 안쪽은 원본(제자리의 디텍터)이 보여야 한다
+    gone_p, gone_d = ImageChops.subtract(widen(exact(p_out), 6), widen(holes, -4)), widen(exact(d_out), 6)
+    plate = fill_from_around(pic, ImageChops.lighter(gone_p, gone_d))
+    band = ImageChops.subtract(ImageChops.subtract(widen(gone_d, 2), widen(exact(d_out), -32)), shape(flowers, KEEP))
+    plate.putalpha(ImageChops.lighter(widen(gone_p, 2), band).filter(ImageFilter.GaussianBlur(1.5)))   # 메운 곳 밖은 원본 그대로라 가장자리가 번져도 이음매가 없다
+    plate.resize((W // 2, H // 2), Image.LANCZOS).save(OUT / names[2], optimize=True)
+    print(names[2], (OUT / names[2]).stat().st_size, 'bytes')
+
+
+make('welcome.jpg', ('welcome-a.png', 'welcome-b.png', 'welcome-p.png'), P_OUT, P_HOLES, D_OUT, FLOWERS)
+make('welcome-m.jpg', ('welcome-ma.png', 'welcome-mb.png', 'welcome-mp.png'), M_P_OUT, M_P_HOLES, M_D_OUT, M_FRONT)
