@@ -63,6 +63,16 @@ jobs:
 
           echo "[통과] 사이트 정상 응답 ($(wc -c < /tmp/page.html) 바이트)"
 
+          # 화면 파일은 늘 새 판인지 확인하게 한다 (nginx.conf 의 location ~ \.html$) — 빠지면 올린 뒤에도 휴대폰 앱이 옛 화면을 몇 시간 쓴다
+          for p in / /xray/; do
+            if ! curl -sI "http://127.0.0.1:8080$p" | grep -qi '^cache-control: no-cache'; then
+              echo "[실패] $p 응답에 Cache-Control: no-cache 가 없습니다 (nginx.conf 확인)."
+              curl -sI "http://127.0.0.1:8080$p"
+              exit 1
+            fi
+          done
+          echo "[통과] 화면 파일 Cache-Control: no-cache"
+
       - name: 정리
         if: always()
         run: docker compose down

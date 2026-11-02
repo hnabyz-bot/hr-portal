@@ -100,7 +100,7 @@ CI(`.github/workflows/ci.yml`)가 자동 검사하는 것: 한글 인코딩, HTM
 - `backend/`: Flask 앱. `/api/calculate`(핵심 계산), `/api/search-places`, `/api/export/{excel,pdf,application-form}`.
 - **로그인 4단계부터 모든 `/api/*`는 세션이 있어야 한다**(`backend/auth.py`, 세션 없이 열린 곳은 `/api/health`와 로그인 받는 곳뿐). 그래서 PC에서 Flask를 띄워 경비 산출기를 시험하려면 가짜 확인 서버로 로그인해야 한다 — 방법은 `backend/auth_check.py`.
 - **회계전표 입력용 목록 (2026-10-03)**: 계산 결과를 "전표에 담기"로 모아 ERP 전표 입력창에 붙여넣을 줄을 만든다 — `/api/export/voucher`(엑셀), `/api/voucher`(표 복사용 JSON). 줄 구성은 `services/calculator.py`의 `build_voucher_rows`, 부서별 계정과목·세목은 `app_config.py`의 `VOUCHER_*`(인사담당자 지정). 귀속부서 이름은 화면 `ORG_TREE`의 팀 이름과 같아야 한다. 목록은 브라우저 메모리에만 있다(저장은 로그인 이후).
-- `nginx.conf`: `/api/`만 `api` 컨테이너로 proxy_pass, 나머지는 기존처럼 정적 서빙.
+- `nginx.conf`: `/api/`만 `api` 컨테이너로 proxy_pass, 나머지는 기존처럼 정적 서빙. **화면 파일(`.html` — `/`와 `/xray/`)은 `Cache-Control: no-cache`**(2026-11-02 — 이 머리가 없을 때 브라우저가 스스로 정해 올린 뒤에도 휴대폰 앱이 옛 화면을 몇 시간 썼다. CI "사이트 동작 확인"이 이 머리를 본다). 그림 · js는 앞단 Cloudflare가 4시간 보관하게 두고 주소 뒤 `?v=` 번호로 바꾼다.
 - `docker-compose.yml`: `api` 서비스는 `expose`만 하고 host 포트를 열지 않음 (nginx만 접근 가능, 새 Cloudflare Tunnel 규칙 불필요).
 - API 키 5개(NAVER_CLIENT_ID/SECRET, NAVER_LOCAL_CLIENT_ID/SECRET, OPINET_API_KEY)는 저장소 루트 `.env`에서 `${VAR:-}` 치환으로 주입 — CI에는 `.env`가 없어도 빈 값으로 통과한다(계산 API를 실제로 호출하는 스모크 테스트는 없음).
 
