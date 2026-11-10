@@ -46,17 +46,13 @@ class TripCalculationResult:
         return any(s.get("is_return") for s in self.route_segments)
 
 
-def get_fuel_efficiency(vehicle_type: str, fuel_type: str = "gasoline") -> float:
-    """차량 구분·유종에 따른 연비(km/L 또는 km/kWh)를 반환한다."""
-    if fuel_type == "lpg":
-        return float(app_config.FUEL_EFFICIENCY_LPG)
-    if fuel_type == "electric":
-        return float(app_config.FUEL_EFFICIENCY_ELECTRIC)
-    if vehicle_type == "under_1800":
-        return float(app_config.FUEL_EFFICIENCY_UNDER_1800)
-    if vehicle_type == "over_1800":
-        return float(app_config.FUEL_EFFICIENCY_OVER_1800)
-    raise ValueError(f"알 수 없는 차량 구분: {vehicle_type}")
+def get_fuel_efficiency(vehicle_type: str, fuel_type: str = "gasoline", rules: dict | None = None) -> float:
+    """차량 구분·유종에 따른 연비(km/L 또는 km/kWh)를 반환한다. rules = 그날 산출 기준(trip_rules.for_day), 없으면 app_config 의 처음 기준."""
+    if vehicle_type not in ("under_1800", "over_1800"):
+        raise ValueError(f"알 수 없는 차량 구분: {vehicle_type}")
+    r = rules or {"under_1800": app_config.FUEL_EFFICIENCY_UNDER_1800, "over_1800": app_config.FUEL_EFFICIENCY_OVER_1800,
+                  "lpg": app_config.FUEL_EFFICIENCY_LPG, "electric": app_config.FUEL_EFFICIENCY_ELECTRIC}
+    return float(r[fuel_type if fuel_type in ("lpg", "electric") else vehicle_type])
 
 
 def get_vehicle_type_label(vehicle_type: str) -> str:
@@ -76,16 +72,16 @@ def calculate_fuel_cost(fuel_used_liters: float, fuel_price: float) -> int:
     return int(round(fuel_used_liters * fuel_price))
 
 
-def calculate_daily_allowance(one_way_distance_km: float, destination_count: int) -> int:
+def calculate_daily_allowance(one_way_distance_km: float, destination_count: int, amount: int | None = None) -> int:
     """
     활동비(국내 출장) 지급액을 계산한다.
 
-    회사 규정(출장여비규정 제13조): 편도 100km 초과 또는 출장지 3곳 이상 -> 20,000원, 그 외 0원.
+    회사 규정(출장여비규정 제13조): 편도 100km 초과 또는 출장지 3곳 이상 -> 활동비(처음 기준 20,000원 — HR 이 산출 기준에서 바꾼다), 그 외 0원.
     """
     meets_distance = one_way_distance_km > app_config.ONE_WAY_DISTANCE_THRESHOLD_KM
     meets_destinations = destination_count >= app_config.MIN_DESTINATIONS_FOR_ALLOWANCE
     if meets_distance or meets_destinations:
-        return app_config.DAILY_ALLOWANCE_AMOUNT
+        return app_config.DAILY_ALLOWANCE_AMOUNT if amount is None else amount
     return 0
 
 
@@ -144,9 +140,10 @@ def build_trip_result(
     fuel_type: str,
     route_data: dict[str, Any],
     fuel_price_info: dict[str, Any],
+    rules: dict | None = None,
 ) -> TripCalculationResult:
-    """경로·유가 정보를 종합하여 최종 계산 결과를 생성한다."""
-    fuel_efficiency = get_fuel_efficiency(vehicle_type, fuel_type)
+    """경로·유가 정보를 종합하여 최종 계산 결과를 생성한다. rules = 그날 산출 기준(연비 · 활동비), 없으면 처음 기준."""
+    fuel_efficiency = get_fuel_efficiency(vehicle_type, fuel_type, rules)
     total_distance_km = route_data["total_distance_km"]
     total_duration_min = route_data["total_duration_min"]
     one_way_distance_km = route_data["one_way_distance_km"]
@@ -154,7 +151,7 @@ def build_trip_result(
     fuel_used = calculate_fuel_used(total_distance_km, fuel_efficiency)
     fuel_price = fuel_price_info["price"]
     fuel_cost = calculate_fuel_cost(fuel_used, fuel_price)
-    daily_allowance = calculate_daily_allowance(one_way_distance_km, len(destinations))
+    daily_allowance = calculate_daily_allowance(one_way_distance_km, len(destinations), rules["allowance"] if rules else None)
     total_payment = fuel_cost + daily_allowance
 
     return TripCalculationResult(
@@ -236,6 +233,15 @@ if __name__ == "__main__":
         ["미지급금", "", "", 0, 219178, "홍길동_출장경비 2건", "", "지원팀"],
     ]
     assert all(len(row) == len(VOUCHER_HEADERS) for row in _rows)
+    # 산출 기준(HR 이 바꾼 연비 · 활동비)을 주면 그것으로, 안 주면 처음 기준
+    _rules = {"under_1800": 8, "over_1800": 7.5, "lpg": 6.5, "electric": 5, "charge_price": 300, "allowance": 30000}
+    assert [get_fuel_efficiency(v, f, _rules) for v, f in (("under_1800", "gasoline"), ("over_1800", "diesel"), ("over_1800", "lpg"), ("under_1800", "electric"))] == [8, 7.5, 6.5, 5]
+    assert get_fuel_efficiency("under_1800") == app_config.FUEL_EFFICIENCY_UNDER_1800
+    _r = build_trip_result(date(2026, 12, 1), "용인", ["부산"], "under_1800", "gasoline",
+                           {"segments": [], "total_distance_km": 160.0, "total_duration_min": 0.0, "one_way_distance_km": 120.0},
+                           {"price": 1600, "source": "가상", "is_fallback": False}, _rules)
+    assert (_r.fuel_efficiency, _r.fuel_used_liters, _r.fuel_cost, _r.daily_allowance, _r.total_payment) == (8, 20.0, 32000, 30000, 62000)
+    assert calculate_daily_allowance(120, 1, 0) == 0 and calculate_daily_allowance(10, 1, 30000) == 0
     assert [build_voucher_rows("홍길동", team, _trips[:1])[0][0] for team in ("DR제조팀", "CsI팀", "솔루션 제조팀", "총무팀")] == [
         "(제)D여비교통비", "(제)C여비교통비", "(제)S여비교통비", "(판)여비교통비"]
     print("경비 계산 자체 검증 통과")

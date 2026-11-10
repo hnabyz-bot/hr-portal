@@ -146,17 +146,18 @@ def _fetch_gyeonggi_monthly_prices(product_code: str, month_start: date, month_e
     return result
 
 
-def get_gyeonggi_previous_month_avg_price(reference_date: date | None = None, fuel_type: str = "gasoline") -> dict[str, Any]:
+def get_gyeonggi_previous_month_avg_price(reference_date: date | None = None, fuel_type: str = "gasoline",
+                                           fixed_price: float | None = None) -> dict[str, Any]:
     """
     경기도 전월 평균 유가(휘발유/경유/LPG)를 Opinet에서 조회한다.
-    전기차는 Opinet 조회 없이 고정 단가를 사용한다.
+    전기차는 Opinet 조회 없이 고정 단가를 사용한다 — fixed_price(HR 이 산출 기준에서 정한 충전 단가), 없으면 app_config 값.
     """
     fuel_config = _get_fuel_config(fuel_type)
     fuel_label = str(fuel_config["label"])
     price_label = str(fuel_config["price_label"])
 
     if not app_config.uses_opinet_price(fuel_type):
-        fixed_price = float(fuel_config.get("fixed_price", fuel_config["default_price"]))
+        fixed_price = float(fixed_price if fixed_price is not None else fuel_config.get("fixed_price", fuel_config["default_price"]))
         return {
             "price": fixed_price,
             "fuel_type": fuel_type,

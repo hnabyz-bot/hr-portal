@@ -53,6 +53,8 @@ FUEL_TYPE_OPTIONS = {
     },
 }
 
+# 아래 연비 넷 · 전기차 fixed_price · DAILY_ALLOWANCE_AMOUNT 는 "처음 기준"이다 — HR 이 경비 산출기 화면의 산출 기준에서
+# 적용 시작일과 함께 바꾸면 그 값(DB trip_rules, backend/trip_rules.py)이 이긴다. 기준이 바뀌어도 여기는 고치지 않는다.
 FUEL_EFFICIENCY_UNDER_1800 = 7
 FUEL_EFFICIENCY_OVER_1800 = 6
 FUEL_EFFICIENCY_LPG = 6
