@@ -126,6 +126,7 @@ def apply_schema(path: str) -> sqlite3.Connection | None:
         "ev_files",
         "ev_pools",
         "ev_appeals",
+        "trip_rules",
     }
     missing = expected - tables
     _report(not missing, f"테이블 {len(expected)}개 생성", f"누락: {sorted(missing)}")
@@ -2068,6 +2069,40 @@ def check_eval_rules_migration() -> None:
             conn.close()
 
 
+def check_trip_rules_table() -> None:
+    """경비 산출기 산출 기준 (024 — 판 24): 적용 시작일마다 한 줄. 날짜 모양 · JSON 객체 · 바꾼 사람은 표가 막고, 숫자 모양은 backend/trip_rules.py clean 이 본다.
+    앞 절들과 섞이지 않게 따로 만든 새 DB 에서 본다. 사람은 가상(T060)."""
+    print("37. 경비 산출 기준 (024)")
+    with tempfile.TemporaryDirectory() as tmp:
+        try:
+            ver = init_db(str(Path(tmp) / "trip-24.db"))
+        except sqlite3.Error as exc:
+            _report(False, "새 DB 에 스키마 넣기", str(exc))
+            return
+        conn = connect(str(Path(tmp) / "trip-24.db"))
+        try:
+            _report(ver >= 24, f"판 번호가 24 이상 — {ver}", f"실제 {ver}")
+            conn.execute("INSERT INTO departments (code, name, level) VALUES ('DIV60', '가상본부', 'DIVISION')")
+            hr = conn.execute("INSERT INTO users (employee_no, name, email, department_id) VALUES ('T060', '가상인사', 't060@example.invalid',"
+                              " (SELECT id FROM departments WHERE code='DIV60'))").lastrowid
+            ins = "INSERT INTO trip_rules (start_date, data, updated_at, updated_by) VALUES (?, ?, '2026-11-10T01:00:00Z', ?)"
+            conn.execute(ins, ("2026-12-01", '{"under_1800": 8}', hr))
+            conn.execute(ins, ("2027-03-01", '{"under_1800": 9}', hr))
+            _report(conn.execute("SELECT COUNT(*) FROM trip_rules").fetchone()[0] == 2, "시작일마다 한 줄씩 저장")
+            pick = "SELECT start_date FROM trip_rules WHERE start_date <= ? ORDER BY start_date DESC LIMIT 1"
+            _report([conn.execute(pick, (d,)).fetchone() for d in ("2026-11-30", "2026-12-01", "2027-02-28", "2027-03-01")]
+                    == [None, ("2026-12-01",), ("2026-12-01",), ("2027-03-01",)], "출장일자에 맞는 줄 고르기 (글자 비교로 날짜 순서)")
+            for args, why in ((("2026-12-01", "{}", hr), "같은 시작일 두 번"), (("2027-02-30", "{}", hr), "없는 날"), (("2027-3-01", "{}", hr), "날짜 모양"),
+                              ((None, "{}", hr), "시작일 비어 있음"), (("2027-04-01", "[]", hr), "객체가 아닌 JSON"), (("2027-04-01", "{", hr), "깨진 JSON"),
+                              (("2027-04-01", "{}", 9999), "없는 바꾼 사람"), (("2027-04-01", "{}", None), "바꾼 사람 비어 있음")):
+                ok, msg = _rejects(conn, ins, args)
+                _report(ok, f"산출 기준 {why} 거부", msg)
+            conn.execute("DELETE FROM trip_rules WHERE start_date = '2027-03-01'")
+            _report(conn.execute("SELECT COUNT(*) FROM trip_rules").fetchone()[0] == 1, "잘못 넣은 줄은 지울 수 있음")
+        finally:
+            conn.close()
+
+
 def main() -> int:
     print("=" * 62)
     print("SQLite 스키마 적용 + 제약조건 동작 검사")
@@ -2104,6 +2139,7 @@ def main() -> int:
     check_cards_migration()
     check_eval_rules_tables()
     check_eval_rules_migration()
+    check_trip_rules_table()
 
     print("-" * 62)
     if _failures:

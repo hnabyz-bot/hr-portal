@@ -566,6 +566,24 @@
   .btn.exp-search:hover{ background:#F9D2C2; border-color:#F3BFAA; }
   .exp-total{ background:#FFF4DE; border:1px solid #FFD9A0; border-radius:12px; padding:22px 24px; text-align:center; margin-bottom:14px; }
   .exp-sub{ font-size:var(--fs-xs); color:var(--text-muted); margin-top:6px; line-height:1.5; }
+  /* 경비 산출 기준 (HR 만, 2026-11-10) — 숫자 칸 높이 · 폭을 맞추고 강조는 빨강(화면이 온통 파랗지 않게) */
+  .trp-head{ display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; }
+  .trp-grid{ display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; margin-top:12px; }
+  .trp-val{ background:var(--bg-page); border-radius:var(--radius); padding:10px 14px; min-height:62px; }
+  .trp-val span{ display:block; font-size:var(--fs-xs); color:var(--text-secondary); }
+  .trp-val b{ font-size:var(--fs-xl); font-weight:700; } .trp-val small{ margin-left:3px; font-size:var(--fs-xs); color:var(--text-muted); font-weight:600; }
+  .trp-sec{ border-top:1px solid var(--border); margin-top:16px; padding-top:14px; }
+  .trp-sec > b{ display:block; font-size:var(--fs-md); margin-bottom:8px; }
+  .trp-form .field{ margin:0; } .trp-form label{ white-space:nowrap; }
+  .trp-foot{ display:flex; align-items:center; justify-content:space-between; gap:8px; margin-top:10px; flex-wrap:wrap; }
+  .btn.trp-save{ background:var(--coral-text); border-color:var(--coral-text); color:#fff; }
+  .btn.trp-save:hover{ background:#A8323C; border-color:#A8323C; }
+  .trp-tbl{ width:100%; border-collapse:collapse; table-layout:fixed; font-size:var(--fs-sm); }
+  .trp-tbl td{ padding:8px 4px; border-top:1px solid var(--border); vertical-align:middle; }
+  .trp-tbl tr:first-child td{ border-top:0; color:var(--text-muted); font-size:var(--fs-xs); padding-top:0; }
+  .trp-tbl .badge{ display:inline-block; width:38px; text-align:center; margin-left:6px; padding:2px 0; }
+  .trp-tbl .trp-del{ color:var(--coral-text); cursor:pointer; font-weight:600; background:none; border:0; font:inherit; padding:0; }
+  @media (max-width:768px){ .trp-grid{ grid-template-columns:repeat(2,minmax(0,1fr)); } .trp-tbl col.trp-by, .trp-tbl td.trp-by{ display:none; } }
   .kpi-wrap{ overflow-x:auto; }
   .kpi-table{ min-width:1400px; table-layout:fixed; }
   .kpi-table th, .kpi-table td{ vertical-align:top; border:1px solid var(--border); padding:6px; white-space:pre-wrap; word-break:break-word; }
@@ -3015,7 +3033,7 @@ function expenseCalculator(){
   const today = new Date(Date.now() - new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);   // 한국 날짜 (toISOString만 쓰면 오전 9시 전엔 어제)
   expDestinations = [''];
   expLastResult = null;
-  setTimeout(()=>{ expRenderDestinations(); expVoucherRender(); }, 0);
+  setTimeout(()=>{ expRenderDestinations(); expVoucherRender(); if(AUTH.live && kpiIsHr()) trpLoad(); }, 0);
   return `
   <div class="card">
     <div class="exp-head">
@@ -3074,7 +3092,86 @@ function expenseCalculator(){
     <div id="expMessage" style="margin-top:12px;"></div>
     <div id="expResult" style="margin-top:14px;"></div>
   </div>
-  <div id="expVoucherWrap" style="margin-top:14px;"></div>`;
+  <div id="expVoucherWrap" style="margin-top:14px;"></div>
+  ${AUTH.live && kpiIsHr() ? '<div id="trpCard" style="margin-top:14px;"></div>' : ''}`;   // 산출 기준 — 실제 로그인 HR 에게만 (아래 trp*)
+}
+
+/* ---- 경비 산출 기준 (HR 만 — 2026-11-10 인사담당자: 연비가 바뀔 때마다 코드를 고치지 않게) ----
+   서버 backend/trip_rules.py(GET · POST /api/trip/rules). 적용 시작일마다 한 줄이고, 출장일자가 그날 이후인 계산부터 그 기준을 쓴다.
+   저장한 줄이 없으면 처음 기준(backend/app_config.py). 자주 묻는 질문의 연비 안내도 서버가 오늘 기준으로 채운다. 실제 로그인 HR 에게만 보인다. */
+const TRP_FIELDS = [
+  ['under_1800', '1,800cc 미만', 'km/L', 0.1], ['over_1800', '1,800cc 이상', 'km/L', 0.1], ['lpg', 'LPG', 'km/L', 0.1],
+  ['electric', '전기차', 'km/kWh', 0.1], ['charge_price', '전기차 충전 단가', '원/kWh', 0.1], ['allowance', '활동비', '원', 1],
+];
+const TRP = { d:null, msg:null, busy:false };
+const trpNum = v=>Number(v).toLocaleString('ko-KR', { maximumFractionDigits:1 });
+const trpVals = data=>TRP_FIELDS.map(([k])=>trpNum(data[k])).join(' · ');
+async function trpLoad(){
+  TRP.msg = null;   // 화면을 다시 열면 지난 저장 안내는 지운다
+  try{ const r = await fetch('/api/trip/rules'); if(!r.ok) throw new Error(r.status); TRP.d = await r.json(); }catch(_){ TRP.d = null; }
+  trpRender();
+}
+function trpCard(d){
+  if(!d) return `<div class="card"><div class="card-title">산출 기준</div><div class="list-sub">산출 기준을 불러오지 못했습니다. 화면을 다시 열어 주세요.</div></div>`;
+  const cur = d.current ? d.rules.find(r=>r.start===d.current).data : d.default, base = d.rules[0]?.data || d.default;
+  const row = r=>`<tr><td>${r.start}${r.start > d.today ? '<span class="badge warning">예정</span>' : r.start===d.current ? '<span class="badge danger">지금</span>' : ''}</td>
+      <td class="list-sub">${trpVals(r.data)}</td><td class="list-sub trp-by">${escapeHtml(r.by)} · ${+r.at.slice(5,7)}/${+r.at.slice(8,10)}</td>
+      <td style="text-align:right;"><button type="button" class="trp-del" onclick="trpRemove('${r.start}')">지우기</button></td></tr>`;
+  return `<div class="card">
+    <div class="trp-head"><div style="display:flex; align-items:center; gap:8px;"><span class="card-title" style="margin:0;">산출 기준</span><span class="badge danger">HR만 보여요</span></div>
+      <span class="list-sub">지금 적용 중 · <b style="color:var(--text-primary);">${d.current ? d.current + ' 출장부터' : '처음 기준'}</b></span></div>
+    <div class="trp-grid">${TRP_FIELDS.map(([k, label, unit])=>`<div class="trp-val"><span>${label}</span><b>${trpNum(cur[k])}</b><small>${unit}</small></div>`).join('')}</div>
+    <div class="trp-sec trp-form"><b>기준 바꾸기</b>
+      ${TRP.msg ? kpiNote(escapeHtml(TRP.msg.text), TRP.msg.type) : ''}
+      <div class="trp-grid" style="margin-top:0;">
+        <div class="field"><label for="trpStart">적용 시작일 (출장일자 기준)</label><input id="trpStart" type="date" value="${d.today}"></div>
+        ${TRP_FIELDS.map(([k, label, unit, step])=>`<div class="field"><label for="trp_${k}">${label} (${unit})</label><input id="trp_${k}" type="number" min="0" step="${step}" value="${base[k]}"></div>`).join('')}
+      </div>
+      <div class="trp-foot"><span class="list-sub">같은 시작일로 다시 저장하면 그 기준을 고쳐요. 시작일 전 출장은 예전 기준으로 계산해요.</span>
+        <span class="btn trp-save" onclick="trpSave()">저장</span></div></div>
+    <div class="trp-sec"><b>바뀐 기록</b>
+      <table class="trp-tbl"><colgroup><col style="width:24%"><col><col class="trp-by" style="width:22%"><col style="width:52px"></colgroup>
+        <tr><td>적용 시작일</td><td>${TRP_FIELDS.map(f=>f[1].replace('전기차 충전 단가', '충전 단가')).join(' · ')}</td><td class="trp-by">바꾼 사람 · 날</td><td></td></tr>
+        ${d.rules.map(row).join('')}
+        <tr><td>처음부터${d.current ? '' : '<span class="badge danger">지금</span>'}</td><td class="list-sub">${trpVals(d.default)}</td><td class="list-sub trp-by">처음 값</td><td></td></tr>
+      </table></div>
+  </div>`;
+}
+function trpRender(){ const el = document.getElementById('trpCard'); if(el) el.innerHTML = trpCard(TRP.d); }
+async function trpPost(url, body, ok){
+  if(TRP.busy) return; TRP.busy = true;
+  let r, j = {};
+  try{ r = await fetch(url, { method:'POST', headers:{ 'Content-Type':'application/json' }, body:JSON.stringify(body || {}) }); j = await r.json().catch(()=>({})); }catch(_){}
+  TRP.busy = false;
+  if(r && r.ok){ TRP.d = j; TRP.msg = { type:'success', text:ok }; } else TRP.msg = { type:'danger', text:j.error || '저장하지 못했습니다. 잠시 뒤 다시 해 주세요.' };
+  trpRender();
+}
+function trpSave(){
+  const start = document.getElementById('trpStart').value, data = {};
+  for(const [k] of TRP_FIELDS){ const v = document.getElementById('trp_' + k).value.trim(); data[k] = v==='' ? null : Number(v); }
+  trpPost('/api/trip/rules', { start, data }, `저장했어요. ${start} 출장부터 새 기준으로 계산해요.`);
+}
+function trpRemove(start){
+  if(!confirm(`${start}부터 적용하는 기준을 지울까요? 지우면 그 기간 출장은 바로 앞 기준으로 계산해요.`)) return;
+  trpPost(`/api/trip/rules/${start}/remove`, null, `${start} 기준을 지웠어요.`);
+}
+function trpSelfCheck(){
+  const ok = (c, m)=>{ if(!c) throw new Error('trpSelfCheck: ' + m); };
+  const def = { under_1800:7, over_1800:6, lpg:6, electric:4, charge_price:347.2, allowance:20000 };
+  const at = '2026-11-10T01:00:00Z', keep = { d:TRP.d, msg:TRP.msg };
+  const d = { today:'2026-11-10', current:'2026-11-01', default:def, rules:[
+    { start:'2026-12-01', data:{ ...def, under_1800:8, over_1800:7 }, at, by:'가상인사' }, { start:'2026-11-01', data:{ ...def, lpg:6.5 }, at, by:'가상인사' } ] };
+  const box = document.createElement('div'); box.innerHTML = trpCard(d);
+  const vals = [...box.querySelectorAll('.trp-val b')].map(b=>b.textContent), rows = [...box.querySelectorAll('.trp-tbl tr')].slice(1);
+  ok(vals.join('|')==='7|6|6.5|4|347.2|20,000', '지금 적용 중인 칸 = 오늘 기준(11/1 줄) · 활동비 쉼표');
+  ok(box.querySelector('#trp_under_1800').value==='8' && box.querySelector('#trpStart').value==='2026-11-10', '고칠 칸은 가장 늦은 줄(예정 포함)에서 · 시작일은 오늘');
+  ok(rows.length===3 && rows[0].textContent.includes('예정') && rows[1].textContent.includes('지금') && !rows[2].textContent.includes('지금') && rows[2].textContent.includes('처음 값'), '예정 · 지금 · 처음부터 줄');
+  ok(rows[0].querySelector('.trp-del') && !rows[2].querySelector('.trp-del'), '처음 기준은 지울 수 없다');
+  box.innerHTML = trpCard({ ...d, current:null, rules:[] });
+  ok([...box.querySelectorAll('.trp-tbl tr')].slice(1).length===1 && box.querySelector('.trp-tbl').textContent.includes('지금') && box.textContent.includes('처음 기준'), '저장한 줄이 없으면 처음 기준이 지금');
+  ok(trpCard(null).includes('불러오지 못했습니다'), '못 불러오면 안내 한 줄');
+  Object.assign(TRP, keep);
+  return 'trpSelfCheck 통과';
 }
 
 /* ---- 경비 산출기 로직 ---- */
@@ -15522,6 +15619,7 @@ const TOURS = {   // 단계: el = 가리킬 곳(여러 개면 묶어서, 배열�
     { el:'#expRegion, [onclick="expVoucherAdd()"]', title:'전표에 담기', body:'출장지역을 확인하고 누르면 아래 <b>회계전표 입력용 목록</b>에 쌓입니다. 여러 건을 담아 한 번에 처리할 수 있습니다.' },
     { el:'[onclick^="expDownload("]', title:'결과 내려받기', body:'<b>Excel · PDF · 출장신청서 PDF</b>로 받을 수 있습니다. 출장신청서에는 위에 적은 신청자 이름이 들어갑니다.' },
     { el:['[onclick="expVoucherCopy()"]', '#expVoucherWrap .card'], title:'표 복사 (엑셀 없이 바로 붙여넣기)', body:'경비를 계산해 <b>전표에 담기</b>를 누르면 여기에 쌓입니다. <b>표 복사</b>를 누른 다음 ERP 전표 입력창 첫 줄의 <b>계정과목 칸</b>을 누르고 붙여넣기(Ctrl+V) 하세요. 계정과목·금액 줄이 자동으로 채워집니다.' },
+    { el:'#trpCard .card', title:'산출 기준 (HR)', body:'연비 · 전기차 충전 단가 · 활동비가 바뀌면 여기서 <b>적용 시작일</b>과 함께 저장합니다. 출장일자가 그날 이후인 계산부터 새 기준이 쓰이고, 자주 묻는 질문의 연비 안내도 함께 바뀝니다.' },
   ]},
   pay:{ label:'급여명세서 보는 법', tab:'p1', steps:()=>[
     { el:'#pinBox', title:'비밀번호', body:'급여·계약 메뉴는 <b>비밀번호 6자리</b>를 넣어야 금액이 보여요. 처음 한 번은 본인이 정해요.' },

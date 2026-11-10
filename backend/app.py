@@ -26,6 +26,7 @@ import kpi
 import payslip
 import paypin
 import push
+import trip_rules
 import usage
 import withholding
 from services import opinet_api
@@ -57,6 +58,7 @@ app = Flask(__name__)
 # 하이웍스 로그인 + 모든 /api/* 세션 검사. 세션 없이 열린 곳은 /api/health 와 로그인 받는 곳뿐 (로그인 설계 §3)
 auth.register(app)
 app.register_blueprint(usage.bp)  # 사용 현황 (조직도 > 사용 현황, HR만 — 위 세션 검사)
+app.register_blueprint(trip_rules.bp)  # 경비 산출기 산출 기준 (연비 · 충전 단가 · 활동비 — HR 만 바꾼다)
 app.register_blueprint(game.bp)  # X-ray 특공대 기록·랭킹·선물 (로그인한 사람만 — 위 세션 검사)
 app.register_blueprint(kpi.bp)  # KPI 계획서 본인 쓰기 · HR 작성 기간 (로그인한 사람만 — 위 세션 검사)
 app.register_blueprint(evaluation.bp)  # 인사평가: 회차 · 시작(떠 두기) · HR 명단 일 (로그인한 사람만 — 위 세션 검사)
@@ -255,8 +257,9 @@ def calculate():
             direct_km = get_driving_route(departure, destinations[1])["distance_km"]
             route_data["one_way_distance_km"] = max(route_data["one_way_distance_km"], direct_km)
 
-    fuel_price_info = opinet_api.get_gyeonggi_previous_month_avg_price(trip_date, fuel_type)
-    result = build_trip_result(trip_date, departure, destinations, vehicle_type, fuel_type, route_data, fuel_price_info)
+    rules = trip_rules.for_day(trip_date)  # 출장일자에 맞는 산출 기준 (HR 이 적용 시작일과 함께 바꾼다)
+    fuel_price_info = opinet_api.get_gyeonggi_previous_month_avg_price(trip_date, fuel_type, rules["charge_price"])
+    result = build_trip_result(trip_date, departure, destinations, vehicle_type, fuel_type, route_data, fuel_price_info, rules)
 
     return jsonify(_result_to_json(result))
 
@@ -363,7 +366,8 @@ def rules_list_route():
 
 @app.get("/api/rules/faq")
 def rules_faq_route():
-    return jsonify({"answers": rules_search.faq_answers()})
+    rules = trip_rules.for_day(auth._today())  # 글 속 {연비1800미만} 같은 자리를 오늘 산출 기준으로 채운다
+    return jsonify({"answers": {k: trip_rules.fill(v, rules) for k, v in rules_search.faq_answers().items()}})
 
 
 @app.get("/api/rules/<rule_id>")

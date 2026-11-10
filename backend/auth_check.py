@@ -8926,6 +8926,86 @@ def check_usage(hr) -> None:
     ok(q("SELECT edit_from, edit_to, eval_start FROM kpi_years WHERE year = ?", year) == had, "끝나면 작성 기간 줄을 되돌린다")
 
 
+def check_trip_rules(hr) -> None:
+    """경비 산출 기준 (2026-11-10): HR 만 보고 바꾼다 · 적용 시작일에 맞춰 계산 · 자주 묻는 질문 글의 자리를 채운다 · 감사로그 전 · 후.
+    휘발유 유가는 Opinet 을 부르지 않게 잠깐 바꿔 둔다(전기차는 원래 Opinet 을 안 부른다)."""
+    import tempfile
+
+    import rules_config
+    import trip_rules
+    from services import opinet_api
+
+    print("경비 산출 기준")
+    emp, lead = app.test_client(), app.test_client()
+    login(emp, new_token("emp"))
+    login(lead, new_token("lead"))
+    get = lambda c: c.get("/api/trip/rules", base_url=BASE)  # noqa: E731
+    put = lambda c, start, data, headers=ORIGIN: c.post("/api/trip/rules", base_url=BASE, headers=headers, json={"start": start, "data": data})  # noqa: E731
+    rm = lambda c, start: c.post(f"/api/trip/rules/{start}/remove", base_url=BASE, headers=ORIGIN)  # noqa: E731
+    today = auth._today()
+    past, future = (today - timedelta(days=30)).isoformat(), (today + timedelta(days=20)).isoformat()
+    a = {"under_1800": 8, "over_1800": 7, "lpg": 6.5, "electric": 5, "charge_price": 300, "allowance": 30000}
+    b = {**a, "under_1800": 10, "electric": 4, "charge_price": 400.5, "allowance": 0}
+
+    ok(app.test_client().get("/api/trip/rules", base_url=BASE).status_code == 401, "로그인 없이 401")
+    ok(get(emp).status_code == 403 and get(lead).status_code == 403, "직원 · 팀장은 못 봄 (HR 만)")
+    d = get(hr).json
+    ok(d == {"today": today.isoformat(), "current": None, "rules": [], "default": trip_rules.DEFAULT}, "처음엔 저장한 줄 없음 — 처음 기준(app_config)으로 계산")
+    ok(put(emp, past, a).status_code == 403 and put(hr, past, a, headers={}).status_code == 403, "직원은 못 바꿈 · 포털 화면에서만 (Origin)")
+    for start, data, why in (("2019-12-31", a, "2020년 전"), ((today + timedelta(days=800)).isoformat(), a, "2년 넘게 뒤"), ("2026-02-30", a, "없는 날"),
+                             (past, {**a, "under_1800": 0}, "연비 0"), (past, {**a, "lpg": 6.55}, "소수 둘째 자리"), (past, {**a, "allowance": -1}, "활동비 음수"),
+                             (past, {k: v for k, v in a.items() if k != "lpg"}, "칸 빠짐"), (past, {**a, "lpg": "6"}, "숫자가 글자")):
+        ok(put(hr, start, data).status_code == 400, f"틀린 기준은 저장 안 함 ({why})")
+    ok(q("SELECT COUNT(*) FROM trip_rules") == [(0,)], "틀린 요청은 하나도 저장 안 됨")
+
+    r = put(hr, past, {**a, "under_1800": 9})
+    ok(r.status_code == 200 and r.json["current"] == past and r.json["rules"][0]["data"]["under_1800"] == 9 and r.json["rules"][0]["by"], "HR 이 저장 → 오늘부터 그 기준 (바꾼 사람 이름도)")
+    r = put(hr, past, a)
+    ok(r.status_code == 200 and len(r.json["rules"]) == 1 and r.json["rules"][0]["data"] == a, "같은 시작일로 다시 저장하면 그 줄을 고친다")
+    r = put(hr, future, b)
+    ok([x_["start"] for x_ in r.json["rules"]] == [future, past] and r.json["current"] == past, "앞날 시작일은 예정 — 늦은 시작일부터 · 오늘 기준은 그대로")
+    log = q("SELECT before_data, after_data, entity_id FROM audit_logs WHERE action = 'TRIP_RULES_SET' ORDER BY id")
+    ok(len(log) == 3 and log[0][0] is None and json.loads(log[1][0])["under_1800"] == 9 and json.loads(log[1][1]) == {"start": past, **a}
+       and log[2][2] == int(future.replace("-", "")), "감사로그 TRIP_RULES_SET (전 · 후 · 시작일 번호)")
+
+    real_price = opinet_api.get_gyeonggi_previous_month_avg_price
+    opinet_api.get_gyeonggi_previous_month_avg_price = lambda d, f, fixed=None: (
+        real_price(d, f, fixed) if f == "electric" else {"price": 1600.0, "source": "가상", "is_fallback": False})
+    calc = lambda day, fuel="gasoline", km=250: emp.post("/api/calculate", base_url=BASE, headers=ORIGIN, json={  # noqa: E731
+        "trip_date": day, "vehicle_type": "under_1800", "fuel_type": fuel, "manual_distance": {"total_km": km, "destination_count": 1}}).json
+    try:
+        r = calc((today - timedelta(days=31)).isoformat())
+        ok((r["fuel_efficiency"], r["daily_allowance"]) == (7, 20000), "시작일 전 출장은 처음 기준 (연비 7 · 활동비 2만 원)")
+        r = calc(past)
+        ok((r["fuel_efficiency"], r["fuel_used_liters"], r["fuel_cost"], r["daily_allowance"], r["total_payment"]) == (8, 31.25, 50000, 30000, 80000),
+           "시작일 당일부터 새 기준 (250km ÷ 8 × 1,600원 + 활동비 3만 원)")
+        r = calc(past, "electric")
+        ok((r["fuel_efficiency"], r["fuel_price"], r["fuel_cost"]) == (5, 300, 15000) and "300.0원" in r["fuel_price_source"], "전기차 연비 · 충전 단가도 그 기준")
+        r = calc(future, "electric")
+        ok((r["fuel_efficiency"], r["fuel_price"], r["daily_allowance"]) == (4, 400.5, 0), "예정 시작일 뒤 출장은 그 기준 (활동비 0원도)")
+    finally:
+        opinet_api.get_gyeonggi_previous_month_avg_price = real_price
+
+    real_dir = rules_config.REGULATIONS_DIR
+    with tempfile.TemporaryDirectory() as tmp:
+        with open(os.path.join(tmp, "faq.json"), "w", encoding="utf-8") as f:
+            json.dump({"travel-15": "1L에 {연비1800미만}km\n140 ÷ {연비1800미만} = {140÷연비1800미만}L · 활동비 {활동비}원"}, f, ensure_ascii=False)
+        rules_config.REGULATIONS_DIR = tmp
+        try:
+            r = emp.get("/api/rules/faq", base_url=BASE).json
+        finally:
+            rules_config.REGULATIONS_DIR = real_dir
+    ok(r["answers"]["travel-15"] == "1L에 8km\n140 ÷ 8 = 17.5L · 활동비 30,000원", "자주 묻는 질문 글의 {자리}는 오늘 기준으로 채움 (예시 계산까지)")
+
+    ok(rm(emp, future).status_code == 403, "지우기도 HR 만")
+    ok(rm(hr, "2027-01-01").status_code == 404, "없는 줄 지우기는 404")
+    r = rm(hr, future)
+    ok(r.status_code == 200 and [x_["start"] for x_ in r.json["rules"]] == [past], "잘못 넣은 줄 지우기")
+    log = q("SELECT before_data, after_data FROM audit_logs WHERE action = 'TRIP_RULES_REMOVED'")
+    ok(len(log) == 1 and json.loads(log[0][0]) == {"start": future, **b} and log[0][1] is None, "감사로그 TRIP_RULES_REMOVED (지운 줄)")
+    x("DELETE FROM trip_rules")
+
+
 def main() -> int:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     seed()
@@ -9187,6 +9267,7 @@ def main() -> int:
     check_pay_pin(hr)
     check_cards(hr)
     check_usage(hr)
+    check_trip_rules(hr)
 
     acts = {r[0] for r in q("SELECT action FROM audit_logs")}
     ok({"LOGIN", "HR_BOOTSTRAP"} <= acts, "감사로그 LOGIN 이 남음")
