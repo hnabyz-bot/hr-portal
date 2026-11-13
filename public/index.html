@@ -725,23 +725,24 @@
   .us-bar > b{ font-size:var(--fs-xs); }
   .us-tbl td small{ display:block; color:var(--text-muted); }
   .us-no{ color:var(--danger); }
-  /* ---------- 근태 현황 (2026-11-13 인사담당자 결정 — "매일 쌓여도 지저분하지 않게") ----------
-     한 번에 하루치 · 챙길 것 두 칸 · 숫자 한 줄 · 팀은 접힌 한 줄 · 펼치면 특이사항 있는 사람만. 화면 attContent · 검증 attSelfCheck() */
+  /* ---------- 근태 현황 (2026-11-13 인사담당자 결정 — "매일 쌓여도 지저분하지 않게", 같은 날 "좌우로 흩어지지 않게 칸으로") ----------
+     한 번에 하루치 · 챙길 것 세 칸 · 숫자 한 줄 · 팀은 칸으로 나눈 한 줄 · 펼치면 특이사항 있는 사람만. 글자는 13~14px, 보조 글자도 진하게. 화면 attContent · 검증 attSelfCheck() */
   .at-head{ display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; margin-bottom:14px; }
   .at-date{ display:flex; align-items:center; gap:6px; }
-  .at-date > b{ min-width:128px; padding:0 4px; font-size:var(--fs-lg); text-align:center; white-space:nowrap; }
+  .at-date > b{ min-width:132px; padding:0 4px; font-size:var(--fs-lg); text-align:center; white-space:nowrap; }
   .at-nav{ position:relative; width:32px; height:32px; flex:none; display:inline-flex; align-items:center; justify-content:center; padding:0; border:1px solid var(--border); border-radius:var(--radius-sm); background:var(--surface); color:var(--text-secondary); cursor:pointer; }
   .at-nav:hover:not(:disabled){ border-color:var(--sky); color:var(--accent); }
   .at-nav:disabled{ opacity:.35; cursor:default; }
   .at-nav svg{ width:16px; height:16px; }
   .at-cal{ position:relative; display:inline-flex; }
   .at-cal input{ position:absolute; inset:0; width:100%; height:100%; opacity:0; pointer-events:none; }
-  .at-meta{ font-size:var(--fs-xs); color:var(--text-muted); }
+  .at-meta{ font-size:var(--fs-sm); color:var(--text-secondary); }
   .at-focus{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; margin-bottom:12px; }
+  .at-focus.three{ grid-template-columns:repeat(3,minmax(0,1fr)); }
   .at-focus button{ min-width:0; padding:12px 14px; border:1px solid; border-radius:var(--radius); font:inherit; text-align:left; cursor:pointer; }
-  .at-focus span{ display:block; margin-bottom:2px; font-size:var(--fs-xs); font-weight:600; }
+  .at-focus span{ display:block; margin-bottom:2px; font-size:var(--fs-sm); font-weight:600; }
   .at-focus b{ font-size:var(--fs-xl); font-weight:700; letter-spacing:-.01em; }
-  .at-focus b small{ margin-left:4px; font-size:var(--fs-xs); font-weight:500; }
+  .at-focus b small{ margin-left:4px; font-size:var(--fs-sm); font-weight:500; }
   .at-focus .danger{ background:var(--bg-danger); border-color:#F6CFD2; color:var(--danger); }
   .at-focus .warn{ background:var(--bg-warning); border-color:#F4CDBE; color:var(--warning); }
   .at-focus .info{ background:var(--accent-soft); border-color:var(--accent-light); color:var(--accent); }
@@ -749,83 +750,90 @@
   .at-nums{ display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); margin-bottom:14px; border:1px solid var(--border); border-radius:var(--radius); text-align:center; }
   .at-nums div{ padding:8px 2px; }
   .at-nums div + div{ border-left:1px solid var(--border); }
-  .at-nums span{ display:block; font-size:var(--fs-xs); color:var(--text-muted); }
+  .at-nums span{ display:block; font-size:var(--fs-sm); color:var(--text-secondary); }
   .at-nums b{ font-size:var(--fs-lg); }
+  /* 팀 목록 = 칸 (팀 · 인원 · 출근 · 휴가 · 미인식·결근 · 지각 · 주 52시간) — 0 은 흐린 – */
   .at-teams{ border:1px solid var(--border); border-radius:var(--radius); overflow:hidden; }
+  .at-thead, .at-row{ display:grid; grid-template-columns:18px minmax(0,1.6fr) repeat(5,minmax(0,1fr)) minmax(0,1.3fr); gap:6px; align-items:center; padding:10px 14px; }
+  .at-thead{ background:#F4F8FB; border-bottom:1px solid var(--border); font-size:var(--fs-sm); font-weight:600; color:var(--text-secondary); }
+  .at-thead span, .at-row .c{ text-align:center; } .at-thead span:nth-child(2){ text-align:left; }
   .at-team + .at-team{ border-top:1px solid var(--border); }
-  .at-row{ display:flex; align-items:center; gap:8px; width:100%; padding:11px 14px; border:0; background:none; font:inherit; text-align:left; color:var(--text-primary); cursor:pointer; }
+  .at-row{ width:100%; border:0; background:none; font:inherit; font-size:var(--fs-md); text-align:left; color:var(--text-primary); cursor:pointer; }
   .at-row:hover{ background:var(--accent-soft); }
-  .at-row svg{ width:16px; height:16px; flex:none; color:var(--text-muted); transition:transform .15s var(--ease); }
-  .at-row .nm{ min-width:104px; font-weight:600; white-space:nowrap; }
-  .at-row .tags{ display:flex; flex-wrap:wrap; justify-content:flex-end; gap:4px; }
-  .at-row .ct{ flex:1; font-size:var(--fs-xs); color:var(--text-muted); }
+  .at-row svg{ width:16px; height:16px; color:var(--text-muted); transition:transform .15s var(--ease); }
+  .at-row .nm{ font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .at-row .c{ font-variant-numeric:tabular-nums; white-space:nowrap; }
+  .at-row .c.z{ color:#C4CDD8; } .at-row .c.info{ color:var(--accent); font-weight:700; } .at-row .c.danger{ color:var(--danger); font-weight:700; } .at-row .c.warn{ color:var(--warning); font-weight:700; }
   .at-team.open .at-row{ background:#F7FBFE; }
   .at-team.open .at-row svg{ transform:rotate(90deg); color:var(--accent); }
   .at-team.open .at-row .nm{ color:var(--accent); }
-  .at-tag{ padding:1px 8px; border-radius:999px; font-size:11px; font-weight:600; white-space:nowrap; }
+  .at-tag{ padding:1px 8px; border-radius:999px; font-size:var(--fs-xs); font-weight:600; white-space:nowrap; }
   .at-tag.danger{ background:var(--bg-danger); color:var(--danger); }
   .at-tag.warn{ background:var(--bg-warning); color:var(--warning); }
   .at-tag.info{ background:var(--accent-soft); color:var(--accent); }
   .at-body{ padding:2px 14px 12px 38px; background:#F7FBFE; }
-  .at-p{ display:grid; grid-template-columns:minmax(0,1.1fr) minmax(0,1fr) 104px minmax(0,1.6fr); gap:10px; align-items:center; padding:7px 0; border-top:1px solid #E6EEF4; font-size:var(--fs-sm); }
-  .at-p.h{ padding-top:4px; border-top:0; font-size:var(--fs-xs); color:var(--text-muted); }
-  .at-p .nm small{ margin-left:4px; font-size:var(--fs-xs); color:var(--text-muted); }
-  .at-st{ font-size:var(--fs-xs); font-weight:600; color:var(--text-secondary); }
+  .at-p{ display:grid; grid-template-columns:minmax(0,1.1fr) minmax(0,1fr) 116px minmax(0,1.6fr); gap:10px; align-items:center; padding:8px 0; border-top:1px solid #E6EEF4; font-size:var(--fs-md); }
+  .at-p.h{ padding-top:4px; border-top:0; font-size:var(--fs-sm); font-weight:600; color:var(--text-secondary); }
+  .at-p .nm small{ margin-left:4px; font-size:var(--fs-sm); color:var(--text-secondary); }
+  .at-st{ font-size:var(--fs-sm); font-weight:600; color:var(--text-secondary); }
   .at-st.danger{ color:var(--danger); } .at-st.warn{ color:var(--warning); } .at-st.info{ color:var(--accent); }
-  .at-tm{ font-size:var(--fs-xs); color:var(--text-secondary); font-variant-numeric:tabular-nums; white-space:nowrap; }
+  .at-tm{ font-size:var(--fs-sm); color:var(--text-primary); font-variant-numeric:tabular-nums; white-space:nowrap; }
   .at-wk{ display:flex; align-items:center; gap:8px; min-width:0; }
-  .at-wk i{ flex:1; height:6px; border-radius:3px; background:#E1E9F0; overflow:hidden; }
-  .at-wk i b{ display:block; height:100%; border-radius:3px; background:var(--sky-mid); }
+  .at-wk i{ flex:1; height:7px; border-radius:4px; background:#E1E9F0; overflow:hidden; }
+  .at-wk i b{ display:block; height:100%; border-radius:4px; background:var(--sky-mid); }
   .at-wk i b.warn{ background:#E08A5B; } .at-wk i b.over{ background:var(--alert); }
-  .at-wk em{ width:46px; font-style:normal; font-size:var(--fs-xs); text-align:right; font-variant-numeric:tabular-nums; }
+  .at-wk em{ width:50px; font-style:normal; font-size:var(--fs-sm); text-align:right; font-variant-numeric:tabular-nums; }
   .at-wk em.warn{ color:var(--warning); font-weight:700; } .at-wk em.over{ color:var(--danger); font-weight:700; }
-  .at-more{ margin-top:8px; padding:0; border:0; background:none; font:inherit; font-size:var(--fs-xs); color:var(--accent); cursor:pointer; }
-  .at-none{ padding:8px 0 2px; font-size:var(--fs-xs); color:var(--text-muted); }
-  .at-legend{ display:flex; flex-wrap:wrap; gap:6px 14px; margin-top:10px; font-size:var(--fs-xs); color:var(--text-muted); }
-  .at-legend i{ display:inline-block; width:12px; height:6px; margin-right:5px; border-radius:3px; vertical-align:middle; }
-  .at-focus.three{ grid-template-columns:repeat(3,minmax(0,1fr)); }
+  .at-more{ margin-top:8px; padding:0; border:0; background:none; font:inherit; font-size:var(--fs-sm); color:var(--accent); cursor:pointer; }
+  .at-none{ padding:8px 0 2px; font-size:var(--fs-sm); color:var(--text-secondary); }
+  .at-legend{ display:flex; flex-wrap:wrap; gap:6px 14px; margin-top:10px; font-size:var(--fs-sm); color:var(--text-secondary); }
+  .at-legend i{ display:inline-block; width:12px; height:7px; margin-right:5px; border-radius:4px; vertical-align:middle; }
   /* 서류 확인 탭 (2단계) */
-  .at-hint{ margin-left:auto; font-size:var(--fs-xs); color:var(--text-muted); }
+  .at-hint{ margin-left:auto; font-size:var(--fs-sm); color:var(--text-secondary); }
   .at-chk{ display:flex; flex-direction:column; gap:6px; }
-  .at-c{ display:grid; grid-template-columns:96px minmax(0,1.4fr) minmax(0,1fr) 220px; gap:10px; align-items:center; padding:9px 12px; border:1px solid var(--border); border-radius:var(--radius); background:var(--surface); }
+  .at-c{ display:grid; grid-template-columns:104px minmax(0,1.4fr) minmax(0,1fr) 230px; gap:10px; align-items:center; padding:10px 14px; border:1px solid var(--border); border-radius:var(--radius); background:var(--surface); font-size:var(--fs-md); }
   .at-c.late{ background:var(--bg-danger); border-color:#F6CFD2; }
   .at-c.done{ background:#F7F9FB; }
-  .at-c .dt{ font-size:var(--fs-xs); color:var(--text-secondary); white-space:nowrap; }
-  .at-c .who b{ font-weight:600; } .at-c .who small{ margin-left:4px; font-size:var(--fs-xs); color:var(--text-muted); }
-  .at-c .who div{ font-size:var(--fs-xs); color:var(--text-secondary); }
-  .at-c .st{ font-size:var(--fs-xs); color:var(--text-secondary); }
+  .at-c .dt{ font-size:var(--fs-sm); color:var(--text-primary); white-space:nowrap; }
+  .at-c .who b{ font-weight:700; } .at-c .who small{ margin-left:4px; font-size:var(--fs-sm); color:var(--text-secondary); }
+  .at-c .who div{ font-size:var(--fs-sm); color:var(--text-secondary); }
+  .at-c .st{ font-size:var(--fs-sm); color:var(--text-secondary); }
   .at-c.late .dt, .at-c.late .who, .at-c.late .who div, .at-c.late .st{ color:var(--danger); }
   .at-c.late .st{ font-weight:700; }
-  .at-c.done .who, .at-c.done .st{ color:var(--text-muted); } .at-c.done .st b{ color:var(--success); font-weight:600; }
+  .at-c.done .who, .at-c.done .st{ color:var(--text-secondary); } .at-c.done .st b{ color:var(--success); font-weight:600; }
   .at-c .bt{ display:flex; gap:4px; justify-content:flex-end; flex-wrap:wrap; }
-  .at-c svg{ width:12px; height:12px; vertical-align:-1px; flex:none; }
-  .at-foot{ margin-top:10px; font-size:var(--fs-xs); color:var(--text-muted); }
+  .at-c svg{ width:13px; height:13px; vertical-align:-2px; flex:none; }
+  .at-foot{ margin-top:10px; font-size:var(--fs-sm); color:var(--text-secondary); }
   /* 직원 본인 알림 카드 (오늘 할 일 창 맨 위) */
   .at-mine{ display:flex; flex-direction:column; gap:8px; margin:0 0 10px; }
   .at-mc{ padding:10px 12px; border:1px solid #F6CFD2; border-radius:var(--radius); background:var(--bg-danger); color:var(--danger); }
   .at-mc > b{ display:flex; align-items:center; gap:6px; font-weight:600; } .at-mc > b svg{ width:13px; height:13px; flex:none; }
-  .at-mc p{ margin:4px 0 8px; font-size:var(--fs-xs); } .at-mc p b{ font-weight:700; }
+  .at-mc p{ margin:4px 0 8px; font-size:var(--fs-sm); } .at-mc p b{ font-weight:700; }
   .at-mc .bts{ display:flex; gap:6px; flex-wrap:wrap; }
   .at-mc.self{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; border-color:#E1E6ED; background:#F7F9FB; color:var(--text-secondary); }
   .at-mc.self > b{ flex:1; }
   /* 월 · 연 집계 탭 */
-  .at-sum{ display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:8px; margin-bottom:12px; }
-  .at-sum div{ padding:8px 12px; border-radius:var(--radius); background:#F4F6F9; }
-  .at-sum span{ display:block; font-size:var(--fs-xs); color:var(--text-muted); } .at-sum b{ font-size:var(--fs-sm); }
-  .at-st tbody tr.p td{ cursor:pointer; }
-  .at-st td.n, .at-st th.n{ text-align:right; font-variant-numeric:tabular-nums; }
-  .at-st td.z{ color:var(--text-muted); }
-  .at-st tr.d td{ background:#F7FBFE; font-size:var(--fs-xs); color:var(--text-secondary); }
+  .at-stat{ font-size:var(--fs-md); }
+  .at-stat tbody tr.p td{ cursor:pointer; }
+  .at-stat td.n, .at-stat th.n{ text-align:right; font-variant-numeric:tabular-nums; }
+  .at-stat td.z{ color:#C4CDD8; }
+  .at-stat tr.d td{ background:#F7FBFE; font-size:var(--fs-sm); color:var(--text-secondary); }
+  /* 내 근태 탭 */
+  .at-my{ border:1px solid var(--border); border-radius:var(--radius); overflow:hidden; }
+  .at-my > div{ display:grid; grid-template-columns:110px 80px 80px minmax(0,1fr) minmax(0,1.3fr); gap:8px; align-items:center; padding:9px 14px; font-size:var(--fs-md); border-top:1px solid #E6EEF4; }
+  .at-my > div:first-child{ border-top:0; background:#F4F8FB; font-size:var(--fs-sm); font-weight:600; color:var(--text-secondary); }
+  .at-my > div.bad{ background:var(--bg-danger); }
+  .at-my .tm{ font-variant-numeric:tabular-nums; }
+  .at-my .doc{ font-size:var(--fs-sm); } .at-my .doc.open{ color:var(--danger); font-weight:600; } .at-my .doc.self{ color:var(--accent); } .at-my .doc.done{ color:var(--success); }
+  .at-my .z{ color:#C4CDD8; }
   @media (max-width:768px){
     .at-date > b{ min-width:0; flex:1; }
     .at-head > .at-date{ width:100%; }
     .at-focus b{ font-size:var(--fs-lg); }
     .at-nums b{ font-size:var(--fs-md); }
-    .at-row .ct{ display:none; }
-    .at-row{ flex-wrap:wrap; row-gap:6px; }
-    .at-row .nm{ min-width:0; flex:1; }
-    .at-row .tags{ width:100%; justify-content:flex-start; padding-left:24px; }
-    .at-row .tags:empty{ display:none; }
+    .at-thead, .at-row{ grid-template-columns:16px minmax(0,1.5fr) repeat(3,minmax(0,1fr)) minmax(0,1.2fr); gap:4px; padding:10px; }
+    .at-thead span:nth-child(3), .at-thead span:nth-child(4), .at-row .c.n1, .at-row .c.n2{ display:none; }   /* 휴대폰: 인원 · 출근 칸은 숫자 한 줄(위)에 있어 뺀다 */
+    .at-thead{ font-size:var(--fs-xs); }
     .at-body{ padding:2px 12px 12px; }
     .at-p{ grid-template-columns:minmax(0,1fr) minmax(0,1fr); row-gap:4px; }
     .at-p.h{ display:none; }
@@ -836,6 +844,9 @@
     .at-c{ grid-template-columns:minmax(0,1fr) auto; row-gap:6px; }
     .at-c .dt{ grid-column:1; } .at-c .st{ grid-column:2; grid-row:1; text-align:right; }
     .at-c .who{ grid-column:1 / -1; } .at-c .bt{ grid-column:1 / -1; justify-content:flex-start; }
+    .at-my > div{ grid-template-columns:76px 52px 52px minmax(0,1fr); padding:9px 10px; font-size:var(--fs-sm); }
+    .at-my .doc{ grid-column:1 / -1; }
+    .at-my > div:first-child .doc{ display:none; }
   }
   .ms-tbl{ table-layout:fixed; min-width:918px; }   /* 칸 폭 합 728 + 이름 칸 190 */
   .ms-tbl th{ vertical-align:bottom; padding:8px 10px 9px; line-height:1.35; }
@@ -15545,18 +15556,19 @@ function attContent(){
       ${tile(s.late + s.miss + s.absent ? 'info' : 'calm', '지각 · 미인식', `${s.late} · ${s.miss}명`, s.absent ? `· 결근 ${s.absent}` : '', 'bad')}
     </div>
     <div class="at-nums">${num('재직', s.total)}${num('출근', s.work)}${num('휴가·휴직', s.leave)}${num('지각', s.late)}${num('미인식', s.miss)}</div>
-    <div class="at-teams" id="atTeams">${d.teams.map(attTeam).join('')}</div>
+    <div class="at-teams" id="atTeams"><div class="at-thead" aria-hidden="true"><span></span><span>팀</span><span>인원</span><span>출근</span><span>휴가</span><span>미인식·결근</span><span>지각</span><span>주 52시간</span></div>${d.teams.map(attTeam).join('')}</div>
     <div class="at-legend"><span><i style="background:var(--sky-mid)"></i>${AT_WARN}시간 미만</span><span><i style="background:#E08A5B"></i>주의 ${AT_WARN}시간~</span><span><i style="background:var(--alert)"></i>초과 ${AT_OVER}시간 넘음</span><span>이번 주 누적은 출퇴근 기록으로 계산한 추정치입니다</span></div>
   </div>`;
 }
 
-function attTeam(t, i){
+function attTeam(t, i){   // 팀 한 줄 = 칸 (팀 · 인원 · 출근 · 휴가 · 미인식·결근 · 지각 · 주 52시간) — 0 은 흐린 – (2026-11-13 인사담당자 "칸에 기입되면 깔끔")
   const ms = t.members, n = fn=>ms.filter(fn).length, open = AT.open.has(i);
-  const late = n(m=>AT_BAD[m.status]==='warn'), bad = n(m=>AT_BAD[m.status]==='danger'), leave = n(m=>attTone(m.status)==='info');
+  const leave = n(m=>attTone(m.status)==='info'), bad = n(m=>AT_BAD[m.status]==='danger'), late = n(m=>m.status==='지각');
   const warn = n(m=>attLevel(m)==='warn'), over = n(attOver);
-  const tag = (cls, label, v)=>v ? `<span class="at-tag ${cls}">${label} ${v}</span>` : '';
+  const cell = (v, cls)=>`<span class="c ${v ? cls : 'z'}">${v || '–'}</span>`;
+  const h52 = over ? `<span class="c danger">초과 ${over}${warn ? ` · 주의 ${warn}` : ''}</span>` : warn ? `<span class="c warn">주의 ${warn}</span>` : '<span class="c z">–</span>';
   const head = `<button type="button" class="at-row" aria-expanded="${open}" onclick="attToggle(${i})">${icon('chevR')}<span class="nm">${escapeHtml(t.team)}</span>
-    <span class="ct">${ms.length}명 · 출근 ${+t.summary?.['실근무'] || 0}</span><span class="tags">${tag('info', '휴가', leave)}${tag('warn', '지각', late)}${tag('danger', '미인식·결근', bad)}${tag('warn', '52h 주의', warn)}${tag('danger', '52h 초과', over)}</span></button>`;
+    <span class="c n1">${ms.length}</span><span class="c n2">${+t.summary?.['실근무'] || 0}</span>${cell(leave, 'info')}${cell(bad, 'danger')}${cell(late, 'warn')}${h52}</button>`;
   if(!open) return `<div class="at-team">${head}</div>`;
   const all = AT.all.has(i), shown = ms.filter(attShown).sort((a, b)=>attRank(a) - attRank(b)), rest = ms.length - shown.length;
   const rows = (all ? [...shown, ...ms.filter(m=>!attShown(m))] : shown).map(attPerson).join('');
@@ -15628,7 +15640,9 @@ function attSelfCheck(){   // 브라우저 콘솔에서 attSelfCheck() 실행 �
     let h = attContent();
     ok(h.includes('11월 11일 (수)') && h.includes("attGo('2026-11-10')") && h.includes("attGo('2026-11-12')") && h.includes('가상본부 · 7명'), '날짜 · 앞뒤 날 단추 · 범위와 인원');
     ok(h.includes('주의 1') && h.includes('· 초과 1') && h.includes('1 · 1명') && !h.includes('가상1') && h.includes('서류 확인'), '챙길 것 세 칸 · 처음엔 팀이 접혀 사람이 안 보인다');
-    ok(h.includes('휴가 1') && h.includes('지각 1') && h.includes('미인식·결근 1') && h.includes('52h 주의 1') && h.includes('52h 초과 1'), '접힌 팀 줄의 표시');
+    const row0 = h.slice(h.indexOf('class="at-row"'), h.indexOf('</button>', h.indexOf('class="at-row"')));
+    ok(h.includes('<span>미인식·결근</span>') && row0.includes('<span class="c info">1</span>') && row0.includes('<span class="c danger">1</span>') && row0.includes('<span class="c warn">1</span>') && row0.includes('초과 1 · 주의 1'), '팀 줄 = 칸 (휴가 · 미인식·결근 · 지각 · 주 52시간)');
+    ok(h.slice(h.lastIndexOf('class="at-row"')).includes('<span class="c z">–</span>'), '0 은 흐린 –');
     AT.open.add(0); h = attContent();
     ok(h.includes('가상2') && h.includes('지각 12분') && h.includes('가상5') && !h.includes('가상1') && h.includes('그 외 1명 접힘'), '펼치면 특이사항만 · 정상 근무자는 접힘');
     ok(h.indexOf('가상4') < h.indexOf('가상3') && h.indexOf('가상3') < h.indexOf('가상5'), '순서: 챙길 상태 → 45시간 이상 → 휴가');
@@ -15659,11 +15673,18 @@ function attSelfCheck(){   // 브라우저 콘솔에서 attSelfCheck() 실행 �
     Object.assign(AT_S, { state:'ok', period:'2026-11', more:false, open:'', d:{ period:'2026-11', days:3, scope:'가상본부', teams:[{ team:'가상A팀', late:2, miss:1 }],
       people:Array.from({ length:12 }, (_, k)=>({ name:'가상' + k, position:'프로', team:'가상A팀', late:k ? 0 : 2, lateMin:k ? 0 : 12, miss:1, open:k ? 0 : 1, over52:0, maxWeek:40, days:[{ date:'2026-11-04', kind:'miss', min:0 }] })) } });
     AT.dates = ['2026-11-12', '2026-10-30']; h = attStats();
-    ok(h.includes('2026년 11월') && h.includes('지각 2 · 미인식 1') && h.includes('더 보기 (2명)') && !h.includes('가상11') && h.includes('1건'), '집계: 기간 · 팀 합 · 상위 10 + 더 보기 · 서류 미확인');
-    AT_S.open = '가상A팀|가상0'; ok(attStats().includes('11/4 미인식'), '이름을 누르면 날짜별');
+    ok(h.includes('2026년 11월') && !h.includes('지각 2 · 미인식 1') && h.includes('더 보기 (2명)') && !h.includes('가상11') && h.includes('1건'), '집계: 기간 · 부서별 칸 없음 · 상위 10 + 더 보기 · 서류 미확인');
+    AT_S.open = '가상A팀|가상0'; ok(attStats().includes('11/4 미인식') && !attStats().includes('at-sum'), '이름을 누르면 날짜별 · 부서별 칸 없음');
+    Object.assign(AT_MY, { state:'ok', period:'2026-11', d:{ period:'2026-11', months:['2026-11', '2026-10'], sum:{ late:1, lateMin:8, miss:1, leave:1.5, open:1 },
+      rows:[{ date:'2026-11-12', team:'가상A팀', checkIn:'08:51', checkOut:'-', status:'미인식', lateMinutes:0, doc:{ doc:'미인식 소명서', state:'open' } },
+            { date:'2026-11-10', team:'가상A팀', checkIn:'09:08', checkOut:'18:30', status:'지각', lateMinutes:8, doc:{ doc:'지각 소명서', state:'done' } },
+            { date:'2026-11-09', team:'가상A팀', checkIn:'-', checkOut:'-', status:'연차', lateMinutes:0, doc:null }] } });
+    h = attMy();
+    ok(h.includes('2026년 11월') && h.includes('1회 · 8분') && h.includes('1.5일') && h.includes('미인식 소명서 · 확인 전') && h.includes('지각 소명서 · 확인됨') && h.includes('지각 8분')
+       && (h.match(/class="bad"/g) || []).length===2 && !/주간|52/.test(h) && h.includes("attMyGo('2026-10')"), '내 근태: 요약 · 날짜별 · 서류 상태 · 주간 시간 없음 · 지난 달');
   } finally {
     Object.assign(AT, keep); Object.assign(AUTH, { live, me }); currentNav = nav; currentTab = tab;
-    Object.assign(AT_C, { state:'', d:null, f:'mine' }); Object.assign(AT_S, { state:'', period:'', d:null, more:false, open:'' });
+    Object.assign(AT_C, { state:'', d:null, f:'mine' }); Object.assign(AT_S, { state:'', period:'', d:null, more:false, open:'' }); Object.assign(AT_MY, { state:'', period:'', d:null });
   }
   return 'attSelfCheck 통과';
 }
@@ -15730,7 +15751,7 @@ function attChkRow(x){
 }
 async function attChecksLoad(){
   AT_C.state = 'loading';
-  try { const r = await fetch('/api/attendance/checks'); if(!r.ok) throw new Error(r.status); AT_C.d = await r.json(); AT_C.state = 'ok'; }
+  try { const r = await fetch('/api/attendance/checks'); if(!r.ok) throw new Error(r.status); if(!AT_C.d && AUTH.me?.is_hr) AT_C.f = 'all'; AT_C.d = await r.json(); AT_C.state = 'ok'; }   // HR 은 처음에 '전체' (2026-11-13 인사담당자)
   catch(e){ AT_C.state = 'err'; }
   if(currentNav.id==='att') renderContent();
 }
@@ -15764,7 +15785,7 @@ function attStats(){   // 월 · 연 집계 탭
   }
   const d = AT_S.d, isYear = AT_S.period.length===4, opts = isYear ? years : months;
   const label = v=>v.length===4 ? `${v}년` : `${v.slice(0, 4)}년 ${+v.slice(5)}월`;
-  const rows = AT_S.more ? d.people : d.people.slice(0, 10), z = v=>v ? `<td class="n">${v}</td>` : '<td class="n z">0</td>';
+  const rows = AT_S.more ? d.people : d.people.slice(0, 10), z = v=>v ? `<td class="n">${v}</td>` : '<td class="n z">–</td>';
   return `<div class="card">
     <div class="ms-bar">
       <button type="button" class="ms-chip ${!isYear ? 'on' : ''}" onclick="attPeriod('${months[0] || ''}')">월별</button><button type="button" class="ms-chip ${isYear ? 'on' : ''}" onclick="attPeriod('${years[0] || ''}')">연간</button>
@@ -15772,19 +15793,51 @@ function attStats(){   // 월 · 연 집계 탭
       <span class="at-hint">${escapeHtml(d.scope)} · 근태 ${d.days}일 · 자료는 ${AT.dates.length ? attMd(AT.dates[AT.dates.length - 1]) : '—'}부터</span>
       ${d.people.length ? `<button type="button" class="btn sm" onclick="attStatsCsv()">${icon('download')} 엑셀</button>` : ''}
     </div>
-    ${d.teams.some(t=>t.late || t.miss) ? `<div class="at-sum">${d.teams.filter(t=>t.late || t.miss).map(t=>`<div><span>${escapeHtml(t.team)}</span><b>지각 ${t.late} · 미인식 ${t.miss}</b></div>`).join('')}</div>` : ''}
-    ${d.people.length ? `<div class="ct-tbl"><table class="ms-tbl at-st" style="min-width:640px;">
+    ${d.people.length ? `<div class="ct-tbl"><table class="ms-tbl at-stat" style="min-width:640px;">
       <thead><tr><th>이름</th><th>팀</th><th class="n">지각</th><th class="n">지각 분</th><th class="n">미인식</th><th class="n">서류 미확인</th><th class="n">52h 넘은 주</th><th class="n">가장 긴 주</th></tr></thead>
       <tbody>${rows.map(p=>{ const k = p.team + '|' + p.name, op = AT_S.open===k;
         return `<tr class="p" onclick="AT_S.open=${op ? "''" : `'${escapeHtml(k).replace(/'/g, '')}'`}; renderContent()"><td><b>${escapeHtml(p.name)}</b> <small style="color:var(--text-muted)">${escapeHtml(p.position || '')}</small></td><td>${escapeHtml(p.team)}</td>
-          ${z(p.late)}${z(p.lateMin)}${z(p.miss)}${p.open ? `<td class="n" style="color:var(--danger); font-weight:700;">${p.open}건</td>` : '<td class="n z">0</td>'}${z(p.over52)}<td class="n">${p.maxWeek.toFixed(1)}h</td></tr>
+          ${z(p.late)}${z(p.lateMin)}${z(p.miss)}${p.open ? `<td class="n" style="color:var(--danger); font-weight:700;">${p.open}건</td>` : '<td class="n z">–</td>'}${z(p.over52)}<td class="n">${p.maxWeek.toFixed(1)}h</td></tr>
           ${op ? `<tr class="d"><td colspan="8">${p.days.map(x=>`${attMd(x.date)} ${x.kind==='late' ? `지각${x.min ? ` ${x.min}분` : ''}` : '미인식'}`).join(' · ') || '지각 · 미인식 없음'}</td></tr>` : ''}`; }).join('')}</tbody>
     </table></div>
     ${d.people.length > 10 ? `<button type="button" class="at-more" onclick="AT_S.more=!AT_S.more; renderContent()">${AT_S.more ? '접기' : `더 보기 (${d.people.length - 10}명)`}</button>` : ''}`
-    : kpiNote(`${label(AT_S.period)}에 지각 · 미인식 · 서류 미확인 · 52시간 넘은 주가 없습니다.`, 'success')}
-    <div class="at-foot">많은 순 · 0회인 사람은 빼고 보입니다 · 이름을 누르면 날짜별 · 시간은 출퇴근 기록으로 계산한 추정치입니다</div>
+    : kpiNote(`${label(AT_S.period)}에 지각 · 미인식이 없습니다.`, 'success')}
+    <div class="at-foot">지각 횟수가 많은 사람부터 · 지각 · 미인식이 없는 사람은 빼고 보입니다 · 이름을 누르면 날짜별 · 시간은 출퇴근 기록으로 계산한 추정치입니다</div>
   </div>`;
 }
+const AT_MY = { state:'', period:'', d:null };   // 내 근태 탭 (GET /api/attendance/me)
+function attMy(){   // 내 근태 — HR · 팀장 · 본부장 본인 (주간 근무시간 칸은 넣지 않는다)
+  if(!attCanUse()) return kpiNote('내 근태는 근태 현황을 쓰는 분만 볼 수 있습니다.');
+  if(AT_MY.state !== 'ok' || (AT_MY.period && AT_MY.d.period !== AT_MY.period)){
+    if(AT_MY.state !== 'loading') attMyLoad();
+    return kpiNote(AT_MY.state==='err' ? '내 근태를 불러오지 못했습니다. 잠시 뒤 새로 고쳐 주세요.' : '내 근태를 불러오는 중입니다…', AT_MY.state==='err' ? 'danger' : 'info');
+  }
+  const d = AT_MY.d, s = d.sum, i = d.months.indexOf(d.period), older = d.months[i + 1], newer = i > 0 ? d.months[i - 1] : '';
+  const label = `${d.period.slice(0, 4)}년 ${+d.period.slice(5)}월`, t = v=>!v || v==='-' ? '—' : escapeHtml(v);
+  const num = (k, v, cls, n)=>`<div><span>${k}</span><b${n && cls ? ` style="color:var(--${cls})"` : ''}>${v}</b></div>`;   // 0 이면 색 없이
+  const doc = r=>r.doc ? `<span class="doc ${r.doc.state}">${escapeHtml(r.doc.doc)} · ${r.doc.state==='done' ? '확인됨' : r.doc.state==='self' ? '제출함 · 확인 대기' : '확인 전'}</span>` : '<span class="doc z">–</span>';
+  const st = r=>{ const tone = attTone(r.status); return `<span class="at-st ${tone}">${escapeHtml(r.status==='지각' && r.lateMinutes ? `지각 ${r.lateMinutes}분` : r.status || '—')}</span>`; };
+  return `<div class="card">
+    <div class="at-head"><div class="at-date">
+      <button type="button" class="at-nav" aria-label="이전 달" ${older ? `onclick="attMyGo('${older}')"` : 'disabled'}>${icon('chevL')}</button><b>${label}</b>
+      <button type="button" class="at-nav" aria-label="다음 달" ${newer ? `onclick="attMyGo('${newer}')"` : 'disabled'}>${icon('chevR')}</button></div>
+      <span class="at-meta">${escapeHtml(AUTH.me?.name || '')} · 근태 ${d.rows.length}일</span></div>
+    <div class="at-nums" style="grid-template-columns:repeat(4,minmax(0,1fr));">${num('지각', s.late ? `${s.late}회 · ${s.lateMin}분` : '0회', 'warning', s.late)}${num('미인식·결근', `${s.miss}회`, 'danger', s.miss)}${num('휴가', `${+s.leave.toFixed(2)}일`)}${num('확인 대기 서류', `${s.open}건`, 'danger', s.open)}</div>
+    ${d.rows.length ? `<div class="at-my"><div><span>날짜</span><span>출근</span><span>퇴근</span><span>상태</span><span class="doc">서류</span></div>
+      ${d.rows.map(r=>`<div class="${['지각', '미인식', '결근'].includes(r.status) ? 'bad' : ''}"><span>${attDay(r.date).replace(/^\d+월 /, `${+r.date.slice(5, 7)}/`).replace('일 ', ' ')}</span><span class="tm">${t(r.checkIn)}</span><span class="tm">${t(r.checkOut)}</span>${st(r)}${doc(r)}</div>`).join('')}</div>`
+      : kpiNote(`${label} 근태 자료에 이름이 없습니다. 하이웍스 이름과 근태 파일 이름이 다르면 HR에 알려 주세요.`)}
+    <div class="at-foot">근태 자료(전일)와 같은 내용입니다 · 서류는 ${attDay(AT_C.d?.checkFrom || '2026-11-16')} 근태부터 셉니다</div>
+  </div>`;
+}
+function attMyGo(p){ AT_MY.period = p; renderContent(); }
+async function attMyLoad(){
+  AT_MY.state = 'loading';
+  const want = AT_MY.period;
+  try { const r = await fetch('/api/attendance/me' + (want ? '?period=' + encodeURIComponent(want) : '')); if(!r.ok) throw new Error(r.status); const d = await r.json(); if(want !== AT_MY.period) return; AT_MY.d = d; AT_MY.period = d.period; AT_MY.state = 'ok'; }
+  catch(e){ AT_MY.state = 'err'; }
+  if(currentNav.id==='att') renderContent();
+}
+
 function attPeriod(v){ if(!v) return; AT_S.period = v; AT_S.more = false; AT_S.open = ''; renderContent(); }
 async function attStatsLoad(){
   AT_S.state = 'loading';
@@ -15822,6 +15875,7 @@ const NAV = [
       {id:'a1', label:'일일 현황', render:attContent},
       {id:'a2', label:'서류 확인', render:attChecks},   // 지각 · 미인식 · 서류 누락 — 팀장이 연락하고 제출 확인 (2단계)
       {id:'a3', label:'월·연 집계', render:attStats},
+      {id:'a4', label:'내 근태', render:attMy},   // HR · 팀장 · 본부장 본인 (2026-11-13 인사담당자)
   ]},
   { id:'rule', label:'규정 검색', icon:'search', tabs:[
       {id:'r1', label:'규정 검색', render:ruleSearch},
