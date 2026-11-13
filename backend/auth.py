@@ -28,6 +28,7 @@ app.py 가 register(app) 로 붙인다.
   GET  /api/phone                 내 등록된 휴대폰 (PC 창이 "등록됐는지"를 볼 때도 쓴다)
   POST /api/phone/revoke          내 휴대폰 등록 해제
   POST /api/attendance/upload     근태 하루치 — 세션 대신 열쇠 HR_ATTEND_KEY (attendance.py)
+  POST /api/attendance/found      늦게 낸 근태 서류 자동 확인 — 같은 열쇠
   그 밖의 /api/* 전부             세션 검사. 세션 없이 열린 곳은 /api/health · 로그인 받는 곳 · 안내 · 휴대폰 등록 · 근태 올리기뿐 (§3). 급여·계약 세 앞머리는 비밀번호도(paypin.py)
 
 서버 설정 (.env → docker-compose.yml):
@@ -85,7 +86,7 @@ TOKEN_KEEP = timedelta(seconds=60)  # 하이웍스 token 유효시간과 같게 
 RATE_PER_MIN = 30  # 접속자 주소마다 1분 (§5)
 TOKEN_RE = re.compile(r"[0-9a-f]{64}")  # 하이웍스 token 모양 (2026-10-12 실측)
 MOBILE_RE = re.compile(r"iPhone|Android|Mobile")  # 휴대폰 브라우저 (§13.1 — 등록은 휴대폰에서만)
-OPEN = {"/api/health", "/api/auth/hiworks", "/api/auth/message", "/api/phone/register", "/api/attendance/upload"}  # 근태 올리기는 세션 대신 열쇠(attendance.py)
+OPEN = {"/api/health", "/api/auth/hiworks", "/api/auth/message", "/api/phone/register", "/api/attendance/upload", "/api/attendance/found"}  # 근태 올리기 · 늦은 서류는 세션 대신 열쇠(attendance.py)
 MSG_LOGIN = "로그인이 필요합니다. 하이웍스에서 인사포털 메뉴로 들어와 주세요."
 AGAIN = "하이웍스에서 인사포털 메뉴를 다시 눌러 주세요."
 MSG_QR = "QR을 다시 띄워 주세요. QR은 3분 동안 한 번만 쓸 수 있습니다."

@@ -83,6 +83,8 @@ LABELS: dict[str, str] = {
     "replies": "확인 메모에 새 답글",
     "e2": "평가 진행",
     "e3": "이의 신청",
+    "att": "근태 서류 기한 지남",  # 내가 책임자인 서류 확인 중 근태 날짜 + 7일이 지난 것 (화면 TODO.a2)
+    "atme": "근태 소명서 쓰기",  # 내 지각 · 미인식 · 서류 누락 중 확인 전이고 "제출했어요"를 안 누른 것 (화면 TODO.am) — 잠금 화면이라 '지각 · 미인식' 글자는 넣지 않는다
     "cards": "새 카드",
 }
 
@@ -338,6 +340,7 @@ def pending(flask_app: Flask, uid: int) -> list[tuple[str, int]]:
     화면이 부르는 서버 함수를 그 사람으로 세워 그대로 쓴다 (kpi.inbox · plan_json · progress_json · evaluation.eval_todo — 화면 TODO.e2 = 평가 진행(me + admin) ·
     TODO.e3 = 이의 신청(e3) · cards.unread — 새 카드). 연봉계약서 문의는 알림만 보내고 세지 않는다 (설계 7장). 열쇠(HR_PAY_KEY)가 없으면 급여명세서 · 영수증 · 계약서는 0 — 화면의 목록도 비어 있다.
     새 앱 컨텍스트를 먼저 연다: 요청 안에서 불러도(inline 보내기) 그 요청의 g.actor · g.db 를 덮어쓰지 않고, 여기서 연 DB 연결은 컨텍스트가 닫힐 때 닫힌다."""
+    import attendance  # 쓰는 자리에서 — attendance 가 kpi 를 부른다
     import cards  # 쓰는 자리에서 — cards 가 payslip 을 거쳐 이 파일을 불러온다
     import evaluation  # 쓰는 자리에서 — evaluation 도 이 파일을 불러온다
     import kpi  # 쓰는 자리에서 — kpi 가 이 파일을 불러와도 순환하지 않게
@@ -365,6 +368,8 @@ def pending(flask_app: Flask, uid: int) -> list[tuple[str, int]]:
         with kpi._txn(conn):  # 평가도 표 여럿을 읽는다 — 화면이 부르는 곳(/api/eval/state)과 같이 한 트랜잭션 안에서
             todo = evaluation.eval_todo(conn, actor)
         n["e2"], n["e3"] = todo["me"] + todo["admin"], todo["e3"]  # 평가 진행 = 내 일 + HR 관리 (화면 evTodo 의 합) · 이의 신청 (화면 TODO.e3)
+        att = attendance.todo_counts(conn, actor, auth._now().astimezone(auth.KST).date())  # 근태 서류 (화면 /api/attendance/todo 와 같은 셈)
+        n["att"], n["atme"] = att["overdue"], sum(1 for it in att["mine"] if not it["selfAt"])
         n["cards"] = cards.unread(conn, uid)  # 안 읽은 받은 카드 (카드 상자의 안 읽음 — 열쇠가 없으면 0)
     return [(k, n[k]) for k in LABELS if n.get(k)]
 
@@ -392,7 +397,28 @@ def deadlines(flask_app: Flask, uid: int, now: datetime) -> list[tuple[str, dict
     n_today, soon, n_late = kpi_counts(prog, today, days["soon"])
     if msg := kpi_text(n_today, soon, n_late, prog["todo"]["prev"] if prog and days["prev"] else 0, k):
         out.append(("morning-kpi", msg))
+    if msg := week52_text(_week52(flask_app, uid, k)):
+        out.append(("morning-att", msg))
     return out
+
+
+def week52_text(n: tuple[int, int] | None) -> dict | None:
+    """팀장 · 본부장의 9시 주 52시간 알림 (2026-11-13 인사담당자 결정) — 주의(45시간 이상) · 초과(52시간 넘음) 수만, 해당자가 없으면 None. 이름은 넣지 않는다."""
+    if not n or not sum(n):
+        return None
+    return {"title": "주 52시간 확인이 필요해요", "body": f"주의 {n[0]}명 · 초과 {n[1]}명 · 근태 현황에서 확인해 주세요", "url": "/?go=att.a1"}
+
+
+def _week52(flask_app: Flask, uid: int, today: date) -> tuple[int, int] | None:
+    import attendance  # 쓰는 자리에서
+
+    try:  # 못 세도 다른 9시 알림은 간다 — 로그에는 예외 종류만
+        with flask_app.app_context():
+            conn = auth._db()
+            return attendance.week52(conn, auth.actor_of(conn, uid), today)
+    except Exception as exc:
+        logger.warning("morning week52 failed: %s", type(exc).__name__)
+        return None
 
 
 def hr_admins(conn: Connection) -> list[int]:
@@ -581,7 +607,10 @@ def check() -> None:
     assert message("eval_answer") == {"title": "이의 신청에 답변이 왔어요", "body": "PC에서 확인해 주세요", "url": "/?go=perf.e3"}  # 바뀐 등급 없음
     assert message("card") == {"title": "카드가 왔어요", "body": "눌러서 확인해 주세요", "url": "/?go=ws.w3"}  # 이름 · 글 자리 없음
     assert message("card_thanks") == {"title": "보낸 카드에 고마워요가 왔어요", "body": "눌러서 확인해 주세요", "url": "/?go=ws.w3.out"}  # 받은 카드 › 보낸 카드
-    assert list(LABELS) == ["p1", "p2", "p3", "inbox", "back", "prev", "memos", "check", "replies", "e2", "e3", "cards"]  # 화면 homePortalTasks 차례 — 평가 진행 · 이의 신청은 KPI 다음, 새 카드는 맨 끝
+    assert list(LABELS) == ["p1", "p2", "p3", "inbox", "back", "prev", "memos", "check", "replies", "e2", "e3", "att", "atme", "cards"]  # 화면 homePortalTasks 차례 — 평가 진행 · 이의 신청은 KPI 다음, 근태 서류 다음, 새 카드는 맨 끝
+    assert week52_text(None) is None and week52_text((0, 0)) is None, "주 52시간: 해당자가 없으면 안 보낸다"
+    assert week52_text((2, 1)) == {"title": "주 52시간 확인이 필요해요", "body": "주의 2명 · 초과 1명 · 근태 현황에서 확인해 주세요", "url": "/?go=att.a1"}, "주 52시간 문구"
+    assert "미인식" not in LABELS["atme"] and "지각" not in LABELS["atme"], "잠금 화면의 근태 소명서 문구에 지각 · 미인식 글자가 없다"
     assert {k: MESSAGES[k][1] for k in MESSAGES if k.startswith("kpi_")} == {  # KPI 알림은 PC 에서 열라는 안내 — 평가·성과는 휴대폰에서 안 열린다
         "kpi_inbox": "PC에서 확인해 주세요", "kpi_back": "PC에서 사유를 확인하고 다시 작성해 주세요", "kpi_memo": "PC에서 확인해 주세요",
         "kpi_reply_to_author": "PC에서 확인해 주세요", "kpi_reply_to_owner": "PC에서 확인해 주세요"}
