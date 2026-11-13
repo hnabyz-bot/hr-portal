@@ -9105,6 +9105,7 @@ def check_attendance(hr) -> None:
         r = teams(LEAD, "2026-11-10")[2].json
         ok(r["teams"] == [] and r["date"] == "2026-11-10", "자료가 없는 날은 빈 목록")
         check_attendance_docs(c, up, KEY, LEAD, HEAD, EMPA, EMPB, DLEAD, DEMP, EMP)
+        check_attendance_push(up, KEY, HEAD, LEAD, DLEAD, CEO, EMP)
         x("UPDATE users SET is_active = 0, deactivated_at = '2026-11-13T00:00:00Z' WHERE id = ?", EMPA)
         ok(teams(LEAD)[1] == ["근태A제조팀", "근태B팀"], "한 사람이 빠져도 나머지 구성원으로 맞춘다")
     finally:
@@ -9117,6 +9118,53 @@ def check_attendance(hr) -> None:
             os.environ["HR_ATTEND_KEY"] = had
     ok(not q("SELECT 1 FROM attendance_days") and not q("SELECT 1 FROM attendance_checks") and os.environ.get("HR_ATTEND_KEY") == had,
        "끝나면 근태 · 서류 확인 줄을 지우고 열쇠를 되돌린다")
+
+
+def check_attendance_push(up, KEY, HEAD, LEAD, DLEAD, CEO, EMP) -> None:
+    """근태 알림 (2026-11-13): 하루치가 처음 올라오면 팀장 · 본부장마다 범위 안 건수로 한 통 · HR · 대표이사 · 직원은 안 받음 ·
+    같은 날 다시 올림 · 더 옛날 날짜 · 7일보다 오래된 날 · 근무시간 밖은 안 울림. 보내기(push.deliver)와 키는 가짜로 갈아 끼운다."""
+    import push
+    print("근태 올라옴 알림")
+    real = auth._now, push.keys, push.deliver, push.SYNC
+    sent: list[tuple[int, dict]] = []
+    push.keys, push.SYNC = (lambda: ("pub", "priv")), True
+    push.deliver = lambda _app, uids, msg, _ttl: sent.extend((u, msg) for u in uids) or len(uids)
+
+    def mem(name, status="정상"):
+        return {"name": name, "position": "프로", "checkIn": "08:50", "checkOut": "18:05", "status": status, "lateMinutes": 0,
+                "overtimeMinutes": {"연장": 0, "야간": 0, "휴일": 0}, "weeklyActualHours": 40.0, "over52Flag": False}
+
+    def day(d):
+        return {"date": d, "teams": [
+            {"team": "근태A제조팀", "members": [mem("가상근태팀장", "지각"), mem("가상근태팀원A", "미인식")]},
+            {"team": "근태B팀", "members": [mem("가상근태팀원B", "연차"), mem("가상근태모르는분", "육아휴직")]},
+            {"team": "근태본부2팀", "members": [mem("가상근태본부2직원", "결근")]},
+            {"team": "근태지원", "members": [mem("가상근태지원팀장"), mem("가상근태지원팀원")]}]}
+
+    def got(d, now):
+        sent.clear()
+        auth._now = lambda: now
+        ok(up(day(d), KEY).status_code == 200, f"{d} 저장")
+        return {u: m for u, m in sent if u in (HEAD, LEAD, DLEAD, CEO, EMP, 1)}
+
+    try:
+        r = got("2026-11-13", datetime(2026, 11, 13, 2, 0, tzinfo=timezone.utc))  # 금 11시(KST)
+        ok(set(r) == {HEAD, LEAD, DLEAD}, "받는 사람 = 팀장 · 본부장 (대표이사 · HR · 직원은 안 받음)")
+        ok(r[HEAD] == r[LEAD] == {"title": "11/13(금) 근태가 올라왔어요", "body": "미인식·결근 1 · 지각 1 · 휴가 1", "url": "/?go=att.a1", "tag": "att-day"},
+           "본부장 · 팀장 = 본부 전체 건수 (다른 본부의 결근 · 육아휴직은 안 셈)")
+        ok(r[DLEAD]["body"] == "미인식·지각 없어요", "특이사항 없는 날도 한 통")
+        ok(not any("가상근태" in json.dumps(m, ensure_ascii=False) for m in r.values()), "알림에 이름이 없다")
+        ok(not got("2026-11-13", datetime(2026, 11, 13, 4, 0, tzinfo=timezone.utc)), "같은 날을 다시 올리면 안 울린다 (Cowork 다시 확인)")
+        ok(not got("2026-11-10", datetime(2026, 11, 13, 4, 0, tzinfo=timezone.utc)), "더 옛날 날짜는 안 울린다 (지난 자료 한꺼번에)")
+        ok(not got("2026-11-16", datetime(2026, 11, 16, 10, 0, tzinfo=timezone.utc)), "근무시간(평일 9~18시) 밖에는 안 울린다")
+        x("INSERT INTO user_roles (user_id, role) VALUES (?, 'HR_ADMIN')", DLEAD)
+        ok(set(got("2026-11-17", datetime(2026, 11, 17, 2, 0, tzinfo=timezone.utc))) == {HEAD, LEAD}, "HR 인 팀장은 안 받는다 (직접 올린다)")
+        x("DELETE FROM attendance_days WHERE date > '2026-11-12'")
+        ok(not got("2026-11-13", datetime(2026, 11, 23, 2, 0, tzinfo=timezone.utc)), "7일보다 오래된 날은 처음이어도 안 울린다")
+    finally:
+        auth._now, push.keys, push.deliver, push.SYNC = real
+        x("DELETE FROM user_roles WHERE user_id = ? AND role = 'HR_ADMIN'", DLEAD)
+        x("DELETE FROM attendance_days WHERE date IN ('2026-11-10', '2026-11-13', '2026-11-16', '2026-11-17')")
 
 
 def check_attendance_docs(_c, up, KEY, LEAD, HEAD, EMPA, EMPB, DLEAD, DEMP, EMP) -> None:

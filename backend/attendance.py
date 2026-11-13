@@ -3,6 +3,7 @@
 app.py 가 bp 를 붙인다. 설계 docs/superpowers/specs/2026-11-13-attendance-design.md.
 
   POST /api/attendance/upload   하루치 저장 (HR PC 예약작업 — 세션 없이, 머리 X-Attend-Key = 서버 HR_ATTEND_KEY)
+                                그 날짜가 처음이고 가장 최근 날(오늘에서 7일 안)이면 팀장 · 본부장 휴대폰에 범위 안 건수 알림 (day_push)
   GET  /api/attendance/dates    자료가 있는 날짜들 (볼 수 있는 사람)
   GET  /api/attendance/day      그날 자료 중 보는 사람 범위의 팀만 (?date=, 없으면 가장 최근 날)
   --- 2단계 (서류 확인 · 직원 본인 · 집계) ---
@@ -43,6 +44,7 @@ from datetime import date, timedelta
 from flask import Blueprint, Response, abort, g, jsonify, request
 
 import auth
+import push
 from hr_eval.domain.models import Role
 from hr_eval.domain.org import led_dept, manager_of
 
@@ -137,12 +139,15 @@ def upload() -> Response:
     except Bad as e:
         return jsonify(error=str(e)), 400
     conn = auth._db()
+    first = not conn.execute("SELECT 1 FROM attendance_days WHERE date >= ?", (day["date"],)).fetchone()  # 그 날짜가 처음이고 가장 최근 날
     conn.execute(
         "INSERT INTO attendance_days (date, data, uploaded_at) VALUES (?, ?, ?)"
         " ON CONFLICT(date) DO UPDATE SET data = excluded.data, uploaded_at = excluded.uploaded_at",
         (day["date"], json.dumps(day, ensure_ascii=False), auth._iso(auth._now())),
     )
     logger.info("근태 자료 저장 %s — %d팀 %d명", day["date"], len(day["teams"]), sum(len(t["members"]) for t in day["teams"]))
+    if first and 0 <= (_today() - date.fromisoformat(day["date"])).days <= PUSH_DAYS:  # 같은 날 다시 올림(Cowork 다시 확인) · 지난 자료 한꺼번에(--all)는 안 울린다
+        push.notify_each(lambda: day_push(conn, day["date"], day["teams"]))  # 연결이 자동 저장이라 이미 저장됐다
     return jsonify(ok=True, date=day["date"])
 
 
@@ -515,6 +520,35 @@ def stats_get() -> Response:
 LEAVE_DAYS = {"반차": 0.5, "반반차": 0.25}  # 그 밖의 휴가는 하루
 NORMAL = {"정상", "연장근무", "야간근무", "야간교대", "연장/야간근무", "외근", "해외출장", "근무변경", "단축근무", "입사일", "회식", "워크샵"}
 
+FOLD = NORMAL | {"육아휴직", "산전육아휴직"}  # 화면 AT_FOLD 와 같다 — 이것도 아니고 지각 · 조퇴 · 미인식 · 결근도 아니면 휴가 칸
+PUSH_DAYS = 7  # 올린 날짜가 오늘에서 7일 안일 때만 알림
+
+
+def day_text(d: str, ms: list[dict]) -> dict:
+    """올라온 날 알림 한 통 (2026-11-13 인사담당자 — 범위 안 건수, 특이사항 없어도 매일). 화면 팀 목록 칸과 같은 셈. 잠금 화면이라 이름은 없다."""
+    bad = sum(m["status"] in ("미인식", "결근") for m in ms)
+    late = sum(m["status"] == "지각" for m in ms)
+    leave = sum(m["status"] not in FOLD and m["status"] not in ("지각", "조퇴", "미인식", "결근") for m in ms)
+    parts = ([f"미인식·결근 {bad}"] if bad else []) + ([f"지각 {late}"] if late else []) or ["미인식·지각 없어요"]
+    day_ = date.fromisoformat(d)
+    return {"title": f"{day_.month}/{day_.day}({'월화수목금토일'[day_.weekday()]}) 근태가 올라왔어요", "body": " · ".join(parts + ([f"휴가 {leave}"] if leave else [])),
+            "url": "/?go=att.a1", "tag": "att-day"}
+
+
+def day_push(conn: sqlite3.Connection, d: str, teams: list[dict]) -> list[tuple[int, dict]]:
+    """[(사람 번호, 알림)] — 활성 팀장 · 본부장마다 그 사람이 보는 범위의 건수. HR 은 직접 올리므로 뺀다 (대표이사도 받지 않는다)."""
+    org = Org(conn)
+    units = team_units(teams, org.people, org.parent)
+    out = []
+    for p in org.persons:
+        if not p.is_active or p.position not in (Role.TEAM_LEADER, Role.DIVISION_HEAD):
+            continue
+        a = auth.actor_of(conn, p.id)
+        who = viewer_unit(a, org.parent)
+        if not a.is_hr and who is not None:
+            out.append((p.id, day_text(d, [m for t in teams if units[t["team"]] == who for m in t["members"]])))
+    return out
+
 
 def my_rows(days: list[tuple[str, list[dict]]], org: Org, uid: int) -> list[dict]:
     """그 사람의 날짜별 줄 — (이름, 단위)가 그 사람 번호로 맞는 근태 줄만. 최근 날부터."""
@@ -616,6 +650,11 @@ def check() -> None:
     ms = my_sum([{"status": "지각", "lateMinutes": 8}, {"status": "미인식", "lateMinutes": 0, "doc": {"state": "open"}}, {"status": "결근", "lateMinutes": 0},
                  {"status": "반차", "lateMinutes": 0}, {"status": "연차", "lateMinutes": 0}, {"status": "정상", "lateMinutes": 0, "doc": {"state": "done"}}])
     assert ms == {"late": 1, "lateMin": 8, "miss": 2, "leave": 1.5, "open": 1}, f"내 근태 요약 {ms}"
+    sts = lambda *xs: [{"status": x} for x in xs]  # noqa: E731
+    assert day_text("2026-11-13", sts("미인식", "결근", "지각", "조퇴", "연차", "병가", "육아휴직", "정상"))["body"] == "미인식·결근 2 · 지각 1 · 휴가 2", "건수 = 화면 칸"
+    assert (day_text("2026-11-13", sts("정상", "반차"))["body"], day_text("2026-11-13", sts("정상"))["body"], day_text("2026-11-13", sts("지각"))["body"]) == (
+        "미인식·지각 없어요 · 휴가 1", "미인식·지각 없어요", "지각 1"), "특이사항 없는 날도 한 통 · 0 은 안 적는다"
+    assert day_text("2026-11-16", [])["title"] == "11/16(월) 근태가 올라왔어요", "제목 = 날짜(요일)"
     print("attendance 검사 통과")
 
 
