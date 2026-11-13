@@ -128,6 +128,7 @@ def apply_schema(path: str) -> sqlite3.Connection | None:
         "ev_appeals",
         "trip_rules",
         "attendance_days",
+        "attendance_checks",
     }
     missing = expected - tables
     _report(not missing, f"테이블 {len(expected)}개 생성", f"누락: {sorted(missing)}")
@@ -2133,6 +2134,43 @@ def check_attendance_table() -> None:
             conn.close()
 
 
+
+def check_attendance_checks_table() -> None:
+    """근태 서류 확인 (026 — 판 26): 한 사람 · 하루 한 줄. 확인했으면 방법이 있어야 하고, 손으로 확인했으면 누가가 있어야 한다(자동이면 없어야)."""
+    print("39. 근태 서류 확인 (026)")
+    with tempfile.TemporaryDirectory() as tmp:
+        try:
+            ver = init_db(str(Path(tmp) / "att-26.db"))
+        except sqlite3.Error as exc:
+            _report(False, "새 DB 에 스키마 넣기", str(exc))
+            return
+        conn = connect(str(Path(tmp) / "att-26.db"))
+        try:
+            _report(ver >= 26, f"판 번호가 26 이상 — {ver}", f"실제 {ver}")
+            conn.execute("INSERT INTO departments (code, name, level) VALUES ('DIV61', '가상본부', 'DIVISION')")
+            lead = conn.execute("INSERT INTO users (employee_no, name, email, department_id) VALUES ('T061', '가상팀장', 't061@example.invalid',"
+                                " (SELECT id FROM departments WHERE code='DIV61'))").lastrowid
+            ins = "INSERT INTO attendance_checks (date, team, name, self_at, done_at, done_by, done_how) VALUES (?, ?, ?, ?, ?, ?, ?)"
+            T = "2026-11-13T01:00:00Z"
+            conn.execute(ins, ("2026-11-12", "가상팀", "가상A", T, None, None, None))
+            conn.execute(ins, ("2026-11-12", "가상팀", "가상B", None, T, lead, "MANUAL"))
+            conn.execute(ins, ("2026-11-12", "가상팀", "가상C", None, T, None, "AUTO"))
+            _report(conn.execute("SELECT COUNT(*) FROM attendance_checks").fetchone()[0] == 3, "본인 제출 · 손으로 확인 · 자동 확인 줄")
+            for args, why in ((("2026-11-12", "가상팀", "가상A", None, None, None, None), "같은 사람 · 같은 날 두 번"),
+                              (("2026-02-30", "가상팀", "가상D", None, None, None, None), "없는 날"),
+                              (("2026-11-12", "", "가상D", None, None, None, None), "팀 비어 있음"),
+                              (("2026-11-12", "가상팀", "가상D", None, T, None, None), "확인했는데 방법 없음"),
+                              (("2026-11-12", "가상팀", "가상D", None, None, None, "AUTO"), "방법만 있고 확인 때 없음"),
+                              (("2026-11-12", "가상팀", "가상D", None, T, None, "MANUAL"), "손으로 확인했는데 누가 없음"),
+                              (("2026-11-12", "가상팀", "가상D", None, T, lead, "AUTO"), "자동인데 누가 있음"),
+                              (("2026-11-12", "가상팀", "가상D", None, T, 9999, "MANUAL"), "없는 사람"),
+                              (("2026-11-12", "가상팀", "가상D", None, T, None, "LATER"), "모르는 방법")):
+                ok, msg = _rejects(conn, ins, args)
+                _report(ok, f"서류 확인 {why} 거부", msg)
+        finally:
+            conn.close()
+
+
 def main() -> int:
     print("=" * 62)
     print("SQLite 스키마 적용 + 제약조건 동작 검사")
@@ -2171,6 +2209,7 @@ def main() -> int:
     check_eval_rules_migration()
     check_trip_rules_table()
     check_attendance_table()
+    check_attendance_checks_table()
 
     print("-" * 62)
     if _failures:

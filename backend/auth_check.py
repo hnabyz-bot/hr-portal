@@ -2601,6 +2601,8 @@ def check_push_pending(hr) -> None:
              "memos": ib["review"]["memos"], "check": ib["review"]["check"] if leads else 0, "replies": ib["review"]["replies"] if leads else 0,
              "e2": todo["me"] + todo["admin"], "e3": todo["e3"],  # 평가 진행 (TODO.e2 = evTodo — 서버 todo 의 me + admin) · 이의 신청 (TODO.e3 — 서버 todo 의 e3)
              "cards": c.get("/api/cards", base_url=BASE).json["unread"]}  # 새 카드 (카드 상자의 안 읽음)
+        at = c.get("/api/attendance/todo", base_url=BASE).json  # 근태 서류 (TODO.a2 = overdue · TODO.am = 제출 안 한 내 서류)
+        n.update(att=at["overdue"], atme=sum(not x["self"] for x in at["mine"]))
         return [(k, n[k]) for k in push.LABELS if n[k]]
 
     def same(c, uid: int, label: str) -> list[tuple[str, int]]:
@@ -9102,16 +9104,138 @@ def check_attendance(hr) -> None:
         ok(teams(LEAD, "2026-11-11")[2].json["date"] == "2026-11-11", "?date= 로 다른 날")
         r = teams(LEAD, "2026-11-10")[2].json
         ok(r["teams"] == [] and r["date"] == "2026-11-10", "자료가 없는 날은 빈 목록")
+        check_attendance_docs(c, up, KEY, LEAD, HEAD, EMPA, EMPB, DLEAD, DEMP, EMP)
         x("UPDATE users SET is_active = 0, deactivated_at = '2026-11-13T00:00:00Z' WHERE id = ?", EMPA)
         ok(teams(LEAD)[1] == ["근태A제조팀", "근태B팀"], "한 사람이 빠져도 나머지 구성원으로 맞춘다")
     finally:
         root.removeHandler(grab)
-        x("DELETE FROM attendance_days WHERE date IN ('2026-11-11', '2026-11-12')")
+        x("DELETE FROM attendance_days WHERE date IN ('2026-10-30', '2026-11-04', '2026-11-11', '2026-11-12')")
+        x("DELETE FROM attendance_checks")
         x("UPDATE users SET is_active = 0, deactivated_at = '2026-11-13T00:00:00Z' WHERE id BETWEEN 6501 AND 6509 AND is_active = 1")
         os.environ.pop("HR_ATTEND_KEY", None)
         if had is not None:
             os.environ["HR_ATTEND_KEY"] = had
-    ok(not q("SELECT 1 FROM attendance_days") and os.environ.get("HR_ATTEND_KEY") == had, "끝나면 근태 줄을 지우고 열쇠를 되돌린다")
+    ok(not q("SELECT 1 FROM attendance_days") and not q("SELECT 1 FROM attendance_checks") and os.environ.get("HR_ATTEND_KEY") == had,
+       "끝나면 근태 · 서류 확인 줄을 지우고 열쇠를 되돌린다")
+
+
+def check_attendance_docs(_c, up, KEY, LEAD, HEAD, EMPA, EMPB, DLEAD, DEMP, EMP) -> None:
+    """근태 2단계 (2026-11-13): 서류 확인 목록 · 책임자(바로 위 관리자) · 체크 권한 · 본인 "제출했어요" · 늦은 서류 자동 확인 · 기한 7일 ·
+    CHECK_FROM 전은 안 셈 · 직원은 자기 것만 · 집계 범위 · 9시 묶음(push.pending)의 att · atme · 주 52시간. 시계는 2026-11-13(금) 정오(KST)로 둔다."""
+    import attendance
+    import push
+    print("근태 서류 확인 · 직원 본인 · 집계")
+    real_now, real_from = auth._now, attendance.CHECK_FROM
+    auth._now = lambda: datetime(2026, 11, 13, 3, 0, tzinfo=timezone.utc)
+    attendance.CHECK_FROM = "2026-11-02"
+    jar: dict[int, object] = {}
+
+    def c(uid):  # 시계를 바꾼 뒤 새로 로그인한다 (평가 검사와 같은 방법)
+        if uid not in jar:
+            jar[uid] = app.test_client()
+            login(jar[uid], new_token(f"HW-{uid}"))
+        return jar[uid]
+
+    def m(name, status="정상", note=None, late=0, h=40.0, cin="08:50", cout="18:05"):
+        r = {"name": name, "position": "프로", "checkIn": cin, "checkOut": cout, "status": status, "lateMinutes": late,
+             "overtimeMinutes": {"연장": 0, "야간": 0, "휴일": 0}, "weeklyActualHours": h, "over52Flag": False}
+        return dict(r, note=note) if note else r
+
+    def day(d, a, b, s, u):
+        return {"date": d, "teams": [{"team": "근태A제조팀", "members": a}, {"team": "근태B팀", "members": b},
+                                     {"team": "근태지원", "members": s}, {"team": "근태모름", "members": u}]}
+
+    x("DELETE FROM attendance_days WHERE date = '2026-11-11'")  # 1단계 검사의 날 — 이 검사는 아래 세 날만 본다
+    try:
+        ok(up(day("2026-10-30", [m("가상근태팀원A", "미인식", cout="-")], [], [m("가상근태지원팀원")], []), KEY).status_code == 200
+           and up(day("2026-11-04", [m("가상근태팀장"), m("가상근태팀원A", "미인식", cout="-")], [m("가상근태팀원B")], [m("가상근태지원팀원")],
+                      [m("가상근태없는이름", "미인식", cin="-")]), KEY).status_code == 200
+           and up(day("2026-11-12", [m("가상근태팀장", "지각", late=5, h=47), m("가상근태팀원A", h=53)],
+                      [m("가상근태팀원B", "병가", note="병가 (사용자 확인, 하이웍스 신청 문서 미확인)", h=16)],
+                      [m("가상근태지원팀원", "미인식", note="출근 미인식 — 미인식 소명서 제출 (11/12, 결재 완료)", cin="-")], []), KEY).status_code == 200,
+           "서류 확인용 근태 세 날 올리기")
+        get = lambda uid: c(uid).get("/api/attendance/checks", base_url=BASE)  # noqa: E731
+        items = lambda uid: {(i["date"], i["name"]): i for i in get(uid).json["items"]}  # noqa: E731
+        lead = items(LEAD)
+        ok(set(lead) == {("2026-11-04", "가상근태팀원A"), ("2026-11-12", "가상근태팀장"), ("2026-11-12", "가상근태팀원B")},
+           "팀장 = 본부의 챙길 사람 (CHECK_FROM 전 날 · 다른 본부 · 지원팀은 없다)")
+        a = lead[("2026-11-04", "가상근태팀원A")]
+        ok(a["kind"] == "miss" and a["doc"] == "미인식 소명서" and a["label"] == "퇴근 미인식" and a["overdue"] and a["days"] == 9
+           and a["mine"] and a["can"] and a["state"] == "open" and a["contact"]["email"] == f"a{EMPA}@example.invalid", "팀원 미인식: 9일째 · 기한 지남 · 내가 챙길 사람 · 체크 가능 · 연락처")
+        b, t = lead[("2026-11-12", "가상근태팀원B")], lead[("2026-11-12", "가상근태팀장")]
+        ok(b["kind"] == "leave" and b["label"] == "병가 · 하이웍스 문서 없음" and not b["overdue"] and t["label"] == "지각 5분",
+           "서류 누락은 휴가신청서 · 지각은 분까지 · 기한 전")
+        ok(not b["mine"] and not b["can"] and not t["mine"] and not t["can"], "팀이 없는 팀원 · 팀장 본인 줄은 본부장 몫 — 다른 팀장은 보기만")
+        head = items(HEAD)
+        ok(head[("2026-11-12", "가상근태팀원B")]["mine"] and head[("2026-11-12", "가상근태팀장")]["mine"] and head[("2026-11-04", "가상근태팀원A")]["can"]
+           and not head[("2026-11-04", "가상근태팀원A")]["mine"], "본부장: 팀장 · 팀 없는 팀원은 내 몫, 팀원은 대신 체크만")
+        sup = items(DLEAD)
+        ok(set(sup) == {("2026-11-12", "가상근태지원팀원")} and sup[("2026-11-12", "가상근태지원팀원")]["state"] == "done"
+           and sup[("2026-11-12", "가상근태지원팀원")]["how"] == "NOTE" and sup[("2026-11-12", "가상근태지원팀원")]["contact"] is None,
+           "비고에 소명서 제출(결재 완료)이 있으면 자동 확인 · 연락처는 안 보냄")
+        hr = items(1)
+        ok(hr[("2026-11-04", "가상근태없는이름")]["mine"] and hr[("2026-11-04", "가상근태없는이름")]["contact"] is None and len(hr) == 5,
+           "HR = 전체 · 이름을 못 맞춘 사람은 HR 몫")
+        ok(c(EMP).get("/api/attendance/checks", base_url=BASE).status_code == 403 and c(EMP).get("/api/attendance/stats", base_url=BASE).status_code == 403,
+           "직원은 서류 확인 · 집계 403")
+
+        todo = lambda uid: c(uid).get("/api/attendance/todo", base_url=BASE).json  # noqa: E731
+        ok(todo(EMP) == {"mine": [], "open": 0, "overdue": 0}, "챙길 일이 없는 직원은 빈 목록")
+        ok(todo(EMPA) == {"mine": [{"date": "2026-11-04", "team": "근태A제조팀", "kind": "miss", "doc": "미인식 소명서", "label": "퇴근 미인식", "self": False}],
+                          "open": 0, "overdue": 0}, "직원 = 자기 것만 (CHECK_FROM 전 날은 없다)")
+        ok(todo(LEAD)["mine"][0]["label"] == "지각 5분" and (todo(LEAD)["open"], todo(LEAD)["overdue"]) == (1, 1), "팀장: 내 지각 + 내가 챙길 1건(기한 지남)")
+        app_ = app
+        pend = lambda uid: dict(push.pending(app_, uid))  # noqa: E731
+        ok(pend(EMPA).get("atme") == 1 and pend(LEAD).get("att") == 1 and pend(LEAD).get("atme") == 1, "9시 묶음: 근태 소명서 쓰기 · 근태 서류 기한 지남")
+
+        post = lambda uid, path, body: c(uid).post(path, base_url=BASE, headers=ORIGIN, json=body)  # noqa: E731
+        ok(post(EMPA, "/api/attendance/mine", {"date": "2026-11-12", "team": "근태A제조팀"}).status_code == 404
+           and post(EMPA, "/api/attendance/mine", {"date": "2026-11-12", "team": "근태B팀"}).status_code == 404, "남의 것 · 챙길 일 없는 날은 404")
+        ok(post(EMPA, "/api/attendance/mine", {"date": "2026-11-04", "team": "근태A제조팀"}).status_code == 200 and todo(EMPA)["mine"][0]["self"]
+           and items(LEAD)[("2026-11-04", "가상근태팀원A")]["state"] == "self" and "atme" not in pend(EMPA), "제출했어요 → 팀장 화면 '본인 제출함' · 9시 알림 멈춤")
+        A = {"date": "2026-11-04", "team": "근태A제조팀", "name": "가상근태팀원A"}
+        ok(post(EMP, "/api/attendance/checks", {**A, "done": True}).status_code == 403, "직원은 체크 못 함")
+        ok(post(LEAD, "/api/attendance/checks", {**A, "done": "yes"}).status_code == 400 and post(LEAD, "/api/attendance/checks", {**A, "name": "없음", "done": True}).status_code == 404,
+           "틀린 몸통 400 · 없는 사람 404")
+        ok(post(LEAD, "/api/attendance/checks", {"date": "2026-11-12", "team": "근태B팀", "name": "가상근태팀원B", "done": True}).status_code == 403,
+           "책임자가 아닌 팀장은 403")
+        ok(post(LEAD, "/api/attendance/checks", {**A, "done": True}).status_code == 200, "책임자(팀장) 체크")
+        a = items(LEAD)[("2026-11-04", "가상근태팀원A")]
+        ok(a["state"] == "done" and a["how"] == "MANUAL" and a["doneByName"] == "가상근태팀장" and a["contact"] is None and todo(LEAD)["overdue"] == 0
+           and todo(EMPA)["mine"] == [] and "att" not in pend(LEAD), "확인 완료 — 누가 · 기한 지남 숫자 · 직원 알림이 사라진다")
+        ok(post(HEAD, "/api/attendance/checks", {"date": "2026-11-12", "team": "근태B팀", "name": "가상근태팀원B", "done": True}).status_code == 200,
+           "본부장 체크")
+        ok(post(LEAD, "/api/attendance/checks", {**A, "done": False}).status_code == 200 and items(LEAD)[("2026-11-04", "가상근태팀원A")]["state"] == "self",
+           "체크 취소 → 다시 확인 전(본인 제출 표시는 남음)")
+        ok(post(DLEAD, "/api/attendance/checks", {"date": "2026-11-12", "team": "근태지원", "name": "가상근태지원팀원", "done": False}).status_code == 409,
+           "하이웍스 결재로 확인된 것은 취소 못 함")
+
+        found = lambda body, key=KEY: app.test_client().post("/api/attendance/found", base_url=BASE, json=body, headers={"X-Attend-Key": key})  # noqa: E731
+        ok(found({"found": []}, "k" * 39).status_code == 403 and found({"found": "x"}).status_code == 400, "늦은 서류: 열쇠 · 모양")
+        r = found({"found": [{"date": "2026-11-12", "team": "근태A제조팀", "name": "가상근태팀장"}, {"date": "2026-11-12", "team": "근태A제조팀", "name": "가상근태팀장"},
+                             {"date": "2026-11-12", "team": "근태B팀", "name": "가상근태팀원B"}, {"date": "2026-11-01", "team": "x", "name": "y"}, {"bad": 1}]})
+        ok(r.status_code == 200 and r.json["marked"] == 1 and items(HEAD)[("2026-11-12", "가상근태팀장")]["how"] == "AUTO"
+           and items(HEAD)[("2026-11-12", "가상근태팀장")]["doneByName"] == "", "Cowork 가 찾은 늦은 서류 → 자동 확인 (이미 확인한 것 · 없는 것은 건너뜀)")
+
+        st = c(LEAD).get("/api/attendance/stats?period=2026-11", base_url=BASE).json
+        ppl = {p["name"]: p for p in st["people"]}
+        ok(st["scope"] == "가상근태본부" and set(ppl) == {"가상근태팀원A", "가상근태팀장"} and ppl["가상근태팀원A"]["miss"] == 1
+           and ppl["가상근태팀원A"]["over52"] == 1 and ppl["가상근태팀장"]["lateMin"] == 5 and st["days"] == 2,
+           "월 집계: 범위 안만 · 미인식 · 52시간 넘은 주 · 지각 분 · 0회인 사람은 없다 (10/30 은 다른 달)")
+        yr = {p["name"]: p for p in c(1).get("/api/attendance/stats?period=2026", base_url=BASE).json["people"]}
+        ok(yr["가상근태팀원A"]["miss"] == 2 and "가상근태없는이름" in yr, "연 집계 · HR 은 전체 (못 맞춘 팀 포함)")
+        ok(c(LEAD).get("/api/attendance/stats?period=2026-13", base_url=BASE).status_code == 400, "기간 모양 400")
+
+        cn = connect(os.environ["HR_DB_PATH"])
+        try:
+            w = lambda uid, d: attendance.week52(cn, auth.actor_of(cn, uid), d)  # noqa: E731
+            from datetime import date as _d
+            ok(w(HEAD, _d(2026, 11, 13)) == (1, 1) and w(LEAD, _d(2026, 11, 13)) == (1, 1) and w(1, _d(2026, 11, 13)) is None
+               and w(HEAD, _d(2026, 11, 16)) is None, "9시 주 52시간: 팀장 · 본부장만 · 이번 주 자료일 때만 (주의 1 · 초과 1)")
+        finally:
+            cn.close()
+    finally:
+        auth._now, attendance.CHECK_FROM = real_now, real_from
 
 
 def main() -> int:

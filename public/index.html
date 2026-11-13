@@ -783,6 +783,39 @@
   .at-none{ padding:8px 0 2px; font-size:var(--fs-xs); color:var(--text-muted); }
   .at-legend{ display:flex; flex-wrap:wrap; gap:6px 14px; margin-top:10px; font-size:var(--fs-xs); color:var(--text-muted); }
   .at-legend i{ display:inline-block; width:12px; height:6px; margin-right:5px; border-radius:3px; vertical-align:middle; }
+  .at-focus.three{ grid-template-columns:repeat(3,minmax(0,1fr)); }
+  /* 서류 확인 탭 (2단계) */
+  .at-hint{ margin-left:auto; font-size:var(--fs-xs); color:var(--text-muted); }
+  .at-chk{ display:flex; flex-direction:column; gap:6px; }
+  .at-c{ display:grid; grid-template-columns:96px minmax(0,1.4fr) minmax(0,1fr) 220px; gap:10px; align-items:center; padding:9px 12px; border:1px solid var(--border); border-radius:var(--radius); background:var(--surface); }
+  .at-c.late{ background:var(--bg-danger); border-color:#F6CFD2; }
+  .at-c.done{ background:#F7F9FB; }
+  .at-c .dt{ font-size:var(--fs-xs); color:var(--text-secondary); white-space:nowrap; }
+  .at-c .who b{ font-weight:600; } .at-c .who small{ margin-left:4px; font-size:var(--fs-xs); color:var(--text-muted); }
+  .at-c .who div{ font-size:var(--fs-xs); color:var(--text-secondary); }
+  .at-c .st{ font-size:var(--fs-xs); color:var(--text-secondary); }
+  .at-c.late .dt, .at-c.late .who, .at-c.late .who div, .at-c.late .st{ color:var(--danger); }
+  .at-c.late .st{ font-weight:700; }
+  .at-c.done .who, .at-c.done .st{ color:var(--text-muted); } .at-c.done .st b{ color:var(--success); font-weight:600; }
+  .at-c .bt{ display:flex; gap:4px; justify-content:flex-end; flex-wrap:wrap; }
+  .at-c svg{ width:12px; height:12px; vertical-align:-1px; flex:none; }
+  .at-foot{ margin-top:10px; font-size:var(--fs-xs); color:var(--text-muted); }
+  /* 직원 본인 알림 카드 (오늘 할 일 창 맨 위) */
+  .at-mine{ display:flex; flex-direction:column; gap:8px; margin:0 0 10px; }
+  .at-mc{ padding:10px 12px; border:1px solid #F6CFD2; border-radius:var(--radius); background:var(--bg-danger); color:var(--danger); }
+  .at-mc > b{ display:flex; align-items:center; gap:6px; font-weight:600; } .at-mc > b svg{ width:13px; height:13px; flex:none; }
+  .at-mc p{ margin:4px 0 8px; font-size:var(--fs-xs); } .at-mc p b{ font-weight:700; }
+  .at-mc .bts{ display:flex; gap:6px; flex-wrap:wrap; }
+  .at-mc.self{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; border-color:#E1E6ED; background:#F7F9FB; color:var(--text-secondary); }
+  .at-mc.self > b{ flex:1; }
+  /* 월 · 연 집계 탭 */
+  .at-sum{ display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:8px; margin-bottom:12px; }
+  .at-sum div{ padding:8px 12px; border-radius:var(--radius); background:#F4F6F9; }
+  .at-sum span{ display:block; font-size:var(--fs-xs); color:var(--text-muted); } .at-sum b{ font-size:var(--fs-sm); }
+  .at-st tbody tr.p td{ cursor:pointer; }
+  .at-st td.n, .at-st th.n{ text-align:right; font-variant-numeric:tabular-nums; }
+  .at-st td.z{ color:var(--text-muted); }
+  .at-st tr.d td{ background:#F7FBFE; font-size:var(--fs-xs); color:var(--text-secondary); }
   @media (max-width:768px){
     .at-date > b{ min-width:0; flex:1; }
     .at-head > .at-date{ width:100%; }
@@ -797,6 +830,12 @@
     .at-p{ grid-template-columns:minmax(0,1fr) minmax(0,1fr); row-gap:4px; }
     .at-p.h{ display:none; }
     .at-p .at-st{ text-align:right; }
+    .at-focus.three button:first-child{ grid-column:1 / -1; }
+    .at-focus.three{ grid-template-columns:repeat(2,minmax(0,1fr)); }
+    .at-hint{ margin-left:0; width:100%; }
+    .at-c{ grid-template-columns:minmax(0,1fr) auto; row-gap:6px; }
+    .at-c .dt{ grid-column:1; } .at-c .st{ grid-column:2; grid-row:1; text-align:right; }
+    .at-c .who{ grid-column:1 / -1; } .at-c .bt{ grid-column:1 / -1; justify-content:flex-start; }
   }
   .ms-tbl{ table-layout:fixed; min-width:918px; }   /* 칸 폭 합 728 + 이름 칸 190 */
   .ms-tbl th{ vertical-align:bottom; padding:8px 10px 9px; line-height:1.35; }
@@ -2122,6 +2161,8 @@ function homePortalTasks(){   // 인사포털이 만든 일. n의 합 = 왼쪽 �
   add(AUTH.live ? (kvCanUse() ? kpiRev('replies') : 0) : TODO.e4(), '확인 메모에 새 답글', 'perf', 'e4', '새 답글');
   add(TODO.e2(), '평가 진행', 'perf', 'e2', '평가 중');
   add(TODO.e3(), '이의 신청 처리', 'perf', 'e3', '처리 대기');
+  add(TODO.a2(), '근태 서류 기한 지남', 'att', 'a2', '기한 지남');
+  if(AUTH.live) AT_TODO.mine.filter(x=>!x.self).forEach(x=>out.push({ n:1, title:`${x.doc} · ${attMd(x.date)}`, act:'homeTodayPop()', where:'근태', badge:'소명서', att:true }));   // 직원 본인 — 누르면 오늘 할 일 창(소명서 쓰러 가기 · 제출했어요)
   add(TODO.w3(), '새 카드 확인', 'ws', 'w3', '새 카드');   // 맨 끝 — 서버 push.pending 의 LABELS 차례와 같게
   return out;
 }
@@ -2187,8 +2228,8 @@ function homeHero(t){
       : pushHeroBtn()}
   </section>`;
 }
-function homePortalRows(pre=''){   // 인사포털이 만든 일의 줄. pre = 누르면 먼저 할 일(팝업 닫기)
-  return homePortalTasks().map(p=>`<div class="hm-row" onclick="${pre}goTo('${p.nav}','${p.tab}')"><span class="hm-go">${icon('chevR')}</span><span class="t">${p.title}<span class="hm-tag">인사포털</span></span><small>${NAV.find(n=>n.id===p.nav).label}</small><span class="badge warning">${p.badge}</span></div>`);
+function homePortalRows(pre=''){   // 인사포털이 만든 일의 줄. pre = 누르면 먼저 할 일(팝업 닫기). 오늘 할 일 창(pre 있음)에서는 내 근태 서류 줄 대신 맨 위 카드(attMineCards)를 보인다
+  return homePortalTasks().filter(p=>!(pre && p.att)).map(p=>`<div class="hm-row" onclick="${pre}${p.act || `goTo('${p.nav}','${p.tab}')`}"><span class="hm-go">${icon('chevR')}</span><span class="t">${p.title}<span class="hm-tag">인사포털</span></span><small>${p.where || NAV.find(n=>n.id===p.nav).label}</small><span class="badge warning">${p.badge}</span></div>`);
 }
 /* 오늘 할 일 팝업 (2026-10-12, 인사담당자 지시) — 환영 페이지에서 들어오면 바로 뜬다(wcEnter). 홈 "오늘의 업무"와 같은 목록을 한눈에 보는 용도라 체크는 없다:
    인사포털 일은 누르면 그 화면으로, 개인 업무는 나의 업무로 간다.
@@ -2208,7 +2249,8 @@ function homeTodayPop(){
     return `<div class="hm-row${fin?' done':''}${x.kpi ? ' kpi' : ''}" onclick="${close}${x.kpi ? 'wsKpiGo()' : "goTo('ws','w1')"}"><span class="hm-go">${icon('chevR')}</span><span class="t">${escapeHtml(x.title)}${x.kpi ? WS_KPI_TAG : ''}${x.pri==='긴급' && !fin ? '<span class="hm-tag red">긴급</span>' : ''}</span><small${late?' class="late"':''}>${when}</small><span class="badge ${wsCls(x.state)}">${escapeHtml(x.state)}</span></div>`; })];
   orgModal(`<div class="card-title"><span>오늘 할 일 <span style="font-weight:500; color:var(--text-secondary);">${t.getMonth()+1}월 ${t.getDate()}일 (${'일월화수목금토'[t.getDay()]})</span></span><button type="button" class="x-btn" onclick="orgCloseModal()" aria-label="닫기">${icon('x')}</button></div>
     <div class="list-sub" style="margin:-6px 0 6px;">남은 일 <b style="color:var(--coral-text);">${left}</b> · 완료 ${done}</div>
-    <div class="hm-list">${rows.join('') || '<div class="hm-empty">오늘 할 일이 없습니다</div>'}</div>
+    ${attMineCards()}
+    <div class="hm-list">${rows.join('') || (AT_TODO.mine.length ? '' : '<div class="hm-empty">오늘 할 일이 없습니다</div>')}</div>
     <button type="button" class="btn primary" style="width:100%; justify-content:center; margin-top:14px;" onclick="orgCloseModal()">확인</button>`);
 }
 function homeTaskCard(){   // 개인 업무는 나의 업무의 '오늘' 목록과 같다 (wsIn)
@@ -15497,7 +15539,8 @@ function attContent(){
   const tile = (cls, label, big, small, fn)=>`<button type="button" class="${cls}" onclick="attFocus('${fn}')"><span>${label}</span><b>${big}${small ? `<small>${small}</small>` : ''}</b></button>`;
   const num = (label, v)=>`<div><span>${label}</span><b>${v}</b></div>`;
   return `<div class="card">${head}
-    <div class="at-focus">
+    <div class="at-focus three">
+      ${tile(AT_TODO.overdue ? 'danger' : AT_TODO.open ? 'warn' : 'calm', '서류 확인', `${AT_TODO.open}건`, AT_TODO.overdue ? `· 기한 지남 ${AT_TODO.overdue}` : '', 'docs')}
       ${tile(s.over ? 'danger' : s.warn ? 'warn' : 'calm', '주 52시간', `주의 ${s.warn}`, `· 초과 ${s.over}`, 'hours')}
       ${tile(s.late + s.miss + s.absent ? 'info' : 'calm', '지각 · 미인식', `${s.late} · ${s.miss}명`, s.absent ? `· 결근 ${s.absent}` : '', 'bad')}
     </div>
@@ -15552,7 +15595,8 @@ function attPick(v){
 function attCal(){ const el = document.getElementById('atCal'); try { el.showPicker(); } catch(e){ el.focus(); el.click(); } }
 function attToggle(i){ AT.open.has(i) ? AT.open.delete(i) : AT.open.add(i); renderContent(); }
 function attAll(i){ AT.all.has(i) ? AT.all.delete(i) : AT.all.add(i); renderContent(); }
-function attFocus(kind){   // 챙길 것 칸을 누르면 해당하는 사람이 있는 팀을 펼친다
+function attFocus(kind){   // 챙길 것 칸을 누르면 해당하는 사람이 있는 팀을 펼친다 (서류 확인은 그 탭으로)
+  if(kind==='docs') return selectTab('a2');
   const hit = kind==='hours' ? m=>attLevel(m) !== '' : m=>!!AT_BAD[m.status];
   AT.open = new Set(AT.d.teams.map((t, i)=>t.members.some(hit) ? i : -1).filter(i=>i >= 0));
   renderContent();
@@ -15583,7 +15627,7 @@ function attSelfCheck(){   // 브라우저 콘솔에서 attSelfCheck() 실행 �
                         d:{ date:'2026-11-11', scope:'가상본부', uploadedAt:'2026-11-12T01:45:00Z', teams } });
     let h = attContent();
     ok(h.includes('11월 11일 (수)') && h.includes("attGo('2026-11-10')") && h.includes("attGo('2026-11-12')") && h.includes('가상본부 · 7명'), '날짜 · 앞뒤 날 단추 · 범위와 인원');
-    ok(h.includes('주의 1') && h.includes('· 초과 1') && h.includes('1 · 1명') && !h.includes('가상1'), '챙길 것 두 칸 · 처음엔 팀이 접혀 사람이 안 보인다');
+    ok(h.includes('주의 1') && h.includes('· 초과 1') && h.includes('1 · 1명') && !h.includes('가상1') && h.includes('서류 확인'), '챙길 것 세 칸 · 처음엔 팀이 접혀 사람이 안 보인다');
     ok(h.includes('휴가 1') && h.includes('지각 1') && h.includes('미인식·결근 1') && h.includes('52h 주의 1') && h.includes('52h 초과 1'), '접힌 팀 줄의 표시');
     AT.open.add(0); h = attContent();
     ok(h.includes('가상2') && h.includes('지각 12분') && h.includes('가상5') && !h.includes('가상1') && h.includes('그 외 1명 접힘'), '펼치면 특이사항만 · 정상 근무자는 접힘');
@@ -15593,10 +15637,166 @@ function attSelfCheck(){   // 브라우저 콘솔에서 attSelfCheck() 실행 �
     ok(attContent().includes('특이사항이 없습니다.') && attContent().includes('그 외 2명 접힘'), '특이사항이 없는 팀');
     AT.d.teams = []; ok(attContent().includes('이 날 자료에 가상본부 근태가 없습니다'), '범위의 팀이 없는 날');
     AT.d = { date:null, scope:'가상본부', uploadedAt:null, teams:[] }; ok(attContent().includes('아직 올라온 근태 자료가 없습니다'), '자료가 하나도 없을 때');
+    // 2단계: 서류 확인 · 직원 본인 · 집계
+    const it = (o)=>({ date:'2026-11-12', team:'가상A팀', name:'가상2', position:'프로', kind:'miss', doc:'미인식 소명서', label:'퇴근 미인식', state:'open', how:null, doneAt:null, doneByName:'', selfAt:null,
+                       mine:true, can:true, overdue:false, days:1, contact:{ email:'v2@example.invalid', mailNo:'', mobile:'' }, ...o });
+    Object.assign(AT_C, { state:'ok', f:'mine', d:{ today:'2026-11-13', checkFrom:'2026-11-16', due:7, items:[
+      it({}), it({ name:'가상4', date:'2026-11-04', overdue:true, days:9, contact:{ email:'', mailNo:'7', mobile:'010' } }), it({ name:'가상5', mine:false, can:false, state:'self' }),
+      it({ name:'가상6', state:'done', how:'MANUAL', doneAt:'2026-11-13T01:00:00Z', doneByName:'가상팀장', contact:null }), it({ name:'가상7', state:'done', how:'NOTE', contact:null }) ] } });
+    h = attChecks();
+    ok(h.includes('내가 챙길 사람 2') && h.includes('전체 3') && h.includes('확인 완료 2') && h.indexOf('가상4') < h.indexOf('가상2') && !h.includes('가상5'), '서류 확인: 칩 숫자 · 기한 지난 것이 먼저 · 내가 챙길 사람만');
+    ok(h.includes('9일째 · 기한 지남') && h.includes('href="tel:010"') && (h.match(/제출 확인/g) || []).length===2, '기한 지남 · 전화는 번호가 있을 때만 · 체크 단추');
+    AT_C.f = 'all'; h = attChecks(); ok(h.includes('가상5') && h.includes('본인 제출함') && (h.match(/제출 확인/g) || []).length===2, '전체: 남의 몫은 보기만 · 본인 제출 표시');
+    AT_C.f = 'done'; h = attChecks(); ok(h.includes('확인 · 가상팀장 11/13') && h.includes('자동 확인 (하이웍스 결재)') && (h.match(/>취소</g) || []).length===1, '확인 완료: 누가 · 자동 확인은 취소 없음');
+    ok(attMailText(AT_C.d.items[0])==='11월 12일 (목) 퇴근 미인식 — 미인식 소명서를 하이웍스 전자결재로 제출해 주세요.', '메일 요청 문구');
+    const keepT = { ...AT_TODO, mine:[...AT_TODO.mine] };
+    Object.assign(AT_TODO, { mine:[{ date:'2026-11-12', team:'가상A팀', kind:'miss', doc:'미인식 소명서', label:'퇴근 미인식', self:false }, { date:'2026-11-10', team:'가상A팀', kind:'late', doc:'지각 소명서', label:'지각 8분', self:true }], open:0, overdue:0 });
+    h = attMineCards();
+    ok(h.includes('문서 종류 <b>미인식소명서</b>') && AT_FORM.late===AT_HW_WRITE && AT_FORM.leave.includes('vacation-apply'), '소명서 쓰러 가기: 고를 양식 이름 · 휴가 신청은 따로');
+    ok(h.includes('11월 12일 (목) 퇴근 미인식') && h.includes('소명서 쓰러 가기') && h.includes('제출했어요') && h.includes('제출함 · 팀장 확인 대기') && !/주간|52|연차/.test(h), '직원 카드: 소명서 쓰러 가기 · 제출했어요 · 제출함 — 주간 시간 · 연차는 없다');
+    ok(TODO.am()===1 && homePortalTasks().some(p=>p.att && p.title==='미인식 소명서 · 11/12') && !homePortalRows('x; ').includes('미인식 소명서 · 11/12'), '홈 줄은 제출 안 한 것만 · 오늘 할 일 창에서는 카드로');
+    Object.assign(AT_TODO, keepT);
+    Object.assign(AT_S, { state:'ok', period:'2026-11', more:false, open:'', d:{ period:'2026-11', days:3, scope:'가상본부', teams:[{ team:'가상A팀', late:2, miss:1 }],
+      people:Array.from({ length:12 }, (_, k)=>({ name:'가상' + k, position:'프로', team:'가상A팀', late:k ? 0 : 2, lateMin:k ? 0 : 12, miss:1, open:k ? 0 : 1, over52:0, maxWeek:40, days:[{ date:'2026-11-04', kind:'miss', min:0 }] })) } });
+    AT.dates = ['2026-11-12', '2026-10-30']; h = attStats();
+    ok(h.includes('2026년 11월') && h.includes('지각 2 · 미인식 1') && h.includes('더 보기 (2명)') && !h.includes('가상11') && h.includes('1건'), '집계: 기간 · 팀 합 · 상위 10 + 더 보기 · 서류 미확인');
+    AT_S.open = '가상A팀|가상0'; ok(attStats().includes('11/4 미인식'), '이름을 누르면 날짜별');
   } finally {
     Object.assign(AT, keep); Object.assign(AUTH, { live, me }); currentNav = nav; currentTab = tab;
+    Object.assign(AT_C, { state:'', d:null, f:'mine' }); Object.assign(AT_S, { state:'', period:'', d:null, more:false, open:'' });
   }
   return 'attSelfCheck 통과';
+}
+
+/* ---------------- 근태 현황 2단계: 서류 확인 · 직원 본인 알림 · 월 · 연 집계 (2026-11-13 인사담당자 결정) ----------------
+   챙길 사람(미인식 · 지각 · 서류 누락)은 서버가 그날 자료에서 고르고 체크 기록만 저장한다(attendance.py collect).
+   서류 확인 = 내가 챙길 사람(책임자 = 바로 위 관리자) · 전체 · 확인 완료. 근태 날짜 + 7일부터 빨간 "기한 지남" · 왼쪽 메뉴 숫자 · 9시 알림.
+   직원은 근태 메뉴 없이 내 서류가 있을 때만 오늘 할 일 창 맨 위 카드 + 오늘의 업무 줄 (주간 근무시간 · 연차는 직원에게 보이지 않는다). */
+const AT_HW_WRITE = 'https://approval.office.hiworks.com/abyzr.com/approval/document/write';   // 하이웍스 전자결재 작성하기 — 주소로 양식을 미리 고를 수 없어(2026-11-13 확인) 카드에 고를 양식 이름을 적는다
+const AT_FORM = { miss:AT_HW_WRITE, late:AT_HW_WRITE, leave:'https://hr-work.office.hiworks.com/approval/vacation-apply' };   // 휴가 신청은 양식이 골라진 채로 열린다
+const AT_FORM_PICK = { miss:'미인식소명서', late:'지각소명서' };   // 하이웍스 '문서 종류'에 보이는 이름 그대로
+const AT_TODO = { mine:[], open:0, overdue:0 };   // GET /api/attendance/todo — 내 서류 · 내가 챙길 확인 전 · 기한 지남
+const AT_C = { state:'', d:null, f:'mine' };   // 서류 확인 탭
+const AT_S = { state:'', period:'', d:null, more:false, open:'' };   // 월 · 연 집계 탭
+function attMd(ymd){ return `${+ymd.slice(5, 7)}/${+ymd.slice(8, 10)}`; }
+async function attTodoLoad(){
+  if(!AUTH.live) return;
+  try { const r = await fetch('/api/attendance/todo'); if(r.ok) Object.assign(AT_TODO, await r.json()); } catch(e){}
+  renderSidebar();
+  if(['home', 'att'].includes(currentNav.id)) renderContent();
+}
+function attMineCards(){   // 오늘 할 일 창 맨 위 — 내 지각 · 미인식 · 서류 누락 (실제 로그인, 있을 때만)
+  if(!AUTH.live || !AT_TODO.mine.length) return '';
+  return `<div class="at-mine">${AT_TODO.mine.map((x, i)=>x.self
+    ? `<div class="at-mc self">${icon('clock')}<b>${attDay(x.date)} ${escapeHtml(x.label)}</b><span class="at-tag info">제출함 · 팀장 확인 대기</span></div>`
+    : `<div class="at-mc"><b>${icon('flag')}${attDay(x.date)} ${escapeHtml(x.label)}</b><p>${AT_FORM_PICK[x.kind] ? `하이웍스 전자결재 작성 화면에서 문서 종류 <b>${AT_FORM_PICK[x.kind]}</b>를 골라 내 주세요.` : '하이웍스 휴가 신청으로 내 주세요.'}</p>
+        <div class="bts"><button type="button" class="btn primary sm" onclick="attForm('${x.kind}')">${x.kind==='leave' ? '휴가신청서' : '소명서'} 쓰러 가기 ↗</button><button type="button" class="btn sm" onclick="attSelf(${i})">제출했어요</button></div></div>`).join('')}</div>`;
+}
+function attForm(kind){ const w = window.open(AT_FORM[kind] || AT_HW_WRITE, '_blank'); if(w) try { w.opener = null; } catch(e){} else wsNotice('새 창이 막혔어요. 이 사이트의 팝업을 허용한 뒤 다시 눌러 주세요.'); }
+async function attSelf(i){   // 본인 "제출했어요" — 9시 알림이 멈추고 팀장 화면에 '본인 제출함'
+  const x = AT_TODO.mine[i];
+  if(!x) return;
+  const r = await fetch('/api/attendance/mine', { method:'POST', headers:{ 'Content-Type':'application/json' }, body:JSON.stringify({ date:x.date, team:x.team }) }).catch(()=>null);
+  if(!r || !r.ok){ wsNotice(r && r.status===404 ? '이미 처리된 서류예요. 화면을 새로 고쳐 주세요.' : NET_ERR); return; }
+  x.self = true; homeTodayPop(); attTodoLoad();
+}
+
+function attChecks(){   // 서류 확인 탭
+  if(!attCanUse()) return kpiNote('서류 확인은 팀장 · 본부장 · HR만 볼 수 있습니다.');
+  if(AT_C.state !== 'ok'){
+    if(!AT_C.state) attChecksLoad();
+    return kpiNote(AT_C.state==='err' ? '서류 확인을 불러오지 못했습니다. 잠시 뒤 새로 고쳐 주세요.' : '서류 확인을 불러오는 중입니다…', AT_C.state==='err' ? 'danger' : 'info');
+  }
+  const all = AT_C.d.items, open = all.filter(x=>x.state!=='done'), mine = open.filter(x=>x.mine), done = all.filter(x=>x.state==='done');
+  const list = attChkSort(AT_C.f==='mine' ? mine : AT_C.f==='done' ? done : open);
+  const chip = (k, label, n)=>`<button type="button" class="ms-chip ${AT_C.f===k ? 'on' : ''}" aria-pressed="${AT_C.f===k}" onclick="AT_C.f='${k}'; renderContent()">${label} ${n}</button>`;
+  return `<div class="card">
+    <div class="ms-bar">${chip('mine', '내가 챙길 사람', mine.length)}${chip('all', '전체', open.length)}${chip('done', '확인 완료', done.length)}
+      <span class="at-hint">근태 날짜 + ${AT_C.d.due}일이 지나면 빨간 경고 · 휴대폰 9시 알림</span></div>
+    ${list.length ? `<div class="at-chk">${list.map(attChkRow).join('')}</div>` : kpiNote(AT_C.f==='done' ? '최근 30일 동안 확인한 서류가 없습니다.' : AT_C.f==='mine' ? '지금 챙길 사람이 없습니다.' : '확인을 기다리는 서류가 없습니다.', 'success')}
+    <div class="at-foot">[메일] = 하이웍스 메일 창 + 요청 문구 복사 · 체크하면 누가 언제 했는지 남습니다 · ${attDay(AT_C.d.checkFrom)} 근태부터 셉니다</div>
+  </div>`;
+}
+function attChkSort(xs){ return [...xs].sort((a, b)=>(b.overdue - a.overdue) || (a.state==='done' ? b.date.localeCompare(a.date) : a.date.localeCompare(b.date)) || a.name.localeCompare(b.name)); }
+function attChkRow(x){
+  const i = AT_C.d.items.indexOf(x), c = x.contact || {}, cls = x.state==='done' ? 'done' : x.overdue ? 'late' : '';
+  const st = x.state==='done' ? `<b>${icon('check')} ${x.how==='MANUAL' ? `확인 · ${escapeHtml(x.doneByName)} ${attMd(x.doneAt.slice(0, 10))}` : '자동 확인 (하이웍스 결재)'}</b>`
+    : `${x.overdue ? `${icon('flag')} ${x.days}일째 · 기한 지남` : `${x.days}일째`}${x.state==='self' ? ' <span class="at-tag info">본인 제출함</span>' : ''}`;
+  const bt = x.state==='done' ? (x.can && x.how!=='NOTE' ? `<button type="button" class="btn sm" onclick="attCheck(${i}, false)">취소</button>` : '')
+    : `${c.email || c.mailNo ? `<button type="button" class="btn sm" onclick="attMail(${i})">${icon('mail')} 메일</button>` : ''}${c.mobile ? `<a class="btn sm" href="tel:${escapeHtml(c.mobile)}" aria-label="전화">${icon('phone')}</a>` : ''}${x.can ? `<button type="button" class="btn sm primary" onclick="attCheck(${i}, true)">${icon('check')} 제출 확인</button>` : ''}`;
+  return `<div class="at-c ${cls}"><span class="dt">${attDay(x.date)}</span>
+    <span class="who"><b>${escapeHtml(x.name)}</b><small>${escapeHtml(x.team)}</small><div>${escapeHtml(x.label)} → ${escapeHtml(x.doc)}</div></span>
+    <span class="st">${st}</span><span class="bt">${bt}</span></div>`;
+}
+async function attChecksLoad(){
+  AT_C.state = 'loading';
+  try { const r = await fetch('/api/attendance/checks'); if(!r.ok) throw new Error(r.status); AT_C.d = await r.json(); AT_C.state = 'ok'; }
+  catch(e){ AT_C.state = 'err'; }
+  if(currentNav.id==='att') renderContent();
+}
+async function attCheck(i, done){
+  const x = AT_C.d.items[i];
+  if(!x) return;
+  const r = await fetch('/api/attendance/checks', { method:'POST', headers:{ 'Content-Type':'application/json' }, body:JSON.stringify({ date:x.date, team:x.team, name:x.name, done }) }).catch(()=>null);
+  if(!r || !r.ok){ const e = r && await r.json().catch(()=>null); wsNotice(e?.error || NET_ERR); return; }
+  AT_C.state = ''; attTodoLoad(); renderContent();
+}
+function attMailText(x){ return `${attDay(x.date)} ${x.label} — ${x.doc}를 하이웍스 전자결재로 제출해 주세요.`; }
+function attMail(i){   // 하이웍스 메일 창: 회사 번호가 있으면 받는 사람을 채우고 요청 문구를 복사, 없으면 메일 주소를 복사 (창이 포커스를 가져가기 전에 복사)
+  const x = AT_C.d.items[i], c = x?.contact;
+  if(!c) return;
+  const copied = c.mailNo
+    ? navigator.clipboard.writeText(attMailText(x)).then(()=>wsNotice('요청 문구를 복사했어요. 메일 본문에 붙여넣기(Ctrl+V) 해 주세요.'), ()=>{})
+    : hwMailCopy(c.email);
+  const w = window.open(hwMailUrl(c.mailNo), '_blank');
+  if(!w){ Promise.resolve(copied).then(()=>wsNotice('새 창이 막혔어요. 이 사이트의 팝업을 허용한 뒤 다시 눌러 주세요.')); return; }
+  try { w.opener = null; } catch(e){}
+}
+
+function attStats(){   // 월 · 연 집계 탭
+  if(!attCanUse()) return kpiNote('월 · 연 집계는 팀장 · 본부장 · HR만 볼 수 있습니다.');
+  if(!AT.dates.length && AT.state!=='ok'){ if(!AT.state) attLoad(); return kpiNote('불러오는 중입니다…', 'info'); }
+  const months = [...new Set(AT.dates.map(d=>d.slice(0, 7)))], years = [...new Set(AT.dates.map(d=>d.slice(0, 4)))];
+  if(!AT_S.period) AT_S.period = months[0] || kpiDay(0).slice(0, 7);
+  if(AT_S.state !== 'ok' || AT_S.d.period !== AT_S.period){
+    if(AT_S.state !== 'loading') attStatsLoad();
+    return kpiNote(AT_S.state==='err' ? '집계를 불러오지 못했습니다. 잠시 뒤 새로 고쳐 주세요.' : '집계를 불러오는 중입니다…', AT_S.state==='err' ? 'danger' : 'info');
+  }
+  const d = AT_S.d, isYear = AT_S.period.length===4, opts = isYear ? years : months;
+  const label = v=>v.length===4 ? `${v}년` : `${v.slice(0, 4)}년 ${+v.slice(5)}월`;
+  const rows = AT_S.more ? d.people : d.people.slice(0, 10), z = v=>v ? `<td class="n">${v}</td>` : '<td class="n z">0</td>';
+  return `<div class="card">
+    <div class="ms-bar">
+      <button type="button" class="ms-chip ${!isYear ? 'on' : ''}" onclick="attPeriod('${months[0] || ''}')">월별</button><button type="button" class="ms-chip ${isYear ? 'on' : ''}" onclick="attPeriod('${years[0] || ''}')">연간</button>
+      <select aria-label="기간" onchange="attPeriod(this.value)">${opts.map(v=>`<option value="${v}" ${v===AT_S.period ? 'selected' : ''}>${label(v)}</option>`).join('')}</select>
+      <span class="at-hint">${escapeHtml(d.scope)} · 근태 ${d.days}일 · 자료는 ${AT.dates.length ? attMd(AT.dates[AT.dates.length - 1]) : '—'}부터</span>
+      ${d.people.length ? `<button type="button" class="btn sm" onclick="attStatsCsv()">${icon('download')} 엑셀</button>` : ''}
+    </div>
+    ${d.teams.some(t=>t.late || t.miss) ? `<div class="at-sum">${d.teams.filter(t=>t.late || t.miss).map(t=>`<div><span>${escapeHtml(t.team)}</span><b>지각 ${t.late} · 미인식 ${t.miss}</b></div>`).join('')}</div>` : ''}
+    ${d.people.length ? `<div class="ct-tbl"><table class="ms-tbl at-st" style="min-width:640px;">
+      <thead><tr><th>이름</th><th>팀</th><th class="n">지각</th><th class="n">지각 분</th><th class="n">미인식</th><th class="n">서류 미확인</th><th class="n">52h 넘은 주</th><th class="n">가장 긴 주</th></tr></thead>
+      <tbody>${rows.map(p=>{ const k = p.team + '|' + p.name, op = AT_S.open===k;
+        return `<tr class="p" onclick="AT_S.open=${op ? "''" : `'${escapeHtml(k).replace(/'/g, '')}'`}; renderContent()"><td><b>${escapeHtml(p.name)}</b> <small style="color:var(--text-muted)">${escapeHtml(p.position || '')}</small></td><td>${escapeHtml(p.team)}</td>
+          ${z(p.late)}${z(p.lateMin)}${z(p.miss)}${p.open ? `<td class="n" style="color:var(--danger); font-weight:700;">${p.open}건</td>` : '<td class="n z">0</td>'}${z(p.over52)}<td class="n">${p.maxWeek.toFixed(1)}h</td></tr>
+          ${op ? `<tr class="d"><td colspan="8">${p.days.map(x=>`${attMd(x.date)} ${x.kind==='late' ? `지각${x.min ? ` ${x.min}분` : ''}` : '미인식'}`).join(' · ') || '지각 · 미인식 없음'}</td></tr>` : ''}`; }).join('')}</tbody>
+    </table></div>
+    ${d.people.length > 10 ? `<button type="button" class="at-more" onclick="AT_S.more=!AT_S.more; renderContent()">${AT_S.more ? '접기' : `더 보기 (${d.people.length - 10}명)`}</button>` : ''}`
+    : kpiNote(`${label(AT_S.period)}에 지각 · 미인식 · 서류 미확인 · 52시간 넘은 주가 없습니다.`, 'success')}
+    <div class="at-foot">많은 순 · 0회인 사람은 빼고 보입니다 · 이름을 누르면 날짜별 · 시간은 출퇴근 기록으로 계산한 추정치입니다</div>
+  </div>`;
+}
+function attPeriod(v){ if(!v) return; AT_S.period = v; AT_S.more = false; AT_S.open = ''; renderContent(); }
+async function attStatsLoad(){
+  AT_S.state = 'loading';
+  const want = AT_S.period;
+  try { const r = await fetch('/api/attendance/stats?period=' + encodeURIComponent(want)); if(!r.ok) throw new Error(r.status); const d = await r.json(); if(want !== AT_S.period) return; AT_S.d = d; AT_S.state = 'ok'; }
+  catch(e){ AT_S.state = 'err'; }
+  if(currentNav.id==='att') renderContent();
+}
+function attStatsCsv(){
+  const d = AT_S.d;
+  rzSave(`근태집계_${d.period}.csv`, [['이름', '직급', '팀', '지각(회)', '지각(분)', '미인식(회)', '서류 미확인(건)', '52시간 넘은 주', '가장 긴 주(시간)', '날짜별'],
+    ...d.people.map(p=>[p.name, p.position || '', p.team, p.late, p.lateMin, p.miss, p.open, p.over52, p.maxWeek, p.days.map(x=>`${x.date} ${x.kind==='late' ? '지각 ' + x.min + '분' : '미인식'}`).join(' / ')])]);
 }
 
 const NAV = [
@@ -15620,6 +15820,8 @@ const NAV = [
   ]},
   { id:'att', label:'근태 현황', icon:'clock', show:()=>attCanUse(), tabs:[   // 팀장 · 본부장 · 대표이사 · HR, 실제 로그인만 (2026-11-13)
       {id:'a1', label:'일일 현황', render:attContent},
+      {id:'a2', label:'서류 확인', render:attChecks},   // 지각 · 미인식 · 서류 누락 — 팀장이 연락하고 제출 확인 (2단계)
+      {id:'a3', label:'월·연 집계', render:attStats},
   ]},
   { id:'rule', label:'규정 검색', icon:'search', tabs:[
       {id:'r1', label:'규정 검색', render:ruleSearch},
@@ -15663,6 +15865,8 @@ const TODO = {
     : kpiWaiting().length + (kpiSheets[kpiRole]?.rejectNote ? 1 : 0) + kvMemoTodo(kvMe()),   // 승인할 KPI + 반려되어 다시 쓸 내 KPI + 확인할 메모
   e4: ()=>!kvCanUse() ? 0 : AUTH.live ? kpiRev('check') + kpiRev('replies') : kvReplyTodo(kvMe()),   // 실제 로그인: 그 달 기록을 확인 안 한 바로 아래 사람 + 내가 쓴 메모에 새 답글이 온 사람 (처리함 review) / 시연: 새 답글이 온 사람 수
   e2: ()=>evTodo(),
+  a2: ()=>AUTH.live ? +AT_TODO.overdue || 0 : 0,   // 근태 서류 — 내가 책임자인 것 중 근태 날짜 + 7일이 지난 것 (서버 /api/attendance/todo · 9시 묶음 att 와 같은 셈)
+  am: ()=>AUTH.live ? AT_TODO.mine.filter(x=>!x.self).length : 0,   // 내 근태 서류 — 확인 전이고 "제출했어요"를 안 누른 것 (탭이 없어 메뉴 숫자는 없고 홈 · 오늘 할 일 · 9시 묶음 atme)
   w3: ()=>cardList().unread,   // 안 읽은 받은 카드 (실제 로그인: 서버가 센 숫자 — 9시 묶음 · 아이콘 숫자와 같은 셈)
   e3: ()=>AUTH.live ? +EV_LIVE.todo.e3 || 0 : (kpiIsHr() ? evPeople.filter(p=>p.appeal && p.appeal.status==='OPEN').length : 0) + evPeople.filter(p=>p.appeal && p.appeal.status==='CEO' && evCeoActs(p)).length,   // HR: 답변할 이의 신청 / 대표이사(또는 맡은 HR): 확인할 등급 변경 — 실제 로그인은 서버 todo.e3 (평가 진행 state 와 함께 받는다)
 };
@@ -15777,7 +15981,7 @@ const TOUR_MENU = {   // 메뉴 id → 둘러보기 설명
   perf:'올해 <b>KPI를 작성</b>하고, 연말에 <b>자기평가</b>를 하고, <b>평가 결과</b>를 확인합니다. 정확한 작성을 위해 PC에서만 열립니다.',
   rule:'인사·급여·보안 규정을 <b>낱말로 검색</b>합니다. 자주 묻는 질문도 여기 있습니다.',
   trip:'출발지와 출장지를 넣으면 <b>출장 경비</b>를 계산해 주고, 신청서와 회계전표 줄까지 만들어 줍니다.',
-  att:'팀장 · 본부장이 <b>본부 직원의 전일 근태</b>를 봅니다. 지각 · 미인식과 <b>주 52시간</b>을 넘기 전에 챙깁니다.',
+  att:'팀장 · 본부장이 <b>본부 직원의 전일 근태</b>를 보고, 지각 · 미인식 <b>서류 제출</b>을 챙기고, 월 · 연으로 모아 봅니다.',
   org:'부서별 조직도를 보고, 이름을 눌러 <b>연락처</b>를 확인합니다.',
   pantry:'쉬는 시간에 잠깐 즐기는 공간입니다.',
 };
@@ -16086,7 +16290,7 @@ async function authBoot(){
   await wsPull(true);   // 나의 업무 · 나의 일상을 서버에서 (이 기기에 적어 둔 것은 처음 한 번 합친다)
   setInterval(pinTick, 5e3);   // 쉰 시간 보기 — 1분 가림 · 5분 잠금 (풀려 있을 때만 일을 한다)
   await pinBoot();   // 급여 비밀번호 상태 + 메뉴 숫자용: 공개됐는데 아직 안 연 내 급여명세서 · 원천징수영수증 · 서명할 내 연봉계약서 (잠겨 있으면 숫자만 — /api/pay/counts)
-  const kpi = Promise.all([kpiLiveLoad(), cardLoad()]);   // 메뉴 · 홈의 처리할 KPI · 새 카드 숫자 — 기다리지 않는다 (다 오면 다시 그린다)
+  const kpi = Promise.all([kpiLiveLoad(), cardLoad(), attTodoLoad()]);   // 메뉴 · 홈의 처리할 KPI · 새 카드 · 근태 서류 숫자 — 기다리지 않는다 (다 오면 다시 그린다)
   evLiveLoad();   // 평가 진행 · 메뉴 숫자 — 기다리지 않는다
   renderSidebar(); renderContent();
   if(code) installNotice(null, true);   // 방금 등록한 휴대폰: 홈 화면에 추가하는 순서
