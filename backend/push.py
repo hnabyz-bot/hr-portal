@@ -15,6 +15,7 @@
 notify() 를 부른다 — 보내는 쪽(pending)이 DB 를 새로 잡으므로 commit 전에 부르면 잠김 오류가 난다. 키가 없거나 근무시간(평일 9~18시 KST) 밖이면 아무것도 안 한다 (다음 근무일 9시 묶음에 들어감).
 보내기는 요청을 붙잡지 않게 데몬 스레드에서, 실패해도 원래 일은 그대로 (예외를 밖으로 내지 않고 로그에는 상태 코드 · 예외 종류만).
 알림 문구에는 금액 · 다른 사람 이름 · 평가 등급이 없다 — 잠금 화면에 그대로 보이므로. 문구는 MESSAGES 한 곳에만 둔다.
+근태 현황(attendance.py): 하루치가 처음 올라오면 팀장 · 본부장마다 범위 안 건수로 한 통(notify_each — 사람마다 문구가 다르다, 이름 없이 건수만).
 축하 · 칭찬 카드(cards.py): 카드를 받으면 받은 사람에게 "card", 처음 고마워요를 받으면 보낸 사람에게 "card_thanks" (이름 · 카드 글 없이 안내뿐). 안 읽은 받은 카드 수는 처리할 일 "cards" 로 9시 묶음 · 아이콘 숫자에 센다.
 받는 기기는 휴대폰 세션(sessions.kind='phone')뿐이다 — 로그아웃 · 휴대폰 해제 · 새 휴대폰 등록 때 forget() 으로 구독을 지우고(auth.py), 놓쳐도 targets() 가 살아 있는 세션만 거른다.
 보내기 함수 SEND 는 검사가 갈아 끼울 수 있게 모듈 이름으로 둔다 (push.SEND = 가짜). 로그에는 상태 코드만 — 이름 · 주소 · 문구는 남기지 않는다.
@@ -481,6 +482,29 @@ def notify(uids: Iterable[int] | Callable[[], Iterable[int]], kind: str, **fmt: 
             threading.Thread(target=deliver, args=args, daemon=True, name="push-deliver").start()
     except Exception as exc:
         logger.warning("push notify failed: %s", type(exc).__name__)
+
+
+def notify_each(build: Callable[[], Iterable[tuple[int, dict]]]) -> None:
+    """notify 와 같은데 사람마다 문구가 다를 때 — build() 가 [(사람 번호, 알림 한 통)]을 만든다 (근태 현황: 범위마다 건수). 키 없음 · 근무시간 밖이면 build 도 부르지 않고,
+    build 가 터져도 원래 일에는 영향이 없다. 보내기는 데몬 스레드에서 한 사람씩 (SYNC 면 바로). 예외를 내지 않는다."""
+    try:
+        if keys() is None or not in_work_hours(auth._now()):
+            return
+        pairs = [(int(u), m) for u, m in build() if u]
+        if not pairs:
+            return
+        flask_app = current_app._get_current_object()
+
+        def run() -> None:
+            for uid, msg in pairs:
+                deliver(flask_app, [uid], msg, TTL_EVENT)
+
+        if SYNC:
+            run()
+        else:
+            threading.Thread(target=run, daemon=True, name="push-deliver").start()
+    except Exception as exc:
+        logger.warning("push notify_each failed: %s", type(exc).__name__)
 
 
 def morning(flask_app: Flask, now: datetime) -> int:
