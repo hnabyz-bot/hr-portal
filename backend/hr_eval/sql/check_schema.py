@@ -127,6 +127,7 @@ def apply_schema(path: str) -> sqlite3.Connection | None:
         "ev_pools",
         "ev_appeals",
         "trip_rules",
+        "attendance_days",
     }
     missing = expected - tables
     _report(not missing, f"테이블 {len(expected)}개 생성", f"누락: {sorted(missing)}")
@@ -2103,6 +2104,35 @@ def check_trip_rules_table() -> None:
             conn.close()
 
 
+
+def check_attendance_table() -> None:
+    """근태 현황 (025 — 판 25): 하루 한 줄. 날짜 모양 · JSON 객체는 표가 막고, 칸 모양은 backend/attendance.py clean 이 본다.
+    같은 날을 다시 넣으면 덮어쓴다(서버는 ON CONFLICT 로). 앞 절들과 섞이지 않게 따로 만든 새 DB 에서 본다."""
+    print("38. 근태 현황 (025)")
+    with tempfile.TemporaryDirectory() as tmp:
+        try:
+            ver = init_db(str(Path(tmp) / "att-25.db"))
+        except sqlite3.Error as exc:
+            _report(False, "새 DB 에 스키마 넣기", str(exc))
+            return
+        conn = connect(str(Path(tmp) / "att-25.db"))
+        try:
+            _report(ver >= 25, f"판 번호가 25 이상 — {ver}", f"실제 {ver}")
+            ins = "INSERT INTO attendance_days (date, data, uploaded_at) VALUES (?, ?, '2026-11-13T01:45:00Z')"
+            up = ins + " ON CONFLICT(date) DO UPDATE SET data = excluded.data"
+            conn.execute(ins, ("2026-11-12", '{"date": "2026-11-12", "teams": []}'))
+            conn.execute(up, ("2026-11-12", '{"date": "2026-11-12", "teams": [1]}'))
+            _report(conn.execute("SELECT COUNT(*), MAX(data) FROM attendance_days").fetchone() == (1, '{"date": "2026-11-12", "teams": [1]}'),
+                    "같은 날을 다시 넣으면 덮어쓴다 (한 줄)")
+            for args, why in ((("2026-11-12", "{}"), "같은 날 두 번(덮어쓰기 없이)"), (("2026-02-30", "{}"), "없는 날"), (("2026-1-02", "{}"), "날짜 모양"),
+                              ((None, "{}"), "날짜 비어 있음"), (("2026-11-13", "[]"), "객체가 아닌 JSON"), (("2026-11-13", "{"), "깨진 JSON"),
+                              (("2026-11-13", None), "자료 비어 있음")):
+                ok, msg = _rejects(conn, ins, args)
+                _report(ok, f"근태 {why} 거부", msg)
+        finally:
+            conn.close()
+
+
 def main() -> int:
     print("=" * 62)
     print("SQLite 스키마 적용 + 제약조건 동작 검사")
@@ -2140,6 +2170,7 @@ def main() -> int:
     check_eval_rules_tables()
     check_eval_rules_migration()
     check_trip_rules_table()
+    check_attendance_table()
 
     print("-" * 62)
     if _failures:
