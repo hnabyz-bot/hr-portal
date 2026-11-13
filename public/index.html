@@ -818,7 +818,7 @@
   .at-stat td.n, .at-stat th.n{ text-align:right; font-variant-numeric:tabular-nums; }
   .at-stat td.z{ color:#C4CDD8; }
   .at-stat tr.d td{ background:#F7FBFE; font-size:var(--fs-sm); color:var(--text-secondary); }
-  /* 내 근태 탭 */
+  /* 나의 근무현황 탭 */
   .at-my{ border:1px solid var(--border); border-radius:var(--radius); overflow:hidden; }
   .at-my > div{ display:grid; grid-template-columns:110px 80px 80px minmax(0,1fr) minmax(0,1.3fr); gap:8px; align-items:center; padding:9px 14px; font-size:var(--fs-md); border-top:1px solid #E6EEF4; }
   .at-my > div:first-child{ border-top:0; background:#F4F8FB; font-size:var(--fs-sm); font-weight:600; color:var(--text-secondary); }
@@ -15635,6 +15635,10 @@ function attSelfCheck(){   // 브라우저 콘솔에서 attSelfCheck() 실행 �
     Object.assign(AUTH, { live:true, me:{ ...(me || {}), position:'TEAM_LEADER', is_hr:false } });
     ok(attCanUse() && NAV.find(n=>n.id==='att').show(), '팀장에게 메뉴가 보인다');
     AUTH.me.position = null; ok(!attCanUse(), '직원에게는 메뉴가 없다'); AUTH.me.position = 'TEAM_LEADER';
+    const tabA4 = NAV.find(n=>n.id==='att').tabs.find(t=>t.id==='a4');
+    ok(tabA4.label==='나의 근무현황' && tabA4.show(), '팀장: 나의 근무현황 탭이 보인다');
+    for(const pos of ['CEO', 'DIVISION_HEAD']){ AUTH.me.position = pos; ok(attCanUse() && !tabA4.show(), pos + ': 근태 현황은 보이고 나의 근무현황 탭은 없다'); }
+    AUTH.me.position = 'DIVISION_HEAD'; AUTH.me.is_hr = true; ok(tabA4.show(), 'HR 권한이 있으면 보인다'); AUTH.me.is_hr = false; AUTH.me.position = 'TEAM_LEADER';
     Object.assign(AT, { state:'ok', at:Date.now(), want:'2026-11-11', dates:['2026-11-12', '2026-11-11', '2026-11-10'], open:new Set(), all:new Set(),
                         d:{ date:'2026-11-11', scope:'가상본부', uploadedAt:'2026-11-12T01:45:00Z', teams } });
     let h = attContent();
@@ -15681,7 +15685,7 @@ function attSelfCheck(){   // 브라우저 콘솔에서 attSelfCheck() 실행 �
             { date:'2026-11-09', team:'가상A팀', checkIn:'-', checkOut:'-', status:'연차', lateMinutes:0, doc:null }] } });
     h = attMy();
     ok(h.includes('2026년 11월') && h.includes('1회 · 8분') && h.includes('1.5일') && h.includes('미인식 소명서 · 확인 전') && h.includes('지각 소명서 · 확인됨') && h.includes('지각 8분')
-       && (h.match(/class="bad"/g) || []).length===2 && !/주간|52/.test(h) && h.includes("attMyGo('2026-10')"), '내 근태: 요약 · 날짜별 · 서류 상태 · 주간 시간 없음 · 지난 달');
+       && (h.match(/class="bad"/g) || []).length===2 && !/주간|52/.test(h) && h.includes("attMyGo('2026-10')"), '나의 근무현황: 요약 · 날짜별 · 서류 상태 · 주간 시간 없음 · 지난 달');
   } finally {
     Object.assign(AT, keep); Object.assign(AUTH, { live, me }); currentNav = nav; currentTab = tab;
     Object.assign(AT_C, { state:'', d:null, f:'mine' }); Object.assign(AT_S, { state:'', period:'', d:null, more:false, open:'' }); Object.assign(AT_MY, { state:'', period:'', d:null });
@@ -15805,12 +15809,13 @@ function attStats(){   // 월 · 연 집계 탭
     <div class="at-foot">지각 횟수가 많은 사람부터 · 지각 · 미인식이 없는 사람은 빼고 보입니다 · 이름을 누르면 날짜별 · 시간은 출퇴근 기록으로 계산한 추정치입니다</div>
   </div>`;
 }
-const AT_MY = { state:'', period:'', d:null };   // 내 근태 탭 (GET /api/attendance/me)
-function attMy(){   // 내 근태 — HR · 팀장 · 본부장 본인 (주간 근무시간 칸은 넣지 않는다)
-  if(!attCanUse()) return kpiNote('내 근태는 근태 현황을 쓰는 분만 볼 수 있습니다.');
+const AT_MY = { state:'', period:'', d:null };   // 나의 근무현황 탭 (GET /api/attendance/me)
+function attMyCanUse(){ return attCanUse() && (!!AUTH.me?.is_hr || AUTH.me?.position==='TEAM_LEADER'); }   // HR · 팀장만 — 대표이사 · 본부장은 탭이 없다 (2026-11-13 인사담당자)
+function attMy(){   // 나의 근무현황 — HR · 팀장 본인 (주간 근무시간 칸은 넣지 않는다)
+  if(!attMyCanUse()) return kpiNote('나의 근무현황은 HR · 팀장만 볼 수 있습니다.');
   if(AT_MY.state !== 'ok' || (AT_MY.period && AT_MY.d.period !== AT_MY.period)){
     if(AT_MY.state !== 'loading') attMyLoad();
-    return kpiNote(AT_MY.state==='err' ? '내 근태를 불러오지 못했습니다. 잠시 뒤 새로 고쳐 주세요.' : '내 근태를 불러오는 중입니다…', AT_MY.state==='err' ? 'danger' : 'info');
+    return kpiNote(AT_MY.state==='err' ? '나의 근무현황을 불러오지 못했습니다. 잠시 뒤 새로 고쳐 주세요.' : '나의 근무현황을 불러오는 중입니다…', AT_MY.state==='err' ? 'danger' : 'info');
   }
   const d = AT_MY.d, s = d.sum, i = d.months.indexOf(d.period), older = d.months[i + 1], newer = i > 0 ? d.months[i - 1] : '';
   const label = `${d.period.slice(0, 4)}년 ${+d.period.slice(5)}월`, t = v=>!v || v==='-' ? '—' : escapeHtml(v);
@@ -15875,7 +15880,7 @@ const NAV = [
       {id:'a1', label:'일일 현황', render:attContent},
       {id:'a2', label:'서류 확인', render:attChecks},   // 지각 · 미인식 · 서류 누락 — 팀장이 연락하고 제출 확인 (2단계)
       {id:'a3', label:'월·연 집계', render:attStats},
-      {id:'a4', label:'내 근태', render:attMy},   // HR · 팀장 · 본부장 본인 (2026-11-13 인사담당자)
+      {id:'a4', label:'나의 근무현황', render:attMy, show:()=>attMyCanUse()},   // HR · 팀장 본인 — 대표이사 · 본부장에게는 탭이 없다 (2026-11-13 인사담당자)
   ]},
   { id:'rule', label:'규정 검색', icon:'search', tabs:[
       {id:'r1', label:'규정 검색', render:ruleSearch},

@@ -12,7 +12,7 @@ app.py 가 bp 를 붙인다. 설계 docs/superpowers/specs/2026-11-13-attendance
   POST /api/attendance/mine     {date, team} 본인 "제출했어요"
   POST /api/attendance/found    늦게 낸 서류 자동 확인 (HR PC — 세션 없이, 같은 열쇠)
   GET  /api/attendance/stats    ?period=YYYY | YYYY-MM 월 · 연 집계 (볼 수 있는 사람 — 범위 안만)
-  GET  /api/attendance/me       ?period=YYYY-MM 내 근태 (누구나 — 내 것만: 이름과 소속 단위가 둘 다 맞는 줄)
+  GET  /api/attendance/me       ?period=YYYY-MM 나의 근무현황 (누구나 — 내 것만: 이름과 소속 단위가 둘 다 맞는 줄)
 
 서류 확인 (2단계): 챙길 사람은 그날 자료에서 고르고(kind_of — 미인식 · 지각 · 결근 / 비고 [확인필요] · 문서 없음) 체크 기록만 저장한다(026).
 책임자 = 바로 위 관리자(KPI 와 같은 manager_of), 이름을 못 맞춘 사람은 그 본부의 본부장(본부도 모르면 HR) 몫. 기한 = 근태 날짜 + 7일. CHECK_FROM 전 · 60일보다 오래된 날은 목록 · 알림에 안 나온다.
