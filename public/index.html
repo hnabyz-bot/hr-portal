@@ -798,13 +798,13 @@
   .at-c.late .st{ font-weight:700; }
   .at-c.done .who, .at-c.done .st{ color:var(--text-muted); } .at-c.done .st b{ color:var(--success); font-weight:600; }
   .at-c .bt{ display:flex; gap:4px; justify-content:flex-end; flex-wrap:wrap; }
-  .at-c svg{ width:13px; height:13px; vertical-align:-2px; flex:none; }
+  .at-c svg{ width:12px; height:12px; vertical-align:-1px; flex:none; }
   .at-foot{ margin-top:10px; font-size:var(--fs-xs); color:var(--text-muted); }
   /* 직원 본인 알림 카드 (오늘 할 일 창 맨 위) */
   .at-mine{ display:flex; flex-direction:column; gap:8px; margin:0 0 10px; }
   .at-mc{ padding:10px 12px; border:1px solid #F6CFD2; border-radius:var(--radius); background:var(--bg-danger); color:var(--danger); }
-  .at-mc > b{ display:flex; align-items:center; gap:6px; font-weight:600; } .at-mc > b svg{ width:15px; height:15px; }
-  .at-mc p{ margin:4px 0 8px; font-size:var(--fs-xs); }
+  .at-mc > b{ display:flex; align-items:center; gap:6px; font-weight:600; } .at-mc > b svg{ width:13px; height:13px; flex:none; }
+  .at-mc p{ margin:4px 0 8px; font-size:var(--fs-xs); } .at-mc p b{ font-weight:700; }
   .at-mc .bts{ display:flex; gap:6px; flex-wrap:wrap; }
   .at-mc.self{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; border-color:#E1E6ED; background:#F7F9FB; color:var(--text-secondary); }
   .at-mc.self > b{ flex:1; }
@@ -15652,6 +15652,7 @@ function attSelfCheck(){   // 브라우저 콘솔에서 attSelfCheck() 실행 �
     const keepT = { ...AT_TODO, mine:[...AT_TODO.mine] };
     Object.assign(AT_TODO, { mine:[{ date:'2026-11-12', team:'가상A팀', kind:'miss', doc:'미인식 소명서', label:'퇴근 미인식', self:false }, { date:'2026-11-10', team:'가상A팀', kind:'late', doc:'지각 소명서', label:'지각 8분', self:true }], open:0, overdue:0 });
     h = attMineCards();
+    ok(h.includes('문서 종류 <b>미인식소명서</b>') && AT_FORM.late===AT_HW_WRITE && AT_FORM.leave.includes('vacation-apply'), '소명서 쓰러 가기: 고를 양식 이름 · 휴가 신청은 따로');
     ok(h.includes('11월 12일 (목) 퇴근 미인식') && h.includes('소명서 쓰러 가기') && h.includes('제출했어요') && h.includes('제출함 · 팀장 확인 대기') && !/주간|52|연차/.test(h), '직원 카드: 소명서 쓰러 가기 · 제출했어요 · 제출함 — 주간 시간 · 연차는 없다');
     ok(TODO.am()===1 && homePortalTasks().some(p=>p.att && p.title==='미인식 소명서 · 11/12') && !homePortalRows('x; ').includes('미인식 소명서 · 11/12'), '홈 줄은 제출 안 한 것만 · 오늘 할 일 창에서는 카드로');
     Object.assign(AT_TODO, keepT);
@@ -15671,8 +15672,9 @@ function attSelfCheck(){   // 브라우저 콘솔에서 attSelfCheck() 실행 �
    챙길 사람(미인식 · 지각 · 서류 누락)은 서버가 그날 자료에서 고르고 체크 기록만 저장한다(attendance.py collect).
    서류 확인 = 내가 챙길 사람(책임자 = 바로 위 관리자) · 전체 · 확인 완료. 근태 날짜 + 7일부터 빨간 "기한 지남" · 왼쪽 메뉴 숫자 · 9시 알림.
    직원은 근태 메뉴 없이 내 서류가 있을 때만 오늘 할 일 창 맨 위 카드 + 오늘의 업무 줄 (주간 근무시간 · 연차는 직원에게 보이지 않는다). */
-const AT_FORM = { miss:'', late:'', leave:'' };   // 하이웍스 전자결재 양식 쓰기 주소 (미인식 소명서 · 지각 소명서 · 휴가신청서) — 인사담당자가 알려 주면 채운다
-const AT_FORM_HOME = 'https://approval.office.hiworks.com/';   // 양식 주소를 모를 때: 하이웍스 전자결재 첫 화면
+const AT_HW_WRITE = 'https://approval.office.hiworks.com/abyzr.com/approval/document/write';   // 하이웍스 전자결재 작성하기 — 주소로 양식을 미리 고를 수 없어(2026-11-13 확인) 카드에 고를 양식 이름을 적는다
+const AT_FORM = { miss:AT_HW_WRITE, late:AT_HW_WRITE, leave:'https://hr-work.office.hiworks.com/approval/vacation-apply' };   // 휴가 신청은 양식이 골라진 채로 열린다
+const AT_FORM_PICK = { miss:'미인식소명서', late:'지각소명서' };   // 하이웍스 '문서 종류'에 보이는 이름 그대로
 const AT_TODO = { mine:[], open:0, overdue:0 };   // GET /api/attendance/todo — 내 서류 · 내가 챙길 확인 전 · 기한 지남
 const AT_C = { state:'', d:null, f:'mine' };   // 서류 확인 탭
 const AT_S = { state:'', period:'', d:null, more:false, open:'' };   // 월 · 연 집계 탭
@@ -15687,10 +15689,10 @@ function attMineCards(){   // 오늘 할 일 창 맨 위 — 내 지각 · 미�
   if(!AUTH.live || !AT_TODO.mine.length) return '';
   return `<div class="at-mine">${AT_TODO.mine.map((x, i)=>x.self
     ? `<div class="at-mc self">${icon('clock')}<b>${attDay(x.date)} ${escapeHtml(x.label)}</b><span class="at-tag info">제출함 · 팀장 확인 대기</span></div>`
-    : `<div class="at-mc"><b>${icon('flag')}${attDay(x.date)} ${escapeHtml(x.label)}</b><p>${escapeHtml(x.doc)}를 하이웍스 전자결재로 내 주세요.</p>
+    : `<div class="at-mc"><b>${icon('flag')}${attDay(x.date)} ${escapeHtml(x.label)}</b><p>${AT_FORM_PICK[x.kind] ? `하이웍스 전자결재 작성 화면에서 문서 종류 <b>${AT_FORM_PICK[x.kind]}</b>를 골라 내 주세요.` : '하이웍스 휴가 신청으로 내 주세요.'}</p>
         <div class="bts"><button type="button" class="btn primary sm" onclick="attForm('${x.kind}')">${x.kind==='leave' ? '휴가신청서' : '소명서'} 쓰러 가기 ↗</button><button type="button" class="btn sm" onclick="attSelf(${i})">제출했어요</button></div></div>`).join('')}</div>`;
 }
-function attForm(kind){ const w = window.open(AT_FORM[kind] || AT_FORM_HOME, '_blank'); if(w) try { w.opener = null; } catch(e){} else wsNotice('새 창이 막혔어요. 이 사이트의 팝업을 허용한 뒤 다시 눌러 주세요.'); }
+function attForm(kind){ const w = window.open(AT_FORM[kind] || AT_HW_WRITE, '_blank'); if(w) try { w.opener = null; } catch(e){} else wsNotice('새 창이 막혔어요. 이 사이트의 팝업을 허용한 뒤 다시 눌러 주세요.'); }
 async function attSelf(i){   // 본인 "제출했어요" — 9시 알림이 멈추고 팀장 화면에 '본인 제출함'
   const x = AT_TODO.mine[i];
   if(!x) return;
