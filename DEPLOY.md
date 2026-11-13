@@ -349,10 +349,17 @@ HR PC 의 데일리 근태 예약작업(평일 10:45)이 하루치를 포털로 
 열쇠는 **HR PC 에서 만들어 파일에 두고, 같은 값을 ssh 로 서버 `.env`에 보낸다** — 값이 화면 · 터미널 기록에 찍히지 않는다. HR PC 의 Git Bash 에서(`<서버>`는 평소 ssh 로 서버에 들어갈 때 쓰는 이름 — 공개 저장소라 적지 않는다):
 
 ```bash
-mkdir -p ~/.hr-portal && python -c "import secrets;print(secrets.token_urlsafe(32))" > ~/.hr-portal/attend_key
-ssh <서버> 'cd ~/workspace/github-hnabyz-bot/hr-portal && if grep -q "^HR_ATTEND_KEY=" .env; then echo "이미 있음 — 그대로 둠"; else printf "\nHR_ATTEND_KEY=%s\n" "$(cat)" >> .env && docker compose up -d && echo "넣음"; fi' < ~/.hr-portal/attend_key
+mkdir -p ~/.hr-portal && python -c "import secrets;print(secrets.token_urlsafe(32))" | tr -d '\r' > ~/.hr-portal/attend_key
+tr -d '\r\n' < ~/.hr-portal/attend_key | ssh <서버> 'cd ~/workspace/github-hnabyz-bot/hr-portal && if grep -q "^HR_ATTEND_KEY=" .env; then echo "이미 있음 — 그대로 둠"; else printf "\nHR_ATTEND_KEY=%s\n" "$(cat)" >> .env && docker compose up -d && echo "넣음"; fi'
 awk '{print "PC 열쇠: " length($0) "자"}' ~/.hr-portal/attend_key
+ssh <서버> 'cd ~/workspace/github-hnabyz-bot/hr-portal && awk -F= "/^HR_ATTEND_KEY=/{print \"서버 열쇠: \" length(\$2) \"자\"}" .env'
 ```
+
+- **두 줄의 글자 수가 같아야 한다(43자).** 윈도우의 파이썬은 줄 끝에 보이지 않는 글자(`\r`)를 붙여 쓰는데, 이것이 서버 `.env`에 들어가면 열쇠가 한 글자 길어져 `403`이 난다(2026-11-13 처음 넣을 때 실제로 44자가 됐다). 그래서 위 명령은 보내기 전에 `tr -d '\r'`로 뗀다.
+- 서버가 44자로 나오면 서버에서 그 글자만 떼고 다시 띄운다(값은 보이지 않는다):
+  `ssh <서버> 'cd ~/workspace/github-hnabyz-bot/hr-portal && sed -i "/^HR_ATTEND_KEY=/s/\r\$//" .env && docker compose up -d'`
+- 열쇠가 맞는지 시험(값은 보이지 않는다): 아래가 `400`이면 맞고, `403`이면 다르다(일부러 틀린 날짜를 보내 아무것도 저장되지 않는다).
+  `curl -s -o /dev/null -w "%{http_code}\n" -X POST https://hr.abyz-lab.work/api/attendance/upload -H "Content-Type: application/json" -H "X-Attend-Key: $(tr -d '\r\n' < ~/.hr-portal/attend_key)" -d '{"date":"2026-02-30","teams":[]}'`
 
 그다음 지난 자료(8/20~)를 한 번에 올린다 — HR PC 의 `근태현황 대시보드 제작` 폴더에서:
 
@@ -361,7 +368,7 @@ python upload_portal.py --all
 ```
 
 - 끝에 `포털 반영 N/N일`이 나오면 성공. 이후로는 평일 10:45 예약작업이 알아서 보낸다(`update.log`에 `포털 반영 YYYY-MM-DD (200)`).
-- **`403 열쇠가 맞지 않습니다`** = PC 파일과 서버 `.env`의 값이 다르다 → 서버 `.env`의 `HR_ATTEND_KEY` 줄을 지우고 위 두 번째 줄을 다시 돌린다. **`404`** = 서버에 열쇠가 없거나 32자보다 짧다(또는 이 기능이 아직 운영에 반영 전).
+- **`403 열쇠가 맞지 않습니다`** = PC 파일과 서버 `.env`의 값이 다르다 → 먼저 위 글자 수 두 줄을 비교한다(서버만 한 글자 길면 위 `sed` 한 줄). 그래도 다르면 서버 `.env`의 `HR_ATTEND_KEY` 줄을 지우고 위 두 번째 줄을 다시 돌린다. **`404`** = 서버에 열쇠가 없거나 32자보다 짧다(또는 이 기능이 아직 운영에 반영 전).
 - 열쇠는 `~/.hr-portal/attend_key`(OneDrive 밖)와 서버 `.env`에만 둔다. 잃어도 새로 만들어 두 곳을 바꾸면 된다 — 저장된 근태 자료는 그대로다.
 - 정정한 날을 다시 보낼 때: `python upload_portal.py --date 2026-10-28`(그날 `history/` 파일을 보낸다 — 같은 날은 덮어쓴다).
 - **2단계(서류 확인)** — 새 표(DB 판 26)는 서버가 뜰 때 저절로 만든다(반영 뒤 서버 로그에 `DB 준비 완료 (판 26)`). 열쇠는 위 것을 그대로 쓴다. 서류 확인은 `attendance.py`의 `CHECK_FROM`(2026-11-16) 근태부터 센다.
