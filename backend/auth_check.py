@@ -9006,6 +9006,114 @@ def check_trip_rules(hr) -> None:
     x("DELETE FROM trip_rules")
 
 
+
+def check_attendance(hr) -> None:
+    """근태 현황 (2026-11-13): HR PC 가 열쇠로 하루치를 올린다(세션 · Origin 없이) · 열쇠가 없거나 짧으면 404 · 틀리면 403 · 모양이 틀리면 400 ·
+    같은 날은 덮어쓴다 · 보는 범위(HR · 대표이사 전체 / 본부장 · 팀장 = 본부 전체 / 직속 팀장 = 자기 팀 / 직원 403) · 다른 범위의 팀은 응답 어디에도 없다 ·
+    서버 로그에 이름이 없다. 팀 ↔ 본부는 사람 이름으로 맞춘다(근태 팀 이름은 하이웍스 부서 이름과 다르다).
+    이 검사만의 가상 조직: 부서 651~655 · 사람 6501~6509. 끝나면 근태 줄을 지우고 사람은 비활성으로 두며 열쇠를 되돌린다."""
+    print("근태 현황")
+    for dept in ((651, "A71", "가상근태본부", "DIVISION", None), (652, "A72", "가상근태팀A", "TEAM", 651), (653, "A73", "가상근태팀B", "TEAM", 651),
+                 (654, "A74", "가상근태본부2", "DIVISION", None), (655, "A75", "가상근태지원팀", "DIVISION", None)):
+        x("INSERT INTO departments (id, code, name, level, parent_id) VALUES (?, ?, ?, ?, ?)", *dept)
+    HEAD, LEAD, EMPA, EMPB, EMP2, DLEAD, DEMP, CEO, EMP = range(6501, 6510)
+    cast = {HEAD: ("가상근태본부장", 651, "DIVISION_HEAD"), LEAD: ("가상근태팀장", 652, "TEAM_LEADER"), EMPA: ("가상근태팀원A", 652, None),
+            EMPB: ("가상근태팀원B", 653, None), EMP2: ("가상근태본부2직원", 654, None), DLEAD: ("가상근태지원팀장", 655, "TEAM_LEADER"),
+            DEMP: ("가상근태지원팀원", 655, None), CEO: ("가상근태대표", 655, "CEO"), EMP: ("가상근태직원", 652, None)}
+    for uid, (name, dept, role) in cast.items():
+        x("INSERT INTO users (id, name, email, department_id, hiworks_user_no, portal_enabled) VALUES (?, ?, ?, ?, ?, 1)",
+          uid, name, f"a{uid}@example.invalid", dept, f"HW-{uid}")
+        if role:
+            x("INSERT INTO user_roles (user_id, role) VALUES (?, ?)", uid, role)
+    jar: dict[int, object] = {}
+
+    def c(uid):
+        if uid not in jar:
+            jar[uid] = app.test_client()
+            login(jar[uid], new_token(f"HW-{uid}"))
+        return jar[uid]
+
+    def mem(name, status="정상", hours=40.0, note=None):
+        m = {"name": name, "position": "프로", "checkIn": "08:50", "checkOut": "18:05", "status": status, "lateMinutes": 0,
+             "overtimeMinutes": {"연장": 5, "야간": 0, "휴일": 0}, "weeklyActualHours": hours, "over52Flag": False, "주민번호": "x"}
+        return dict(m, note=note) if note else m
+
+    def day(d, extra=""):
+        return {"date": d, "teams": [
+            {"team": "근태A제조팀", "summary": {"총원": 2}, "members": [mem("가상근태팀장"), mem("가상근태팀원A", "미인식", note="[확인필요] 퇴근 미인식" + extra)]},
+            {"team": "근태B팀", "summary": {"총원": 2}, "members": [mem("가상근태팀원B", hours=46.5), mem("가상근태모르는분")]},
+            {"team": "근태본부2팀", "summary": {"총원": 1}, "members": [mem("가상근태본부2직원", "지각")]},
+            {"team": "근태지원", "summary": {"총원": 2}, "members": [mem("가상근태지원팀장"), mem("가상근태지원팀원")]},
+            {"team": "근태모름", "summary": {"총원": 1}, "members": [mem("가상근태없는이름")]}]}
+
+    def up(body, key=None, cl=None):
+        return (cl or app.test_client()).post("/api/attendance/upload", base_url=BASE, json=body,
+                                              headers={"X-Attend-Key": key} if key is not None else {})
+
+    had = os.environ.pop("HR_ATTEND_KEY", None)
+    KEY = "k" * 40
+    logs: list[str] = []
+
+    class Grab(logging.Handler):
+        def emit(self, rec: logging.LogRecord) -> None:
+            logs.append(rec.getMessage())
+
+    grab = Grab(level=logging.INFO)
+    root = logging.getLogger()
+    root.addHandler(grab)
+    try:
+        ok(up(day("2026-11-12"), KEY).status_code == 404, "서버에 열쇠가 없으면 올리기 404 (기능 꺼짐)")
+        os.environ["HR_ATTEND_KEY"] = "k" * 31
+        ok(up(day("2026-11-12"), "k" * 31).status_code == 404, "32자보다 짧은 열쇠는 없는 것과 같다")
+        os.environ["HR_ATTEND_KEY"] = KEY
+        ok(up(day("2026-11-12")).status_code == 403 and up(day("2026-11-12"), "k" * 39).status_code == 403, "열쇠가 없거나 틀리면 403")
+        ok(up(day("2026-02-30"), KEY).status_code == 400 and up({"date": "2026-11-12", "teams": []}, KEY).status_code == 400
+           and up(None, KEY).status_code == 400, "모양이 틀리면 400 (없는 날 · 팀 없음 · 몸통 없음)")
+        ok(not q("SELECT 1 FROM attendance_days WHERE date IN ('2026-11-12', '2026-02-30')"), "거절한 것은 저장하지 않는다")
+        r = up(day("2026-11-12"), KEY)
+        ok(r.status_code == 200 and r.json == {"ok": True, "date": "2026-11-12"}, "열쇠가 맞으면 세션 · Origin 없이 저장")
+        r = up(day("2026-11-12", " — 하이웍스 문서 없음"), KEY, c(EMP))
+        ok(r.status_code == 200 and q("SELECT COUNT(*) FROM attendance_days WHERE date = '2026-11-12'") == [(1,)]
+           and "하이웍스 문서 없음" in q("SELECT data FROM attendance_days WHERE date = '2026-11-12'")[0][0], "같은 날을 다시 보내면 덮어쓴다 (한 줄)")
+        ok("주민번호" not in q("SELECT data FROM attendance_days WHERE date = '2026-11-12'")[0][0], "모르는 칸은 저장하지 않는다")
+        ok(up(day("2026-11-11"), KEY).status_code == 200, "다른 날도 저장")
+        ok(any("근태 자료 저장" in m for m in logs) and not any("가상근태" in m for m in logs), "서버 로그에 이름이 없다 (날짜 · 팀 수 · 사람 수만)")
+
+        ok(app.test_client().get("/api/attendance/dates", base_url=BASE).status_code == 401, "보기는 로그인 없이 401")
+        ok(c(EMP).get("/api/attendance/dates", base_url=BASE).status_code == 403 and c(EMP2).get("/api/attendance/day", base_url=BASE).status_code == 403,
+           "직원은 403")
+        r = c(LEAD).get("/api/attendance/dates", base_url=BASE)
+        ok(r.status_code == 200 and r.json["dates"][:2] == ["2026-11-12", "2026-11-11"] and r.headers.get("Cache-Control") == "no-store",
+           "날짜는 최근 날부터 · 브라우저에 남기지 않는다")
+
+        def teams(uid, d=""):
+            r = c(uid).get("/api/attendance/day" + (f"?date={d}" if d else ""), base_url=BASE)
+            return r.json["scope"], [t["team"] for t in r.json["teams"]], r
+
+        ALL = ["근태A제조팀", "근태B팀", "근태본부2팀", "근태지원", "근태모름"]
+        ok(teams(HEAD)[:2] == ("가상근태본부", ["근태A제조팀", "근태B팀"]), "본부장 = 자기 본부의 팀만 (근태 팀 이름이 하이웍스와 달라도 사람으로 맞춘다)")
+        ok(teams(LEAD)[:2] == ("가상근태본부", ["근태A제조팀", "근태B팀"]), "팀장 = 자기 팀이 아니라 본부 전체")
+        ok(teams(DLEAD)[:2] == ("가상근태지원팀", ["근태지원"]), "대표이사 직속 팀장 = 자기 팀")
+        ok(teams(CEO)[:2] == ("전체", ALL) and teams(1)[:2] == ("전체", ALL), "대표이사 · HR = 전체 (못 맞춘 팀 포함)")
+        body = json.dumps(teams(LEAD)[2].json, ensure_ascii=False)
+        ok(not any(w in body for w in ("근태본부2팀", "가상근태본부2직원", "근태지원", "근태모름", "가상근태없는이름")), "다른 범위의 팀 · 사람은 응답 어디에도 없다")
+        r = teams(LEAD)[2].json
+        ok(r["date"] == "2026-11-12" and r["uploadedAt"] and r["teams"][0]["members"][1]["note"].startswith("[확인필요]"), "날짜를 안 주면 가장 최근 날 · 비고(note)도 온다")
+        ok(teams(LEAD, "2026-11-11")[2].json["date"] == "2026-11-11", "?date= 로 다른 날")
+        r = teams(LEAD, "2026-11-10")[2].json
+        ok(r["teams"] == [] and r["date"] == "2026-11-10", "자료가 없는 날은 빈 목록")
+        x("UPDATE users SET is_active = 0, deactivated_at = '2026-11-13T00:00:00Z' WHERE id = ?", EMPA)
+        ok(teams(LEAD)[1] == ["근태A제조팀", "근태B팀"], "한 사람이 빠져도 나머지 구성원으로 맞춘다")
+    finally:
+        root.removeHandler(grab)
+        x("DELETE FROM attendance_days WHERE date IN ('2026-11-11', '2026-11-12')")
+        x("UPDATE users SET is_active = 0, deactivated_at = '2026-11-13T00:00:00Z' WHERE id BETWEEN 6501 AND 6509 AND is_active = 1")
+        os.environ.pop("HR_ATTEND_KEY", None)
+        if had is not None:
+            os.environ["HR_ATTEND_KEY"] = had
+    ok(not q("SELECT 1 FROM attendance_days") and os.environ.get("HR_ATTEND_KEY") == had, "끝나면 근태 줄을 지우고 열쇠를 되돌린다")
+
+
 def main() -> int:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     seed()
@@ -9268,6 +9376,7 @@ def main() -> int:
     check_cards(hr)
     check_usage(hr)
     check_trip_rules(hr)
+    check_attendance(hr)
 
     acts = {r[0] for r in q("SELECT action FROM audit_logs")}
     ok({"LOGIN", "HR_BOOTSTRAP"} <= acts, "감사로그 LOGIN 이 남음")

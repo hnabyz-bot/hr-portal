@@ -339,3 +339,28 @@ docker compose logs api --tail 50    # "DB 준비 완료 (판 20)" 가 보이면
 cd ~/workspace/github-hnabyz-bot/hr-portal
 docker compose exec -T api python -c "import os,sqlite3; c=sqlite3.connect(os.environ['HR_DB_PATH'], timeout=5); n=c.execute(\"UPDATE cards SET read_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE read_at IS NULL\").rowcount; c.commit(); print(f'{n}장을 읽음으로 바꿨습니다')"
 ```
+
+---
+
+## 14. 근태 현황 — 열쇠 한 번 (서버 + HR PC)
+
+HR PC 의 데일리 근태 예약작업(평일 10:45)이 하루치를 포털로 보낸다(설계: `docs/superpowers/specs/2026-11-13-attendance-design.md`). 새 표(DB 판 25)는 서버가 뜰 때 저절로 만든다(반영 뒤 서버 로그에 `DB 준비 완료 (판 25)`). **열쇠는 사람이 한 번 넣는다** — 넣기 전에는 올리기가 404이고 근태 현황 화면은 "아직 올라온 근태 자료가 없습니다"로 뜬다(다른 기능은 그대로).
+
+열쇠는 **HR PC 에서 만들어 파일에 두고, 같은 값을 ssh 로 서버 `.env`에 보낸다** — 값이 화면 · 터미널 기록에 찍히지 않는다. HR PC 의 Git Bash 에서(`<서버>`는 평소 ssh 로 서버에 들어갈 때 쓰는 이름 — 공개 저장소라 적지 않는다):
+
+```bash
+mkdir -p ~/.hr-portal && python -c "import secrets;print(secrets.token_urlsafe(32))" > ~/.hr-portal/attend_key
+ssh <서버> 'cd ~/workspace/github-hnabyz-bot/hr-portal && if grep -q "^HR_ATTEND_KEY=" .env; then echo "이미 있음 — 그대로 둠"; else printf "\nHR_ATTEND_KEY=%s\n" "$(cat)" >> .env && docker compose up -d && echo "넣음"; fi' < ~/.hr-portal/attend_key
+awk '{print "PC 열쇠: " length($0) "자"}' ~/.hr-portal/attend_key
+```
+
+그다음 지난 자료(8/20~)를 한 번에 올린다 — HR PC 의 `근태현황 대시보드 제작` 폴더에서:
+
+```bash
+python upload_portal.py --all
+```
+
+- 끝에 `포털 반영 N/N일`이 나오면 성공. 이후로는 평일 10:45 예약작업이 알아서 보낸다(`update.log`에 `포털 반영 YYYY-MM-DD (200)`).
+- **`403 열쇠가 맞지 않습니다`** = PC 파일과 서버 `.env`의 값이 다르다 → 서버 `.env`의 `HR_ATTEND_KEY` 줄을 지우고 위 두 번째 줄을 다시 돌린다. **`404`** = 서버에 열쇠가 없거나 32자보다 짧다(또는 이 기능이 아직 운영에 반영 전).
+- 열쇠는 `~/.hr-portal/attend_key`(OneDrive 밖)와 서버 `.env`에만 둔다. 잃어도 새로 만들어 두 곳을 바꾸면 된다 — 저장된 근태 자료는 그대로다.
+- 정정한 날을 다시 보낼 때: `python upload_portal.py --date 2026-10-28`(그날 `history/` 파일을 보낸다 — 같은 날은 덮어쓴다).

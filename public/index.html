@@ -725,6 +725,79 @@
   .us-bar > b{ font-size:var(--fs-xs); }
   .us-tbl td small{ display:block; color:var(--text-muted); }
   .us-no{ color:var(--danger); }
+  /* ---------- 근태 현황 (2026-11-13 인사담당자 결정 — "매일 쌓여도 지저분하지 않게") ----------
+     한 번에 하루치 · 챙길 것 두 칸 · 숫자 한 줄 · 팀은 접힌 한 줄 · 펼치면 특이사항 있는 사람만. 화면 attContent · 검증 attSelfCheck() */
+  .at-head{ display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; margin-bottom:14px; }
+  .at-date{ display:flex; align-items:center; gap:6px; }
+  .at-date > b{ min-width:128px; padding:0 4px; font-size:var(--fs-lg); text-align:center; white-space:nowrap; }
+  .at-nav{ position:relative; width:32px; height:32px; flex:none; display:inline-flex; align-items:center; justify-content:center; padding:0; border:1px solid var(--border); border-radius:var(--radius-sm); background:var(--surface); color:var(--text-secondary); cursor:pointer; }
+  .at-nav:hover:not(:disabled){ border-color:var(--sky); color:var(--accent); }
+  .at-nav:disabled{ opacity:.35; cursor:default; }
+  .at-nav svg{ width:16px; height:16px; }
+  .at-cal{ position:relative; display:inline-flex; }
+  .at-cal input{ position:absolute; inset:0; width:100%; height:100%; opacity:0; pointer-events:none; }
+  .at-meta{ font-size:var(--fs-xs); color:var(--text-muted); }
+  .at-focus{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; margin-bottom:12px; }
+  .at-focus button{ min-width:0; padding:12px 14px; border:1px solid; border-radius:var(--radius); font:inherit; text-align:left; cursor:pointer; }
+  .at-focus span{ display:block; margin-bottom:2px; font-size:var(--fs-xs); font-weight:600; }
+  .at-focus b{ font-size:var(--fs-xl); font-weight:700; letter-spacing:-.01em; }
+  .at-focus b small{ margin-left:4px; font-size:var(--fs-xs); font-weight:500; }
+  .at-focus .danger{ background:var(--bg-danger); border-color:#F6CFD2; color:var(--danger); }
+  .at-focus .warn{ background:var(--bg-warning); border-color:#F4CDBE; color:var(--warning); }
+  .at-focus .info{ background:var(--accent-soft); border-color:var(--accent-light); color:var(--accent); }
+  .at-focus .calm{ background:#F4F6F9; border-color:#E1E6ED; color:var(--text-secondary); }
+  .at-nums{ display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); margin-bottom:14px; border:1px solid var(--border); border-radius:var(--radius); text-align:center; }
+  .at-nums div{ padding:8px 2px; }
+  .at-nums div + div{ border-left:1px solid var(--border); }
+  .at-nums span{ display:block; font-size:var(--fs-xs); color:var(--text-muted); }
+  .at-nums b{ font-size:var(--fs-lg); }
+  .at-teams{ border:1px solid var(--border); border-radius:var(--radius); overflow:hidden; }
+  .at-team + .at-team{ border-top:1px solid var(--border); }
+  .at-row{ display:flex; align-items:center; gap:8px; width:100%; padding:11px 14px; border:0; background:none; font:inherit; text-align:left; color:var(--text-primary); cursor:pointer; }
+  .at-row:hover{ background:var(--accent-soft); }
+  .at-row svg{ width:16px; height:16px; flex:none; color:var(--text-muted); transition:transform .15s var(--ease); }
+  .at-row .nm{ min-width:104px; font-weight:600; white-space:nowrap; }
+  .at-row .tags{ display:flex; flex-wrap:wrap; justify-content:flex-end; gap:4px; }
+  .at-row .ct{ flex:1; font-size:var(--fs-xs); color:var(--text-muted); }
+  .at-team.open .at-row{ background:#F7FBFE; }
+  .at-team.open .at-row svg{ transform:rotate(90deg); color:var(--accent); }
+  .at-team.open .at-row .nm{ color:var(--accent); }
+  .at-tag{ padding:1px 8px; border-radius:999px; font-size:11px; font-weight:600; white-space:nowrap; }
+  .at-tag.danger{ background:var(--bg-danger); color:var(--danger); }
+  .at-tag.warn{ background:var(--bg-warning); color:var(--warning); }
+  .at-tag.info{ background:var(--accent-soft); color:var(--accent); }
+  .at-body{ padding:2px 14px 12px 38px; background:#F7FBFE; }
+  .at-p{ display:grid; grid-template-columns:minmax(0,1.1fr) minmax(0,1fr) 104px minmax(0,1.6fr); gap:10px; align-items:center; padding:7px 0; border-top:1px solid #E6EEF4; font-size:var(--fs-sm); }
+  .at-p.h{ padding-top:4px; border-top:0; font-size:var(--fs-xs); color:var(--text-muted); }
+  .at-p .nm small{ margin-left:4px; font-size:var(--fs-xs); color:var(--text-muted); }
+  .at-st{ font-size:var(--fs-xs); font-weight:600; color:var(--text-secondary); }
+  .at-st.danger{ color:var(--danger); } .at-st.warn{ color:var(--warning); } .at-st.info{ color:var(--accent); }
+  .at-tm{ font-size:var(--fs-xs); color:var(--text-secondary); font-variant-numeric:tabular-nums; white-space:nowrap; }
+  .at-wk{ display:flex; align-items:center; gap:8px; min-width:0; }
+  .at-wk i{ flex:1; height:6px; border-radius:3px; background:#E1E9F0; overflow:hidden; }
+  .at-wk i b{ display:block; height:100%; border-radius:3px; background:var(--sky-mid); }
+  .at-wk i b.warn{ background:#E08A5B; } .at-wk i b.over{ background:var(--alert); }
+  .at-wk em{ width:46px; font-style:normal; font-size:var(--fs-xs); text-align:right; font-variant-numeric:tabular-nums; }
+  .at-wk em.warn{ color:var(--warning); font-weight:700; } .at-wk em.over{ color:var(--danger); font-weight:700; }
+  .at-more{ margin-top:8px; padding:0; border:0; background:none; font:inherit; font-size:var(--fs-xs); color:var(--accent); cursor:pointer; }
+  .at-none{ padding:8px 0 2px; font-size:var(--fs-xs); color:var(--text-muted); }
+  .at-legend{ display:flex; flex-wrap:wrap; gap:6px 14px; margin-top:10px; font-size:var(--fs-xs); color:var(--text-muted); }
+  .at-legend i{ display:inline-block; width:12px; height:6px; margin-right:5px; border-radius:3px; vertical-align:middle; }
+  @media (max-width:768px){
+    .at-date > b{ min-width:0; flex:1; }
+    .at-head > .at-date{ width:100%; }
+    .at-focus b{ font-size:var(--fs-lg); }
+    .at-nums b{ font-size:var(--fs-md); }
+    .at-row .ct{ display:none; }
+    .at-row{ flex-wrap:wrap; row-gap:6px; }
+    .at-row .nm{ min-width:0; flex:1; }
+    .at-row .tags{ width:100%; justify-content:flex-start; padding-left:24px; }
+    .at-row .tags:empty{ display:none; }
+    .at-body{ padding:2px 12px 12px; }
+    .at-p{ grid-template-columns:minmax(0,1fr) minmax(0,1fr); row-gap:4px; }
+    .at-p.h{ display:none; }
+    .at-p .at-st{ text-align:right; }
+  }
   .ms-tbl{ table-layout:fixed; min-width:918px; }   /* 칸 폭 합 728 + 이름 칸 190 */
   .ms-tbl th{ vertical-align:bottom; padding:8px 10px 9px; line-height:1.35; }
   /* 제목 줄 고정 (2026-10-19 인사담당자 — 내리면 무슨 칸인지 몰라서). 옆으로 넘기는 상자 안에서는 붙지 않으므로, 표가 다 들어가는 넓은 화면에서는 상자를 풀고
@@ -15371,6 +15444,161 @@ async function cardSelfCheck(){   // 브라우저 콘솔에서 await cardSelfChe
 }
 
 /* ---------------- NAV DATA ---------------- */
+/* ---------------- 근태 현황 (2026-11-13 인사담당자 결정) ----------------
+   HR PC 의 데일리 근태 대시보드 자료를 팀장 · 본부장 · 대표이사 · HR 이 본다. 실제 로그인만 — 시연에는 메뉴가 없다(NAV 의 show).
+   서버 attendance.py 가 보는 사람 범위의 팀만 보낸다(HR · 대표이사 전체 / 본부장 · 팀장 = 본부 전체 / 대표이사 직속 팀장 = 자기 팀).
+   "매일 쌓여도 지저분하지 않게": 한 번에 하루치(‹ › · 달력), 챙길 것 두 칸, 숫자 한 줄, 팀은 접힌 한 줄, 펼치면 특이사항 있는 사람만.
+   설계 docs/superpowers/specs/2026-11-13-attendance-design.md. 검증 attSelfCheck(). */
+const AT_WARN = 45, AT_OVER = 52;   // 주간 누적(월~그날) — 45시간 이상 주의, 52시간 넘으면 초과 (인사담당자 결정)
+const AT_BAD = { 지각:'warn', 조퇴:'warn', 미인식:'danger', 결근:'danger' };   // 챙길 상태 → 색
+const AT_FOLD = new Set(['정상', '연장근무', '야간근무', '야간교대', '연장/야간근무', '외근', '해외출장', '근무변경', '단축근무', '육아휴직', '산전육아휴직', '입사일', '회식', '워크샵']);   // 펼쳐도 "그 외"로 접어 두는 상태. 여기 없는 상태(연차 · 반차 · 병가 · 경조사 …)는 휴가로 보이고, 처음 보는 상태도 보인다
+const AT = { state:'', at:0, want:'', dates:[], d:null, open:new Set(), all:new Set() };
+function attCanUse(){ return !!AUTH.live && (['TEAM_LEADER', 'DIVISION_HEAD', 'CEO'].includes(AUTH.me?.position) || !!AUTH.me?.is_hr); }
+function attHours(m){ return +m.weeklyActualHours || 0; }
+function attOver(m){ return !!m.over52Flag || attHours(m) > AT_OVER; }
+function attLevel(m){ return attOver(m) ? 'over' : attHours(m) >= AT_WARN ? 'warn' : ''; }
+function attTone(st){ return AT_BAD[st] || (AT_FOLD.has(st) ? '' : 'info'); }   // info = 휴가 쪽(파랑)
+function attShown(m){ return attTone(m.status) !== '' || attLevel(m) !== ''; }
+function attRank(m){ return AT_BAD[m.status] ? 0 : attLevel(m) ? 1 : 2; }   // 펼친 줄 순서: 챙길 상태 → 주간 45시간 이상 → 휴가
+function attSum(teams){
+  const ms = teams.flatMap(t=>t.members), sum = k=>teams.reduce((a, t)=>a + (+t.summary?.[k] || 0), 0);
+  const n = st=>ms.filter(m=>m.status===st).length, total = ms.length, work = sum('실근무'), miss = n('미인식'), absent = n('결근');
+  return { total, work, miss, absent, late:n('지각'), leave:Math.max(0, total - work - miss - absent),
+           warn:ms.filter(m=>attLevel(m)==='warn').length, over:ms.filter(attOver).length };
+}
+function attNear(dates, v){   // 달력에서 고른 날에 자료가 없으면 그 앞의 가장 가까운 날(없으면 가장 이른 날). dates 는 최근 날부터
+  return dates.includes(v) ? v : dates.find(d=>d < v) || dates[dates.length - 1] || '';
+}
+function attDay(ymd){ const t = celebParse(ymd); return `${t.getMonth() + 1}월 ${t.getDate()}일 (${WS_DOW[t.getDay()]})`; }
+function attStamp(iso){ const t = new Date(iso); return isNaN(t) ? '' : `${t.getMonth() + 1}/${t.getDate()} ${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')} 반영`; }
+
+function attContent(){
+  if(!attCanUse()) return kpiNote('근태 현황은 팀장 · 본부장 · HR만 볼 수 있습니다.');
+  if(AT.state==='ok' && Date.now() - AT.at > 10*60*1000 && !AT.want){ AT.state = ''; AT.dates = []; }   // 10분 넘게 열어 둔 최근 날 화면은 새 자료(평일 10:45)를 다시 받는다
+  if(AT.state !== 'ok'){
+    if(!AT.state) attLoad();
+    return kpiNote(AT.state==='err' ? '근태 현황을 불러오지 못했습니다. 잠시 뒤 새로 고쳐 주세요.' : '근태 현황을 불러오는 중입니다…', AT.state==='err' ? 'danger' : 'info');
+  }
+  const d = AT.d;
+  if(!d.date) return kpiNote('아직 올라온 근태 자료가 없습니다. 평일 오전 10시 45분쯤 전일 자료가 올라옵니다.');
+  const i = AT.dates.indexOf(d.date), older = AT.dates[i + 1], newer = i > 0 ? AT.dates[i - 1] : '';
+  const head = `<div class="at-head">
+    <div class="at-date">
+      <button type="button" class="at-nav" aria-label="이전 날" ${older ? `onclick="attGo('${older}')"` : 'disabled'}>${icon('chevL')}</button>
+      <b>${attDay(d.date)}</b>
+      <button type="button" class="at-nav" aria-label="다음 날" ${newer ? `onclick="attGo('${newer}')"` : 'disabled'}>${icon('chevR')}</button>
+      <span class="at-cal"><button type="button" class="at-nav" aria-label="날짜 고르기" onclick="attCal()">${icon('calendar')}</button>
+        <input type="date" id="atCal" tabindex="-1" aria-hidden="true" value="${d.date}" min="${AT.dates[AT.dates.length - 1] || ''}" max="${AT.dates[0] || ''}" onchange="attPick(this.value)"></span>
+    </div>
+    <span class="at-meta">${escapeHtml(d.scope)}${d.teams.length ? ` · ${attSum(d.teams).total}명` : ''}${d.uploadedAt ? ` · ${attStamp(d.uploadedAt)}` : ''}</span>
+  </div>`;
+  if(!d.teams.length) return `<div class="card">${head}${kpiNote(`이 날 자료에 ${escapeHtml(d.scope)} 근태가 없습니다. 계속 비어 있으면 HR에 알려 주세요.`)}</div>`;
+  const s = attSum(d.teams);
+  const tile = (cls, label, big, small, fn)=>`<button type="button" class="${cls}" onclick="attFocus('${fn}')"><span>${label}</span><b>${big}${small ? `<small>${small}</small>` : ''}</b></button>`;
+  const num = (label, v)=>`<div><span>${label}</span><b>${v}</b></div>`;
+  return `<div class="card">${head}
+    <div class="at-focus">
+      ${tile(s.over ? 'danger' : s.warn ? 'warn' : 'calm', '주 52시간', `주의 ${s.warn}`, `· 초과 ${s.over}`, 'hours')}
+      ${tile(s.late + s.miss + s.absent ? 'info' : 'calm', '지각 · 미인식', `${s.late} · ${s.miss}명`, s.absent ? `· 결근 ${s.absent}` : '', 'bad')}
+    </div>
+    <div class="at-nums">${num('재직', s.total)}${num('출근', s.work)}${num('휴가·휴직', s.leave)}${num('지각', s.late)}${num('미인식', s.miss)}</div>
+    <div class="at-teams" id="atTeams">${d.teams.map(attTeam).join('')}</div>
+    <div class="at-legend"><span><i style="background:var(--sky-mid)"></i>${AT_WARN}시간 미만</span><span><i style="background:#E08A5B"></i>주의 ${AT_WARN}시간~</span><span><i style="background:var(--alert)"></i>초과 ${AT_OVER}시간 넘음</span><span>이번 주 누적은 출퇴근 기록으로 계산한 추정치입니다</span></div>
+  </div>`;
+}
+
+function attTeam(t, i){
+  const ms = t.members, n = fn=>ms.filter(fn).length, open = AT.open.has(i);
+  const late = n(m=>AT_BAD[m.status]==='warn'), bad = n(m=>AT_BAD[m.status]==='danger'), leave = n(m=>attTone(m.status)==='info');
+  const warn = n(m=>attLevel(m)==='warn'), over = n(attOver);
+  const tag = (cls, label, v)=>v ? `<span class="at-tag ${cls}">${label} ${v}</span>` : '';
+  const head = `<button type="button" class="at-row" aria-expanded="${open}" onclick="attToggle(${i})">${icon('chevR')}<span class="nm">${escapeHtml(t.team)}</span>
+    <span class="ct">${ms.length}명 · 출근 ${+t.summary?.['실근무'] || 0}</span><span class="tags">${tag('info', '휴가', leave)}${tag('warn', '지각', late)}${tag('danger', '미인식·결근', bad)}${tag('warn', '52h 주의', warn)}${tag('danger', '52h 초과', over)}</span></button>`;
+  if(!open) return `<div class="at-team">${head}</div>`;
+  const all = AT.all.has(i), shown = ms.filter(attShown).sort((a, b)=>attRank(a) - attRank(b)), rest = ms.length - shown.length;
+  const rows = (all ? [...shown, ...ms.filter(m=>!attShown(m))] : shown).map(attPerson).join('');
+  return `<div class="at-team open">${head}<div class="at-body">
+    ${shown.length || all ? `<div class="at-p h"><span>이름</span><span>상태</span><span>출근 · 퇴근</span><span>이번 주 누적</span></div>${rows}` : '<div class="at-none">특이사항이 없습니다.</div>'}
+    ${rest ? `<button type="button" class="at-more" onclick="attAll(${i})">${all ? '접기' : `그 외 ${rest}명 접힘 · 모두 보기`}</button>` : ''}
+  </div></div>`;
+}
+
+function attPerson(m){
+  const tone = attTone(m.status), lv = attLevel(m), h = attHours(m), t = v=>!v || v==='-' ? '—' : escapeHtml(v);
+  const st = m.status==='지각' && m.lateMinutes ? `지각 ${m.lateMinutes}분` : m.status;
+  return `<div class="at-p"><span class="nm">${escapeHtml(m.name)}${m.position ? `<small>${escapeHtml(m.position)}</small>` : ''}</span>
+    <span class="at-st ${tone}">${escapeHtml(st || '—')}</span><span class="at-tm">${t(m.checkIn)} · ${t(m.checkOut)}</span>
+    <span class="at-wk"><i><b class="${lv}" style="width:${Math.min(100, h / AT_OVER * 100).toFixed(1)}%"></b></i><em class="${lv}">${h.toFixed(1)}h</em></span></div>`;
+}
+
+async function attLoad(){
+  AT.state = 'loading';
+  const want = AT.want;
+  try {
+    const [a, b] = await Promise.all([AT.dates.length ? null : fetch('/api/attendance/dates'), fetch('/api/attendance/day' + (want ? '?date=' + encodeURIComponent(want) : ''))]);
+    if((a && !a.ok) || !b.ok) throw new Error((a && !a.ok ? a : b).status);
+    if(a) AT.dates = (await a.json()).dates;
+    AT.d = await b.json(); AT.state = 'ok'; AT.at = Date.now(); AT.open.clear(); AT.all.clear();
+    if(AT.d.date === AT.dates[0]) AT.want = '';   // 최근 날을 보고 있으면 10분 뒤 새 자료를 다시 받는다
+  } catch(e){ AT.state = 'err'; }
+  if(currentNav.id==='att') renderContent();
+}
+function attGo(date){ if(!date || date===AT.d?.date) return; AT.want = date; AT.state = ''; renderContent(); }
+function attPick(v){
+  const d = attNear(AT.dates, v);
+  if(d && d !== v) wsNotice(`${attDay(v)} 자료가 없어 ${attDay(d)} 자료를 보여 드려요.`);
+  attGo(d);
+}
+function attCal(){ const el = document.getElementById('atCal'); try { el.showPicker(); } catch(e){ el.focus(); el.click(); } }
+function attToggle(i){ AT.open.has(i) ? AT.open.delete(i) : AT.open.add(i); renderContent(); }
+function attAll(i){ AT.all.has(i) ? AT.all.delete(i) : AT.all.add(i); renderContent(); }
+function attFocus(kind){   // 챙길 것 칸을 누르면 해당하는 사람이 있는 팀을 펼친다
+  const hit = kind==='hours' ? m=>attLevel(m) !== '' : m=>!!AT_BAD[m.status];
+  AT.open = new Set(AT.d.teams.map((t, i)=>t.members.some(hit) ? i : -1).filter(i=>i >= 0));
+  renderContent();
+  document.getElementById('atTeams')?.scrollIntoView({ behavior:'smooth', block:'start' });
+}
+
+function attSelfCheck(){   // 브라우저 콘솔에서 attSelfCheck() 실행 — 시연 상태는 끝나면 되돌린다
+  const ok = (c, msg)=>{ if(!c) throw new Error('attSelfCheck 실패: ' + msg); };
+  const m = (name, status, h=40, extra={})=>({ name, position:'프로', checkIn:'08:50', checkOut:'18:05', status, lateMinutes:0, weeklyActualHours:h, over52Flag:false, ...extra });
+  ok(attLevel(m('a', '정상', 44.9))==='' && attLevel(m('a', '정상', 45))==='warn' && attLevel(m('a', '정상', 52))==='warn' && attLevel(m('a', '정상', 52.1))==='over', '45시간부터 주의 · 52시간 넘으면 초과');
+  ok(attLevel(m('a', '정상', 30, { over52Flag:true }))==='over', '대시보드가 초과로 표시한 사람은 초과');
+  ok(!attShown(m('a', '정상')) && !attShown(m('a', '외근')) && !attShown(m('a', '육아휴직')) && attShown(m('a', '연차')) && attShown(m('a', '미인식')) && attShown(m('a', '처음보는상태'))
+     && attShown(m('a', '정상', 46)), '펼치면 특이사항만 — 정상 · 외근 · 육아휴직은 접고 휴가 · 챙길 상태 · 처음 보는 상태 · 45시간 이상은 보인다');
+  ok(attTone('미인식')==='danger' && attTone('지각')==='warn' && attTone('병가')==='info' && attTone('정상')==='', '상태 색');
+  const teams = [{ team:'가상A팀', summary:{ 실근무:3 }, members:[m('가상1', '정상'), m('가상2', '지각', 47, { lateMinutes:12 }), m('가상3', '연장근무', 53), m('가상4', '미인식'), m('가상5', '연차')] },
+                 { team:'가상B팀', summary:{ 실근무:1 }, members:[m('가상6', '정상'), m('가상7', '육아휴직')] }];
+  const s = attSum(teams);
+  ok(s.total===7 && s.work===4 && s.late===1 && s.miss===1 && s.absent===0 && s.leave===2 && s.warn===1 && s.over===1, '숫자 한 줄 · 주 52시간 칸 셈');
+  ok(attNear(['2026-11-12', '2026-11-11', '2026-11-06'], '2026-11-11')==='2026-11-11' && attNear(['2026-11-12', '2026-11-11', '2026-11-06'], '2026-11-08')==='2026-11-06'
+     && attNear(['2026-11-12', '2026-11-11'], '2026-11-01')==='2026-11-11' && attNear([], '2026-11-01')==='', '달력: 자료 없는 날은 그 앞 날(없으면 가장 이른 날)');
+  ok(attDay('2026-11-12')==='11월 12일 (목)', '날짜 글자');
+  const keep = { ...AT, open:new Set(AT.open), all:new Set(AT.all) }, live = AUTH.live, me = AUTH.me, nav = currentNav, tab = currentTab;
+  try {
+    Object.assign(AUTH, { live:true, me:{ ...(me || {}), position:'TEAM_LEADER', is_hr:false } });
+    ok(attCanUse() && NAV.find(n=>n.id==='att').show(), '팀장에게 메뉴가 보인다');
+    AUTH.me.position = null; ok(!attCanUse(), '직원에게는 메뉴가 없다'); AUTH.me.position = 'TEAM_LEADER';
+    Object.assign(AT, { state:'ok', at:Date.now(), want:'2026-11-11', dates:['2026-11-12', '2026-11-11', '2026-11-10'], open:new Set(), all:new Set(),
+                        d:{ date:'2026-11-11', scope:'가상본부', uploadedAt:'2026-11-12T01:45:00Z', teams } });
+    let h = attContent();
+    ok(h.includes('11월 11일 (수)') && h.includes("attGo('2026-11-10')") && h.includes("attGo('2026-11-12')") && h.includes('가상본부 · 7명'), '날짜 · 앞뒤 날 단추 · 범위와 인원');
+    ok(h.includes('주의 1') && h.includes('· 초과 1') && h.includes('1 · 1명') && !h.includes('가상1'), '챙길 것 두 칸 · 처음엔 팀이 접혀 사람이 안 보인다');
+    ok(h.includes('휴가 1') && h.includes('지각 1') && h.includes('미인식·결근 1') && h.includes('52h 주의 1') && h.includes('52h 초과 1'), '접힌 팀 줄의 표시');
+    AT.open.add(0); h = attContent();
+    ok(h.includes('가상2') && h.includes('지각 12분') && h.includes('가상5') && !h.includes('가상1') && h.includes('그 외 1명 접힘'), '펼치면 특이사항만 · 정상 근무자는 접힘');
+    ok(h.indexOf('가상4') < h.indexOf('가상3') && h.indexOf('가상3') < h.indexOf('가상5'), '순서: 챙길 상태 → 45시간 이상 → 휴가');
+    AT.all.add(0); ok(attContent().includes('가상1') && attContent().includes('>접기<'), '모두 보기');
+    AT.open.clear(); AT.all.clear(); AT.d.teams = [teams[1]]; AT.open.add(0);
+    ok(attContent().includes('특이사항이 없습니다.') && attContent().includes('그 외 2명 접힘'), '특이사항이 없는 팀');
+    AT.d.teams = []; ok(attContent().includes('이 날 자료에 가상본부 근태가 없습니다'), '범위의 팀이 없는 날');
+    AT.d = { date:null, scope:'가상본부', uploadedAt:null, teams:[] }; ok(attContent().includes('아직 올라온 근태 자료가 없습니다'), '자료가 하나도 없을 때');
+  } finally {
+    Object.assign(AT, keep); Object.assign(AUTH, { live, me }); currentNav = nav; currentTab = tab;
+  }
+  return 'attSelfCheck 통과';
+}
+
 const NAV = [
   { id:'home', label:'홈', icon:'home', tabs:[ {id:'dash', label:'대시보드', render:homeContent} ] },
   { id:'ws', label:'워크스페이스', icon:'edit', tabs:[
@@ -15389,6 +15617,9 @@ const NAV = [
       {id:'e4', label:'KPI 현황', render:kvContent, show:()=>kvCanUse()},   // 팀장·본부장·대표이사·HR에게만 보인다
       {id:'e2', label:'평가 진행', render:evContent},
       {id:'e3', label:'평가 결과', render:evResultContent},
+  ]},
+  { id:'att', label:'근태 현황', icon:'clock', show:()=>attCanUse(), tabs:[   // 팀장 · 본부장 · 대표이사 · HR, 실제 로그인만 (2026-11-13)
+      {id:'a1', label:'일일 현황', render:attContent},
   ]},
   { id:'rule', label:'규정 검색', icon:'search', tabs:[
       {id:'r1', label:'규정 검색', render:ruleSearch},
@@ -15464,7 +15695,7 @@ function renderSidebar(){
   const who = document.getElementById('sidebarWho');
   if(AUTH.live) who.innerHTML = `${escapeHtml(AUTH.me.name)} · ${escapeHtml(AUTH.me.department)}<button type="button" class="auth-out" onclick="authLogout()">로그아웃</button>`;
   else who.textContent = `로그인: ${me.name} ${me.title}${me.dept ? ' · '+me.dept : ''}`;   // 시연 역할을 바꾸면 따라 바뀐다
-  document.getElementById('sidebarNav').innerHTML = NAV.map(n => `
+  document.getElementById('sidebarNav').innerHTML = navShown().map(n => `
     <div class="nav-item ${n.id===currentNav.id?'active':''}${n.id===PC_ONLY_NAV?' pc-only':''}" onclick="selectNav('${n.id}')" ${n.id===currentNav.id?'aria-current="page"':''}>
       ${icon(n.icon)}<span>${n.label}</span>${n.id===PC_ONLY_NAV?'<b class="nav-pc">PC 전용</b>':''}${navBadge(n.tabs.reduce((a,t)=>a+todoCount(t), 0))}
     </div>`).join('');
@@ -15487,6 +15718,7 @@ function pcOnlyNotice(){
     <button type="button" class="btn primary" style="width:100%; justify-content:center;" onclick="orgCloseModal()">확인</button>
   </div>`);
 }
+function navShown(){ return NAV.filter(n=>!n.show || n.show()); }   // 메뉴째로 안 보이는 사람이 있다 (근태 현황 — 팀장 · 본부장 · 대표이사 · HR)
 function navTabs(n){ return n.tabs.filter(t=>!t.show || t.show()); }   // 역할에 따라 안 보이는 탭(KPI 현황)을 뺀다
 const TOP_PC = matchMedia('(min-width:769px)');   // PC에는 맨 위 메뉴 이름 줄이 없다(CSS) — "이 화면 사용법"을 탭 줄에 둔다
 function renderSubtabs(){   // 탭이 하나뿐이면 비워 둔다. 단 PC에서 "이 화면 사용법"이 있는 화면이면 그 탭 하나를 보여 주고 단추를 그 줄 오른쪽 끝에 둔다
@@ -15507,6 +15739,7 @@ function renderContent(){   // 화면을 다시 그릴 때마다 메뉴·탭 숫
 }
 function selectNav(id){
   if(pcOnlyBlocked(id)){ pcOnlyNotice(); return false; }
+  if(!navShown().some(n=>n.id===id)) return false;   // 안 보이는 메뉴(근태 현황)로 가는 알림 · 주소
   currentNav = NAV.find(n=>n.id===id);
   currentTab = currentNav.tabs[0];
   kpiLiveFresh(); kvLiveFresh();
@@ -15544,6 +15777,7 @@ const TOUR_MENU = {   // 메뉴 id → 둘러보기 설명
   perf:'올해 <b>KPI를 작성</b>하고, 연말에 <b>자기평가</b>를 하고, <b>평가 결과</b>를 확인합니다. 정확한 작성을 위해 PC에서만 열립니다.',
   rule:'인사·급여·보안 규정을 <b>낱말로 검색</b>합니다. 자주 묻는 질문도 여기 있습니다.',
   trip:'출발지와 출장지를 넣으면 <b>출장 경비</b>를 계산해 주고, 신청서와 회계전표 줄까지 만들어 줍니다.',
+  att:'팀장 · 본부장이 <b>본부 직원의 전일 근태</b>를 봅니다. 지각 · 미인식과 <b>주 52시간</b>을 넘기 전에 챙깁니다.',
   org:'부서별 조직도를 보고, 이름을 눌러 <b>연락처</b>를 확인합니다.',
   pantry:'쉬는 시간에 잠깐 즐기는 공간입니다.',
 };
@@ -15551,7 +15785,7 @@ const trCol = (...n)=>n.flatMap(i=>[`#kpiMine[data-mode=edit] .kpi-table thead t
 const TOURS = {   // 단계: el = 가리킬 곳(여러 개면 묶어서, 배열이면 앞에서부터 있는 것) / one = 첫 번째 것만 / menu = 휴대폰에서 메뉴를 열어 놓는다 / inline = 옆으로 넘기는 표에서 놓을 자리
   menu:{ label:'사이트 둘러보기', open:()=>goTo('home'), steps:()=>[
     { center:true, intro:true, title:'인사포털에 오신 것을 환영합니다', body:'메뉴가 어디에 있고 무엇을 하는 곳인지<br>차례로 안내해 드릴게요.' },
-    ...NAV.map((n,i)=>({ el:`#sidebarNav .nav-item:nth-child(${i+1})`, menu:true, title:n.label,
+    ...navShown().map((n,i)=>({ el:`#sidebarNav .nav-item:nth-child(${i+1})`, menu:true, title:n.label,
       body:TOUR_MENU[n.id] + (n.id==='perf' && kvCanUse() ? ' 팀장·본부장·HR은 여기서 KPI를 승인하고 <b>KPI 현황</b>으로 진행률을 챙깁니다.' : '') })),
     { el:'#hmTasks', title:'오늘의 업무', body:'제목만 적고 <b>Enter</b>를 누르면 오늘 할 일로 등록됩니다. 서명·승인처럼 인사포털이 만든 일도 여기에 함께 나옵니다.' },
     { el:'#hmCal', title:'일정', body:'급여일, KPI·평가 일정, 내 업무 마감이 <b>색 점</b>으로 표시됩니다. 날짜를 누르면 그날 일정이 나옵니다.' },
