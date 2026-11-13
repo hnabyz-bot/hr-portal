@@ -9226,6 +9226,17 @@ def check_attendance_docs(_c, up, KEY, LEAD, HEAD, EMPA, EMPB, DLEAD, DEMP, EMP)
         ok(yr["가상근태팀원A"]["miss"] == 2 and "가상근태없는이름" in yr, "연 집계 · HR 은 전체 (못 맞춘 팀 포함)")
         ok(c(LEAD).get("/api/attendance/stats?period=2026-13", base_url=BASE).status_code == 400, "기간 모양 400")
 
+        me = lambda uid, per="2026-11": c(uid).get(f"/api/attendance/me?period={per}", base_url=BASE)  # noqa: E731
+        r = me(EMPA).json
+        ok([x["date"] for x in r["rows"]] == ["2026-11-12", "2026-11-04"] and r["rows"][1]["status"] == "미인식" and r["rows"][1]["doc"] == {"doc": "미인식 소명서", "state": "self"}
+           and r["rows"][0]["doc"] is None and r["sum"] == {"late": 0, "lateMin": 0, "miss": 1, "leave": 0, "open": 1} and r["months"][:2] == ["2026-11", "2026-10"],
+           "내 근태: 내 줄만 최근 날부터 · 서류 상태(본인 제출) · 요약")
+        ok(me(EMPA, "2026-10").json["rows"] == [{"date": "2026-10-30", "team": "근태A제조팀", "checkIn": "08:50", "checkOut": "-", "status": "미인식", "lateMinutes": 0, "doc": None}],
+           "다른 달 · CHECK_FROM 전 날은 서류 없음")
+        r = me(LEAD).json
+        ok(r["sum"] == {"late": 1, "lateMin": 5, "miss": 0, "leave": 0, "open": 0} and r["rows"][0]["doc"]["state"] == "done" and len(r["rows"]) == 2, "팀장 본인: 지각 · 자동 확인된 서류")
+        ok(me(EMP).json["rows"] == [] and me(EMP, "2026-13").status_code == 400 and "weeklyActualHours" not in json.dumps(me(EMPA).json), "근태 자료에 없는 사람은 빈 목록 · 기간 모양 · 주간 시간은 보내지 않음")
+
         cn = connect(os.environ["HR_DB_PATH"])
         try:
             w = lambda uid, d: attendance.week52(cn, auth.actor_of(cn, uid), d)  # noqa: E731

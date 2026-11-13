@@ -12,6 +12,7 @@ app.py 가 bp 를 붙인다. 설계 docs/superpowers/specs/2026-11-13-attendance
   POST /api/attendance/mine     {date, team} 본인 "제출했어요"
   POST /api/attendance/found    늦게 낸 서류 자동 확인 (HR PC — 세션 없이, 같은 열쇠)
   GET  /api/attendance/stats    ?period=YYYY | YYYY-MM 월 · 연 집계 (볼 수 있는 사람 — 범위 안만)
+  GET  /api/attendance/me       ?period=YYYY-MM 내 근태 (누구나 — 내 것만: 이름과 소속 단위가 둘 다 맞는 줄)
 
 서류 확인 (2단계): 챙길 사람은 그날 자료에서 고르고(kind_of — 미인식 · 지각 · 결근 / 비고 [확인필요] · 문서 없음) 체크 기록만 저장한다(026).
 책임자 = 바로 위 관리자(KPI 와 같은 manager_of), 이름을 못 맞춘 사람은 그 본부의 본부장(본부도 모르면 HR) 몫. 기한 = 근태 날짜 + 7일. CHECK_FROM 전 · 60일보다 오래된 날은 목록 · 알림에 안 나온다.
@@ -484,8 +485,8 @@ def stats_of(days: list[tuple[str, list[dict]]], its: list[dict]) -> dict:
     for k, p in ppl.items():
         p["over52"] = sum(1 for h in weeks[k].values() if h > 52)
         p["maxWeek"] = round(max(weeks[k].values(), default=0), 1)
-    rows = [p for p in ppl.values() if p["late"] or p["miss"] or p["open"] or p["over52"]]
-    rows.sort(key=lambda p: (-(p["late"] + p["miss"] + p["open"]), -p["over52"], p["team"], p["name"]))
+    rows = [p for p in ppl.values() if p["late"] or p["miss"]]  # 지각 · 미인식이 둘 다 없는 사람은 빼고 (2026-11-13 인사담당자)
+    rows.sort(key=lambda p: (-p["late"], -p["miss"], -p["lateMin"], p["name"]))  # 지각 횟수가 많은 사람이 맨 위 — 같으면 미인식 → 지각 분
     return {"people": rows, "teams": sorted(teams.values(), key=lambda t: t["team"])}
 
 
@@ -509,6 +510,50 @@ def stats_get() -> Response:
         days.append((d, ts))
     its = collect(conn, org, today, max(lo, CHECK_FROM), hi)
     return jsonify(period=period, days=len(days), scope="전체" if who == "all" else org.names.get(who, ""), **stats_of(days, its))
+
+
+LEAVE_DAYS = {"반차": 0.5, "반반차": 0.25}  # 그 밖의 휴가는 하루
+NORMAL = {"정상", "연장근무", "야간근무", "야간교대", "연장/야간근무", "외근", "해외출장", "근무변경", "단축근무", "입사일", "회식", "워크샵"}
+
+
+def my_rows(days: list[tuple[str, list[dict]]], org: Org, uid: int) -> list[dict]:
+    """그 사람의 날짜별 줄 — (이름, 단위)가 그 사람 번호로 맞는 근태 줄만. 최근 날부터."""
+    out = []
+    for d, teams in days:
+        units = team_units(teams, org.people, org.parent)
+        for t in teams:
+            unit = units[t["team"]]
+            for m in t["members"]:
+                if unit is not None and org.uid.get((m["name"], unit)) == uid:
+                    out.append({"date": d, "team": t["team"], "checkIn": m.get("checkIn", ""), "checkOut": m.get("checkOut", ""),
+                                "status": m.get("status", ""), "lateMinutes": m.get("lateMinutes", 0)})
+    return sorted(out, key=lambda r: r["date"], reverse=True)
+
+
+def my_sum(rows: list[dict]) -> dict:
+    """요약 네 칸 — 지각(횟수 · 분) · 미인식 · 결근 · 휴가(반차 0.5 · 반반차 0.25 · 그 밖 하루) · 확인 전 서류."""
+    late = [r for r in rows if r["status"] == "지각"]
+    leave = sum(LEAVE_DAYS.get(r["status"], 1) for r in rows if r["status"] not in NORMAL and r["status"] not in ("지각", "미인식", "결근", ""))
+    return {"late": len(late), "lateMin": sum(r["lateMinutes"] for r in late), "miss": sum(r["status"] in ("미인식", "결근") for r in rows),
+            "leave": leave, "open": sum(1 for r in rows if r.get("doc") and r["doc"]["state"] != "done")}
+
+
+@bp.get("/api/attendance/me")
+def me_get() -> Response:
+    conn, a, today = auth._db(), g.actor, _today()
+    period = request.args.get("period") or today.isoformat()[:7]
+    if not re.fullmatch(r"20[0-9]{2}-(0[1-9]|1[0-2])", period):
+        return jsonify(error="period 는 YYYY-MM 입니다."), 400
+    org = Org(conn)
+    days = [(d, json.loads(data)["teams"]) for d, data in conn.execute(
+        "SELECT date, data FROM attendance_days WHERE date BETWEEN ? AND ? ORDER BY date", (f"{period}-01", f"{period}-31"))]
+    rows = my_rows(days, org, a.user_id)
+    docs = {(it["date"], it["team"]): it for it in collect(conn, org, today, max(f"{period}-01", CHECK_FROM), f"{period}-31") if it["uid"] == a.user_id}
+    for r in rows:
+        it = docs.get((r["date"], r["team"]))
+        r["doc"] = {"doc": DOCS[it["kind"]], "state": "done" if it["how"] else "self" if it["selfAt"] else "open"} if it else None
+    months = sorted({d[:7] for (d,) in conn.execute("SELECT date FROM attendance_days")}, reverse=True)
+    return jsonify(period=period, months=months, rows=rows, sum=my_sum(rows))
 
 
 def check() -> None:
@@ -559,14 +604,18 @@ def check() -> None:
     it = {"how": None, "date": "2026-11-12"}
     assert not overdue(it, date(2026, 11, 18)) and overdue(it, date(2026, 11, 19)) and not overdue({**it, "how": "MANUAL"}, date(2026, 12, 1)), "기한 = 날짜 + 7일, 확인되면 끝"
     mm = lambda name, st="정상", lm=0, h=40.0, f=False: {"name": name, "status": st, "lateMinutes": lm, "weeklyActualHours": h, "over52Flag": f}  # noqa: E731
-    days = [("2026-11-09", [{"team": "A", "members": [mm("가", "지각", 5, 20), mm("나", h=53)]}]),
-            ("2026-11-10", [{"team": "A", "members": [mm("가", "미인식", h=30), mm("나", h=12)]}]),
-            ("2026-11-16", [{"team": "A", "members": [mm("가", "지각", 7, 9), mm("나", h=8), mm("다")]}])]
+    days = [("2026-11-09", [{"team": "A", "members": [mm("가", "지각", 5, 20), mm("나", "미인식", h=53), mm("라", "지각", 30)]}]),
+            ("2026-11-10", [{"team": "A", "members": [mm("가", "미인식", h=30), mm("나", h=12), mm("라")]}]),
+            ("2026-11-16", [{"team": "A", "members": [mm("가", "지각", 7, 9), mm("나", h=8), mm("다", h=60), mm("라")]}])]
     st = stats_of(days, [{"team": "A", "name": "가", "how": None}, {"team": "A", "name": "가", "how": "MANUAL"}])
     g_ = {p["name"]: p for p in st["people"]}
-    assert set(g_) == {"가", "나"} and (g_["가"]["late"], g_["가"]["lateMin"], g_["가"]["miss"], g_["가"]["open"]) == (2, 12, 1, 1), "지각 횟수 · 분 · 미인식 · 서류 미확인"
-    assert (g_["나"]["over52"], g_["나"]["maxWeek"], g_["가"]["over52"]) == (1, 53, 0) and st["teams"] == [{"team": "A", "late": 2, "miss": 1}], "52시간 넘은 주 · 가장 긴 주 · 팀 합"
-    assert [p["name"] for p in st["people"]] == ["가", "나"] and len(g_["가"]["days"]) == 3, "많은 순 · 날짜별"
+    assert set(g_) == {"가", "나", "라"} and (g_["가"]["late"], g_["가"]["lateMin"], g_["가"]["miss"], g_["가"]["open"]) == (2, 12, 1, 1), "지각 횟수 · 분 · 미인식 · 서류 미확인"
+    assert "다" not in g_, "지각 · 미인식이 없는 사람은 빠진다 (52시간이 넘어도)"
+    assert (g_["나"]["over52"], g_["나"]["maxWeek"], g_["가"]["over52"]) == (1, 53, 0) and st["teams"] == [{"team": "A", "late": 3, "miss": 2}], "52시간 넘은 주 · 가장 긴 주 · 팀 합"
+    assert [p["name"] for p in st["people"]] == ["가", "라", "나"] and len(g_["가"]["days"]) == 3, "지각 많은 순 → 미인식 → 지각 분 · 날짜별"
+    ms = my_sum([{"status": "지각", "lateMinutes": 8}, {"status": "미인식", "lateMinutes": 0, "doc": {"state": "open"}}, {"status": "결근", "lateMinutes": 0},
+                 {"status": "반차", "lateMinutes": 0}, {"status": "연차", "lateMinutes": 0}, {"status": "정상", "lateMinutes": 0, "doc": {"state": "done"}}])
+    assert ms == {"late": 1, "lateMin": 8, "miss": 2, "leave": 1.5, "open": 1}, f"내 근태 요약 {ms}"
     print("attendance 검사 통과")
 
 
