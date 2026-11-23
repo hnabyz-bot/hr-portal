@@ -9106,6 +9106,10 @@ def check_attendance(hr) -> None:
         ok(r["teams"] == [] and r["date"] == "2026-11-10", "자료가 없는 날은 빈 목록")
         check_attendance_docs(c, up, KEY, LEAD, HEAD, EMPA, EMPB, DLEAD, DEMP, EMP)
         check_attendance_push(up, KEY, HEAD, LEAD, DLEAD, CEO, EMP)
+        ok(up({**day("2026-11-14"), "special": True}, KEY).status_code == 200 and teams(LEAD)[2].json["date"] == "2026-11-12"
+           and c(LEAD).get("/api/attendance/dates", base_url=BASE).json["dates"][0] == "2026-11-14", "특근일은 날짜 목록에 있지만 처음 화면은 가장 최근 평일")
+        ok(teams(LEAD, "2026-11-14")[2].json["special"] is True and teams(LEAD, "2026-11-12")[2].json["special"] is False, "특근일 표시가 화면까지 온다")
+        x("DELETE FROM attendance_days WHERE date = '2026-11-14'")
         x("UPDATE users SET is_active = 0, deactivated_at = '2026-11-13T00:00:00Z' WHERE id = ?", EMPA)
         ok(teams(LEAD)[1] == ["근태A제조팀", "근태B팀"], "한 사람이 빠져도 나머지 구성원으로 맞춘다")
     finally:
@@ -9141,10 +9145,10 @@ def check_attendance_push(up, KEY, HEAD, LEAD, DLEAD, CEO, EMP) -> None:
             {"team": "근태본부2팀", "members": [mem("가상근태본부2직원", "결근")]},
             {"team": "근태지원", "members": [mem("가상근태지원팀장"), mem("가상근태지원팀원")]}]}
 
-    def got(d, now):
+    def got(d, now, **extra):
         sent.clear()
         auth._now = lambda: now
-        ok(up(day(d), KEY).status_code == 200, f"{d} 저장")
+        ok(up({**day(d), **extra}, KEY).status_code == 200, f"{d} 저장")
         return {u: m for u, m in sent if u in (HEAD, LEAD, DLEAD, CEO, EMP, 1)}
 
     try:
@@ -9159,6 +9163,8 @@ def check_attendance_push(up, KEY, HEAD, LEAD, DLEAD, CEO, EMP) -> None:
         ok(not got("2026-11-16", datetime(2026, 11, 16, 10, 0, tzinfo=timezone.utc)), "근무시간(평일 9~18시) 밖에는 안 울린다")
         x("INSERT INTO user_roles (user_id, role) VALUES (?, 'HR_ADMIN')", DLEAD)
         ok(set(got("2026-11-17", datetime(2026, 11, 17, 2, 0, tzinfo=timezone.utc))) == {HEAD, LEAD}, "HR 인 팀장은 안 받는다 (직접 올린다)")
+        ok(not got("2026-11-21", datetime(2026, 11, 23, 2, 0, tzinfo=timezone.utc), special=True), "특근일은 안 울린다")
+        ok(set(got("2026-11-20", datetime(2026, 11, 23, 2, 0, tzinfo=timezone.utc))) == {HEAD, LEAD}, "특근일이 먼저 올라가 있어도 평일 자료 알림은 간다")
         x("DELETE FROM attendance_days WHERE date > '2026-11-12'")
         ok(not got("2026-11-13", datetime(2026, 11, 23, 2, 0, tzinfo=timezone.utc)), "7일보다 오래된 날은 처음이어도 안 울린다")
     finally:
