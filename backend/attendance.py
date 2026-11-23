@@ -117,12 +117,18 @@ def clean(body: object) -> dict:
             row["over52Flag"] = m.get("over52Flag") is True
             rows.append(row)
         out.append({"team": name, "summary": {k: _int(summary.get(k), 10000, f"summary.{k}") for k in SUMMARY}, "members": rows})
-    return {"date": d, "teams": out}
+    return {"date": d, "teams": out, **({"special": True} if body.get("special") is True else {})}  # special = 주말 · 공휴일 특근일
 
 
 def _key() -> str:
     k = os.environ.get("HR_ATTEND_KEY", "")
     return k if len(k) >= 32 else ""
+
+
+def latest_day(conn: sqlite3.Connection) -> tuple | None:
+    """가장 최근 평일 자료 (date, data, uploaded_at). 특근일은 일한 사람만 있어 '최근 현황'으로 쓰지 않는다."""
+    rows = conn.execute("SELECT date, data, uploaded_at FROM attendance_days ORDER BY date DESC LIMIT 14").fetchall()  # ponytail: 특근일이 14일 넘게 이어지면 가장 최근 특근일을 보여 준다
+    return next((r for r in rows if not json.loads(r[1]).get("special")), rows[0] if rows else None)
 
 
 @bp.post("/api/attendance/upload")
@@ -139,7 +145,8 @@ def upload() -> Response:
     except Bad as e:
         return jsonify(error=str(e)), 400
     conn = auth._db()
-    first = not conn.execute("SELECT 1 FROM attendance_days WHERE date >= ?", (day["date"],)).fetchone()  # 그 날짜가 처음이고 가장 최근 날
+    newest = latest_day(conn)
+    first = not day.get("special") and (not newest or newest[0] < day["date"])  # 그 날짜가 처음이고 가장 최근 평일 — 특근일은 알림 없음
     conn.execute(
         "INSERT INTO attendance_days (date, data, uploaded_at) VALUES (?, ?, ?)"
         " ON CONFLICT(date) DO UPDATE SET data = excluded.data, uploaded_at = excluded.uploaded_at",
@@ -206,19 +213,17 @@ def day() -> Response:
     conn = auth._db()
     who, parent, names = _scope(conn)
     d = request.args.get("date") or ""
-    row = conn.execute(
-        "SELECT date, data, uploaded_at FROM attendance_days WHERE date = ?" if d else
-        "SELECT date, data, uploaded_at FROM attendance_days ORDER BY date DESC LIMIT 1", (d,) if d else ()
-    ).fetchone()
+    row = conn.execute("SELECT date, data, uploaded_at FROM attendance_days WHERE date = ?", (d,)).fetchone() if d else latest_day(conn)
     scope = "전체" if who == "all" else names.get(who, "")
     if not row:
         return jsonify(date=d or None, scope=scope, uploadedAt=None, teams=[])
-    teams = json.loads(row[1])["teams"]
+    data = json.loads(row[1])
+    teams = data["teams"]
     if who != "all":
         people = conn.execute("SELECT name, department_id FROM users WHERE is_active = 1").fetchall()
         units = team_units(teams, people, parent)
         teams = [t for t in teams if units[t["team"]] == who]
-    return jsonify(date=row[0], scope=scope, uploadedAt=row[2], teams=teams)
+    return jsonify(date=row[0], scope=scope, uploadedAt=row[2], special=bool(data.get("special")), teams=teams)
 
 # ---------------- 2단계: 서류 확인 · 직원 본인 · 집계 (2026-11-13 인사담당자 결정) ----------------
 CHECK_FROM = "2026-11-16"  # 이 날 근태부터 서류 확인 · 직원 알림에 센다 (기능을 연 다음 월요일 — 그 전 미인식이 한꺼번에 뜨지 않게)
@@ -334,7 +339,7 @@ def week52(conn: sqlite3.Connection, a, today: date) -> tuple[int, int] | None:
     """팀장 · 본부장의 9시 주 52시간 알림 — 가장 최근 자료가 이번 주(월~오늘)일 때 범위 안의 (주의 45시간 이상 · 초과 52시간 넘음) 수. 아니면 None."""
     if a.position not in (Role.TEAM_LEADER, Role.DIVISION_HEAD):
         return None
-    row = conn.execute("SELECT date, data FROM attendance_days ORDER BY date DESC LIMIT 1").fetchone()
+    row = latest_day(conn)
     if not row or date.fromisoformat(row[0]) < today - timedelta(days=today.weekday()):
         return None
     org = Org(conn)
@@ -518,7 +523,7 @@ def stats_get() -> Response:
 
 
 LEAVE_DAYS = {"반차": 0.5, "반반차": 0.25}  # 그 밖의 휴가는 하루
-NORMAL = {"정상", "연장근무", "야간근무", "야간교대", "연장/야간근무", "외근", "해외출장", "근무변경", "단축근무", "입사일", "회식", "워크샵"}
+NORMAL = {"정상", "연장근무", "야간근무", "야간교대", "연장/야간근무", "외근", "해외출장", "근무변경", "단축근무", "입사일", "회식", "워크샵", "특근", "특근(야간)"}
 
 FOLD = NORMAL | {"육아휴직", "산전육아휴직"}  # 화면 AT_FOLD 와 같다 — 이것도 아니고 지각 · 조퇴 · 미인식 · 결근도 아니면 휴가 칸
 PUSH_DAYS = 7  # 올린 날짜가 오늘에서 7일 안일 때만 알림
@@ -601,6 +606,10 @@ def check() -> None:
     assert set(day_) == {"date", "teams"} and "기타" not in t["summary"] and t["summary"]["지각"] == 0, "모르는 칸은 버리고 빠진 수는 0"
     assert "secret" not in t["members"][0] and "note" not in t["members"][0], "모르는 사람 칸 · 빈 비고는 남기지 않는다"
     assert t["members"][0]["weeklyActualHours"] == 41.3, "시간은 소수 한 자리"
+    sp = {"date": "2026-11-21", "teams": [{"team": "가상팀", "members": [dict(m, status="특근")]}]}
+    assert clean({**sp, "special": True})["special"] is True and "special" not in clean({**sp, "special": "yes"}), "특근일 표시는 true 만 받는다"
+    assert day_text("2026-11-21", [{"status": "특근"}, {"status": "특근(야간)"}])["body"] == "미인식·지각 없어요" and my_sum(
+        [{"status": "특근", "lateMinutes": 0}])["leave"] == 0, "특근은 휴가로 세지 않는다"
     assert clean({"date": "2026-11-12", "teams": [{"team": "가상팀", "members": [dict(m, note="[확인필요] 퇴근 미인식")]}]})["teams"][0]["members"][0]["note"]
     for bad in ({"date": "2026-02-30", "teams": [{"team": "a", "members": []}]}, {"date": "2026-11-12", "teams": []},
                 {"date": "2026-11-12", "teams": [{"team": "", "members": []}]},

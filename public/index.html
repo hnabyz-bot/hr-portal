@@ -15502,16 +15502,17 @@ async function cardSelfCheck(){   // 브라우저 콘솔에서 await cardSelfChe
    서버 attendance.py 가 보는 사람 범위의 팀만 보낸다(HR · 대표이사 전체 / 본부장 · 팀장 = 본부 전체 / 대표이사 직속 팀장 = 자기 팀).
    "매일 쌓여도 지저분하지 않게": 한 번에 하루치(‹ › · 달력), 챙길 것 두 칸, 숫자 한 줄, 팀은 접힌 한 줄, 펼치면 특이사항 있는 사람만.
    설계 docs/superpowers/specs/2026-11-13-attendance-design.md. 검증 attSelfCheck(). */
-const AT_WARN = 45, AT_OVER = 52;   // 주간 누적(월~그날) — 45시간 이상 주의, 52시간 넘으면 초과 (인사담당자 결정)
+const AT_WARN = 45, AT_OVER = 52;   // 주간 누적(월~일, 주말 · 공휴일 특근 포함 — 2026-11-23) — 45시간 이상 주의, 52시간 넘으면 초과 (인사담당자 결정)
+const AT_SPECIAL = new Set(['특근', '특근(야간)']);   // 근무로 세고(휴가 아님), 펼치면 접지 않고 보여 준다
 const AT_BAD = { 지각:'warn', 조퇴:'warn', 미인식:'danger', 결근:'danger' };   // 챙길 상태 → 색
-const AT_FOLD = new Set(['정상', '연장근무', '야간근무', '야간교대', '연장/야간근무', '외근', '해외출장', '근무변경', '단축근무', '육아휴직', '산전육아휴직', '입사일', '회식', '워크샵']);   // 펼쳐도 "그 외"로 접어 두는 상태. 여기 없는 상태(연차 · 반차 · 병가 · 경조사 …)는 휴가로 보이고, 처음 보는 상태도 보인다
+const AT_FOLD = new Set(['정상', '연장근무', '야간근무', '야간교대', '연장/야간근무', '외근', '해외출장', '근무변경', '단축근무', '육아휴직', '산전육아휴직', '입사일', '회식', '워크샵', ...AT_SPECIAL]);   // 펼쳐도 "그 외"로 접어 두는 상태. 여기 없는 상태(연차 · 반차 · 병가 · 경조사 …)는 휴가로 보이고, 처음 보는 상태도 보인다
 const AT = { state:'', at:0, want:'', dates:[], d:null, open:new Set(), all:new Set() };
 function attCanUse(){ return !!AUTH.live && (['TEAM_LEADER', 'DIVISION_HEAD', 'CEO'].includes(AUTH.me?.position) || !!AUTH.me?.is_hr); }
 function attHours(m){ return +m.weeklyActualHours || 0; }
 function attOver(m){ return !!m.over52Flag || attHours(m) > AT_OVER; }
 function attLevel(m){ return attOver(m) ? 'over' : attHours(m) >= AT_WARN ? 'warn' : ''; }
 function attTone(st){ return AT_BAD[st] || (AT_FOLD.has(st) ? '' : 'info'); }   // info = 휴가 쪽(파랑)
-function attShown(m){ return attTone(m.status) !== '' || attLevel(m) !== ''; }
+function attShown(m){ return AT_SPECIAL.has(m.status) || attTone(m.status) !== '' || attLevel(m) !== ''; }
 function attRank(m){ return AT_BAD[m.status] ? 0 : attLevel(m) ? 1 : 2; }   // 펼친 줄 순서: 챙길 상태 → 주간 45시간 이상 → 휴가
 function attSum(teams){
   const ms = teams.flatMap(t=>t.members), sum = k=>teams.reduce((a, t)=>a + (+t.summary?.[k] || 0), 0);
@@ -15538,7 +15539,7 @@ function attContent(){
   const head = `<div class="at-head">
     <div class="at-date">
       <button type="button" class="at-nav" aria-label="이전 날" ${older ? `onclick="attGo('${older}')"` : 'disabled'}>${icon('chevL')}</button>
-      <b>${attDay(d.date)}</b>
+      <b>${attDay(d.date)}${d.special ? ' · 특근' : ''}</b>
       <button type="button" class="at-nav" aria-label="다음 날" ${newer ? `onclick="attGo('${newer}')"` : 'disabled'}>${icon('chevR')}</button>
       <span class="at-cal"><button type="button" class="at-nav" aria-label="날짜 고르기" onclick="attCal()">${icon('calendar')}</button>
         <input type="date" id="atCal" tabindex="-1" aria-hidden="true" value="${d.date}" min="${AT.dates[AT.dates.length - 1] || ''}" max="${AT.dates[0] || ''}" onchange="attPick(this.value)"></span>
@@ -15555,9 +15556,9 @@ function attContent(){
       ${tile(s.over ? 'danger' : s.warn ? 'warn' : 'calm', '주 52시간', `주의 ${s.warn}`, `· 초과 ${s.over}`, 'hours')}
       ${tile(s.late + s.miss + s.absent ? 'info' : 'calm', '지각 · 미인식', `${s.late} · ${s.miss}명`, s.absent ? `· 결근 ${s.absent}` : '', 'bad')}
     </div>
-    <div class="at-nums">${num('재직', s.total)}${num('출근', s.work)}${num('휴가·휴직', s.leave)}${num('지각', s.late)}${num('미인식', s.miss)}</div>
+    <div class="at-nums">${num(d.special ? '특근 인원' : '재직', s.total)}${num('출근', s.work)}${num('휴가·휴직', s.leave)}${num('지각', s.late)}${num('미인식', s.miss)}</div>
     <div class="at-teams" id="atTeams"><div class="at-thead" aria-hidden="true"><span></span><span>팀</span><span>인원</span><span>출근</span><span>휴가</span><span>미인식·결근</span><span>지각</span><span>주 52시간</span></div>${d.teams.map(attTeam).join('')}</div>
-    <div class="at-legend"><span><i style="background:var(--sky-mid)"></i>${AT_WARN}시간 미만</span><span><i style="background:#E08A5B"></i>주의 ${AT_WARN}시간~</span><span><i style="background:var(--alert)"></i>초과 ${AT_OVER}시간 넘음</span><span>이번 주 누적은 출퇴근 기록으로 계산한 추정치입니다</span></div>
+    <div class="at-legend"><span><i style="background:var(--sky-mid)"></i>${AT_WARN}시간 미만</span><span><i style="background:#E08A5B"></i>주의 ${AT_WARN}시간~</span><span><i style="background:var(--alert)"></i>초과 ${AT_OVER}시간 넘음</span><span>이번 주 누적(주말 · 공휴일 특근 포함)은 출퇴근 기록으로 계산한 추정치입니다</span></div>
   </div>`;
 }
 
@@ -15594,7 +15595,7 @@ async function attLoad(){
     if((a && !a.ok) || !b.ok) throw new Error((a && !a.ok ? a : b).status);
     if(a) AT.dates = (await a.json()).dates;
     AT.d = await b.json(); AT.state = 'ok'; AT.at = Date.now(); AT.open.clear(); AT.all.clear();
-    if(AT.d.date === AT.dates[0]) AT.want = '';   // 최근 날을 보고 있으면 10분 뒤 새 자료를 다시 받는다
+    if(AT.d.date === AT.dates[0] && !AT.d.special) AT.want = '';   // 최근 날을 보고 있으면 10분 뒤 새 자료를 다시 받는다 (특근일을 보던 사람은 평일로 튕기지 않게 그대로)
   } catch(e){ AT.state = 'err'; }
   if(currentNav.id==='att') renderContent();
 }
@@ -15623,6 +15624,7 @@ function attSelfCheck(){   // 브라우저 콘솔에서 attSelfCheck() 실행 �
   ok(!attShown(m('a', '정상')) && !attShown(m('a', '외근')) && !attShown(m('a', '육아휴직')) && attShown(m('a', '연차')) && attShown(m('a', '미인식')) && attShown(m('a', '처음보는상태'))
      && attShown(m('a', '정상', 46)), '펼치면 특이사항만 — 정상 · 외근 · 육아휴직은 접고 휴가 · 챙길 상태 · 처음 보는 상태 · 45시간 이상은 보인다');
   ok(attTone('미인식')==='danger' && attTone('지각')==='warn' && attTone('병가')==='info' && attTone('정상')==='', '상태 색');
+  ok(attTone('특근')==='' && attTone('특근(야간)')==='' && attShown(m('a', '특근')) && attShown(m('a', '특근(야간)')), '특근은 휴가 색이 아니고 펼치면 보인다');
   const teams = [{ team:'가상A팀', summary:{ 실근무:3 }, members:[m('가상1', '정상'), m('가상2', '지각', 47, { lateMinutes:12 }), m('가상3', '연장근무', 53), m('가상4', '미인식'), m('가상5', '연차')] },
                  { team:'가상B팀', summary:{ 실근무:1 }, members:[m('가상6', '정상'), m('가상7', '육아휴직')] }];
   const s = attSum(teams);
