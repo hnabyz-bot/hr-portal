@@ -804,6 +804,15 @@
   .at-c .bt{ display:flex; gap:4px; justify-content:flex-end; flex-wrap:wrap; }
   .at-c svg{ width:13px; height:13px; vertical-align:-2px; flex:none; }
   .at-foot{ margin-top:10px; font-size:var(--fs-sm); color:var(--text-secondary); }
+  .at-wg{ display:flex; align-items:baseline; gap:8px; margin:18px 2px 8px; font-size:var(--fs-md); }   /* 확인 완료: 주 제목 줄 */
+  .at-wg b{ font-weight:700; } .at-wg span{ font-size:var(--fs-sm); color:var(--text-secondary); }
+  .at-wg em{ margin-left:auto; font-style:normal; font-size:var(--fs-sm); color:var(--text-secondary); white-space:nowrap; }
+  .at-wgd{ margin-top:6px; }
+  .at-wgd > summary{ list-style:none; cursor:pointer; margin:0; padding:11px 14px; border:1px solid var(--border); border-radius:var(--radius); background:var(--surface); }
+  .at-wgd > summary::-webkit-details-marker{ display:none; }
+  .at-wgd > summary:hover{ background:var(--accent-soft); }
+  .at-wgd > summary svg{ width:14px; height:14px; align-self:center; color:var(--text-secondary); transition:transform .15s var(--ease); }
+  .at-wgd[open] > summary{ margin-bottom:6px; } .at-wgd[open] > summary svg{ transform:rotate(180deg); }
   /* 직원 본인 알림 카드 (오늘 할 일 창 맨 위) */
   .at-mine{ display:flex; flex-direction:column; gap:8px; margin:0 0 10px; }
   .at-mc{ padding:10px 12px; border:1px solid #F6CFD2; border-radius:var(--radius); background:var(--bg-danger); color:var(--danger); }
@@ -844,6 +853,7 @@
     .at-c{ grid-template-columns:minmax(0,1fr) auto; row-gap:6px; }
     .at-c .dt{ grid-column:1; } .at-c .st{ grid-column:2; grid-row:1; text-align:right; }
     .at-c .who{ grid-column:1 / -1; } .at-c .bt{ grid-column:1 / -1; justify-content:flex-start; }
+    .at-wg .mix{ display:none; }   /* 휴대폰: 주 제목 줄은 건수만 */
     .at-my > div{ grid-template-columns:76px 52px 52px minmax(0,1fr); padding:9px 10px; font-size:var(--fs-sm); }
     .at-my .doc{ grid-column:1 / -1; }
     .at-my > div:first-child .doc{ display:none; }
@@ -15668,6 +15678,11 @@ function attSelfCheck(){   // 브라우저 콘솔에서 attSelfCheck() 실행 �
     ok(h.includes('9일째 · 기한 지남') && h.includes('href="tel:010"') && (h.match(/제출 확인/g) || []).length===2, '기한 지남 · 전화는 번호가 있을 때만 · 체크 단추');
     AT_C.f = 'all'; h = attChecks(); ok(h.includes('가상5') && h.includes('본인 제출함') && (h.match(/제출 확인/g) || []).length===2, '전체: 남의 몫은 보기만 · 본인 제출 표시');
     AT_C.f = 'done'; h = attChecks(); ok(h.includes('확인 · 가상팀장 11/13') && h.includes('자동 확인 (하이웍스 결재)') && (h.match(/>취소</g) || []).length===1, '확인 완료: 누가 · 자동 확인은 취소 없음');
+    AT_C.d.items.push(it({ name:'가상8', date:'2026-10-28', state:'done', how:'AUTO', doneAt:'2026-10-29T01:00:00Z', contact:null })); h = attChecks();
+    ok(h.includes('<b>이번 주</b><span>11/9(월) ~ 11/15(일)</span><em>2건<span class="mix"> · 자동 1 · 직접 1</span>') && !h.includes('지난주')
+       && h.includes('<details class="at-wgd" ') && h.indexOf('<b>10/26(월) ~ 11/1(일)</b><em>1건') > h.indexOf('가상6') && h.indexOf('가상8') > h.indexOf('10/26(월)') && !h.includes('at-wgd" open'), '확인 완료: 주로 묶음 · 이번 주는 펼침 · 2주 전은 접힘');
+    AT_C.wk.add(celebParse('2026-10-26').getTime()); ok(attChecks().includes('<details class="at-wgd" open'), '펼친 지난 주는 다시 그려도 펼친 채');
+    AT_C.d.items.pop(); AT_C.wk.clear();
     ok(attMailText(AT_C.d.items[0])==='11월 12일 (목) 퇴근 미인식 — 미인식 소명서를 하이웍스 전자결재로 제출해 주세요.', '메일 요청 문구');
     const keepT = { ...AT_TODO, mine:[...AT_TODO.mine] };
     Object.assign(AT_TODO, { mine:[{ date:'2026-11-12', team:'가상A팀', kind:'miss', doc:'미인식 소명서', label:'퇴근 미인식', self:false }, { date:'2026-11-10', team:'가상A팀', kind:'late', doc:'지각 소명서', label:'지각 8분', self:true }], open:0, overdue:0 });
@@ -15690,7 +15705,7 @@ function attSelfCheck(){   // 브라우저 콘솔에서 attSelfCheck() 실행 �
        && (h.match(/class="bad"/g) || []).length===2 && !/주간|52/.test(h) && h.includes("attMyGo('2026-10')"), '나의 근무현황: 요약 · 날짜별 · 서류 상태 · 주간 시간 없음 · 지난 달');
   } finally {
     Object.assign(AT, keep); Object.assign(AUTH, { live, me }); currentNav = nav; currentTab = tab;
-    Object.assign(AT_C, { state:'', d:null, f:'mine' }); Object.assign(AT_S, { state:'', period:'', d:null, more:false, open:'' }); Object.assign(AT_MY, { state:'', period:'', d:null });
+    Object.assign(AT_C, { state:'', d:null, f:'mine', wk:new Set() }); Object.assign(AT_S, { state:'', period:'', d:null, more:false, open:'' }); Object.assign(AT_MY, { state:'', period:'', d:null });
   }
   return 'attSelfCheck 통과';
 }
@@ -15703,7 +15718,7 @@ const AT_HW_WRITE = 'https://approval.office.hiworks.com/abyzr.com/approval/docu
 const AT_FORM = { miss:AT_HW_WRITE, late:AT_HW_WRITE, leave:'https://hr-work.office.hiworks.com/approval/vacation-apply' };   // 휴가 신청은 양식이 골라진 채로 열린다
 const AT_FORM_PICK = { miss:'미인식소명서', late:'지각소명서' };   // 하이웍스 '문서 종류'에 보이는 이름 그대로
 const AT_TODO = { mine:[], open:0, overdue:0 };   // GET /api/attendance/todo — 내 서류 · 내가 챙길 확인 전 · 기한 지남
-const AT_C = { state:'', d:null, f:'mine' };   // 서류 확인 탭
+const AT_C = { state:'', d:null, f:'mine', wk:new Set() };   // 서류 확인 탭 · wk = 확인 완료에서 펼친 지난 주(월요일 시각)
 const AT_S = { state:'', period:'', d:null, more:false, open:'' };   // 월 · 연 집계 탭
 function attMd(ymd){ return `${+ymd.slice(5, 7)}/${+ymd.slice(8, 10)}`; }
 async function attTodoLoad(){
@@ -15740,9 +15755,22 @@ function attChecks(){   // 서류 확인 탭
   return `<div class="card">
     <div class="ms-bar">${chip('mine', '내가 챙길 사람', mine.length)}${chip('all', '전체', open.length)}${chip('done', '확인 완료', done.length)}
       <span class="at-hint">근태 날짜 + ${AT_C.d.due}일이 지나면 빨간 경고 · 휴대폰 9시 알림</span></div>
-    ${list.length ? `<div class="at-chk">${list.map(attChkRow).join('')}</div>` : kpiNote(AT_C.f==='done' ? '최근 30일 동안 확인한 서류가 없습니다.' : AT_C.f==='mine' ? '지금 챙길 사람이 없습니다.' : '확인을 기다리는 서류가 없습니다.', 'success')}
+    ${list.length ? (AT_C.f==='done' ? attDoneWeeks(list) : `<div class="at-chk">${list.map(attChkRow).join('')}</div>`) : kpiNote(AT_C.f==='done' ? '최근 30일 동안 확인한 서류가 없습니다.' : AT_C.f==='mine' ? '지금 챙길 사람이 없습니다.' : '확인을 기다리는 서류가 없습니다.', 'success')}
     <div class="at-foot">[메일] = 하이웍스 메일 창 + 요청 문구 복사 · 체크하면 누가 언제 했는지 남습니다 · ${attDay(AT_C.d.checkFrom)} 근태부터 셉니다</div>
   </div>`;
+}
+function attDoneWeeks(list){   // 확인 완료: 근태 날짜의 주(월~일)로 묶는다 — 이번 주 · 지난주는 펼치고 그 전 주는 한 줄로 접는다 (2026-11-25 인사담당자 B안)
+  const mon = ymd=>{ const t = celebParse(ymd); t.setDate(t.getDate() - (t.getDay() + 6) % 7); return t; };
+  const md = t=>`${t.getMonth() + 1}/${t.getDate()}(${WS_DOW[t.getDay()]})`, now = mon(AT_C.d.today).getTime(), groups = [];
+  for(const x of list){ const m = mon(x.date); if(groups.at(-1)?.k !== m.getTime()) groups.push({ k:m.getTime(), m, xs:[] }); groups.at(-1).xs.push(x); }   // list 는 날짜 최신순
+  return groups.map(g=>{
+    const back = Math.round((now - g.k) / 6048e5), sun = new Date(g.m); sun.setDate(sun.getDate() + 6);
+    const range = `${md(g.m)} ~ ${md(sun)}`, man = g.xs.filter(x=>x.how==='MANUAL').length;
+    const head = `${back < 2 ? `<b>${back ? '지난주' : '이번 주'}</b><span>${range}</span>` : `<b>${range}</b>`}<em>${g.xs.length}건<span class="mix"> · 자동 ${g.xs.length - man} · 직접 ${man}</span></em>`;
+    const rows = `<div class="at-chk">${g.xs.map(attChkRow).join('')}</div>`;
+    return back < 2 ? `<div class="at-wg">${head}</div>${rows}`
+      : `<details class="at-wgd" ${AT_C.wk.has(g.k) ? 'open' : ''} ontoggle="AT_C.wk[this.open ? 'add' : 'delete'](${g.k})"><summary class="at-wg">${head}${icon('chevD')}</summary>${rows}</details>`;
+  }).join('');
 }
 function attChkSort(xs){ return [...xs].sort((a, b)=>(b.overdue - a.overdue) || (a.state==='done' ? b.date.localeCompare(a.date) : a.date.localeCompare(b.date)) || a.name.localeCompare(b.name)); }
 function attChkRow(x){
